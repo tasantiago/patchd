@@ -12,7 +12,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 USER root
 
 # CA corporativa (opcional): todo .crt em .docker/certs entra no repositório de confiança do sistema.
-# Soma-se às CAs públicas em vez de substituí-las.
 COPY .docker/certs/ /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 
@@ -25,24 +24,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         lynx \
         tzdata \
         openssh-client \
+        locales \
     && ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime \
     && echo "$TZ" > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
+
+# Compila os locales direto das definições do pacote "locales", sem depender do /etc/locale.gen.
+# en_US.UTF-8: esperado pelo instalador do zsh. pt_BR.UTF-8: testes de saída localizada (Módulo 2).
+RUN localedef -i en_US -f UTF-8 en_US.UTF-8 \
+    && localedef -i pt_BR -f UTF-8 pt_BR.UTF-8
 
 # Usuário de desenvolvimento com o mesmo UID/GID do host.
 RUN groupadd -g "$GID" appuser \
     && useradd -m -u "$UID" -g "$GID" -s /usr/bin/zsh appuser
 
 # Toolchain: GOPATH e cache de build na home do usuário (montados como volumes no compose).
-# CGO_ENABLED=0: binários estáticos, requisito RNF-02.
 ENV HOME=/home/appuser \
     GOPATH=/home/appuser/go \
     GOCACHE=/home/appuser/.cache/go-build \
     CGO_ENABLED=0
 ENV PATH=/usr/local/go/bin:/home/appuser/go/bin:${PATH}
 
-# As pastas precisam existir com o dono certo ANTES do primeiro uso dos volumes nomeados:
-# o Docker copia dono e conteúdo da imagem para o volume vazio.
+# Pastas com o dono certo antes do primeiro uso dos volumes nomeados.
 RUN mkdir -p "$GOPATH" "$GOCACHE" /home/appuser/app /home/appuser/zsh \
     && chown -R appuser:appuser /home/appuser
 
@@ -64,5 +67,4 @@ RUN echo '[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh' >> ~/.zshrc \
     && echo 'HISTFILE=/home/appuser/zsh/.zsh_history' >> ~/.zshrc \
     && echo 'setopt interactivecomments' >> ~/.zshrc
 
-# O container só precisa ficar de pé; você entra com "docker compose exec dev zsh".
 CMD ["sleep", "infinity"]
