@@ -3,10 +3,14 @@ package main
 
 import (
 	"fmt"
-	"runtime"
+
+	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/platform"
 )
 
 func main() {
-	// Por enquanto só se identifica. A versão via ldflags entra na Aula 1.2.
-	fmt.Printf("patchd-agent (%s/%s): esqueleto da Aula 1.1\n", runtime.GOOS, runtime.GOARCH)
+	// Identificação do binário: versão (ldflags ou git) e commit gravado pelo Go.
+	fmt.Printf("patchd-agent %s\n", buildinfo.Get())
+	// Valores escolhidos na compilação conforme o GOOS (arquivos _windows, _linux, _darwin).
+	fmt.Printf("plataforma: %s | unix: %t | dados: %s\n", platform.Name, platform.IsUnix, platform.DataDir())
 }

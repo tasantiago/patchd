@@ -3,10 +3,11 @@ package main
 
 import (
 	"fmt"
-	"runtime"
+
+	"github.com/tasantiago/patchd/internal/buildinfo"
 )
 
 func main() {
 	// Por enquanto só se identifica. HTTP e banco entram no Módulo 4.
-	fmt.Printf("patchd-server (%s/%s): esqueleto da Aula 1.1\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("patchd-server %s\n", buildinfo.Get())
 }
