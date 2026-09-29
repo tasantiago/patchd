@@ -23,8 +23,10 @@ services:
       - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
     environment:
       SSH_AUTH_SOCK: /ssh-agent
+    # Só na interface local do host: o servidor de desenvolvimento não fica exposto na rede.
+    # Porta do host ajustável pelo .env (PATCHD_DEV_PORT), padrão 18080, para não disputar a 8080.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${PATCHD_DEV_PORT:-18080}:8080"
     restart: unless-stopped
 
 volumes:
