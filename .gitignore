@@ -1,0 +1,10 @@
+# Binários e artefatos de build
+/bin/
+/dist/
+
+# Variáveis locais (UID/GID e, no futuro, segredos de desenvolvimento)
+.env
+
+# Ambiente de desenvolvimento: histórico do shell e certificados locais
+/.docker/zsh/history/
+/.docker/certs/*.crt
