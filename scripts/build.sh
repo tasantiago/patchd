@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # Compila o patchd-agent para os seis alvos e o patchd-server para Linux, com a versão injetada.
 # Uso (dentro do container): ./scripts/build.sh [versão]    exemplo: ./scripts/build.sh v0.1.0
+# Versões sem o sufixo "-dev" são builds de release e exigem a árvore do git limpa.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 # Versão: argumento, ou a descrição do git (tag, hash, "-dirty" se houver alterações), ou "dev".
 VERSAO="${1:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+
+# Trava de release: binário de release precisa corresponder exatamente a um commit.
+if [ "$#" -ge 1 ] && [[ "$VERSAO" != *-dev ]] && [ -n "$(git status --porcelain)" ]; then
+  echo "ERRO: build de release ($VERSAO) com alterações não commitadas." >&2
+  echo "Faça commit ou use uma versão terminada em -dev." >&2
+  exit 1
+fi
+
 MODULO="$(go list -m)"
 
 # -s -w: remove tabela de símbolos e dados de depuração (binário menor; o stack trace de panic continua).
