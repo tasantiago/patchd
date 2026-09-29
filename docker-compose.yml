@@ -16,6 +16,7 @@ services:
       - .:/home/appuser/app
       - ./.docker/zsh/powerlevel10k/.p10k.zsh:/home/appuser/.p10k.zsh
       - ./.docker/zsh/history:/home/appuser/zsh
+      - ./.docker/ssh:/home/appuser/.ssh
       - gomod:/home/appuser/go
       - gobuild:/home/appuser/.cache/go-build
       - ${HOME}/.gitconfig:/home/appuser/.gitconfig:ro
@@ -23,7 +24,7 @@ services:
     environment:
       SSH_AUTH_SOCK: /ssh-agent
     ports:
-      - "8081:8080"
+      - "8080:8080"
     restart: unless-stopped
 
 volumes:
