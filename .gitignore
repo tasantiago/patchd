@@ -8,3 +8,5 @@
 # Ambiente de desenvolvimento: histórico do shell e certificados locais
 /.docker/zsh/history/
 /.docker/certs/*.crt
+# known_hosts do container de desenvolvimento
+/.docker/ssh/
