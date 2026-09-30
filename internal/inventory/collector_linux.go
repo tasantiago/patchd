@@ -18,7 +18,7 @@ const kernelReleasePath = "/proc/sys/kernel/osrelease"
 
 // linuxCollector coleta o inventário no Linux.
 type linuxCollector struct {
-	run      platform.Runner              // comandos (usado a partir da Aula 2.3)
+	run      platform.Runner              // comandos (dpkg-query, rpm)
 	readFile func(string) ([]byte, error) // os.ReadFile; substituível nos testes
 	hostname func() (string, error)       // os.Hostname; substituível nos testes
 }
@@ -28,30 +28,32 @@ func New(run platform.Runner) Collector {
 	return &linuxCollector{run: run, readFile: os.ReadFile, hostname: os.Hostname}
 }
 
-// OS lê o os-release (fonte de verdade da distribuição) e a versão do kernel.
-func (c *linuxCollector) OS(ctx context.Context) (OSInfo, error) {
-	info := OSInfo{Family: "linux", Arch: runtime.GOARCH}
-
-	var data []byte
+// readOSRelease lê e interpreta o primeiro os-release encontrado.
+func (c *linuxCollector) readOSRelease() (map[string]string, string, error) {
 	var errs []error
 	for _, p := range osReleasePaths {
 		d, err := c.readFile(p)
 		if err == nil {
-			data = d
-			info.Sources = append(info.Sources, p)
-			break
+			return parseOSRelease(d), p, nil
 		}
 		errs = append(errs, err)
 	}
-	if data == nil {
-		return info, fmt.Errorf("os-release não encontrado: %w", errors.Join(errs...))
-	}
+	return nil, "", fmt.Errorf("os-release não encontrado: %w", errors.Join(errs...))
+}
 
-	fields := parseOSRelease(data)
+// OS lê o os-release (fonte de verdade da distribuição) e a versão do kernel.
+func (c *linuxCollector) OS(ctx context.Context) (OSInfo, error) {
+	info := OSInfo{Family: "linux", Arch: runtime.GOARCH}
+
+	fields, src, err := c.readOSRelease()
+	if err != nil {
+		return info, err
+	}
 	info.ID = fields["ID"]
 	info.Name = fields["NAME"]
 	info.Version = fields["VERSION_ID"]
 	info.Codename = fields["VERSION_CODENAME"]
+	info.Sources = append(info.Sources, src)
 
 	// O kernel é informativo: se não der para ler, o inventário segue sem ele.
 	if k, err := c.readFile(kernelReleasePath); err == nil {

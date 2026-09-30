@@ -28,17 +28,20 @@ type OSInfo struct {
 // Software é um item de software instalado. Os campos são fatos brutos da fonte;
 // o servidor decide o que exibir e o que avaliar (P-01).
 type Software struct {
-	Name            string `json:"name"`
-	Version         string `json:"version,omitempty"`
-	Publisher       string `json:"publisher,omitempty"`
-	InstallDate     string `json:"install_date,omitempty"`     // AAAA-MM-DD, quando a fonte informa uma data válida
-	Scope           string `json:"scope"`                      // "machine" ou "user"
-	User            string `json:"user,omitempty"`             // SID do dono, em instalações por usuário no Windows
-	Arch            string `json:"arch,omitempty"`             // no Windows, a visão do registro: "x64" ou "x86"
-	ProductCode     string `json:"product_code,omitempty"`     // {GUID} de instalações MSI
-	SystemComponent bool   `json:"system_component,omitempty"` // oculto no Adicionar/Remover Programas
-	IsUpdate        bool   `json:"is_update,omitempty"`        // entrada que representa atualização de outro produto
-	Source          string `json:"source"`                     // chave ou arquivo exato de onde veio (P-03)
+	Name                 string `json:"name"`
+	Version              string `json:"version,omitempty"` // no Linux, com época quando houver: "1:3.5.7-2.fc44"
+	Publisher            string `json:"publisher,omitempty"`
+	InstallDate          string `json:"install_date,omitempty"`           // AAAA-MM-DD, quando a fonte informa uma data válida
+	Scope                string `json:"scope"`                            // "machine" ou "user"
+	User                 string `json:"user,omitempty"`                   // SID do dono, em instalações por usuário no Windows
+	Arch                 string `json:"arch,omitempty"`                   // "x64"/"x86" (visão do registro) ou a do pacote (amd64, x86_64, noarch...)
+	ProductCode          string `json:"product_code,omitempty"`           // {GUID} de instalações MSI
+	SourcePackage        string `json:"source_package,omitempty"`         // Linux: pacote fonte (unidade dos avisos do Ubuntu)
+	SourcePackageVersion string `json:"source_package_version,omitempty"` // Linux: versão do pacote fonte
+	SystemComponent      bool   `json:"system_component,omitempty"`       // oculto no Adicionar/Remover Programas
+	IsUpdate             bool   `json:"is_update,omitempty"`              // entrada que representa atualização de outro produto
+	Held                 bool   `json:"held,omitempty"`                   // travado no gerenciador de pacotes: não será atualizado
+	Source               string `json:"source"`                           // de onde o dado veio (P-03)
 }
 
 // Collector coleta o inventário da máquina local. Cada SO tem sua implementação,
