@@ -62,8 +62,11 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
     -p https://github.com/zsh-users/zsh-completions \
     -a 'export TERM=xterm-256color'
 
-# Tema, histórico persistente e comentários (#) aceitos em comandos colados.
-RUN echo '[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh' >> ~/.zshrc \
+# DISABLE_MAGIC_FUNCTIONS no TOPO do .zshrc (antes do oh-my-zsh carregar): desliga o
+# url-quote-magic, que insere barras invertidas em URLs coladas e corrompe heredocs.
+# No fim: tema, histórico persistente e comentários (#) aceitos em comandos colados.
+RUN sed -i '1i DISABLE_MAGIC_FUNCTIONS=true' ~/.zshrc \
+    && echo '[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh' >> ~/.zshrc \
     && echo 'HISTFILE=/home/appuser/zsh/.zsh_history' >> ~/.zshrc \
     && echo 'setopt interactivecomments' >> ~/.zshrc
 
