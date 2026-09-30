@@ -2,7 +2,10 @@ package inventory
 
 import "context"
 
-// Software: provisório; a leitura via system_profiler e pkgutil vem na Aula 2.4.
+// Software lista os aplicativos pelo system_profiler. Os recibos do pkgutil
+// entram na segunda etapa da Aula 2.4.
 func (c *darwinCollector) Software(ctx context.Context) ([]Software, error) {
-	return nil, ErrNotImplemented
+	list, err := collectDarwinApps(ctx, c.run)
+	sortSoftware(list)
+	return list, err
 }
