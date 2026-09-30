@@ -4,6 +4,12 @@
 # Versões sem o sufixo "-dev" são builds de release e exigem a árvore do git limpa.
 set -euo pipefail
 
+# Sem Go, o script para aqui, antes de tocar no dist/ (um binário antigo não pode parecer resultado novo).
+if ! command -v go >/dev/null 2>&1; then
+  echo "ERRO: go não encontrado. Rode dentro do container: docker compose exec dev ./scripts/build.sh $*" >&2
+  exit 1
+fi
+
 cd "$(git rev-parse --show-toplevel)"
 
 # Versão: argumento, ou a descrição do git (tag, hash, "-dirty" se houver alterações), ou "dev".
