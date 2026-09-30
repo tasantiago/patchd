@@ -2,15 +2,71 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io"
+	"log/slog"
+	"os"
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/platform"
 )
 
+// Códigos de saída do agente.
+const (
+	exitOK     = 0
+	exitConfig = 2 // mesma convenção do pacote flag para erro de uso
+)
+
 func main() {
-	// Identificação do binário: versão (ldflags ou git) e commit gravado pelo Go.
-	fmt.Printf("patchd-agent %s\n", buildinfo.Get())
-	// Valores escolhidos na compilação conforme o GOOS (arquivos _windows, _linux, _darwin).
-	fmt.Printf("plataforma: %s | unix: %t | dados: %s\n", platform.Name, platform.IsUnix, platform.DataDir())
+	os.Exit(run(os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr))
+}
+
+// run concentra a lógica do agente. Argumentos, ambiente e saídas chegam como
+// parâmetros para que a função possa ser testada sem criar um processo.
+func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
+	info := buildinfo.Get()
+
+	cfg, err := loadAgentConfig(args, look, stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return exitOK
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: configuração inválida:\n%v\n", err)
+		return exitConfig
+	}
+	if cfg.ShowVersion {
+		fmt.Fprintf(stdout, "patchd-agent %s\n", info)
+		return exitOK
+	}
+
+	logger, err := logging.New(stderr, cfg.LogLevel, cfg.LogFormat)
+	if err != nil {
+		// Não deveria acontecer: nível e formato já foram validados.
+		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
+		return exitConfig
+	}
+	// Campos presentes em todas as linhas de log do agente.
+	logger = logger.With("app", "patchd-agent", "version", info.Version)
+	slog.SetDefault(logger)
+
+	logger.Info("agente iniciado",
+		"commit", info.Commit,
+		"os", info.OS,
+		"arch", info.Arch,
+		"platform", platform.Name,
+		"data_dir", cfg.DataDir,
+		"server", cfg.ServerURL,
+		"checkin_interval", cfg.CheckinInterval.String(),
+	)
+	logger.Debug("configuração de log", "log_level", cfg.LogLevel, "log_format", cfg.LogFormat)
+
+	if cfg.ServerURL == "" {
+		logger.Warn("PATCHD_SERVER_URL não definido: o agente não fará check-in")
+	}
+	logger.Info("agente encerrado: ainda sem funcionalidades (Aula 1.3)")
+	return exitOK
 }
