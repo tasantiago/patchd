@@ -23,6 +23,7 @@ type agentConfig struct {
 	LogLevel        string
 	LogFormat       string
 	ShowVersion     bool
+	Inventory       bool // coleta, imprime em JSON e sai
 }
 
 // loadAgentConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -47,6 +48,7 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	fs.StringVar(&cfg.LogFormat, "log-format", config.String(look, "PATCHD_LOG_FORMAT", "json"),
 		"formato de log: json ou text (env PATCHD_LOG_FORMAT)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
+	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 
 	if err := fs.Parse(args); err != nil {
 		// O pacote flag já escreveu a mensagem e a ajuda em usage.
