@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/inventory"
@@ -24,9 +25,22 @@ type inventoryReport struct {
 	// Software: null = não coletado (motivo em Errors); [] = coletado, nenhum item.
 	// Em falha parcial, traz o que foi lido e o erro aparece em Errors.
 	Software []inventory.Software `json:"software"`
-	// Errors lista as seções que falharam, total ou parcialmente. Uma falha nunca
-	// fica escondida atrás de uma lista vazia.
+	// Errors lista as falhas, uma por entrada, com o prefixo da seção. Uma falha
+	// nunca fica escondida atrás de uma lista vazia.
 	Errors []string `json:"errors,omitempty"`
+}
+
+// addErrors acrescenta cada linha de err como uma entrada própria em Errors, com o
+// prefixo da seção. errors.Join junta mensagens com quebra de linha; aqui elas se separam.
+func (r *inventoryReport) addErrors(section string, err error) {
+	if err == nil {
+		return
+	}
+	for _, line := range strings.Split(err.Error(), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			r.Errors = append(r.Errors, section+": "+line)
+		}
+	}
 }
 
 // printInventory coleta com c e escreve o relatório em JSON indentado em w.
@@ -46,18 +60,15 @@ func printInventory(ctx context.Context, w io.Writer, c inventory.Collector, age
 	}
 
 	hw, err := c.Hardware(ctx)
-	if err != nil {
-		report.Errors = append(report.Errors, "hardware: "+err.Error())
-	}
+	report.addErrors("hardware", err)
 	if !errors.Is(err, inventory.ErrNotImplemented) {
 		// Coletado, inteiro ou em parte.
 		report.Hardware = &hw
 	}
 
 	software, err := c.Software(ctx)
-	if err != nil {
-		report.Errors = append(report.Errors, "software: "+err.Error())
-	} else if software == nil {
+	report.addErrors("software", err)
+	if err == nil && software == nil {
 		// Coleta bem-sucedida sem itens: [] no JSON, e não null.
 		software = []inventory.Software{}
 	}

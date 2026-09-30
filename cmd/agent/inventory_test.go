@@ -93,18 +93,26 @@ func TestPrintInventorySoftwareParcial(t *testing.T) {
 	}
 }
 
-func TestPrintInventoryHardwareParcial(t *testing.T) {
+func TestPrintInventoryHardwareParcialUmErroPorEntrada(t *testing.T) {
 	c := coletorFalso{
-		info:        linuxFalso,
-		hardware:    inventory.Hardware{Manufacturer: "LENOVO"},
-		hardwareErr: errors.New("product_serial: permissão negada (exige root)"),
+		info:     linuxFalso,
+		hardware: inventory.Hardware{Manufacturer: "LENOVO"},
+		hardwareErr: errors.Join(
+			errors.New("/sys/class/dmi/id/product_serial: permissão negada (exige root)"),
+			errors.New("/sys/class/dmi/id/product_uuid: permissão negada (exige root)"),
+		),
 	}
 	_, rep := imprime(t, c)
 	if rep.Hardware == nil || rep.Hardware.Manufacturer != "LENOVO" {
 		t.Errorf("hardware parcial deveria vir no relatório: %+v", rep.Hardware)
 	}
-	if len(rep.Errors) != 1 || !strings.HasPrefix(rep.Errors[0], "hardware: ") {
-		t.Errorf("o erro parcial do hardware deveria vir em errors: %v", rep.Errors)
+	if len(rep.Errors) != 2 {
+		t.Fatalf("esperadas 2 entradas em errors, uma por falha: %q", rep.Errors)
+	}
+	for _, e := range rep.Errors {
+		if !strings.HasPrefix(e, "hardware: ") || strings.Contains(e, "\n") {
+			t.Errorf("cada entrada precisa do prefixo da seção e nenhuma quebra de linha: %q", e)
+		}
 	}
 }
 
