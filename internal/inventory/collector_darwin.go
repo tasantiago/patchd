@@ -2,7 +2,7 @@ package inventory
 
 import (
 	"context"
-	"errors"
+	"os"
 
 	"github.com/tasantiago/patchd/internal/platform"
 )
@@ -15,7 +15,7 @@ type darwinCollector struct {
 // New devolve o coletor do SO atual.
 func New(run platform.Runner) Collector { return &darwinCollector{run: run} }
 
-// OS: provisório; a implementação pelo SystemVersion.plist vem na próxima etapa da Aula 2.1.
+// OS lê o SystemVersion.plist via plutil (fonte de verdade da versão do macOS).
 func (c *darwinCollector) OS(ctx context.Context) (OSInfo, error) {
-	return OSInfo{}, errors.New("identificação do SO no macOS ainda não implementada")
+	return collectDarwinOS(ctx, c.run, os.Hostname)
 }
