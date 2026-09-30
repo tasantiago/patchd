@@ -34,6 +34,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
 	}
+	var usageErr *config.UsageError
+	if errors.As(err, &usageErr) {
+		// O pacote flag já mostrou a mensagem e a ajuda; não repetir.
+		return exitConfig
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: configuração inválida:\n%v\n", err)
 		return exitConfig
