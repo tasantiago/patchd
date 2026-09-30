@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -18,6 +19,8 @@ type inventoryReport struct {
 	AgentVersion string           `json:"agent_version"`
 	CollectedAt  time.Time        `json:"collected_at"` // sempre em UTC
 	OS           inventory.OSInfo `json:"os"`
+	// Hardware: null = não coletado (motivo em Errors); objeto = coletado, talvez parcialmente.
+	Hardware *inventory.Hardware `json:"hardware"`
 	// Software: null = não coletado (motivo em Errors); [] = coletado, nenhum item.
 	// Em falha parcial, traz o que foi lido e o erro aparece em Errors.
 	Software []inventory.Software `json:"software"`
@@ -40,6 +43,15 @@ func printInventory(ctx context.Context, w io.Writer, c inventory.Collector, age
 		AgentVersion: agentVersion,
 		CollectedAt:  time.Now().UTC(),
 		OS:           osInfo,
+	}
+
+	hw, err := c.Hardware(ctx)
+	if err != nil {
+		report.Errors = append(report.Errors, "hardware: "+err.Error())
+	}
+	if !errors.Is(err, inventory.ErrNotImplemented) {
+		// Coletado, inteiro ou em parte.
+		report.Hardware = &hw
 	}
 
 	software, err := c.Software(ctx)

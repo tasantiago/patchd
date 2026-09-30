@@ -11,18 +11,24 @@ import (
 	"github.com/tasantiago/patchd/internal/inventory"
 )
 
-// coletorFalso cumpre inventory.Collector só por ter os métodos OS e Software.
+// coletorFalso cumpre inventory.Collector só por ter os métodos OS, Software e Hardware.
 type coletorFalso struct {
 	info        inventory.OSInfo
 	osErr       error
 	software    []inventory.Software
 	softwareErr error
+	hardware    inventory.Hardware
+	hardwareErr error
 }
 
 func (c coletorFalso) OS(ctx context.Context) (inventory.OSInfo, error) { return c.info, c.osErr }
 
 func (c coletorFalso) Software(ctx context.Context) ([]inventory.Software, error) {
 	return c.software, c.softwareErr
+}
+
+func (c coletorFalso) Hardware(ctx context.Context) (inventory.Hardware, error) {
+	return c.hardware, c.hardwareErr
 }
 
 // imprime executa printInventory e devolve o JSON cru e o relatório decodificado.
@@ -61,13 +67,14 @@ func TestPrintInventorySoftwareVazioEhListaVazia(t *testing.T) {
 	}
 }
 
-func TestPrintInventorySoftwareNaoImplementadoEhNull(t *testing.T) {
-	cru, rep := imprime(t, coletorFalso{info: linuxFalso, softwareErr: inventory.ErrNotImplemented})
-	if !strings.Contains(cru, `"software": null`) {
-		t.Errorf("seção não coletada deveria gerar \"software\": null, veio:\n%s", cru)
+func TestPrintInventoryNaoImplementadoEhNull(t *testing.T) {
+	c := coletorFalso{info: linuxFalso, softwareErr: inventory.ErrNotImplemented, hardwareErr: inventory.ErrNotImplemented}
+	cru, rep := imprime(t, c)
+	if !strings.Contains(cru, `"software": null`) || !strings.Contains(cru, `"hardware": null`) {
+		t.Errorf("seções não coletadas deveriam ser null, veio:\n%s", cru)
 	}
-	if len(rep.Errors) != 1 || !strings.HasPrefix(rep.Errors[0], "software: ") {
-		t.Errorf("errors deveria explicar a falha do software: %v", rep.Errors)
+	if len(rep.Errors) != 2 {
+		t.Errorf("errors deveria explicar as duas seções: %v", rep.Errors)
 	}
 }
 
@@ -83,6 +90,21 @@ func TestPrintInventorySoftwareParcial(t *testing.T) {
 	}
 	if len(rep.Errors) != 1 || !strings.Contains(rep.Errors[0], "acesso negado") {
 		t.Errorf("em falha parcial, o erro deveria vir em errors: %v", rep.Errors)
+	}
+}
+
+func TestPrintInventoryHardwareParcial(t *testing.T) {
+	c := coletorFalso{
+		info:        linuxFalso,
+		hardware:    inventory.Hardware{Manufacturer: "LENOVO"},
+		hardwareErr: errors.New("product_serial: permissão negada (exige root)"),
+	}
+	_, rep := imprime(t, c)
+	if rep.Hardware == nil || rep.Hardware.Manufacturer != "LENOVO" {
+		t.Errorf("hardware parcial deveria vir no relatório: %+v", rep.Hardware)
+	}
+	if len(rep.Errors) != 1 || !strings.HasPrefix(rep.Errors[0], "hardware: ") {
+		t.Errorf("o erro parcial do hardware deveria vir em errors: %v", rep.Errors)
 	}
 }
 
