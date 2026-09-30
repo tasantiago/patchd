@@ -10,3 +10,6 @@
 /.docker/certs/*.crt
 # known_hosts do container de desenvolvimento
 /.docker/ssh/
+
+# Segredos do compose de produção
+/deploy/secrets/
