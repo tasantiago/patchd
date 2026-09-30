@@ -1,7 +1,10 @@
 # Ambiente de desenvolvimento do patchd.
 # Subir:  docker compose up -d --build
 # Entrar: docker compose exec dev zsh
-# O compose de produção (servidor + Postgres) fica em deploy/, Aula 1.4.
+# O compose de produção (servidor + Postgres) fica em deploy/ e usa o projeto "patchd".
+# Nome próprio: evita que um compose trate os containers do outro como órfãos.
+name: patchd-dev
+
 services:
   dev:
     build:

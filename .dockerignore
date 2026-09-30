@@ -1,0 +1,12 @@
+# Contexto do docker build: nada de histórico, binários, segredos ou configuração local.
+.git
+bin/
+dist/
+.env
+deploy/secrets/
+
+# Ambiente de desenvolvimento (a pasta .docker/certs continua: a CA corporativa entra no build)
+.docker/zsh/
+.docker/ssh/
+Dockerfile.dev
+docker-compose.yml

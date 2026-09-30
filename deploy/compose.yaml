@@ -1,0 +1,70 @@
+# patchd em produção: patchd-server + PostgreSQL.
+# Uso, a partir da raiz do repositório:
+#   ./deploy/gerar-segredos.sh
+#   export PATCHD_VERSION=v0.1.0 PATCHD_COMMIT="$(git rev-parse HEAD)"
+#   docker compose -f deploy/compose.yaml up -d --build
+# Toda a configuração vem de variáveis de ambiente e de segredos; nada fica dentro da imagem.
+name: patchd
+
+services:
+  postgres:
+    image: postgres:18-trixie
+    environment:
+      POSTGRES_DB: patchd
+      POSTGRES_USER: patchd
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      # A partir do Postgres 18, a imagem oficial declara o volume em /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # -h 127.0.0.1: só fica saudável quando o servidor definitivo aceita TCP
+      # (o servidor temporário da inicialização escuta apenas no socket local).
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U patchd -d patchd"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    # Sem "ports": o banco não é exposto no host, só na rede interna do compose.
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        VERSION: ${PATCHD_VERSION:-dev}
+        COMMIT: ${PATCHD_COMMIT:-}
+    image: patchd-server:${PATCHD_VERSION:-dev}
+    environment:
+      PATCHD_LISTEN_ADDR: ":8080"
+      PATCHD_LOG_FORMAT: json
+      PATCHD_LOG_LEVEL: ${PATCHD_LOG_LEVEL:-info}
+      PATCHD_DATABASE_URL_FILE: /run/secrets/database_url
+    secrets:
+      - database_url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # HTTP sem TLS até a Aula 9.1: por padrão, só na interface local do host.
+      - "${PATCHD_HTTP_BIND:-127.0.0.1}:${PATCHD_HTTP_PORT:-8081}:8080"
+    # Endurecimento: raiz somente leitura, nenhuma capability, sem escalada de privilégio.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Maior que o shutdownTimeout do servidor (10 s), para o Docker não matar no meio do encerramento.
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  database_url:
+    file: ./secrets/database_url
+
+volumes:
+  pgdata:
