@@ -44,6 +44,23 @@ type Software struct {
 	Source               string `json:"source"`                           // de onde o dado veio (P-03)
 }
 
+// Hardware descreve a máquina física ou virtual. Valores crus da fonte: seriais
+// genéricos ("To be filled by O.E.M.") são filtrados no servidor (Aula 4.3).
+type Hardware struct {
+	Manufacturer string   `json:"manufacturer,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	SerialNumber string   `json:"serial_number,omitempty"`
+	UUID         string   `json:"uuid,omitempty"`         // UUID do SMBIOS
+	ChassisType  string   `json:"chassis_type,omitempty"` // código SMBIOS cru (ex.: 3 = desktop, 9 e 10 = notebook)
+	BIOSVendor   string   `json:"bios_vendor,omitempty"`
+	BIOSVersion  string   `json:"bios_version,omitempty"`
+	BIOSDate     string   `json:"bios_date,omitempty"`
+	CPUModel     string   `json:"cpu_model,omitempty"`
+	CPUThreads   int      `json:"cpu_threads,omitempty"` // processadores lógicos
+	MemoryBytes  uint64   `json:"memory_bytes,omitempty"`
+	Sources      []string `json:"sources"` // de onde cada dado veio (P-03)
+}
+
 // Collector coleta o inventário da máquina local. Cada SO tem sua implementação,
 // escolhida na compilação; New devolve a do SO atual.
 type Collector interface {
@@ -52,4 +69,7 @@ type Collector interface {
 	// Software lista o software instalado. Em falha parcial, devolve o que
 	// conseguiu coletar junto com o erro. Seção não implementada: ErrNotImplemented.
 	Software(ctx context.Context) ([]Software, error)
+	// Hardware descreve a máquina. Em falha parcial (ex.: campo que exige root),
+	// devolve os campos lidos junto com o erro. Não implementada: ErrNotImplemented.
+	Hardware(ctx context.Context) (Hardware, error)
 }
