@@ -1,9 +1,10 @@
 package inventory
 
 import (
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // uninstallEntry são os valores de uma subchave Uninstall do registro do Windows,
@@ -98,17 +99,8 @@ func isUserSID(name string) bool {
 	return strings.HasPrefix(name, "S-1-5-21-") && !strings.HasSuffix(name, "_Classes")
 }
 
-// sortSoftware ordena por nome (sem diferenciar maiúsculas), versão e fonte.
-// Saída estável entre coletas iguais é pré-requisito para o hash da Aula 2.5.
+// sortSoftware aplica a ordenação canônica do protocolo: uma única regra no projeto,
+// a mesma que o hash do inventário usa.
 func sortSoftware(list []Software) {
-	sort.Slice(list, func(i, j int) bool {
-		a, b := list[i], list[j]
-		if na, nb := strings.ToLower(a.Name), strings.ToLower(b.Name); na != nb {
-			return na < nb
-		}
-		if a.Version != b.Version {
-			return a.Version < b.Version
-		}
-		return a.Source < b.Source
-	})
+	protocol.SortSoftware(list)
 }

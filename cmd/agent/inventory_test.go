@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/tasantiago/patchd/internal/inventory"
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // coletorFalso cumpre inventory.Collector só por ter os métodos OS, Software e Hardware.
@@ -32,13 +33,13 @@ func (c coletorFalso) Hardware(ctx context.Context) (inventory.Hardware, error) 
 }
 
 // imprime executa printInventory e devolve o JSON cru e o relatório decodificado.
-func imprime(t *testing.T, c coletorFalso) (string, inventoryReport) {
+func imprime(t *testing.T, c coletorFalso) (string, protocol.InventoryReport) {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := printInventory(context.Background(), &buf, c, "v0.2.0-teste"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	var rep inventoryReport
+	var rep protocol.InventoryReport
 	if err := json.Unmarshal(buf.Bytes(), &rep); err != nil {
 		t.Fatalf("saída não é JSON válido: %v\n%s", err, buf.String())
 	}
@@ -49,11 +50,27 @@ var linuxFalso = inventory.OSInfo{Family: "linux", ID: "ubuntu", Version: "26.04
 
 func TestPrintInventoryBasico(t *testing.T) {
 	_, rep := imprime(t, coletorFalso{info: linuxFalso})
-	if rep.AgentVersion != "v0.2.0-teste" || rep.OS.ID != "ubuntu" || rep.OS.Version != "26.04" {
+	if rep.SchemaVersion != protocol.InventorySchemaVersion || rep.AgentVersion != "v0.2.0-teste" || rep.OS.ID != "ubuntu" {
 		t.Errorf("relatório errado: %+v", rep)
 	}
 	if rep.CollectedAt.IsZero() || rep.CollectedAt.Location().String() != "UTC" {
 		t.Errorf("collected_at deveria ser preenchido em UTC: %v", rep.CollectedAt)
+	}
+	if !strings.HasPrefix(rep.Hash, "sha256:") {
+		t.Errorf("o relatório deveria trazer o hash do conteúdo: %q", rep.Hash)
+	}
+}
+
+func TestPrintInventoryHashEstavelEntreColetas(t *testing.T) {
+	c := coletorFalso{
+		info:     linuxFalso,
+		software: []inventory.Software{{Name: "b", Source: "x"}, {Name: "a", Source: "x"}},
+	}
+	_, r1 := imprime(t, c)
+	c.software = []inventory.Software{{Name: "a", Source: "x"}, {Name: "b", Source: "x"}}
+	_, r2 := imprime(t, c)
+	if r1.Hash != r2.Hash {
+		t.Errorf("mesmo conteúdo em outra ordem e em outro horário deveria dar o mesmo hash: %s != %s", r1.Hash, r2.Hash)
 	}
 }
 
