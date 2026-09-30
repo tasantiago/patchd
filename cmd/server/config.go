@@ -29,6 +29,7 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 
 	fs := flag.NewFlagSet("patchd-server", flag.ContinueOnError)
 	fs.SetOutput(usage)
+	config.SetUsage(fs)
 	fs.StringVar(&cfg.ListenAddr, "listen", config.String(look, "PATCHD_LISTEN_ADDR", ":8080"),
 		"endereço de escuta da API, ex.: :8080 (env PATCHD_LISTEN_ADDR)")
 	fs.StringVar(&cfg.LogLevel, "log-level", config.String(look, "PATCHD_LOG_LEVEL", "info"),
@@ -38,7 +39,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 
 	if err := fs.Parse(args); err != nil {
-		return cfg, err
+		// O pacote flag já escreveu a mensagem e a ajuda em usage.
+		return cfg, &config.UsageError{Err: err}
 	}
 	if cfg.ShowVersion {
 		return cfg, nil

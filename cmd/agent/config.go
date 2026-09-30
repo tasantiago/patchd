@@ -35,6 +35,7 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 
 	fs := flag.NewFlagSet("patchd-agent", flag.ContinueOnError)
 	fs.SetOutput(usage)
+	config.SetUsage(fs)
 	fs.StringVar(&cfg.ServerURL, "server", config.String(look, "PATCHD_SERVER_URL", ""),
 		"URL do patchd-server, ex.: https://patchd.exemplo:8443 (env PATCHD_SERVER_URL)")
 	fs.StringVar(&cfg.DataDir, "data-dir", config.String(look, "PATCHD_DATA_DIR", platform.DataDir()),
@@ -48,7 +49,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 
 	if err := fs.Parse(args); err != nil {
-		return cfg, err
+		// O pacote flag já escreveu a mensagem e a ajuda em usage.
+		return cfg, &config.UsageError{Err: err}
 	}
 	if cfg.ShowVersion {
 		return cfg, nil
