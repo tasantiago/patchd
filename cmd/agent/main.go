@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,14 +12,16 @@ import (
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/inventory"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/platform"
 )
 
 // Códigos de saída do agente.
 const (
-	exitOK     = 0
-	exitConfig = 2 // mesma convenção do pacote flag para erro de uso
+	exitOK      = 0
+	exitRuntime = 1 // falha durante a execução (coleta, rede etc.)
+	exitConfig  = 2 // mesma convenção do pacote flag para erro de uso
 )
 
 func main() {
@@ -58,6 +61,18 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	logger = logger.With("app", "patchd-agent", "version", info.Version)
 	slog.SetDefault(logger)
 
+	// Coletor do SO em que o binário foi compilado, com o executor real de comandos.
+	collector := inventory.New(platform.ExecRunner{})
+
+	if cfg.Inventory {
+		// JSON limpo em stdout; eventuais logs continuam em stderr.
+		if err := printInventory(context.Background(), stdout, collector, info.Version); err != nil {
+			logger.Error("falha na coleta do inventário", "error", err)
+			return exitRuntime
+		}
+		return exitOK
+	}
+
 	logger.Info("agente iniciado",
 		"commit", info.Commit,
 		"os", info.OS,
@@ -72,6 +87,6 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if cfg.ServerURL == "" {
 		logger.Warn("PATCHD_SERVER_URL não definido: o agente não fará check-in")
 	}
-	logger.Info("agente encerrado: ainda sem funcionalidades (Aula 1.3)")
+	logger.Info("agente encerrado: ainda sem funcionalidades além de -inventory (Aula 2.1)")
 	return exitOK
 }
