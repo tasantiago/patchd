@@ -23,7 +23,8 @@ type agentConfig struct {
 	LogLevel        string
 	LogFormat       string
 	ShowVersion     bool
-	Inventory       bool // coleta, imprime em JSON e sai
+	Inventory       bool // coleta o inventário, imprime em JSON e sai
+	Scan            bool // busca atualizações faltantes e histórico, imprime em JSON e sai
 }
 
 // loadAgentConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -49,6 +50,7 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		"formato de log: json ou text (env PATCHD_LOG_FORMAT)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
+	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")
 
 	if err := fs.Parse(args); err != nil {
 		// O pacote flag já escreveu a mensagem e a ajuda em usage.
@@ -68,6 +70,9 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	// argumentos sobrando indicam flags que foram ignoradas.
 	if fs.NArg() > 0 {
 		problems = append(problems, fmt.Errorf("argumentos não reconhecidos: %q (flags depois deles são ignoradas)", fs.Args()))
+	}
+	if cfg.Inventory && cfg.Scan {
+		problems = append(problems, errors.New("use -inventory ou -scan, não os dois"))
 	}
 	if errInterval != nil && !given["checkin-interval"] {
 		problems = append(problems, errInterval)
