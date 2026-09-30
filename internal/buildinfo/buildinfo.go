@@ -15,6 +15,10 @@ import (
 // Precisa ser uma variável string de pacote, sem inicialização por função, para o -X funcionar.
 var Version = "dev"
 
+// Commit pode ser injetado com -X quando o build acontece sem a pasta .git
+// (por exemplo, dentro do docker build). Se o Go encontrar o commit no git, o do git prevalece.
+var Commit = ""
+
 // Info reúne o que identifica um binário do patchd.
 type Info struct {
 	Version   string // versão de release (ldflags) ou a que o Go derivou do git
@@ -26,7 +30,7 @@ type Info struct {
 	Arch      string // GOARCH do binário
 }
 
-// Get monta a Info a partir da variável injetada e dos metadados que o Go grava no executável.
+// Get monta a Info a partir das variáveis injetadas e dos metadados que o Go grava no executável.
 func Get() Info {
 	info := Info{
 		Version:   Version,
@@ -34,6 +38,9 @@ func Get() Info {
 		GoVersion: runtime.Version(),
 		OS:        runtime.GOOS,
 		Arch:      runtime.GOARCH,
+	}
+	if Commit != "" {
+		info.Commit = Commit
 	}
 
 	bi, ok := debug.ReadBuildInfo()

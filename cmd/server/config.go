@@ -20,6 +20,7 @@ type serverConfig struct {
 	LogLevel    string
 	LogFormat   string
 	ShowVersion bool
+	HealthCheck bool // modo usado pelo HEALTHCHECK do Docker
 }
 
 // loadServerConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -37,6 +38,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	fs.StringVar(&cfg.LogFormat, "log-format", config.String(look, "PATCHD_LOG_FORMAT", "json"),
 		"formato de log: json ou text (env PATCHD_LOG_FORMAT)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
+	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
+		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
 
 	if err := fs.Parse(args); err != nil {
 		// O pacote flag já escreveu a mensagem e a ajuda em usage.

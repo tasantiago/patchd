@@ -2,12 +2,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
@@ -16,8 +19,9 @@ import (
 
 // Códigos de saída do servidor.
 const (
-	exitOK     = 0
-	exitConfig = 2 // mesma convenção do pacote flag para erro de uso
+	exitOK      = 0
+	exitRuntime = 1 // falha durante a execução (porta ocupada, healthcheck negativo etc.)
+	exitConfig  = 2 // mesma convenção do pacote flag para erro de uso
 )
 
 func main() {
@@ -46,6 +50,13 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "patchd-server %s\n", info)
 		return exitOK
 	}
+	if cfg.HealthCheck {
+		if err := healthcheck(cfg.ListenAddr); err != nil {
+			fmt.Fprintf(stderr, "patchd-server: healthcheck falhou: %v\n", err)
+			return exitRuntime
+		}
+		return exitOK
+	}
 
 	logger, err := logging.New(stderr, cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
@@ -56,6 +67,10 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	logger = logger.With("app", "patchd-server", "version", info.Version)
 	slog.SetDefault(logger)
 
+	// SIGTERM vem do "docker stop"; SIGINT, do Ctrl+C no terminal.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	logger.Info("servidor iniciado",
 		"commit", info.Commit,
 		"listen", cfg.ListenAddr,
@@ -64,6 +79,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if cfg.DatabaseURL == "" {
 		logger.Warn("PATCHD_DATABASE_URL não definido: o banco será obrigatório a partir do Módulo 4")
 	}
-	logger.Info("servidor encerrado: ainda sem funcionalidades (Aula 1.3)")
+
+	if err := serve(ctx, logger, cfg.ListenAddr); err != nil {
+		logger.Error("servidor parou com erro", "error", err)
+		return exitRuntime
+	}
+	logger.Info("servidor encerrado")
 	return exitOK
 }
