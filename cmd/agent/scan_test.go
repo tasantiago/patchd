@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -12,45 +11,42 @@ import (
 )
 
 type scannerFalso struct {
-	missing    []protocol.MissingUpdate
-	missingErr error
+	scans      []protocol.ScanResult
 	history    []protocol.UpdateHistoryEntry
 	historyErr error
+	recebido   patch.Options
 }
 
-func (s scannerFalso) Missing(ctx context.Context) ([]protocol.MissingUpdate, error) {
-	return s.missing, s.missingErr
+func (s *scannerFalso) Scan(ctx context.Context, opts patch.Options) []protocol.ScanResult {
+	s.recebido = opts
+	return s.scans
 }
 
-func (s scannerFalso) History(ctx context.Context, max int) ([]protocol.UpdateHistoryEntry, error) {
+func (s *scannerFalso) History(ctx context.Context, max int) ([]protocol.UpdateHistoryEntry, error) {
 	return s.history, s.historyErr
 }
 
-func TestScanNadaFaltandoEhListaVazia(t *testing.T) {
+func TestScanRepassaOpcoesESchema2(t *testing.T) {
+	s := &scannerFalso{scans: []protocol.ScanResult{{Source: patch.SourceWUADefault, Missing: []protocol.MissingUpdate{}}}}
+	rep := collectScan(context.Background(), s, patch.Options{OfflineCatalog: `C:\patchd\wsusscn2.cab`}, "v")
+	if rep.SchemaVersion != 2 || len(rep.Scans) != 1 || s.recebido.OfflineCatalog != `C:\patchd\wsusscn2.cab` {
+		t.Errorf("schema, scans ou opções errados: %+v / %+v", rep, s.recebido)
+	}
+}
+
+func TestScanHistoricoVazioEhListaVazia(t *testing.T) {
 	var buf bytes.Buffer
-	if err := printScan(context.Background(), &buf, scannerFalso{}, "v"); err != nil {
+	if err := printScan(context.Background(), &buf, &scannerFalso{}, patch.Options{}, "v"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), `"missing": []`) || !strings.Contains(buf.String(), `"history": []`) {
-		t.Errorf("sem itens, as listas deveriam ser []:\n%s", buf.String())
+	if !strings.Contains(buf.String(), `"history": []`) {
+		t.Errorf("histórico sem itens deveria ser []:\n%s", buf.String())
 	}
 }
 
-func TestScanNaoImplementadoEhNull(t *testing.T) {
-	s := scannerFalso{missingErr: patch.ErrNotImplemented, historyErr: patch.ErrNotImplemented}
-	rep := collectScan(context.Background(), s, "v")
-	if rep.Missing != nil || rep.History != nil || len(rep.Errors) != 2 {
-		t.Errorf("seções não coletadas deveriam ser null com motivo: %+v", rep)
-	}
-}
-
-func TestScanParcialMantemLista(t *testing.T) {
-	s := scannerFalso{
-		missing:    []protocol.MissingUpdate{{ID: "a"}},
-		missingErr: errors.New("busca concluída com erros (ResultCode 3)"),
-	}
-	rep := collectScan(context.Background(), s, "v")
-	if len(rep.Missing) != 1 || len(rep.Errors) != 1 || !strings.HasPrefix(rep.Errors[0], "missing: ") {
-		t.Errorf("em falha parcial, a lista e o erro deveriam vir juntos: %+v", rep)
+func TestScanHistoricoNaoImplementadoEhNull(t *testing.T) {
+	rep := collectScan(context.Background(), &scannerFalso{historyErr: patch.ErrNotImplemented}, patch.Options{}, "v")
+	if rep.History != nil || len(rep.Errors) != 1 || !strings.HasPrefix(rep.Errors[0], "history: ") {
+		t.Errorf("histórico não coletado deveria ser null com motivo: %+v", rep)
 	}
 }

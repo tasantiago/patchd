@@ -85,19 +85,6 @@ type InventoryReport struct {
 	Errors []string `json:"errors,omitempty"`
 }
 
-// AddErrors acrescenta cada linha de err como uma entrada própria em Errors, com o
-// prefixo da seção. errors.Join junta mensagens com quebra de linha; aqui elas se separam.
-func (r *InventoryReport) AddErrors(section string, err error) {
-	if err == nil {
-		return
-	}
-	for _, line := range strings.Split(err.Error(), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			r.Errors = append(r.Errors, section+": "+line)
-		}
-	}
-}
-
 // hashInput é o que o hash cobre: só o conteúdo coletado. Ficam de fora os campos que
 // mudam a cada coleta (collected_at, agent_version) e os erros.
 type hashInput struct {

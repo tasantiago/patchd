@@ -43,11 +43,8 @@ type wuaHistory struct {
 	ServerSelection     int
 }
 
-// Fonte registrada nos itens vindos da busca e do histórico do WUA.
-const (
-	wuaSearchSource  = "WUA IUpdateSearcher.Search (servidor definido pela política: WSUS quando configurado)"
-	wuaHistorySource = "WUA IUpdateSearcher.QueryHistory"
-)
+// Fonte registrada nas entradas do histórico do WUA.
+const wuaHistorySource = "WUA IUpdateSearcher.QueryHistory"
 
 // classificationsByID traduz o GUID da classificação para um nome estável.
 // GUIDs públicos das classificações do WSUS; desconhecidos ficam sem nome, com o GUID cru.
@@ -85,8 +82,8 @@ var serverSelectionNames = map[int]string{
 // kbPattern acha o trecho "KB" + dígitos, igual em qualquer idioma do título.
 var kbPattern = regexp.MustCompile(`\bKB(\d{6,8})\b`)
 
-// toMissing converte uma atualização do WUA para o protocolo.
-func toMissing(u wuaUpdate) protocol.MissingUpdate {
+// toMissing converte uma atualização do WUA para o protocolo, marcando a fonte da busca.
+func toMissing(u wuaUpdate, source string) protocol.MissingUpdate {
 	m := protocol.MissingUpdate{
 		ID:         u.UpdateID,
 		Revision:   u.Revision,
@@ -96,7 +93,7 @@ func toMissing(u wuaUpdate) protocol.MissingUpdate {
 		CVEs:       u.CVEs,
 		Type:       "software",
 		Downloaded: u.Downloaded,
-		Source:     wuaSearchSource,
+		Source:     source,
 	}
 	if u.Type == 2 {
 		m.Type = "driver"
@@ -112,6 +109,27 @@ func toMissing(u wuaUpdate) protocol.MissingUpdate {
 		}
 	}
 	return m
+}
+
+// scanResult monta o resultado de uma busca. Falha na busca: lista nula e o motivo.
+// ResultCode 3 (concluída com erros): a lista vem junto com o aviso.
+func scanResult(source string, raw []wuaUpdate, resultCode int, duration time.Duration, err error) protocol.ScanResult {
+	r := protocol.ScanResult{Source: source, DurationMS: duration.Milliseconds()}
+	if err != nil {
+		r.Error = err.Error()
+		return r
+	}
+	if rcErr := searchResultError(resultCode); rcErr != nil {
+		r.Error = rcErr.Error()
+		if resultCode != 3 {
+			return r
+		}
+	}
+	r.Missing = make([]protocol.MissingUpdate, 0, len(raw))
+	for _, u := range raw {
+		r.Missing = append(r.Missing, toMissing(u, source))
+	}
+	return r
 }
 
 // toHistory converte uma entrada do histórico do WUA para o protocolo.
@@ -150,8 +168,8 @@ func extractKBs(title string) []string {
 	return out
 }
 
-// searchResultError traduz o ResultCode da busca: 2 é sucesso; 3 devolve a lista com
-// aviso de que pode estar incompleta; os demais indicam busca não concluída.
+// searchResultError traduz o ResultCode da busca: 2 é sucesso; 3 indica lista possivelmente
+// incompleta; os demais indicam busca não concluída.
 func searchResultError(code int) error {
 	switch code {
 	case 2:

@@ -1,7 +1,11 @@
 package patch
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,14 +26,14 @@ func TestToMissingSeguranca(t *testing.T) {
 		Released:   time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC),
 		Downloaded: true,
 	}
-	m := toMissing(u)
+	m := toMissing(u, SourceWUAOffline)
 	if m.Classification != "security" || m.ClassificationID != "0fa1201d-4330-4fa8-8ae9-b877473b6441" {
 		t.Errorf("classificação deveria vir pelo GUID, não pelo nome traduzido: %+v", m)
 	}
 	if m.Type != "software" || m.Severity != "Critical" || m.ReleasedAt != "2026-10-13" || !m.Downloaded {
 		t.Errorf("campos errados: %+v", m)
 	}
-	if !reflect.DeepEqual(m.KBs, []string{"5130000"}) || len(m.CVEs) != 2 || m.Source != wuaSearchSource {
+	if !reflect.DeepEqual(m.KBs, []string{"5130000"}) || len(m.CVEs) != 2 || m.Source != SourceWUAOffline {
 		t.Errorf("KB, CVEs ou fonte errados: %+v", m)
 	}
 }
@@ -40,7 +44,7 @@ func TestToMissingDriverEClassificacaoDesconhecida(t *testing.T) {
 		Type:       2,
 		Categories: []wuaCategory{{ID: "99999999-0000-0000-0000-000000000000", Name: "Nova", Type: "UpdateClassification"}},
 	}
-	m := toMissing(u)
+	m := toMissing(u, SourceWUADefault)
 	if m.Type != "driver" {
 		t.Errorf("Type 2 deveria ser driver: %q", m.Type)
 	}
@@ -49,6 +53,35 @@ func TestToMissingDriverEClassificacaoDesconhecida(t *testing.T) {
 	}
 	if m.ReleasedAt != "" {
 		t.Errorf("data zero não deveria virar texto: %q", m.ReleasedAt)
+	}
+}
+
+func TestScanResult(t *testing.T) {
+	raw := []wuaUpdate{{UpdateID: "a", Type: 1}}
+
+	ok := scanResult(SourceWUAOffline, raw, 2, 1500*time.Millisecond, nil)
+	if len(ok.Missing) != 1 || ok.Error != "" || ok.DurationMS != 1500 || ok.Missing[0].Source != SourceWUAOffline {
+		t.Errorf("busca bem-sucedida errada: %+v", ok)
+	}
+
+	vazio := scanResult(SourceWUAOffline, nil, 2, 0, nil)
+	if vazio.Missing == nil || len(vazio.Missing) != 0 {
+		t.Errorf("sucesso sem itens deveria ser [] e não null: %+v", vazio)
+	}
+
+	falha := scanResult(SourceWUADefault, nil, 0, 0, errors.New("Search: HRESULT 0x80244007"))
+	if falha.Missing != nil || !strings.Contains(falha.Error, "0x80244007") {
+		t.Errorf("falha deveria ter lista nula e o motivo: %+v", falha)
+	}
+
+	parcial := scanResult(SourceWUADefault, raw, 3, 0, nil)
+	if len(parcial.Missing) != 1 || parcial.Error == "" {
+		t.Errorf("ResultCode 3: lista junto com o aviso: %+v", parcial)
+	}
+
+	abortada := scanResult(SourceWUADefault, raw, 5, 0, nil)
+	if abortada.Missing != nil || abortada.Error == "" {
+		t.Errorf("ResultCode 5: lista nula e motivo: %+v", abortada)
 	}
 }
 
@@ -72,6 +105,21 @@ func TestToHistoryComTituloReal(t *testing.T) {
 	}
 	if e.ClientApplicationID != "UpdateOrchestrator" {
 		t.Errorf("ClientApplicationID sem espaços: %q", e.ClientApplicationID)
+	}
+}
+
+func TestToHistoryEmAndamentoReal(t *testing.T) {
+	// Entrada real do laboratório (Aula 3.2): feature update aguardando a etapa pós-reboot.
+	e := toHistory(wuaHistory{
+		Operation:           1,
+		ResultCode:          1,
+		HResult:             0x80242014,
+		Title:               "Windows 11, version 26H2",
+		ClientApplicationID: "MoUpdateOrchestrator",
+		ServerSelection:     3,
+	})
+	if e.Result != "in_progress" || e.HResult != "0x80242014" || e.ServerSelection != "others" || e.KBs != nil {
+		t.Errorf("entrada em andamento errada: %+v", e)
 	}
 }
 
@@ -102,11 +150,34 @@ func TestExtractKBs(t *testing.T) {
 	}
 }
 
-func TestSearchResultError(t *testing.T) {
-	if searchResultError(2) != nil {
-		t.Error("ResultCode 2 é sucesso")
+func TestCatalogInfo(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "wsusscn2.cab")
+	if err := os.WriteFile(p, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if searchResultError(3) == nil || searchResultError(4) == nil {
-		t.Error("ResultCode 3 e 4 precisam gerar erro")
+	sum, mod, err := catalogInfo(p)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	// SHA-256 conhecido de "abc".
+	if sum != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {
+		t.Errorf("hash errado: %s", sum)
+	}
+	if mod.IsZero() || mod.Location() != time.UTC {
+		t.Errorf("data de modificação deveria vir em UTC: %v", mod)
+	}
+	if _, _, err := catalogInfo(dir); err == nil {
+		t.Error("esperado erro para uma pasta")
+	}
+	if _, _, err := catalogInfo(filepath.Join(dir, "nao-existe.cab")); err == nil {
+		t.Error("esperado erro para arquivo inexistente")
+	}
+}
+
+func TestUnsupportedComCatalogoOffline(t *testing.T) {
+	r := unsupported("apt-dnf", Options{OfflineCatalog: "/tmp/wsusscn2.cab"})
+	if len(r) != 2 || r[0].Missing != nil || r[1].Source != SourceWUAOffline || !strings.Contains(r[1].Error, "só se aplica ao Windows") {
+		t.Errorf("esperado o provisório do SO e a recusa do catálogo offline: %+v", r)
 	}
 }

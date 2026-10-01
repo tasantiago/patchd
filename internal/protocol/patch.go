@@ -1,12 +1,10 @@
 package protocol
 
-import (
-	"strings"
-	"time"
-)
+import "time"
 
 // PatchSchemaVersion é a versão do formato do relatório de busca de atualizações.
-const PatchSchemaVersion = 1
+// Versão 2: a lista única "missing" deu lugar a "scans", um resultado por fonte.
+const PatchSchemaVersion = 2
 
 // MissingUpdate é uma atualização aplicável e não instalada.
 type MissingUpdate struct {
@@ -21,13 +19,27 @@ type MissingUpdate struct {
 	Type             string   `json:"type"`                  // software ou driver
 	ReleasedAt       string   `json:"released_at,omitempty"` // AAAA-MM-DD
 	Downloaded       bool     `json:"downloaded,omitempty"`  // já baixada, aguardando instalação
-	Source           string   `json:"source"`                // de onde a lista veio (P-03)
+	Source           string   `json:"source"`                // fonte da busca que encontrou o item
+}
+
+// ScanResult é o resultado de uma busca numa fonte.
+type ScanResult struct {
+	// Source identifica a fonte: wua-default (servidor da política: WSUS quando configurado),
+	// wua-offline (catálogo wsusscn2.cab da Microsoft); no Linux e no macOS, as fontes da 3.4 e 3.5.
+	Source string `json:"source"`
+	// Catálogo usado, quando a fonte é um arquivo (wsusscn2.cab): hash e data do arquivo.
+	CatalogSHA256     string     `json:"catalog_sha256,omitempty"`
+	CatalogModifiedAt *time.Time `json:"catalog_modified_at,omitempty"`
+	DurationMS        int64      `json:"duration_ms"`
+	// Missing: null = a busca falhou (motivo em Error); [] = nada faltando nesta fonte.
+	Missing []MissingUpdate `json:"missing"`
+	Error   string          `json:"error,omitempty"`
 }
 
 // UpdateHistoryEntry é uma operação registrada no histórico de atualizações do SO.
-// Histórico é auditoria, não estado: o estado vem da busca e do nível de patch.
+// Histórico é auditoria, não estado: o estado vem das buscas e do nível de patch.
 type UpdateHistoryEntry struct {
-	Date                time.Time `json:"date"`
+	Date                time.Time `json:"date"`              // UTC
 	Operation           string    `json:"operation"`         // install ou uninstall
 	Result              string    `json:"result"`            // succeeded, succeeded_with_errors, failed, aborted...
 	HResult             string    `json:"hresult,omitempty"` // código de erro do Windows, ex.: "0x80240022"
@@ -45,22 +57,10 @@ type PatchScanReport struct {
 	SchemaVersion int       `json:"schema_version"`
 	AgentVersion  string    `json:"agent_version"`
 	ScannedAt     time.Time `json:"scanned_at"` // sempre em UTC
-	// Missing: null = não coletado (motivo em Errors); [] = nenhuma atualização faltando.
-	Missing []MissingUpdate `json:"missing"`
+	// Scans: um resultado por fonte consultada, cada um com a própria lista e o próprio erro.
+	Scans []ScanResult `json:"scans"`
 	// History: null = não coletado (motivo em Errors); [] = histórico vazio.
 	History []UpdateHistoryEntry `json:"history"`
-	// Errors lista as falhas, uma por entrada, com o prefixo da seção.
+	// Errors lista as falhas fora das buscas (ex.: histórico), uma por entrada.
 	Errors []string `json:"errors,omitempty"`
-}
-
-// AddErrors acrescenta cada linha de err como uma entrada própria em Errors, com o prefixo da seção.
-func (r *PatchScanReport) AddErrors(section string, err error) {
-	if err == nil {
-		return
-	}
-	for _, line := range strings.Split(err.Error(), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			r.Errors = append(r.Errors, section+": "+line)
-		}
-	}
 }

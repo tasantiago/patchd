@@ -13,8 +13,8 @@ type linuxScanner struct{ run platform.Runner }
 // New devolve o scanner do SO atual.
 func New(run platform.Runner) Scanner { return linuxScanner{run: run} }
 
-func (linuxScanner) Missing(ctx context.Context) ([]protocol.MissingUpdate, error) {
-	return nil, ErrNotImplemented
+func (linuxScanner) Scan(ctx context.Context, opts Options) []protocol.ScanResult {
+	return unsupported("apt-dnf", opts)
 }
 
 func (linuxScanner) History(ctx context.Context, max int) ([]protocol.UpdateHistoryEntry, error) {
