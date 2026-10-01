@@ -13,7 +13,7 @@ import (
 func Get(disp *ole.IDispatch, name string, args ...any) (any, error) {
 	v, err := oleutil.GetProperty(disp, name, args...)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, comError(name, err)
 	}
 	defer v.Clear()
 	if v.VT == ole.VT_DISPATCH {
@@ -26,7 +26,7 @@ func Get(disp *ole.IDispatch, name string, args ...any) (any, error) {
 func Call(disp *ole.IDispatch, method string, args ...any) (any, error) {
 	v, err := oleutil.CallMethod(disp, method, args...)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", method, err)
+		return nil, comError(method, err)
 	}
 	defer v.Clear()
 	if v.VT == ole.VT_DISPATCH {
@@ -40,7 +40,7 @@ func Call(disp *ole.IDispatch, method string, args ...any) (any, error) {
 func GetObject(disp *ole.IDispatch, name string, args ...any) (*ole.IDispatch, error) {
 	v, err := oleutil.GetProperty(disp, name, args...)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, comError(name, err)
 	}
 	if v.VT != ole.VT_DISPATCH {
 		_ = v.Clear()
@@ -53,7 +53,7 @@ func GetObject(disp *ole.IDispatch, name string, args ...any) (*ole.IDispatch, e
 func CallObject(disp *ole.IDispatch, method string, args ...any) (*ole.IDispatch, error) {
 	v, err := oleutil.CallMethod(disp, method, args...)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", method, err)
+		return nil, comError(method, err)
 	}
 	if v.VT != ole.VT_DISPATCH {
 		_ = v.Clear()
@@ -66,7 +66,7 @@ func CallObject(disp *ole.IDispatch, method string, args ...any) (*ole.IDispatch
 func Put(disp *ole.IDispatch, name string, value any) error {
 	v, err := oleutil.PutProperty(disp, name, value)
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return comError(name, err)
 	}
 	_ = v.Clear()
 	return nil

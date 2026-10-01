@@ -30,7 +30,7 @@ func Do(ctx context.Context, fn func() error) error {
 		if err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED); err != nil {
 			var oe *ole.OleError
 			if !errors.As(err, &oe) || oe.Code() != sFalse {
-				done <- fmt.Errorf("inicializar COM: %w", err)
+				done <- comError("CoInitializeEx", err)
 				return
 			}
 		}
@@ -55,13 +55,13 @@ func Do(ctx context.Context, fn func() error) error {
 func CreateDispatch(progID string) (*ole.IDispatch, error) {
 	unknown, err := oleutil.CreateObject(progID)
 	if err != nil {
-		return nil, fmt.Errorf("criar %s: %w", progID, err)
+		return nil, comError("criar "+progID, err)
 	}
 	defer unknown.Release()
 
 	disp, err := unknown.QueryInterface(ole.IID_IDispatch)
 	if err != nil {
-		return nil, fmt.Errorf("%s: obter IDispatch: %w", progID, err)
+		return nil, comError(progID+": IDispatch", err)
 	}
 	return disp, nil
 }
@@ -79,29 +79,25 @@ func Query(namespace, wql string, props []string) ([]Row, error) {
 	defer locator.Release()
 
 	// Servidor nulo = máquina local.
-	svcVar, err := oleutil.CallMethod(locator, "ConnectServer", nil, namespace)
+	svc, err := CallObject(locator, "ConnectServer", nil, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("WMI %s: conectar: %w", namespace, err)
 	}
-	svc := svcVar.ToIDispatch()
 	defer svc.Release()
 
-	resVar, err := oleutil.CallMethod(svc, "ExecQuery", wql)
+	res, err := CallObject(svc, "ExecQuery", wql)
 	if err != nil {
 		return nil, fmt.Errorf("WMI %q: %w", wql, err)
 	}
-	res := resVar.ToIDispatch()
 	defer res.Release()
 
-	countVar, err := oleutil.GetProperty(res, "Count")
+	count, err := GetInt(res, "Count")
 	if err != nil {
 		return nil, fmt.Errorf("WMI %q: contar resultados: %w", wql, err)
 	}
-	count := int(countVar.Val)
-	_ = countVar.Clear()
 
 	rows := make([]Row, 0, count)
-	for i := 0; i < count; i++ {
+	for i := 0; i < int(count); i++ {
 		row, err := readItem(res, i, props)
 		if err != nil {
 			return rows, fmt.Errorf("WMI %q: item %d: %w", wql, i, err)
@@ -113,21 +109,19 @@ func Query(namespace, wql string, props []string) ([]Row, error) {
 
 // readItem lê as propriedades de um objeto do resultado e o libera.
 func readItem(res *ole.IDispatch, i int, props []string) (Row, error) {
-	itemVar, err := oleutil.CallMethod(res, "ItemIndex", i)
+	item, err := CallObject(res, "ItemIndex", i)
 	if err != nil {
 		return nil, err
 	}
-	item := itemVar.ToIDispatch()
 	defer item.Release()
 
 	row := Row{}
 	for _, p := range props {
-		v, err := oleutil.GetProperty(item, p)
+		v, err := Get(item, p)
 		if err != nil {
-			return nil, fmt.Errorf("propriedade %s: %w", p, err)
+			return nil, err
 		}
-		row[p] = variantValue(v)
-		_ = v.Clear()
+		row[p] = v
 	}
 	return row, nil
 }
