@@ -74,7 +74,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 
 	if cfg.Scan {
-		if err := printScan(context.Background(), stdout, patch.New(runner), info.Version); err != nil {
+		opts := patch.Options{OfflineCatalog: cfg.OfflineCatalog}
+		if err := printScan(context.Background(), stdout, patch.New(runner), opts, info.Version); err != nil {
 			logger.Error("falha na busca de atualizações", "error", err)
 			return exitRuntime
 		}

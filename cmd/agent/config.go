@@ -22,9 +22,10 @@ type agentConfig struct {
 	CheckinInterval time.Duration
 	LogLevel        string
 	LogFormat       string
+	OfflineCatalog  string // caminho do wsusscn2.cab (Windows); vazio = sem busca offline
 	ShowVersion     bool
 	Inventory       bool // coleta o inventário, imprime em JSON e sai
-	Scan            bool // busca atualizações faltantes e histórico, imprime em JSON e sai
+	Scan            bool // busca atualizações e histórico, imprime em JSON e sai
 }
 
 // loadAgentConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -48,6 +49,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		"nível de log: debug, info, warn ou error (env PATCHD_LOG_LEVEL)")
 	fs.StringVar(&cfg.LogFormat, "log-format", config.String(look, "PATCHD_LOG_FORMAT", "json"),
 		"formato de log: json ou text (env PATCHD_LOG_FORMAT)")
+	fs.StringVar(&cfg.OfflineCatalog, "offline-cab", config.String(look, "PATCHD_OFFLINE_CAB", ""),
+		"caminho do wsusscn2.cab para a busca offline no Windows (env PATCHD_OFFLINE_CAB)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")
@@ -73,6 +76,9 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	}
 	if cfg.Inventory && cfg.Scan {
 		problems = append(problems, errors.New("use -inventory ou -scan, não os dois"))
+	}
+	if cfg.OfflineCatalog != "" && !filepath.IsAbs(cfg.OfflineCatalog) {
+		problems = append(problems, fmt.Errorf("-offline-cab/PATCHD_OFFLINE_CAB: o caminho precisa ser absoluto (recebido %q)", cfg.OfflineCatalog))
 	}
 	if errInterval != nil && !given["checkin-interval"] {
 		problems = append(problems, errInterval)

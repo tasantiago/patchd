@@ -3,6 +3,7 @@ package patch
 import (
 	"context"
 	"fmt"
+	"time"
 
 	ole "github.com/go-ole/go-ole"
 
@@ -11,14 +12,48 @@ import (
 	"github.com/tasantiago/patchd/internal/wincom"
 )
 
-// wuaCriteria: aplicável, não instalada e não oculta. Inclui software e drivers.
-const wuaCriteria = "IsInstalled=0 and IsHidden=0"
+// Critérios de busca: aplicável e não instalada. A busca online também ignora as ocultas.
+const (
+	onlineCriteria  = "IsInstalled=0 and IsHidden=0"
+	offlineCriteria = "IsInstalled=0"
+)
+
+// ssOthers: o searcher consulta o serviço indicado em ServiceID (o catálogo registrado).
+const ssOthers = 3
 
 // wuaScanner consulta o Windows Update Agent via COM.
 type wuaScanner struct{}
 
 // New devolve o scanner do SO atual.
 func New(run platform.Runner) Scanner { return wuaScanner{} }
+
+// Scan executa a busca na fonte da política e, se houver catálogo, a busca offline.
+func (wuaScanner) Scan(ctx context.Context, opts Options) []protocol.ScanResult {
+	results := []protocol.ScanResult{search(ctx, SourceWUADefault, onlineCriteria, nil)}
+
+	if opts.OfflineCatalog != "" {
+		sum, mod, err := catalogInfo(opts.OfflineCatalog)
+		var r protocol.ScanResult
+		if err != nil {
+			r = protocol.ScanResult{Source: SourceWUAOffline, Error: err.Error()}
+		} else {
+			r = search(ctx, SourceWUAOffline, offlineCriteria, registerCatalog(opts.OfflineCatalog))
+		}
+		r.CatalogSHA256 = sum
+		if !mod.IsZero() {
+			r.CatalogModifiedAt = &mod
+		}
+		results = append(results, r)
+	}
+	return results
+}
+
+// search executa uma busca e mede o tempo.
+func search(ctx context.Context, source, criteria string, configure func(*ole.IDispatch) (func(), error)) protocol.ScanResult {
+	start := time.Now()
+	raw, rc, err := runSearch(ctx, criteria, configure)
+	return scanResult(source, raw, rc, time.Since(start), err)
+}
 
 // newSearcher cria a sessão (identificada como patchd-agent) e o searcher.
 // A função devolvida libera os dois objetos.
@@ -40,8 +75,46 @@ func newSearcher() (*ole.IDispatch, func(), error) {
 	return searcher, func() { searcher.Release(); session.Release() }, nil
 }
 
-// Missing busca as atualizações faltantes no servidor definido pela política.
-func (wuaScanner) Missing(ctx context.Context) ([]protocol.MissingUpdate, error) {
+// registerCatalog registra o wsusscn2.cab como serviço de varredura, aponta o searcher
+// para ele e devolve a limpeza, que remove o serviço: sem ela, cada execução deixaria
+// um serviço órfão registrado no Windows. Registrar exige administrador.
+func registerCatalog(cab string) func(*ole.IDispatch) (func(), error) {
+	return func(searcher *ole.IDispatch) (func(), error) {
+		mgr, err := wincom.CreateDispatch("Microsoft.Update.ServiceManager")
+		if err != nil {
+			return nil, err
+		}
+		// Terceiro argumento como no exemplo da documentação da Microsoft.
+		svc, err := wincom.CallObject(mgr, "AddScanPackageService", "patchd offline", cab, 1)
+		if err != nil {
+			mgr.Release()
+			return nil, fmt.Errorf("registrar catálogo offline: %w", err)
+		}
+		id, err := wincom.GetString(svc, "ServiceID")
+		svc.Release()
+		if err != nil {
+			mgr.Release()
+			return nil, err
+		}
+
+		cleanup := func() {
+			_, _ = wincom.Call(mgr, "RemoveService", id)
+			mgr.Release()
+		}
+		if err := wincom.Put(searcher, "ServerSelection", ssOthers); err != nil {
+			cleanup()
+			return nil, err
+		}
+		if err := wincom.Put(searcher, "ServiceID", id); err != nil {
+			cleanup()
+			return nil, err
+		}
+		return cleanup, nil
+	}
+}
+
+// runSearch cria sessão e searcher, aplica configure (se houver), busca e lê as atualizações.
+func runSearch(ctx context.Context, criteria string, configure func(*ole.IDispatch) (func(), error)) ([]wuaUpdate, int, error) {
 	var raw []wuaUpdate
 	var resultCode int64
 
@@ -52,7 +125,16 @@ func (wuaScanner) Missing(ctx context.Context) ([]protocol.MissingUpdate, error)
 		}
 		defer release()
 
-		result, err := wincom.CallObject(searcher, "Search", wuaCriteria)
+		if configure != nil {
+			cleanup, err := configure(searcher)
+			if err != nil {
+				return err
+			}
+			// Registrado depois do release: roda antes dele.
+			defer cleanup()
+		}
+
+		result, err := wincom.CallObject(searcher, "Search", criteria)
 		if err != nil {
 			return fmt.Errorf("busca no WUA: %w", err)
 		}
@@ -85,15 +167,7 @@ func (wuaScanner) Missing(ctx context.Context) ([]protocol.MissingUpdate, error)
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	list := make([]protocol.MissingUpdate, 0, len(raw))
-	for _, u := range raw {
-		list = append(list, toMissing(u))
-	}
-	return list, searchResultError(int(resultCode))
+	return raw, int(resultCode), err
 }
 
 // readUpdate lê os campos de um IUpdate.
