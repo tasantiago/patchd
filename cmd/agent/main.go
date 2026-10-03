@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
@@ -24,6 +25,9 @@ const (
 	exitRuntime = 1 // falha durante a execução (coleta, rede etc.)
 	exitConfig  = 2 // mesma convenção do pacote flag para erro de uso
 )
+
+// scanCommandTimeout é o prazo de cada comando de busca (o dnf pode baixar metadados).
+const scanCommandTimeout = 15 * time.Minute
 
 func main() {
 	os.Exit(run(os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr))
@@ -62,11 +66,10 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	logger = logger.With("app", "patchd-agent", "version", info.Version)
 	slog.SetDefault(logger)
 
-	runner := platform.ExecRunner{}
-
 	if cfg.Inventory {
 		// JSON limpo em stdout; eventuais logs continuam em stderr.
-		if err := printInventory(context.Background(), stdout, inventory.New(runner), info.Version); err != nil {
+		collector := inventory.New(platform.ExecRunner{})
+		if err := printInventory(context.Background(), stdout, collector, info.Version); err != nil {
 			logger.Error("falha na coleta do inventário", "error", err)
 			return exitRuntime
 		}
@@ -74,8 +77,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 
 	if cfg.Scan {
+		scanner := patch.New(platform.ExecRunner{Timeout: scanCommandTimeout})
 		opts := patch.Options{OfflineCatalog: cfg.OfflineCatalog}
-		if err := printScan(context.Background(), stdout, patch.New(runner), opts, info.Version); err != nil {
+		if err := printScan(context.Background(), stdout, scanner, opts, info.Version); err != nil {
 			logger.Error("falha na busca de atualizações", "error", err)
 			return exitRuntime
 		}
