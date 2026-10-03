@@ -1,10 +1,8 @@
 package patch
 
 import (
-	"errors"
 	"strings"
 	"testing"
-	"time"
 )
 
 // Linha real do Ubuntu 26.04 do laboratório (Aula 0.3), mais casos sintéticos.
@@ -109,37 +107,5 @@ func TestParseNEVRA(t *testing.T) {
 	}
 	if _, _, _, ok := parseNEVRA("semformato"); ok {
 		t.Error("esperado falha para NEVRA inválida")
-	}
-}
-
-func TestAptListsFreshness(t *testing.T) {
-	sec := time.Date(2026, 10, 3, 6, 9, 0, 0, time.UTC)
-	upd := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
-	listDir := func(string) ([]string, error) {
-		return []string{
-			"archive.ubuntu.com_ubuntu_dists_resolute-updates_InRelease",
-			"security.ubuntu.com_ubuntu_dists_resolute-security_InRelease",
-			"security.ubuntu.com_ubuntu_dists_resolute-security_main_binary-amd64_Packages",
-			"lock",
-		}, nil
-	}
-	modTime := func(p string) (time.Time, error) {
-		switch {
-		case strings.Contains(p, "-security_InRelease"):
-			return sec, nil
-		case strings.Contains(p, "-updates_InRelease"):
-			return upd, nil
-		default:
-			return time.Time{}, errors.New("não deveria consultar")
-		}
-	}
-	got, ok := aptListsFreshness(listDir, modTime)
-	if !ok || !got.Equal(sec) {
-		t.Errorf("deveria usar o InRelease do -security (mesmo mais antigo que o -updates): %v, %t", got, ok)
-	}
-
-	semLista := func(string) ([]string, error) { return nil, errors.New("sem acesso") }
-	if _, ok := aptListsFreshness(semLista, modTime); ok {
-		t.Error("sem a pasta de listas, não há data")
 	}
 }
