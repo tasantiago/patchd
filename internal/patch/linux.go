@@ -134,36 +134,3 @@ func parseNEVRA(s string) (name, evr, arch string, ok bool) {
 	}
 	return rest[:ver], rest[ver+1:], arch, true
 }
-
-// aptListsFreshness devolve a data da última atualização dos metadados do apt: o
-// InRelease mais recente do pocket -security ou, sem ele, o mais recente de qualquer pocket.
-func aptListsFreshness(listDir func(string) ([]string, error), modTime func(string) (time.Time, error)) (time.Time, bool) {
-	names, err := listDir(aptListsDir)
-	if err != nil {
-		return time.Time{}, false
-	}
-	var security, any time.Time
-	for _, n := range names {
-		if !strings.HasSuffix(n, "_InRelease") {
-			continue
-		}
-		t, err := modTime(aptListsDir + "/" + n)
-		if err != nil {
-			continue
-		}
-		if t.After(any) {
-			any = t
-		}
-		if strings.Contains(n, "-security_") && t.After(security) {
-			security = t
-		}
-	}
-	switch {
-	case !security.IsZero():
-		return security.UTC(), true
-	case !any.IsZero():
-		return any.UTC(), true
-	default:
-		return time.Time{}, false
-	}
-}

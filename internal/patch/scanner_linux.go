@@ -50,13 +50,11 @@ func (s linuxScanner) Scan(ctx context.Context, opts Options) []protocol.ScanRes
 }
 
 // scanApt simula a atualização completa, sem atualizar as listas nem instalar nada.
-// A idade dos metadados vai no resultado: listas velhas produzem falso negativo.
+// As datas do catálogo vão no resultado: listas velhas produzem falso negativo.
 func (s linuxScanner) scanApt(ctx context.Context) protocol.ScanResult {
 	start := time.Now()
 	r := protocol.ScanResult{Source: SourceApt}
-	if t, ok := aptListsFreshness(s.listDir, s.modTime); ok {
-		r.CatalogModifiedAt = &t
-	}
+	r.CatalogModifiedAt, r.CatalogCheckedAt = aptMetadataDates(s.readFile, s.listDir, s.modTime)
 
 	out, err := s.run.Run(ctx, aptGetPath, "-s", "dist-upgrade")
 	r.DurationMS = time.Since(start).Milliseconds()

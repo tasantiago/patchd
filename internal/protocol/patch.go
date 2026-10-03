@@ -33,11 +33,15 @@ type ScanResult struct {
 	// Source identifica a fonte: wua-default (servidor da política: WSUS quando configurado),
 	// wua-offline (catálogo wsusscn2.cab da Microsoft), apt, dnf; no macOS, a da Aula 3.5.
 	Source string `json:"source"`
-	// Catálogo usado: hash do arquivo (wsusscn2.cab) e data do arquivo ou dos metadados
-	// do repositório (no apt, a última atualização das listas do pocket -security).
-	CatalogSHA256     string     `json:"catalog_sha256,omitempty"`
+	// CatalogSHA256: hash do catálogo, quando a fonte é um arquivo (wsusscn2.cab).
+	CatalogSHA256 string `json:"catalog_sha256,omitempty"`
+	// CatalogModifiedAt: quão novo é o catálogo que a máquina tem. No apt, o Date: assinado
+	// do InRelease do pocket -security; no wsusscn2.cab, a data do arquivo (chegada à máquina).
 	CatalogModifiedAt *time.Time `json:"catalog_modified_at,omitempty"`
-	DurationMS        int64      `json:"duration_ms"`
+	// CatalogCheckedAt: quando a máquina verificou o catálogo pela última vez com sucesso
+	// (no apt, o último "apt update" bem-sucedido). Datas velhas aqui tornam o resultado suspeito.
+	CatalogCheckedAt *time.Time `json:"catalog_checked_at,omitempty"`
+	DurationMS       int64      `json:"duration_ms"`
 	// Missing: null = a busca falhou (motivo em Error); [] = nada faltando nesta fonte.
 	Missing []MissingUpdate `json:"missing"`
 	Error   string          `json:"error,omitempty"`
