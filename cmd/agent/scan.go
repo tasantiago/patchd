@@ -17,8 +17,8 @@ const (
 	historyMax = 100
 )
 
-// collectScan executa as buscas e lê o histórico. Cada busca traz o próprio erro;
-// falhas do histórico vão para Errors.
+// collectScan executa as buscas, verifica o reinício pendente e lê o histórico. Cada
+// busca traz o próprio erro; falhas do reinício e do histórico vão para Errors.
 func collectScan(ctx context.Context, s patch.Scanner, opts patch.Options, agentVersion string) protocol.PatchScanReport {
 	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
 	defer cancel()
@@ -28,6 +28,12 @@ func collectScan(ctx context.Context, s patch.Scanner, opts patch.Options, agent
 		AgentVersion:  agentVersion,
 		ScannedAt:     time.Now().UTC(),
 		Scans:         s.Scan(ctx, opts),
+	}
+
+	reboot, err := s.Reboot(ctx)
+	report.AddErrors("reboot", err)
+	if err == nil {
+		report.Reboot = &reboot
 	}
 
 	history, err := s.History(ctx, historyMax)

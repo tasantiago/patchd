@@ -30,6 +30,8 @@ type Scanner interface {
 	// Scan executa as buscas disponíveis e devolve um resultado por fonte. A falha de uma
 	// fonte fica no próprio resultado e não impede as demais.
 	Scan(ctx context.Context, opts Options) []protocol.ScanResult
+	// Reboot informa se há algo instalado esperando reinício, sinal por sinal.
+	Reboot(ctx context.Context) (protocol.RebootStatus, error)
 	// History lista as últimas max operações registradas pelo SO, da mais recente para a mais antiga.
 	History(ctx context.Context, max int) ([]protocol.UpdateHistoryEntry, error)
 }
