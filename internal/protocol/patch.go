@@ -4,7 +4,7 @@ import "time"
 
 // PatchSchemaVersion é a versão do formato do relatório de busca de atualizações.
 // Versão 2: a lista única "missing" deu lugar a "scans", um resultado por fonte.
-// Campos novos e opcionais (como os de pacote do Linux) não mudam a versão.
+// Campos novos e opcionais (de pacote, de reinício) não mudam a versão.
 const PatchSchemaVersion = 2
 
 // MissingUpdate é uma atualização aplicável e não instalada.
@@ -20,7 +20,7 @@ type MissingUpdate struct {
 	Type             string   `json:"type"`                       // software ou driver
 	ReleasedAt       string   `json:"released_at,omitempty"`      // AAAA-MM-DD
 	Downloaded       bool     `json:"downloaded,omitempty"`       // já baixada, aguardando instalação
-	RestartRequired  bool     `json:"restart_required,omitempty"` // a instalação exige reinício
+	RestartRequired  bool     `json:"restart_required,omitempty"` // instalar este item VAI exigir reinício (futuro)
 	// Campos de pacote (Linux) e de produto (macOS).
 	Package          string `json:"package,omitempty"`           // pacote binário ou produto (macOS, Safari...)
 	InstalledVersion string `json:"installed_version,omitempty"` // versão instalada, quando a fonte informa
@@ -49,6 +49,27 @@ type ScanResult struct {
 	Error   string          `json:"error,omitempty"`
 }
 
+// RebootSignal é o que uma fonte disse sobre reinício pendente.
+type RebootSignal struct {
+	Source  string `json:"source"`
+	Pending bool   `json:"pending"`
+	Weak    bool   `json:"weak,omitempty"`  // indício fraco: não decide sozinho
+	Error   string `json:"error,omitempty"` // a fonte não pôde ser lida
+}
+
+// RebootStatus é o estado de reinício pendente: algo JÁ instalado esperando reinício (presente).
+type RebootStatus struct {
+	// Pending: true = algum sinal forte disse que sim; false = sinais fortes lidos e nenhum
+	// disse que sim; null = nenhum sinal forte disponível (o motivo vai em Note ou nos sinais).
+	Pending       *bool          `json:"pending"`
+	Signals       []RebootSignal `json:"signals"`
+	LastBoot      *time.Time     `json:"last_boot,omitempty"`      // UTC
+	RunningKernel string         `json:"running_kernel,omitempty"` // Linux
+	NewestKernel  string         `json:"newest_kernel,omitempty"`  // Linux: o mais novo em /boot
+	Packages      []string       `json:"packages,omitempty"`       // Ubuntu: pacotes que pediram o reinício
+	Note          string         `json:"note,omitempty"`
+}
+
 // UpdateHistoryEntry é uma operação registrada no histórico de atualizações do SO.
 // Histórico é auditoria, não estado: o estado vem das buscas e do nível de patch.
 type UpdateHistoryEntry struct {
@@ -72,8 +93,10 @@ type PatchScanReport struct {
 	ScannedAt     time.Time `json:"scanned_at"` // sempre em UTC
 	// Scans: um resultado por fonte consultada, cada um com a própria lista e o próprio erro.
 	Scans []ScanResult `json:"scans"`
+	// Reboot: null = não coletado (motivo em Errors).
+	Reboot *RebootStatus `json:"reboot"`
 	// History: null = não coletado (motivo em Errors); [] = histórico vazio.
 	History []UpdateHistoryEntry `json:"history"`
-	// Errors lista as falhas fora das buscas (ex.: histórico), uma por entrada.
+	// Errors lista as falhas fora das buscas (reinício, histórico), uma por entrada.
 	Errors []string `json:"errors,omitempty"`
 }
