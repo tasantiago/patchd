@@ -9,19 +9,20 @@ const PatchSchemaVersion = 2
 
 // MissingUpdate é uma atualização aplicável e não instalada.
 type MissingUpdate struct {
-	ID               string   `json:"id"`                          // UpdateID do WUA, nome do advisory do Fedora, nome do pacote no Ubuntu
+	ID               string   `json:"id"`                          // UpdateID do WUA, advisory do Fedora, pacote do Ubuntu, Label do macOS
 	Revision         int      `json:"revision,omitempty"`          // revisão do UpdateID no WUA
 	KBs              []string `json:"kbs,omitempty"`               // números de KB, só dígitos: "5129195"
 	Title            string   `json:"title"`                       // só para exibição
-	Classification   string   `json:"classification,omitempty"`    // normalizada: security, critical, update, rollup, definition, driver, bugfix...
+	Classification   string   `json:"classification,omitempty"`    // normalizada: security, critical, update, upgrade, rollup, definition, driver, bugfix...
 	ClassificationID string   `json:"classification_id,omitempty"` // identificador cru da classificação na fonte
 	Severity         string   `json:"severity,omitempty"`          // severidade da fonte (MsrcSeverity, severidade do advisory)
 	CVEs             []string `json:"cves,omitempty"`
-	Type             string   `json:"type"`                  // software ou driver
-	ReleasedAt       string   `json:"released_at,omitempty"` // AAAA-MM-DD
-	Downloaded       bool     `json:"downloaded,omitempty"`  // já baixada, aguardando instalação
-	// Campos de pacote (Linux).
-	Package          string `json:"package,omitempty"`           // pacote binário a atualizar
+	Type             string   `json:"type"`                       // software ou driver
+	ReleasedAt       string   `json:"released_at,omitempty"`      // AAAA-MM-DD
+	Downloaded       bool     `json:"downloaded,omitempty"`       // já baixada, aguardando instalação
+	RestartRequired  bool     `json:"restart_required,omitempty"` // a instalação exige reinício
+	// Campos de pacote (Linux) e de produto (macOS).
+	Package          string `json:"package,omitempty"`           // pacote binário ou produto (macOS, Safari...)
 	InstalledVersion string `json:"installed_version,omitempty"` // versão instalada, quando a fonte informa
 	FixedVersion     string `json:"fixed_version,omitempty"`     // versão candidata ou corrigida
 	Arch             string `json:"arch,omitempty"`
@@ -31,7 +32,7 @@ type MissingUpdate struct {
 // ScanResult é o resultado de uma busca numa fonte.
 type ScanResult struct {
 	// Source identifica a fonte: wua-default (servidor da política: WSUS quando configurado),
-	// wua-offline (catálogo wsusscn2.cab da Microsoft), apt, dnf; no macOS, a da Aula 3.5.
+	// wua-offline (catálogo wsusscn2.cab da Microsoft), apt, dnf, softwareupdate.
 	Source string `json:"source"`
 	// CatalogSHA256: hash do catálogo, quando a fonte é um arquivo (wsusscn2.cab).
 	CatalogSHA256 string `json:"catalog_sha256,omitempty"`
@@ -39,7 +40,8 @@ type ScanResult struct {
 	// do InRelease do pocket -security; no wsusscn2.cab, a data do arquivo (chegada à máquina).
 	CatalogModifiedAt *time.Time `json:"catalog_modified_at,omitempty"`
 	// CatalogCheckedAt: quando a máquina verificou o catálogo pela última vez com sucesso
-	// (no apt, o último "apt update" bem-sucedido). Datas velhas aqui tornam o resultado suspeito.
+	// (no apt, o último "apt update" bem-sucedido). Fontes que consultam a rede na própria
+	// busca (WUA online, softwareupdate) não o preenchem: a verificação é o scanned_at.
 	CatalogCheckedAt *time.Time `json:"catalog_checked_at,omitempty"`
 	DurationMS       int64      `json:"duration_ms"`
 	// Missing: null = a busca falhou (motivo em Error); [] = nada faltando nesta fonte.
@@ -58,7 +60,7 @@ type UpdateHistoryEntry struct {
 	Revision            int       `json:"revision,omitempty"`
 	KBs                 []string  `json:"kbs,omitempty"`
 	Title               string    `json:"title"`                           // só para exibição
-	ClientApplicationID string    `json:"client_application_id,omitempty"` // quem pediu a operação
+	ClientApplicationID string    `json:"client_application_id,omitempty"` // quem pediu a operação (no macOS, a origem do pacote)
 	ServerSelection     string    `json:"server_selection,omitempty"`      // default, managed_server (WSUS), windows_update, others
 	Source              string    `json:"source"`
 }
