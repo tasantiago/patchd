@@ -1,8 +1,12 @@
-// Package api implementa a API REST do patchd-server: recebe e devolve os relatórios
-// de inventário e de busca de atualizações das máquinas.
+// Package api implementa a API REST do patchd-server.
 //
-// ATENÇÃO: nesta etapa (Aula 4.1) não há autenticação e o ID da máquina vem na URL.
-// Só é aceitável com a porta ligada em 127.0.0.1. Enrollment e token chegam na 4.3; TLS na 9.1.
+// Rotas do agente (Aula 4.3): o registro (/api/v1/enroll) exige um token de enrollment;
+// os envios (/api/v1/agent/...) exigem a credencial da máquina, e a máquina é a dona da
+// credencial, nunca um ID vindo da URL.
+//
+// ATENÇÃO: as rotas de leitura (/api/v1/machines...) ainda não têm autenticação. Elas
+// são do painel, e o login do painel chega no Módulo 7. TLS na 9.1. Até lá, a porta
+// fica restrita a 127.0.0.1.
 package api
 
 import (
@@ -12,24 +16,29 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
-// tipo com estes métodos serve (a memória da 4.1, o PostgreSQL da 4.2, um fake de teste).
+// tipo com estes métodos serve (a memória, o PostgreSQL, um fake de teste).
 type Store interface {
 	SaveInventory(ctx context.Context, machineID string, rep protocol.InventoryReport) (stored bool, err error)
 	LatestInventory(ctx context.Context, machineID string) (protocol.InventoryReport, bool, error)
 	SaveScan(ctx context.Context, machineID string, rep protocol.PatchScanReport) error
 	LatestScan(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
+	// Enroll consome um uso do token e registra a máquina; token inválido devolve
+	// um erro que satisfaz errors.Is(err, identity.ErrEnrollmentRejected).
+	Enroll(ctx context.Context, tokenHash []byte, m identity.NewMachine) error
+	MachineByCredential(ctx context.Context, credentialHash []byte) (machineID string, found bool, err error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
 const maxClockSkew = 5 * time.Minute
 
-// machineIDPattern: provisório até o enrollment (4.3). Letras, dígitos, ponto, hífen e
-// sublinhado, começando por letra ou dígito, até 64 caracteres.
+// machineIDPattern vale para as rotas de leitura: aceita os UUIDs emitidos no enrollment
+// e os IDs antigos da Aula 4.1, que continuam no banco.
 var machineIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // hashPattern: o formato do hash do protocolo ("sha256:" + 64 dígitos hexadecimais).
@@ -46,9 +55,12 @@ func New(st Store, logger *slog.Logger) http.Handler {
 	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() }}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/machines/{id}/inventory", a.submitInventory)
+	// Agente.
+	mux.HandleFunc("POST /api/v1/enroll", a.enroll)
+	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
+	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
+	// Leitura (painel; sem autenticação até o Módulo 7).
 	mux.HandleFunc("GET /api/v1/machines/{id}/inventory", a.getInventory)
-	mux.HandleFunc("POST /api/v1/machines/{id}/scan", a.submitScan)
 	mux.HandleFunc("GET /api/v1/machines/{id}/scan", a.getScan)
 	mux.HandleFunc("GET /api/v1/machines", a.listMachines)
 
@@ -56,22 +68,18 @@ func New(st Store, logger *slog.Logger) http.Handler {
 	return withRequestID(withAccessLog(logger, withRecover(logger, mux)))
 }
 
-// machineID lê e valida o {id} da URL. Em caso de erro, já respondeu.
+// machineID lê e valida o {id} da URL nas rotas de leitura. Em caso de erro, já respondeu.
 func (a *api) machineID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id := r.PathValue("id")
 	if !machineIDPattern.MatchString(id) {
-		writeError(w, http.StatusBadRequest, "invalid_machine_id",
-			"ID de máquina inválido: use letras, dígitos, ponto, hífen ou sublinhado, até 64 caracteres")
+		writeError(w, http.StatusBadRequest, "invalid_machine_id", "ID de máquina inválido")
 		return "", false
 	}
 	return id, true
 }
 
-func (a *api) submitInventory(w http.ResponseWriter, r *http.Request) {
-	id, ok := a.machineID(w, r)
-	if !ok {
-		return
-	}
+// submitInventory recebe o inventário da máquina autenticada.
+func (a *api) submitInventory(w http.ResponseWriter, r *http.Request, id string) {
 	var rep protocol.InventoryReport
 	if !decodeJSON(w, r, &rep) {
 		return
@@ -104,6 +112,25 @@ func (a *api) submitInventory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, code, protocol.SubmitResponse{Status: status, Hash: rep.Hash, ServerTime: a.now()})
 }
 
+// submitScan recebe a busca de atualizações da máquina autenticada.
+func (a *api) submitScan(w http.ResponseWriter, r *http.Request, id string) {
+	var rep protocol.PatchScanReport
+	if !decodeJSON(w, r, &rep) {
+		return
+	}
+	if rep.SchemaVersion != protocol.PatchSchemaVersion {
+		writeError(w, http.StatusUnprocessableEntity, "unsupported_schema",
+			"schema_version da busca não suportado (este servidor aceita a versão 2)")
+		return
+	}
+	if err := a.store.SaveScan(r.Context(), id, rep); err != nil {
+		a.internalError(w, r, "gravar busca", err)
+		return
+	}
+	a.checkClock(r, id, rep.ScannedAt)
+	writeJSON(w, http.StatusCreated, protocol.SubmitResponse{Status: "stored", ServerTime: a.now()})
+}
+
 func (a *api) getInventory(w http.ResponseWriter, r *http.Request) {
 	id, ok := a.machineID(w, r)
 	if !ok {
@@ -119,27 +146,6 @@ func (a *api) getInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rep)
-}
-
-func (a *api) submitScan(w http.ResponseWriter, r *http.Request) {
-	id, ok := a.machineID(w, r)
-	if !ok {
-		return
-	}
-	var rep protocol.PatchScanReport
-	if !decodeJSON(w, r, &rep) {
-		return
-	}
-	if rep.SchemaVersion != protocol.PatchSchemaVersion {
-		writeError(w, http.StatusUnprocessableEntity, "unsupported_schema",
-			"schema_version da busca não suportado (este servidor aceita a versão 2)")
-		return
-	}
-	if err := a.store.SaveScan(r.Context(), id, rep); err != nil {
-		a.internalError(w, r, "gravar busca", err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, protocol.SubmitResponse{Status: "stored", ServerTime: a.now()})
 }
 
 func (a *api) getScan(w http.ResponseWriter, r *http.Request) {
@@ -169,8 +175,7 @@ func (a *api) listMachines(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkClock registra quando o horário da coleta diverge do relógio do servidor
-// (decisão da Aula 0.1: o servidor calcula o desvio). A coleta leva segundos, então
-// uma diferença acima de maxClockSkew indica relógio errado no agente.
+// (decisão da Aula 0.1: o servidor calcula o desvio).
 func (a *api) checkClock(r *http.Request, id string, collectedAt time.Time) {
 	if collectedAt.IsZero() {
 		return

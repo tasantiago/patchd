@@ -34,6 +34,11 @@ func main() {
 func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
+	// Subcomando de administração: "patchd-server token create|list|revoke".
+	if len(args) > 0 && args[0] == "token" {
+		return runToken(args[1:], look, stdout, stderr)
+	}
+
 	cfg, err := loadServerConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
