@@ -28,3 +28,13 @@ type EnrollResponse struct {
 	Credential string    `json:"credential"`
 	ServerTime time.Time `json:"server_time"`
 }
+
+// IdentityLink é um alerta de identidade: a máquina MachineID, ao se registrar, apresentou
+// evidências que a relacionam com RelatedMachineID. Nunca é uma fusão: o administrador decide.
+type IdentityLink struct {
+	ID               int64     `json:"id"`
+	MachineID        string    `json:"machine_id"`         // a que acabou de se registrar
+	RelatedMachineID string    `json:"related_machine_id"` // a que já existia
+	Relation         string    `json:"relation"`           // reenrollment, clone, same_hardware
+	CreatedAt        time.Time `json:"created_at"`
+}

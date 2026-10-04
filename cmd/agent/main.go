@@ -38,6 +38,26 @@ func main() {
 func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
+	// Subcomandos: "patchd-agent identity" e "patchd-agent enroll [opções]".
+	if len(args) > 0 {
+		switch args[0] {
+		case "identity":
+			return runIdentity(args[1:], stdout, stderr)
+		case "enroll":
+			return runEnroll(args[1:], look, stdout, stderr, info.Version)
+		}
+	}
+
+	// Subcomandos: "patchd-agent identity" e "patchd-agent enroll [opções]".
+	if len(args) > 0 {
+		switch args[0] {
+		case "identity":
+			return runIdentity(args[1:], stdout, stderr)
+		case "enroll":
+			return runEnroll(args[1:], look, stdout, stderr, info.Version)
+		}
+	}
+
 	cfg, err := loadAgentConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
