@@ -12,9 +12,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // Códigos de saída do servidor.
@@ -76,11 +78,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		"listen", cfg.ListenAddr,
 		"database", redactDatabaseURL(cfg.DatabaseURL),
 	)
-	if cfg.DatabaseURL == "" {
-		logger.Warn("PATCHD_DATABASE_URL não definido: o banco será obrigatório a partir do Módulo 4")
-	}
+	// Aula 4.1: armazenamento em memória (perdido ao reiniciar). PostgreSQL na 4.2.
+	logger.Warn("armazenamento em memória: os relatórios se perdem ao reiniciar (PostgreSQL na Aula 4.2)")
+	logger.Warn("API sem autenticação: mantenha a porta restrita a 127.0.0.1 (enrollment na 4.3, TLS na 9.1)")
 
-	if err := serve(ctx, logger, cfg.ListenAddr); err != nil {
+	handler := newHandler(api.New(store.NewMemory(), logger))
+	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {
 		logger.Error("servidor parou com erro", "error", err)
 		return exitRuntime
 	}
