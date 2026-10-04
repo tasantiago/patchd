@@ -13,3 +13,7 @@
 
 # Segredos do compose de produção
 /deploy/secrets/
+
+# Atualização do agente (Aula 5.4): a chave privada e a pasta de versões nunca entram no git
+*.key
+/releases/

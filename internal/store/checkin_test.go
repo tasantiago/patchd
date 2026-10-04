@@ -43,6 +43,12 @@ func testarCheckin(t *testing.T, st contratoCheckin) {
 	if !depois[0].LastSeenAt.After(antes[0].LastSeenAt) {
 		t.Errorf("o check-in atualiza o último contato: %v → %v", antes[0].LastSeenAt, depois[0].LastSeenAt)
 	}
+	if _, err := st.CheckIn(ctx, m.ID, "v0.5.1", inv.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := st.Machines(ctx); l[0].AgentVersion != "v0.5.1" {
+		t.Errorf("a lista mostra a versão do último check-in: %q", l[0].AgentVersion)
+	}
 	if known, _ := st.CheckIn(ctx, m.ID, "v0.4.0", "sha256:outro"); known {
 		t.Error("hash diferente não é conhecido")
 	}

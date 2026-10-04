@@ -18,6 +18,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/release"
 )
 
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
@@ -52,11 +53,17 @@ type api struct {
 	store  Store
 	logger *slog.Logger
 	now    func() time.Time
+
+	releases      release.Dir // vazia: sem atualização automática
+	serverVersion string
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
-func New(st Store, logger *slog.Logger) http.Handler {
+func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() }}
+	for _, o := range opts {
+		o(a)
+	}
 
 	mux := http.NewServeMux()
 	// Agente.
@@ -64,6 +71,7 @@ func New(st Store, logger *slog.Logger) http.Handler {
 	mux.Handle("POST /api/v1/agent/checkin", a.machineAuth(a.checkin))
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
+	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
 	// Leitura (painel; sem autenticação até o Módulo 7).
 	mux.HandleFunc("GET /api/v1/machines/{id}/inventory", a.getInventory)
 	mux.HandleFunc("GET /api/v1/machines/{id}/scan", a.getScan)

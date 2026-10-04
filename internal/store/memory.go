@@ -30,6 +30,7 @@ type memMachine struct {
 	scan               *protocol.PatchScanReport
 	scanReceivedAt     time.Time
 	lastSeenAt         time.Time
+	agentVersion       string
 }
 
 type memKeys struct {
@@ -119,7 +120,7 @@ func (m *Memory) Machines(ctx context.Context) ([]protocol.MachineSummary, error
 
 	list := make([]protocol.MachineSummary, 0, len(m.machines))
 	for id, mm := range m.machines {
-		s := protocol.MachineSummary{ID: id, LastSeenAt: mm.lastSeenAt}
+		s := protocol.MachineSummary{ID: id, LastSeenAt: mm.lastSeenAt, AgentVersion: mm.agentVersion}
 		if mm.inventory != nil {
 			s.Hostname = mm.inventory.OS.Hostname
 			s.OSName = mm.inventory.OS.Name
@@ -150,6 +151,7 @@ func (m *Memory) CheckIn(ctx context.Context, id, agentVersion, inventoryHash st
 		return false, fmt.Errorf("máquina %s desconhecida", id)
 	}
 	mm.lastSeenAt = m.now()
+	mm.agentVersion = agentVersion
 	return mm.inventory != nil && mm.inventory.Hash == inventoryHash, nil
 }
 
@@ -214,6 +216,7 @@ func (m *Memory) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMa
 	tok.Uses++
 	now := m.now()
 	m.machine(nm.ID).lastSeenAt = now
+	m.machine(nm.ID).agentVersion = nm.AgentVersion
 	m.credentials[string(nm.CredentialHash)] = nm.ID
 
 	links := []protocol.IdentityLink{}

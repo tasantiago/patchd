@@ -191,7 +191,7 @@ func (p *Postgres) latest(ctx context.Context, query, id string, dst any) (bool,
 // sem depender do locale do banco.
 func (p *Postgres) Machines(ctx context.Context) ([]protocol.MachineSummary, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT m.id, m.last_seen_at,
+		SELECT m.id, m.last_seen_at, m.agent_version,
 		       i.hostname, i.os_name, i.os_version, i.hash, i.received_at,
 		       s.received_at, s.reboot_pending
 		FROM machines m
@@ -208,7 +208,7 @@ func (p *Postgres) Machines(ctx context.Context) ([]protocol.MachineSummary, err
 		var s protocol.MachineSummary
 		var hostname, osName, osVersion, hash *string
 		var invAt, scanAt *time.Time
-		if err := rows.Scan(&s.ID, &s.LastSeenAt, &hostname, &osName, &osVersion, &hash, &invAt, &scanAt, &s.RebootPending); err != nil {
+		if err := rows.Scan(&s.ID, &s.LastSeenAt, &s.AgentVersion, &hostname, &osName, &osVersion, &hash, &invAt, &scanAt, &s.RebootPending); err != nil {
 			return nil, err
 		}
 		s.LastSeenAt = s.LastSeenAt.UTC()

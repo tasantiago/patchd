@@ -28,6 +28,22 @@ MODULO="$(go list -m)"
 # -X: injeta a versão na variável buildinfo.Version.
 LDFLAGS="-s -w -X ${MODULO}/internal/buildinfo.Version=${VERSAO}"
 
+# Chave pública de atualização (Aula 5.4): só por variável, nunca no repositório. Sem ela,
+# os agentes deste build não se atualizam sozinhos; um build de release exige a chave.
+if [ -n "${PATCHD_UPDATE_PUBKEY:-}" ]; then
+  if ! [[ "$PATCHD_UPDATE_PUBKEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    echo "ERRO: PATCHD_UPDATE_PUBKEY não parece uma chave do patchd-release keygen (base64 de 32 bytes)." >&2
+    exit 1
+  fi
+  LDFLAGS="${LDFLAGS} -X ${MODULO}/internal/release.PublicKey=${PATCHD_UPDATE_PUBKEY}"
+  echo "chave de atualização embutida nos agentes"
+elif [[ "$VERSAO" != *-dev ]]; then
+  echo "ERRO: build de release ($VERSAO) sem PATCHD_UPDATE_PUBKEY: os agentes não conseguiriam se atualizar." >&2
+  exit 1
+else
+  echo "aviso: sem PATCHD_UPDATE_PUBKEY; os agentes deste build não se atualizam sozinhos" >&2
+fi
+
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 
 rm -rf dist

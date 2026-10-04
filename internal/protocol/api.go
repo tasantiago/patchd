@@ -26,6 +26,7 @@ type MachineSummary struct {
 	Hostname           string     `json:"hostname,omitempty"`
 	OSName             string     `json:"os_name,omitempty"`
 	OSVersion          string     `json:"os_version,omitempty"`
+	AgentVersion       string     `json:"agent_version,omitempty"`        // do último check-in (ou do registro)
 	LastSeenAt         time.Time  `json:"last_seen_at"`                   // último relatório recebido, de qualquer tipo
 	InventoryHash      string     `json:"inventory_hash,omitempty"`       // hash do inventário guardado
 	InventoryChangedAt *time.Time `json:"inventory_changed_at,omitempty"` // quando o inventário mudou pela última vez
@@ -41,8 +42,17 @@ type CheckinRequest struct {
 	SentAt        time.Time `json:"sent_at"`        // relógio do agente, para o desvio
 }
 
-// CheckinResponse diz ao agente se ele precisa enviar o inventário.
+// CheckinResponse diz ao agente se ele precisa enviar o inventário e, quando há uma
+// versão do agente publicada diferente da dele, qual é (Aula 5.4).
 type CheckinResponse struct {
-	InventoryKnown bool      `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
-	ServerTime     time.Time `json:"server_time"`
+	InventoryKnown bool         `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
+	ServerTime     time.Time    `json:"server_time"`
+	AgentUpdate    *AgentUpdate `json:"agent_update,omitempty"`
+}
+
+// AgentUpdate é a oferta de atualização. É só uma sugestão: o agente baixa o manifesto,
+// confere a assinatura com a chave embutida nele e recusa qualquer versão que não seja
+// mais nova que a sua.
+type AgentUpdate struct {
+	Version string `json:"version"`
 }

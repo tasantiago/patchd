@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strconv"
 
 	"github.com/tasantiago/patchd/internal/config"
@@ -19,6 +20,7 @@ type serverConfig struct {
 	DatabaseURL string // segredo: só por PATCHD_DATABASE_URL ou PATCHD_DATABASE_URL_FILE
 	LogLevel    string
 	LogFormat   string
+	ReleasesDir string // pasta das versões do agente (Aula 5.4); vazia: sem atualização automática
 	ShowVersion bool
 	HealthCheck bool // modo usado pelo HEALTHCHECK do Docker
 }
@@ -37,6 +39,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"nível de log: debug, info, warn ou error (env PATCHD_LOG_LEVEL)")
 	fs.StringVar(&cfg.LogFormat, "log-format", config.String(look, "PATCHD_LOG_FORMAT", "json"),
 		"formato de log: json ou text (env PATCHD_LOG_FORMAT)")
+	fs.StringVar(&cfg.ReleasesDir, "releases-dir", config.String(look, "PATCHD_RELEASES_DIR", ""),
+		"pasta das versões assinadas do agente; vazia desliga a atualização automática (env PATCHD_RELEASES_DIR)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
 		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
@@ -55,6 +59,9 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	}
 	if err := validateListenAddr(cfg.ListenAddr); err != nil {
 		problems = append(problems, err)
+	}
+	if cfg.ReleasesDir != "" && !filepath.IsAbs(cfg.ReleasesDir) {
+		problems = append(problems, fmt.Errorf("-releases-dir/PATCHD_RELEASES_DIR: o caminho precisa ser absoluto (recebido %q)", cfg.ReleasesDir))
 	}
 
 	// Segredo: nunca por flag (a linha de comando é visível para outros usuários).
