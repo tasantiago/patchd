@@ -44,13 +44,16 @@ func main() {
 func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
-	// Subcomandos: "identity", "enroll [opções]" e "service install|uninstall|run [opções]".
+	// Subcomandos: "identity", "enroll [opções]", "install [opções]" e
+	// "service install|uninstall|run [opções]".
 	if len(args) > 0 {
 		switch args[0] {
 		case "identity":
 			return runIdentity(args[1:], stdout, stderr)
 		case "enroll":
 			return runEnroll(args[1:], look, stdout, stderr, info.Version)
+		case "install":
+			return runInstall(args[1:], look, stdout, stderr, info.Version)
 		case "service":
 			return runService(args[1:], look, stdout, stderr)
 		}

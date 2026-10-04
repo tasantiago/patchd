@@ -29,22 +29,37 @@ func TestEnrollToken(t *testing.T) {
 	dir := t.TempDir()
 	arq := filepath.Join(dir, "token")
 	_ = os.WriteFile(arq, []byte("patchd_enr_abc\n"), 0o600)
+	nada := ambienteFalso(nil)
 
-	if tok, err := enrollToken(ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN_FILE": arq})); err != nil || tok != "patchd_enr_abc" {
+	if tok, err := enrollToken(arq, nada); err != nil || tok != "patchd_enr_abc" {
 		t.Errorf("pelo arquivo: %q %v", tok, err)
 	}
-	if tok, err := enrollToken(ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN": " patchd_enr_abc "})); err != nil || tok != "patchd_enr_abc" {
+	if tok, err := enrollToken("", ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN": " patchd_enr_abc "})); err != nil || tok != "patchd_enr_abc" {
 		t.Errorf("pela variável: %q %v", tok, err)
 	}
-	for nome, amb := range map[string]map[string]string{
-		"nenhum":           {},
-		"os dois":          {"PATCHD_ENROLL_TOKEN_FILE": arq, "PATCHD_ENROLL_TOKEN": "patchd_enr_abc"},
-		"tipo errado":      {"PATCHD_ENROLL_TOKEN": "patchd_mac_abc"},
-		"arquivo faltando": {"PATCHD_ENROLL_TOKEN_FILE": filepath.Join(dir, "nao-existe")},
+	for nome, c := range map[string]struct {
+		arquivo string
+		amb     map[string]string
+	}{
+		"nenhum":           {"", nil},
+		"os dois":          {arq, map[string]string{"PATCHD_ENROLL_TOKEN": "patchd_enr_abc"}},
+		"tipo errado":      {"", map[string]string{"PATCHD_ENROLL_TOKEN": "patchd_mac_abc"}},
+		"arquivo faltando": {filepath.Join(dir, "nao-existe"), nil},
 	} {
-		if _, err := enrollToken(ambienteFalso(amb)); err == nil {
+		if _, err := enrollToken(c.arquivo, ambienteFalso(c.amb)); err == nil {
 			t.Errorf("%s: deveria falhar", nome)
 		}
+	}
+
+	// A variável PATCHD_ENROLL_TOKEN_FILE chega pela configuração, como padrão da flag.
+	var errs bytes.Buffer
+	cfg, err := loadAgentConfig(nil, ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN_FILE": arq}), &errs)
+	if err != nil || cfg.EnrollTokenFile != arq {
+		t.Errorf("PATCHD_ENROLL_TOKEN_FILE: %q %v", cfg.EnrollTokenFile, err)
+	}
+	cfg, err = loadAgentConfig([]string{"-enroll-token-file", "outro"}, ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN_FILE": arq}), &errs)
+	if err != nil || cfg.EnrollTokenFile != "outro" {
+		t.Errorf("a flag vence a variável: %q %v", cfg.EnrollTokenFile, err)
 	}
 }
 

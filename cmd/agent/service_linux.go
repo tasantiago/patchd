@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 
 	"github.com/tasantiago/patchd/internal/config"
@@ -21,6 +23,16 @@ func systemctlPath() string {
 	return ""
 }
 
+// systemdReady confere que o systemd é o init e devolve o caminho do systemctl.
+// /run/systemd/system só existe quando o systemd é o init (a mesma checagem do sd_booted).
+func systemdReady() (string, error) {
+	systemctl := systemctlPath()
+	if _, err := os.Stat("/run/systemd/system"); err != nil || systemctl == "" {
+		return "", errors.New("este sistema não usa o systemd; instalação não suportada")
+	}
+	return systemctl, nil
+}
+
 // serviceLog: no Linux, o stderr do serviço vai para o journald, que já guarda, rotaciona
 // e indexa (journalctl -u patchd-agent).
 func serviceLog(dataDir string, asService bool, stderr io.Writer) (io.Writer, func(), error) {
@@ -30,7 +42,7 @@ func serviceLog(dataDir string, asService bool, stderr io.Writer) (io.Writer, fu
 // serviceInstall copia o agente para /usr/local/sbin, protege a pasta de dados, grava a
 // unidade do systemd e a habilita e inicia. As opções dadas aqui viram a linha de comando.
 func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if !requireRoot(stderr) {
+	if !requireAdmin(stderr) {
 		return exitRuntime
 	}
 	cfg, err := loadAgentConfig(args, look, stderr)
@@ -42,10 +54,9 @@ func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer)
 		fmt.Fprintf(stderr, "patchd-agent: não instalo o serviço dentro de container (%s)\n", why)
 		return exitConfig
 	}
-	// /run/systemd/system só existe quando o systemd é o init (a mesma checagem do sd_booted).
-	systemctl := systemctlPath()
-	if _, err := os.Stat("/run/systemd/system"); err != nil || systemctl == "" {
-		fmt.Fprintln(stderr, "patchd-agent: este sistema não usa o systemd; instalação não suportada")
+	systemctl, err := systemdReady()
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return exitRuntime
 	}
 	if _, err := credential.Load(cfg.DataDir); err != nil {
@@ -85,7 +96,7 @@ func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer)
 // serviceUninstall para e remove o serviço, a unidade e o executável. A pasta de dados
 // (com a credencial) fica: reinstalar não deve criar outra máquina no servidor.
 func serviceUninstall(stdout, stderr io.Writer) int {
-	if !requireRoot(stderr) {
+	if !requireAdmin(stderr) {
 		return exitRuntime
 	}
 	if _, err := os.Stat(unitPath); err != nil {
@@ -108,4 +119,33 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "serviço %s removido; a pasta de dados e a credencial foram mantidas\n", serviceName)
 	return exitOK
+}
+
+// installedState compara a unidade e o executável instalados com os que este install
+// gravaria: iguais, não há o que fazer; diferentes, o install reinstala.
+func installedState(cfg agentConfig, args []string) (serviceState, error) {
+	if _, err := systemdReady(); err != nil {
+		return 0, err
+	}
+	unit, err := os.ReadFile(unitPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return serviceMissing, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	same, err := sameExecutable(installedBinary)
+	if err != nil {
+		return 0, err
+	}
+	if same && string(unit) == systemdUnit(installedBinary, args) {
+		return serviceCurrent, nil
+	}
+	return serviceOutdated, nil
+}
+
+// serviceStart: "enable --now" é idempotente; habilita e inicia só o que faltar (inclusive
+// uma unidade em "failed").
+func serviceStart() error {
+	return runTool(systemctlPath(), "enable", "--now", serviceName+".service")
 }

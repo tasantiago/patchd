@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -27,7 +29,7 @@ func serviceLog(dataDir string, asService bool, stderr io.Writer) (io.Writer, fu
 // serviceInstall copia o agente para /usr/local/sbin, protege a pasta de dados, grava o
 // LaunchDaemon (root:wheel, 0644: o launchd recusa plist gravável por outros) e o carrega.
 func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if !requireRoot(stderr) {
+	if !requireAdmin(stderr) {
 		return exitRuntime
 	}
 	cfg, err := loadAgentConfig(args, look, stderr)
@@ -68,7 +70,7 @@ func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer)
 // serviceUninstall descarrega e remove o LaunchDaemon e o executável. A pasta de dados
 // (com a credencial) fica.
 func serviceUninstall(stdout, stderr io.Writer) int {
-	if !requireRoot(stderr) {
+	if !requireAdmin(stderr) {
 		return exitRuntime
 	}
 	if _, err := os.Stat(plistPath); err != nil {
@@ -88,4 +90,33 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "serviço %s removido; a pasta de dados e a credencial foram mantidas\n", launchdLabel)
 	return exitOK
+}
+
+// installedState compara o plist e o executável instalados com os que este install
+// gravaria: iguais, não há o que fazer; diferentes, o install reinstala.
+func installedState(cfg agentConfig, args []string) (serviceState, error) {
+	plist, err := os.ReadFile(plistPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return serviceMissing, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	same, err := sameExecutable(installedBinary)
+	if err != nil {
+		return 0, err
+	}
+	if same && string(plist) == launchdPlist(installedBinary, args, cfg.DataDir) {
+		return serviceCurrent, nil
+	}
+	return serviceOutdated, nil
+}
+
+// serviceStart: carregado, o kickstart (sem -k) inicia só se não estiver rodando;
+// descarregado (um "bootout" manual, por exemplo), o bootstrap carrega e inicia.
+func serviceStart() error {
+	if runTool(launchctlPath, "print", "system/"+launchdLabel) != nil {
+		return runTool(launchctlPath, "bootstrap", "system", plistPath)
+	}
+	return runTool(launchctlPath, "kickstart", "system/"+launchdLabel)
 }
