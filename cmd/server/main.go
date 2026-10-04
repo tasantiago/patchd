@@ -91,6 +91,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	defer closeStore()
+	if p, ok := st.(scanPruner); ok {
+		go pruneScansLoop(ctx, logger, p)
+	}
 
 	handler := newHandler(api.New(st, logger))
 	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {

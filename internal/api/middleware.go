@@ -78,6 +78,7 @@ func withAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
+			"request_bytes", r.ContentLength,
 			"bytes", rec.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"request_id", RequestID(r.Context()),

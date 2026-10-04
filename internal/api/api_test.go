@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -278,5 +279,88 @@ func TestCredentialProblemNoLog(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "patchd_enr_qualquer") {
 		t.Error("o segredo não pode aparecer no log")
+	}
+}
+
+func gz(t *testing.T, b []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func enviaGzip(h http.Handler, path, bearer, encoding string, body []byte) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", path, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", encoding)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestCorpoGzip(t *testing.T) {
+	h, tok := ambiente(t)
+	m := registra(t, h, tok)
+
+	if r := enviaGzip(h, "/api/v1/agent/inventory", m.Credential, "gzip", gz(t, inventario(t, "1"))); r.Code != http.StatusCreated {
+		t.Errorf("inventário em gzip: %d %s", r.Code, r.Body)
+	}
+	if r := enviaGzip(h, "/api/v1/agent/inventory", m.Credential, "gzip", []byte("não é gzip")); r.Code != http.StatusBadRequest ||
+		!strings.Contains(r.Body.String(), "invalid_gzip") {
+		t.Errorf("gzip inválido: %d %s", r.Code, r.Body)
+	}
+	if r := enviaGzip(h, "/api/v1/agent/inventory", m.Credential, "br", inventario(t, "1")); r.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("codificação desconhecida: %d %s", r.Code, r.Body)
+	}
+
+	// Bomba de compressão: 40 MB de espaços (JSON válido até ali) viram poucos KB de gzip.
+	bomba := gz(t, append([]byte(`{"schema_version":1,"x":"`), bytes.Repeat([]byte(" "), 40<<20)...))
+	if len(bomba) > 1<<20 {
+		t.Fatalf("a bomba deveria ser pequena comprimida: %d bytes", len(bomba))
+	}
+	r := enviaGzip(h, "/api/v1/agent/inventory", m.Credential, "gzip", bomba)
+	if r.Code != http.StatusRequestEntityTooLarge || !strings.Contains(r.Body.String(), "descomprimido") {
+		t.Errorf("bomba de compressão: esperado 413, veio %d %s", r.Code, r.Body)
+	}
+}
+
+func TestCheckin(t *testing.T) {
+	h, tok := ambiente(t)
+	m := registra(t, h, tok)
+	inv := inventario(t, "1")
+	var rep protocol.InventoryReport
+	_ = json.Unmarshal(inv, &rep)
+
+	checkin := func(hash string) (int, protocol.CheckinResponse) {
+		corpo, _ := json.Marshal(protocol.CheckinRequest{AgentVersion: "v0.4.0", InventoryHash: hash, SentAt: time.Now().UTC()})
+		r := envia(h, "POST", "/api/v1/agent/checkin", m.Credential, corpo)
+		var resp protocol.CheckinResponse
+		_ = json.Unmarshal(r.Body.Bytes(), &resp)
+		return r.Code, resp
+	}
+
+	if code, resp := checkin(rep.Hash); code != http.StatusOK || resp.InventoryKnown {
+		t.Errorf("antes do primeiro inventário, o servidor não o conhece: %d %+v", code, resp)
+	}
+	envia(h, "POST", "/api/v1/agent/inventory", m.Credential, inv)
+	if code, resp := checkin(rep.Hash); code != http.StatusOK || !resp.InventoryKnown || resp.ServerTime.IsZero() {
+		t.Errorf("depois do envio, o servidor conhece o hash: %d %+v", code, resp)
+	}
+	if _, resp := checkin("sha256:" + strings.Repeat("b", 64)); resp.InventoryKnown {
+		t.Error("hash diferente: o agente precisa enviar o inventário")
+	}
+	if code, _ := checkin("md5:x"); code != http.StatusUnprocessableEntity {
+		t.Errorf("hash fora do formato: esperado 422, veio %d", code)
+	}
+	corpo, _ := json.Marshal(protocol.CheckinRequest{InventoryHash: rep.Hash})
+	if r := envia(h, "POST", "/api/v1/agent/checkin", "", corpo); r.Code != http.StatusUnauthorized {
+		t.Errorf("check-in sem credencial: esperado 401, veio %d", r.Code)
 	}
 }

@@ -10,12 +10,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/agent"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/credential"
 	"github.com/tasantiago/patchd/internal/evidence"
@@ -148,7 +148,7 @@ func postEnroll(ctx context.Context, serverURL, token string, req protocol.Enrol
 	hr.Header.Set("User-Agent", "patchd-agent/"+req.AgentVersion)
 
 	resp, err := (&http.Client{Timeout: enrollHTTPTimeout}).Do(hr)
-	if closedWithoutResponse(err) {
+	if agent.ClosedWithoutResponse(err) {
 		return out, fmt.Errorf("%w: a conexão abriu, mas foi fechada sem resposta "+
 			"(em geral, nada escutando atrás de uma porta publicada do Docker ou de um proxy)", err)
 	}
@@ -182,24 +182,6 @@ func postEnroll(ctx context.Context, serverURL, token string, req protocol.Enrol
 		}
 		return out, fmt.Errorf("o servidor respondeu %d: %s (request_id %s)", resp.StatusCode, msg, requestID)
 	}
-}
-
-// closedWithoutResponse reconhece a conexão aceita e encerrada sem resposta. O net/http
-// relata isso de três jeitos, conforme o instante: EOF (o pedido já tinha sido escrito),
-// "server closed idle connection" (o fechamento chegou antes; não há erro exportado, e a
-// comparação pelo texto é a única disponível) e erro de leitura, como "connection reset by
-// peer" (o outro lado fechou com dados não lidos). Recusa na conexão é erro de "dial", e
-// esgotamento de prazo não conta: os dois têm causas e mensagens próprias.
-func closedWithoutResponse(err error) bool {
-	if err == nil {
-		return false
-	}
-	var op *net.OpError
-	if errors.As(err, &op) && op.Op == "read" && !op.Timeout() {
-		return true
-	}
-	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
-		strings.Contains(err.Error(), "server closed idle connection")
 }
 
 // newRequestID gera o X-Request-ID: o mesmo valor aparece no log do servidor.

@@ -219,6 +219,32 @@ func (p *Postgres) Machines(ctx context.Context) ([]protocol.MachineSummary, err
 	return list, rows.Err()
 }
 
+// CheckIn registra o contato periódico da máquina e diz se o inventário atual dela tem o
+// hash informado. Não há corrida que importe: no pior caso, o agente reenvia um
+// inventário que o servidor acabou de receber, e o envio volta "unchanged".
+func (p *Postgres) CheckIn(ctx context.Context, id, agentVersion, inventoryHash string) (bool, error) {
+	var current *string
+	err := p.pool.QueryRow(ctx, `
+		UPDATE machines m SET last_seen_at = now(), agent_version = $2
+		WHERE m.id = $1
+		RETURNING (SELECT r.hash FROM inventory_reports r WHERE r.id = m.current_inventory_id)`,
+		id, agentVersion).Scan(&current)
+	if err != nil {
+		return false, err
+	}
+	return current != nil && *current == inventoryHash, nil
+}
+
+// PruneScans apaga as buscas recebidas antes de before, exceto a atual de cada máquina.
+// Devolve quantas foram apagadas.
+func (p *Postgres) PruneScans(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `
+		DELETE FROM scan_reports s
+		WHERE s.received_at < $1
+		  AND NOT EXISTS (SELECT 1 FROM machines m WHERE m.current_scan_id = s.id)`, before)
+	return tag.RowsAffected(), err
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""
