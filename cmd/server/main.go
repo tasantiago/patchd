@@ -16,13 +16,12 @@ import (
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
-	"github.com/tasantiago/patchd/internal/store"
 )
 
 // Códigos de saída do servidor.
 const (
 	exitOK      = 0
-	exitRuntime = 1 // falha durante a execução (porta ocupada, healthcheck negativo etc.)
+	exitRuntime = 1 // falha durante a execução (porta ocupada, banco indisponível etc.)
 	exitConfig  = 2 // mesma convenção do pacote flag para erro de uso
 )
 
@@ -78,11 +77,17 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		"listen", cfg.ListenAddr,
 		"database", redactDatabaseURL(cfg.DatabaseURL),
 	)
-	// Aula 4.1: armazenamento em memória (perdido ao reiniciar). PostgreSQL na 4.2.
-	logger.Warn("armazenamento em memória: os relatórios se perdem ao reiniciar (PostgreSQL na Aula 4.2)")
 	logger.Warn("API sem autenticação: mantenha a porta restrita a 127.0.0.1 (enrollment na 4.3, TLS na 9.1)")
 
-	handler := newHandler(api.New(store.NewMemory(), logger))
+	// Banco primeiro: conecta, aplica as migrations e só então a porta é aberta.
+	st, closeStore, err := openStore(ctx, logger, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("armazenamento indisponível", "error", err)
+		return exitRuntime
+	}
+	defer closeStore()
+
+	handler := newHandler(api.New(st, logger))
 	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {
 		logger.Error("servidor parou com erro", "error", err)
 		return exitRuntime
