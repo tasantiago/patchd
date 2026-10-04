@@ -11,7 +11,8 @@ type NewMachine struct {
 	ID             string
 	CredentialHash []byte
 	AgentVersion   string
-	Evidence       protocol.IdentityEvidence
+	Evidence       protocol.IdentityEvidence // como a máquina declarou (guardado cru)
+	Keys           Keys                      // normalizadas (as que são comparadas)
 }
 
 // EnrollmentToken descreve um token de enrollment (nunca o segredo, que não é guardado).

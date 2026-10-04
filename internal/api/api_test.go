@@ -138,7 +138,7 @@ func TestRecusasDeAutenticacao(t *testing.T) {
 	h, tok := ambiente(t)
 	m := registra(t, h, tok)
 	inv := inventario(t, "1")
-	corpoEnroll, _ := json.Marshal(protocol.EnrollRequest{Evidence: protocol.IdentityEvidence{OSFamily: "linux"}})
+	corpoEnroll, _ := json.Marshal(protocol.EnrollRequest{Evidence: protocol.IdentityEvidence{InstallID: "guid-2", OSFamily: "linux"}})
 
 	casos := []struct {
 		nome, caminho, bearer string
@@ -166,7 +166,7 @@ func TestTokenEsgotado(t *testing.T) {
 	for range 5 {
 		registra(t, h, tok)
 	}
-	corpo, _ := json.Marshal(protocol.EnrollRequest{Evidence: protocol.IdentityEvidence{OSFamily: "linux"}})
+	corpo, _ := json.Marshal(protocol.EnrollRequest{Evidence: protocol.IdentityEvidence{InstallID: "guid-2", OSFamily: "linux"}})
 	if r := envia(h, "POST", "/api/v1/enroll", tok, corpo); r.Code != http.StatusUnauthorized {
 		t.Errorf("sexto registro com token de 5 usos: esperado 401, veio %d", r.Code)
 	}
@@ -234,5 +234,49 @@ func TestContentTypeETamanho(t *testing.T) {
 	enorme := []byte(`{"schema_version":1,"x":"` + strings.Repeat("a", 9<<20) + `"}`)
 	if r := envia(h, "POST", "/api/v1/agent/inventory", m.Credential, enorme); r.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("corpo grande demais: esperado 413, veio %d", r.Code)
+	}
+}
+
+func TestEvidenciaInsuficiente(t *testing.T) {
+	h, tok := ambiente(t)
+	for nome, ev := range map[string]protocol.IdentityEvidence{
+		"só o sistema":          {OSFamily: "linux", Hostname: "x"},
+		"só valores de fábrica": {OSFamily: "linux", InstallID: "uninitialized", HardwareUUID: "00000000-0000-0000-0000-000000000000", Serial: "Default string"},
+		"só o serial":           {OSFamily: "linux", Serial: "PF3ABC12"},
+	} {
+		t.Run(nome, func(t *testing.T) {
+			corpo, _ := json.Marshal(protocol.EnrollRequest{Evidence: ev})
+			r := envia(h, "POST", "/api/v1/enroll", tok, corpo)
+			if r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "insufficient_evidence") {
+				t.Errorf("esperado 422 insufficient_evidence, veio %d %s", r.Code, r.Body)
+			}
+		})
+	}
+}
+
+func TestAlertaDeIdentidadeNaoVazaParaOCliente(t *testing.T) {
+	h, tok := ambiente(t)
+	a := registra(t, h, tok)
+	b := registra(t, h, tok) // mesmo install_id ("guid-1"): reenrollment de A
+	r := envia(h, "GET", "/api/v1/identity-links", "", nil)
+	var links []protocol.IdentityLink
+	if err := json.Unmarshal(r.Body.Bytes(), &links); err != nil || len(links) != 1 {
+		t.Fatalf("esperado um alerta: %v %s", err, r.Body)
+	}
+	l := links[0]
+	if l.MachineID != b.MachineID || l.RelatedMachineID != a.MachineID || l.Relation != "reenrollment" {
+		t.Errorf("alerta errado: %+v", l)
+	}
+}
+
+func TestCredentialProblemNoLog(t *testing.T) {
+	var buf bytes.Buffer
+	h := api.New(store.NewMemory(), slog.New(slog.NewTextHandler(&buf, nil)))
+	envia(h, "POST", "/api/v1/agent/inventory", "patchd_enr_qualquer", inventario(t, "1"))
+	if !strings.Contains(buf.String(), "token de enrollment usado no lugar da credencial") {
+		t.Errorf("o log deve dizer que o token de enrollment foi usado como credencial:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), "patchd_enr_qualquer") {
+		t.Error("o segredo não pode aparecer no log")
 	}
 }

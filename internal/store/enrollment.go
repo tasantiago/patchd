@@ -10,7 +10,13 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/protocol"
 )
+
+// enrollLockID serializa os registros. Sem ele, duas máquinas clonadas registrando-se no
+// mesmo instante, com tokens diferentes, não enxergariam uma à outra (cada transação só vê
+// o que já foi confirmado) e o clone passaria sem alerta. Registro é raro: a fila não pesa.
+const enrollLockID int64 = 7_243_042_002
 
 // CreateEnrollmentToken guarda um token novo (só o hash) e devolve o ID dele.
 func (p *Postgres) CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error) {
@@ -50,18 +56,30 @@ func (p *Postgres) RevokeEnrollmentToken(ctx context.Context, id int64) (bool, e
 	return tag.RowsAffected() == 1, err
 }
 
-// Enroll consome um uso do token e registra a máquina, numa transação. A linha do token
-// fica travada até o fim: dois registros simultâneos não ultrapassam o limite de usos.
-func (p *Postgres) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) error {
+// nullable converte texto vazio em NULL: evidência ausente nunca casa com nada.
+func nullable(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// Enroll consome um uso do token, registra a máquina e cria os alertas de identidade
+// contra as máquinas já conhecidas, numa transação. Devolve os alertas criados.
+func (p *Postgres) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) ([]protocol.IdentityLink, error) {
 	evidence, err := json.Marshal(nm.Evidence)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", enrollLockID); err != nil {
+		return nil, err
+	}
 
 	var tok identity.EnrollmentToken
 	var now time.Time
@@ -70,25 +88,95 @@ func (p *Postgres) Enroll(ctx context.Context, tokenHash []byte, nm identity.New
 		FROM enrollment_tokens WHERE token_hash = $1 FOR UPDATE`, tokenHash).
 		Scan(&tok.ID, &tok.ExpiresAt, &tok.MaxUses, &tok.Uses, &tok.RevokedAt, &now)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
+		return nil, fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if st := tok.Status(now); st != "válido" {
-		return fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
+		return nil, fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
+	}
+
+	// Candidatas: qualquer máquina com alguma chave igual. A relação é decidida em Go,
+	// pela mesma função que os testes conferem (identity.Relation).
+	k := nm.Keys
+	rows, err := tx.Query(ctx, `
+		SELECT id, coalesce(install_id, ''), coalesce(hardware_key, ''), coalesce(serial, '')
+		FROM machines
+		WHERE install_id = $1 OR hardware_key = $2 OR serial = $3
+		ORDER BY first_seen_at, id`,
+		nullable(k.InstallID), nullable(k.HardwareKey), nullable(k.Serial))
+	if err != nil {
+		return nil, err
+	}
+	type candidate struct {
+		id   string
+		keys identity.Keys
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.keys.InstallID, &c.keys.HardwareKey, &c.keys.Serial); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		candidates = append(candidates, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	if _, err := tx.Exec(ctx, "UPDATE enrollment_tokens SET uses = uses + 1 WHERE id = $1", tok.ID); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO machines (id, credential_hash, enrolled_at, enrollment_token_id, agent_version, evidence)
-		VALUES ($1, $2, now(), $3, $4, $5)`,
-		nm.ID, nm.CredentialHash, tok.ID, nm.AgentVersion, evidence); err != nil {
-		return fmt.Errorf("registro da máquina: %w", err)
+		INSERT INTO machines (id, credential_hash, enrolled_at, enrollment_token_id, agent_version, evidence,
+		                      install_id, hardware_key, serial)
+		VALUES ($1, $2, now(), $3, $4, $5, $6, $7, $8)`,
+		nm.ID, nm.CredentialHash, tok.ID, nm.AgentVersion, evidence,
+		nullable(k.InstallID), nullable(k.HardwareKey), nullable(k.Serial)); err != nil {
+		return nil, fmt.Errorf("registro da máquina: %w", err)
 	}
-	return tx.Commit(ctx)
+
+	links := []protocol.IdentityLink{}
+	for _, c := range candidates {
+		rel, ok := identity.Relation(k, c.keys)
+		if !ok {
+			continue
+		}
+		l := protocol.IdentityLink{MachineID: nm.ID, RelatedMachineID: c.id, Relation: rel}
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO identity_links (machine_id, related_machine_id, relation)
+			VALUES ($1, $2, $3) RETURNING id, created_at`,
+			l.MachineID, l.RelatedMachineID, l.Relation).Scan(&l.ID, &l.CreatedAt); err != nil {
+			return nil, fmt.Errorf("alerta de identidade: %w", err)
+		}
+		l.CreatedAt = l.CreatedAt.UTC()
+		links = append(links, l)
+	}
+	return links, tx.Commit(ctx)
+}
+
+// IdentityLinks lista os alertas de identidade, do mais antigo para o mais novo.
+func (p *Postgres) IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT id, machine_id, related_machine_id, relation, created_at
+		FROM identity_links ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []protocol.IdentityLink{}
+	for rows.Next() {
+		var l protocol.IdentityLink
+		if err := rows.Scan(&l.ID, &l.MachineID, &l.RelatedMachineID, &l.Relation, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		l.CreatedAt = l.CreatedAt.UTC()
+		list = append(list, l)
+	}
+	return list, rows.Err()
 }
 
 // MachineByCredential devolve a máquina dona da credencial.

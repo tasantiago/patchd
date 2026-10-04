@@ -30,8 +30,10 @@ type Store interface {
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	// Enroll consome um uso do token e registra a máquina; token inválido devolve
 	// um erro que satisfaz errors.Is(err, identity.ErrEnrollmentRejected).
-	Enroll(ctx context.Context, tokenHash []byte, m identity.NewMachine) error
+	// Também cria os alertas de identidade contra as máquinas já conhecidas e os devolve.
+	Enroll(ctx context.Context, tokenHash []byte, m identity.NewMachine) ([]protocol.IdentityLink, error)
 	MachineByCredential(ctx context.Context, credentialHash []byte) (machineID string, found bool, err error)
+	IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -63,6 +65,7 @@ func New(st Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/machines/{id}/inventory", a.getInventory)
 	mux.HandleFunc("GET /api/v1/machines/{id}/scan", a.getScan)
 	mux.HandleFunc("GET /api/v1/machines", a.listMachines)
+	mux.HandleFunc("GET /api/v1/identity-links", a.listIdentityLinks)
 
 	// Ordem: o ID existe antes do log; o log enxerga o 500 produzido pela recuperação.
 	return withRequestID(withAccessLog(logger, withRecover(logger, mux)))
@@ -169,6 +172,15 @@ func (a *api) listMachines(w http.ResponseWriter, r *http.Request) {
 	list, err := a.store.Machines(r.Context())
 	if err != nil {
 		a.internalError(w, r, "listar máquinas", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (a *api) listIdentityLinks(w http.ResponseWriter, r *http.Request) {
+	list, err := a.store.IdentityLinks(r.Context())
+	if err != nil {
+		a.internalError(w, r, "listar alertas de identidade", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, list)

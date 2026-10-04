@@ -19,6 +19,8 @@ type Memory struct {
 	machines    map[string]*memMachine
 	tokens      []*memToken
 	credentials map[string]string // hash da credencial (como texto) → ID da máquina
+	keys        []memKeys         // chaves de identidade, na ordem de registro
+	links       []protocol.IdentityLink
 	now         func() time.Time
 }
 
@@ -28,6 +30,11 @@ type memMachine struct {
 	scan               *protocol.PatchScanReport
 	scanReceivedAt     time.Time
 	lastSeenAt         time.Time
+}
+
+type memKeys struct {
+	id   string
+	keys identity.Keys
 }
 
 type memToken struct {
@@ -172,8 +179,8 @@ func (m *Memory) RevokeEnrollmentToken(ctx context.Context, id int64) (bool, err
 	return false, nil
 }
 
-// Enroll consome um uso do token e registra a máquina com a credencial.
-func (m *Memory) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) error {
+// Enroll consome um uso do token, registra a máquina e cria os alertas de identidade.
+func (m *Memory) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) ([]protocol.IdentityLink, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -184,18 +191,36 @@ func (m *Memory) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMa
 		}
 	}
 	if tok == nil {
-		return fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
+		return nil, fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
 	}
 	if st := tok.Status(m.now()); st != "válido" {
-		return fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
+		return nil, fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
 	}
 	if _, exists := m.machines[nm.ID]; exists {
-		return fmt.Errorf("ID de máquina repetido: %s", nm.ID)
+		return nil, fmt.Errorf("ID de máquina repetido: %s", nm.ID)
 	}
 	tok.Uses++
-	m.machine(nm.ID).lastSeenAt = m.now()
+	now := m.now()
+	m.machine(nm.ID).lastSeenAt = now
 	m.credentials[string(nm.CredentialHash)] = nm.ID
-	return nil
+
+	links := []protocol.IdentityLink{}
+	for _, c := range m.keys {
+		if rel, ok := identity.Relation(nm.Keys, c.keys); ok {
+			l := protocol.IdentityLink{ID: int64(len(m.links) + 1), MachineID: nm.ID, RelatedMachineID: c.id, Relation: rel, CreatedAt: now}
+			m.links = append(m.links, l)
+			links = append(links, l)
+		}
+	}
+	m.keys = append(m.keys, memKeys{id: nm.ID, keys: nm.Keys})
+	return links, nil
+}
+
+// IdentityLinks lista os alertas de identidade, do mais antigo para o mais novo.
+func (m *Memory) IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]protocol.IdentityLink{}, m.links...), nil
 }
 
 // MachineByCredential devolve a máquina dona da credencial.
