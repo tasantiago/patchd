@@ -24,5 +24,11 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	a.checkClock(r, id, req.SentAt)
-	writeJSON(w, http.StatusOK, protocol.CheckinResponse{InventoryKnown: known && req.InventoryHash != "", ServerTime: a.now()})
+	resp := protocol.CheckinResponse{InventoryKnown: known && req.InventoryHash != "", ServerTime: a.now()}
+	// A oferta vai quando a versão publicada é outra. Se ela serve, quem decide é o agente:
+	// ele confere a assinatura e recusa qualquer versão que não seja mais nova que a sua.
+	if v := a.offeredVersion(r); v != "" && v != req.AgentVersion {
+		resp.AgentUpdate = &protocol.AgentUpdate{Version: v}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

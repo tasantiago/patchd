@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/release"
 )
 
 // Códigos de saída do servidor.
@@ -34,9 +35,13 @@ func main() {
 func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
-	// Subcomando de administração: "patchd-server token create|list|revoke".
+	// Subcomandos de administração: "patchd-server token create|list|revoke" e
+	// "patchd-server release current|publish|withdraw".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "release" {
+		return runRelease(args[1:], look, stdout, stderr, info.Version)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
@@ -95,7 +100,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		go pruneScansLoop(ctx, logger, p)
 	}
 
-	handler := newHandler(api.New(st, logger))
+	var apiOpts []api.Option
+	if cfg.ReleasesDir != "" {
+		apiOpts = append(apiOpts, api.WithReleases(release.Dir(cfg.ReleasesDir), info.Version))
+		logReleases(logger, release.Dir(cfg.ReleasesDir), info.Version)
+	}
+	handler := newHandler(api.New(st, logger, apiOpts...))
 	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {
 		logger.Error("servidor parou com erro", "error", err)
 		return exitRuntime

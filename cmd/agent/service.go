@@ -94,6 +94,8 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 		OfflineCatalog: cfg.OfflineCatalog,
 		Interval:       cfg.CheckinInterval,
 		AllowContainer: allowContainer(look),
+		AutoUpdate:     asService,
+		ServiceArgs:    args,
 	}
 	if asService {
 		return runAsService(logger, func(ctx context.Context) int { return runLoop(ctx, logger, opts) })

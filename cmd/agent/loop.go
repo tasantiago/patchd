@@ -26,6 +26,10 @@ type loopOptions struct {
 	OfflineCatalog string
 	Interval       time.Duration
 	AllowContainer bool // PATCHD_ALLOW_CONTAINER=1: só para desenvolvimento
+	// AutoUpdate: só como serviço (Aula 5.4). ServiceArgs são as opções do "service run",
+	// repassadas ao install da versão nova para o serviço continuar com as mesmas opções.
+	AutoUpdate  bool
+	ServiceArgs []string
 }
 
 // inContainer é a detecção de container; os testes a substituem.
@@ -82,8 +86,9 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	scanner := patch.New(platform.ExecRunner{Timeout: scanCommandTimeout})
 	scanOpts := patch.Options{OfflineCatalog: opts.OfflineCatalog}
 
+	client := agent.NewClient(cred.ServerURL, cred.Credential, info.Version)
 	ag := &agent.Agent{
-		Client: agent.NewClient(cred.ServerURL, cred.Credential, info.Version),
+		Client: client,
 		// O inventário passa pela mesma função do "-inventory": o check-in envia exatamente
 		// o JSON que você conferiu nas aulas do Módulo 2.
 		Inventory: func(ctx context.Context) (protocol.InventoryReport, error) {
@@ -102,6 +107,10 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Interval:  opts.Interval,
 		ScanEvery: scanEvery,
 		Logger:    logger,
+	}
+
+	if opts.AutoUpdate {
+		ag.Update = newUpdater(logger, client, opts, info.Version)
 	}
 
 	logger.Info("agente iniciado",

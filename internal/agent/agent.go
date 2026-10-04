@@ -24,6 +24,8 @@ type Agent struct {
 	Interval  time.Duration // entre check-ins (RNF-03: 1 h)
 	ScanEvery time.Duration // entre buscas (RNF-03: 24 h)
 	Logger    *slog.Logger
+	// Update recebe a versão oferecida no check-in (Aula 5.4); nil: o agente não se atualiza.
+	Update func(ctx context.Context, version string)
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -162,6 +164,11 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 
 	a.Logger.Info("check-in concluído", "inventory_sent", inventorySent, "scan_sent", scanSent,
 		"duration", a.now().Sub(start).Round(time.Millisecond).String())
+
+	// 4. Atualização do agente, por último: os relatórios deste ciclo já foram entregues.
+	if resp.AgentUpdate != nil && a.Update != nil {
+		a.Update(ctx, resp.AgentUpdate.Version)
+	}
 	return outcomeOK
 }
 

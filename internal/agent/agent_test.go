@@ -35,10 +35,10 @@ func (s *servidor) conta(p string) int {
 	return s.pedidos[p]
 }
 
-func novoServidor(t *testing.T) (*servidor, string, string) {
+func novoServidor(t *testing.T, opts ...api.Option) (*servidor, string, string) {
 	t.Helper()
 	s := &servidor{st: store.NewMemory(), pedidos: map[string]int{}}
-	h := api.New(s.st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := api.New(s.st, slog.New(slog.NewTextHandler(io.Discard, nil)), opts...)
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.fora.Load() {
 			http.Error(w, "fora", http.StatusServiceUnavailable)
