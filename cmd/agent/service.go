@@ -26,7 +26,7 @@ const (
 const serviceUsage = `uso: patchd-agent service <comando> [opções do agente]
 
 comandos:
-  install     instala e inicia o serviço (exige administrador; a máquina já registrada)
+  install     instala e inicia o serviço (exige administrador/root; a máquina já registrada)
   uninstall   para e remove o serviço (a pasta de dados e a credencial ficam)
   run         o que o gerenciador de serviços executa; no terminal, roda em primeiro plano
 `
@@ -50,8 +50,8 @@ func runService(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	}
 }
 
-// serviceRun roda o laço. Sob o gerenciador de serviços, protege a pasta de dados e
-// escreve o log num arquivo rotativo (não há terminal); no terminal, usa o stderr.
+// serviceRun roda o laço. Sob o gerenciador de serviços, protege a pasta de dados e usa o
+// log do sistema escolhido para ele (serviceLog); no terminal, usa o stderr.
 func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 	cfg, err := loadAgentConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
@@ -67,19 +67,19 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 	}
 
 	asService := isServiceProcess()
-	var out io.Writer = stderr
 	if asService {
 		if err := protectDataDir(cfg.DataDir); err != nil {
-			// Ainda não há log: o código de saída é tudo o que o gerenciador vai registrar.
+			// Ainda não há log próprio: vai para o stderr que o gerenciador guardar (se guardar).
+			fmt.Fprintf(stderr, "patchd-agent: proteger %s: %v\n", cfg.DataDir, err)
 			return exitRuntime
 		}
-		rf, err := logging.OpenRotating(filepath.Join(cfg.DataDir, "logs", "agent.log"), logFileMaxSize, logFileKeep)
-		if err != nil {
-			return exitRuntime
-		}
-		defer rf.Close()
-		out = rf
 	}
+	out, closeLog, err := serviceLog(cfg.DataDir, asService, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: abrir o log: %v\n", err)
+		return exitRuntime
+	}
+	defer closeLog()
 
 	logger, err := logging.New(out, cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
@@ -93,6 +93,7 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 		ServerURL:      cfg.ServerURL,
 		OfflineCatalog: cfg.OfflineCatalog,
 		Interval:       cfg.CheckinInterval,
+		AllowContainer: allowContainer(look),
 	}
 	if asService {
 		return runAsService(logger, func(ctx context.Context) int { return runLoop(ctx, logger, opts) })
@@ -100,4 +101,14 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return runLoop(ctx, logger, opts)
+}
+
+// rotatingLog abre o log rotativo na pasta de dados (Windows e macOS, que não têm um
+// journal que o serviço use por padrão).
+func rotatingLog(dataDir string) (io.Writer, func(), error) {
+	rf, err := logging.OpenRotating(filepath.Join(dataDir, "logs", "agent.log"), logFileMaxSize, logFileKeep)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rf, func() { rf.Close() }, nil
 }

@@ -24,6 +24,15 @@ const (
 func (s linuxScanner) Reboot(ctx context.Context) (protocol.RebootStatus, error) {
 	st := protocol.RebootStatus{Signals: []protocol.RebootSignal{}}
 
+	// Em container, /boot e /run/reboot-required são os da imagem e o kernel é o do host:
+	// nenhum sinal descreve uma máquina. "Não sei" (null) é a resposta honesta (Aula 4.2).
+	if s.inContainer != nil {
+		if in, why := s.inContainer(); in {
+			st.Note = "dentro de container (" + why + "): o reinício pendente seria o do host, que o container não enxerga"
+			return st, nil
+		}
+	}
+
 	// O arquivo só existe no Debian e no Ubuntu: noutras distribuições, sua ausência não diz nada.
 	if manager, _, _ := inventory.DetectPackageManager(s.readFile); manager == "dpkg" {
 		sig := protocol.RebootSignal{Source: rebootRequiredPath}

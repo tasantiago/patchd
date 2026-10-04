@@ -84,7 +84,7 @@ func TestPostEnroll(t *testing.T) {
 func TestRunEnrollFluxoNaMaquinaDoTeste(t *testing.T) {
 	srv, tok := servidorDeTeste(t)
 	dataDir := filepath.Join(t.TempDir(), "patchd")
-	amb := ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN": tok})
+	amb := ambienteFalso(map[string]string{"PATCHD_ENROLL_TOKEN": tok, "PATCHD_ALLOW_CONTAINER": "1"})
 	args := []string{"-server", srv.URL, "-data-dir", dataDir}
 
 	var out, errs bytes.Buffer

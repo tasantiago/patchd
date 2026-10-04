@@ -51,6 +51,13 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 		fmt.Fprintln(stderr, "patchd-agent: informe o servidor (-server ou PATCHD_SERVER_URL)")
 		return exitConfig
 	}
+	// Um container registrado viraria no servidor uma "máquina" que não existe.
+	if why, refuse := containerCheck(allowContainer(look)); refuse {
+		fmt.Fprintf(stderr, "patchd-agent: não registro um container como máquina (%s)\n", why)
+		return exitConfig
+	} else if why != "" {
+		fmt.Fprintf(stderr, "patchd-agent: aviso: registrando de dentro de um container por PATCHD_ALLOW_CONTAINER=1 (só para desenvolvimento): %s\n", why)
+	}
 	token, err := enrollToken(look)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)

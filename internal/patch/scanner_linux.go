@@ -17,11 +17,13 @@ type linuxScanner struct {
 	readFile func(string) ([]byte, error)
 	listDir  func(string) ([]string, error)
 	modTime  func(string) (time.Time, error)
+	// inContainer: nil nos testes (nunca em container).
+	inContainer func() (bool, string)
 }
 
 // New devolve o scanner do SO atual.
 func New(run platform.Runner) Scanner {
-	return linuxScanner{run: run, readFile: os.ReadFile, listDir: listDirNames, modTime: fileModTime}
+	return linuxScanner{run: run, readFile: os.ReadFile, listDir: listDirNames, modTime: fileModTime, inContainer: platform.InContainer}
 }
 
 // Scan escolhe a fonte pelo os-release (a mesma decisão do inventário) e executa a busca.
