@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -12,12 +13,56 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 )
 
-func novoServidor() http.Handler {
-	return api.New(store.NewMemory(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+// ambiente monta a API sobre a memória, com um token de enrollment de 5 usos.
+func ambiente(t *testing.T) (http.Handler, string) {
+	t.Helper()
+	st := store.NewMemory()
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateEnrollmentToken(context.Background(), hash, "teste", time.Now().Add(time.Hour), 5); err != nil {
+		t.Fatal(err)
+	}
+	return api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil))), tok
+}
+
+func envia(h http.Handler, method, path, bearer string, body []byte) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func registra(t *testing.T, h http.Handler, tok string) protocol.EnrollResponse {
+	t.Helper()
+	corpo, _ := json.Marshal(protocol.EnrollRequest{
+		AgentVersion: "v0.4.0-teste",
+		Evidence:     protocol.IdentityEvidence{InstallID: "guid-1", Hostname: "itom-teste", OSFamily: "linux"},
+	})
+	r := envia(h, "POST", "/api/v1/enroll", tok, corpo)
+	if r.Code != http.StatusCreated {
+		t.Fatalf("enrollment: %d %s", r.Code, r.Body)
+	}
+	if r.Header().Get("Cache-Control") != "no-store" {
+		t.Error("a resposta com a credencial não pode ser guardada em cache")
+	}
+	var resp protocol.EnrollResponse
+	if err := json.Unmarshal(r.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(resp.Credential, identity.CredentialPrefix) || len(resp.MachineID) != 36 {
+		t.Fatalf("resposta do enrollment fora do formato: %+v", resp)
+	}
+	return resp
 }
 
 func inventario(t *testing.T, versao string) []byte {
@@ -38,136 +83,156 @@ func inventario(t *testing.T, versao string) []byte {
 	return b
 }
 
-func envia(h http.Handler, method, path, contentType string, body []byte) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, bytes.NewReader(body))
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	return rec
-}
+func TestFluxoCompleto(t *testing.T) {
+	h, tok := ambiente(t)
+	m := registra(t, h, tok)
 
-const caminhoInv = "/api/v1/machines/itom-teste/inventory"
-
-func TestInventarioGravaDepoisInalteradoDepoisMuda(t *testing.T) {
-	h := novoServidor()
-
-	r := envia(h, "POST", caminhoInv, "application/json", inventario(t, "1.34.6-1"))
-	if r.Code != http.StatusCreated || !strings.Contains(r.Body.String(), `"stored"`) {
-		t.Fatalf("primeiro envio: %d %s", r.Code, r.Body)
-	}
-	if r.Header().Get("X-Request-ID") == "" {
-		t.Error("toda resposta deveria trazer o X-Request-ID")
-	}
-
-	r = envia(h, "POST", caminhoInv, "application/json", inventario(t, "1.34.6-1"))
-	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"unchanged"`) {
-		t.Errorf("mesmo conteúdo (outro collected_at): esperado 200 unchanged, veio %d %s", r.Code, r.Body)
-	}
-
-	r = envia(h, "POST", caminhoInv, "application/json", inventario(t, "1.34.6-1ubuntu0.1"))
+	r := envia(h, "POST", "/api/v1/agent/inventory", m.Credential, inventario(t, "1.34.6-1"))
 	if r.Code != http.StatusCreated {
-		t.Errorf("conteúdo novo: esperado 201, veio %d %s", r.Code, r.Body)
+		t.Fatalf("inventário: %d %s", r.Code, r.Body)
+	}
+	r = envia(h, "POST", "/api/v1/agent/inventory", m.Credential, inventario(t, "1.34.6-1"))
+	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"unchanged"`) {
+		t.Errorf("mesmo conteúdo: %d %s", r.Code, r.Body)
 	}
 
-	r = envia(h, "GET", caminhoInv, "", nil)
-	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "1.34.6-1ubuntu0.1") {
-		t.Errorf("leitura deveria devolver o último inventário: %d %s", r.Code, r.Body)
+	sim := true
+	scan, _ := json.Marshal(protocol.PatchScanReport{
+		SchemaVersion: protocol.PatchSchemaVersion, ScannedAt: time.Now().UTC(),
+		Reboot: &protocol.RebootStatus{Pending: &sim},
+	})
+	r = envia(h, "POST", "/api/v1/agent/scan", m.Credential, scan)
+	if r.Code != http.StatusCreated || strings.Contains(r.Body.String(), `"hash"`) {
+		t.Errorf("busca: %d %s (sem campo hash vazio)", r.Code, r.Body)
+	}
+
+	// O relatório ficou na máquina emitida no enrollment, e não em um ID escolhido pelo cliente.
+	r = envia(h, "GET", "/api/v1/machines/"+m.MachineID+"/inventory", "", nil)
+	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "libcares2") {
+		t.Errorf("leitura pelo ID emitido: %d %s", r.Code, r.Body)
+	}
+	r = envia(h, "GET", "/api/v1/machines", "", nil)
+	var lista []protocol.MachineSummary
+	_ = json.Unmarshal(r.Body.Bytes(), &lista)
+	if len(lista) != 1 || lista[0].ID != m.MachineID || lista[0].RebootPending == nil || !*lista[0].RebootPending {
+		t.Errorf("lista: %+v", lista)
 	}
 }
 
-func TestRejeicoes(t *testing.T) {
-	h := novoServidor()
-	valido := inventario(t, "1")
+func TestDuasMaquinasNaoSeMisturam(t *testing.T) {
+	h, tok := ambiente(t)
+	a, b := registra(t, h, tok), registra(t, h, tok)
+	if a.MachineID == b.MachineID || a.Credential == b.Credential {
+		t.Fatal("cada enrollment emite ID e credencial próprios")
+	}
+	envia(h, "POST", "/api/v1/agent/inventory", a.Credential, inventario(t, "A"))
+	envia(h, "POST", "/api/v1/agent/inventory", b.Credential, inventario(t, "B"))
+	ra := envia(h, "GET", "/api/v1/machines/"+a.MachineID+"/inventory", "", nil)
+	rb := envia(h, "GET", "/api/v1/machines/"+b.MachineID+"/inventory", "", nil)
+	if !strings.Contains(ra.Body.String(), `"version":"A"`) || !strings.Contains(rb.Body.String(), `"version":"B"`) {
+		t.Errorf("cada credencial grava na própria máquina:\nA: %s\nB: %s", ra.Body, rb.Body)
+	}
+}
 
-	var semSchema map[string]any
-	_ = json.Unmarshal(valido, &semSchema)
-	semSchema["schema_version"] = 99
-	schema99, _ := json.Marshal(semSchema)
-	semSchema["schema_version"] = 1
-	semSchema["hash"] = "md5:abc"
-	hashRuim, _ := json.Marshal(semSchema)
-
-	enorme := []byte(`{"schema_version":1,"x":"` + strings.Repeat("a", 9<<20) + `"}`)
+func TestRecusasDeAutenticacao(t *testing.T) {
+	h, tok := ambiente(t)
+	m := registra(t, h, tok)
+	inv := inventario(t, "1")
+	corpoEnroll, _ := json.Marshal(protocol.EnrollRequest{Evidence: protocol.IdentityEvidence{OSFamily: "linux"}})
 
 	casos := []struct {
-		nome        string
-		caminho     string
-		contentType string
-		corpo       []byte
-		status      int
-		codigo      string
+		nome, caminho, bearer string
+		corpo                 []byte
 	}{
-		{"content-type errado", caminhoInv, "text/plain", valido, 415, "unsupported_media_type"},
-		{"json malformado", caminhoInv, "application/json", []byte(`{"schema_version":`), 400, "invalid_json"},
-		{"dados além do json", caminhoInv, "application/json", append(append([]byte{}, valido...), []byte(`{}`)...), 400, "invalid_json"},
-		{"schema desconhecido", caminhoInv, "application/json", schema99, 422, "unsupported_schema"},
-		{"hash fora do formato", caminhoInv, "application/json", hashRuim, 422, "invalid_hash"},
-		{"corpo grande demais", caminhoInv, "application/json", enorme, 413, "body_too_large"},
-		{"id inválido", "/api/v1/machines/-comeca-com-hifen/inventory", "application/json", valido, 400, "invalid_machine_id"},
+		{"envio sem credencial", "/api/v1/agent/inventory", "", inv},
+		{"envio com credencial inventada", "/api/v1/agent/inventory", "patchd_mac_inventada", inv},
+		{"envio com o token de enrollment", "/api/v1/agent/inventory", tok, inv},
+		{"enrollment sem token", "/api/v1/enroll", "", corpoEnroll},
+		{"enrollment com token inventado", "/api/v1/enroll", "patchd_enr_inventado", corpoEnroll},
+		{"enrollment com a credencial da máquina", "/api/v1/enroll", m.Credential, corpoEnroll},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			r := envia(h, "POST", c.caminho, c.contentType, c.corpo)
-			var e protocol.ErrorResponse
-			_ = json.Unmarshal(r.Body.Bytes(), &e)
-			if r.Code != c.status || e.Error.Code != c.codigo {
-				t.Errorf("esperado %d %s, veio %d %s", c.status, c.codigo, r.Code, r.Body)
+			r := envia(h, "POST", c.caminho, c.bearer, c.corpo)
+			if r.Code != http.StatusUnauthorized || r.Header().Get("WWW-Authenticate") == "" {
+				t.Errorf("esperado 401 com desafio Bearer, veio %d %s", r.Code, r.Body)
 			}
 		})
 	}
 }
 
-func TestCampoDesconhecidoEAceito(t *testing.T) {
-	var m map[string]any
-	_ = json.Unmarshal(inventario(t, "1"), &m)
-	m["campo_de_um_agente_mais_novo"] = map[string]any{"qualquer": 1}
-	corpo, _ := json.Marshal(m)
-
-	r := envia(novoServidor(), "POST", caminhoInv, "application/json", corpo)
-	if r.Code != http.StatusCreated {
-		t.Errorf("campos desconhecidos devem ser aceitos (compatibilidade com agentes mais novos): %d %s", r.Code, r.Body)
+func TestTokenEsgotado(t *testing.T) {
+	h, tok := ambiente(t) // 5 usos
+	for range 5 {
+		registra(t, h, tok)
+	}
+	corpo, _ := json.Marshal(protocol.EnrollRequest{Evidence: protocol.IdentityEvidence{OSFamily: "linux"}})
+	if r := envia(h, "POST", "/api/v1/enroll", tok, corpo); r.Code != http.StatusUnauthorized {
+		t.Errorf("sexto registro com token de 5 usos: esperado 401, veio %d", r.Code)
 	}
 }
 
-func TestMaquinaDesconhecida(t *testing.T) {
-	r := envia(novoServidor(), "GET", "/api/v1/machines/nunca-vista/inventory", "", nil)
-	if r.Code != http.StatusNotFound {
-		t.Errorf("esperado 404, veio %d", r.Code)
+func TestRotaAntigaComIDNaURLNaoExisteMais(t *testing.T) {
+	h, _ := ambiente(t)
+	r := envia(h, "POST", "/api/v1/machines/qualquer-id/inventory", "", inventario(t, "1"))
+	if r.Code != http.StatusMethodNotAllowed && r.Code != http.StatusNotFound {
+		t.Errorf("o envio com ID escolhido pelo cliente foi removido: veio %d", r.Code)
 	}
 }
 
-func TestScanEListaDeMaquinas(t *testing.T) {
-	h := novoServidor()
-	envia(h, "POST", caminhoInv, "application/json", inventario(t, "1"))
+func TestRejeicoesDeConteudo(t *testing.T) {
+	h, tok := ambiente(t)
+	m := registra(t, h, tok)
 
-	sim := true
-	scan := protocol.PatchScanReport{
-		SchemaVersion: protocol.PatchSchemaVersion,
-		ScannedAt:     time.Now().UTC(),
-		Scans:         []protocol.ScanResult{{Source: "apt", Missing: []protocol.MissingUpdate{}}},
-		Reboot:        &protocol.RebootStatus{Pending: &sim},
-	}
-	corpo, _ := json.Marshal(scan)
-	if r := envia(h, "POST", "/api/v1/machines/itom-teste/scan", "application/json", corpo); r.Code != http.StatusCreated {
-		t.Fatalf("envio da busca: %d %s", r.Code, r.Body)
-	}
+	var mapa map[string]any
+	_ = json.Unmarshal(inventario(t, "1"), &mapa)
+	mapa["schema_version"] = 99
+	schema99, _ := json.Marshal(mapa)
+	mapa["schema_version"] = 1
+	mapa["hash"] = "md5:abc"
+	hashRuim, _ := json.Marshal(mapa)
+	mapa["hash"] = "sha256:" + strings.Repeat("a", 64)
+	mapa["campo_de_um_agente_mais_novo"] = 1
+	comExtra, _ := json.Marshal(mapa)
 
-	r := envia(h, "GET", "/api/v1/machines", "", nil)
-	var lista []protocol.MachineSummary
-	if err := json.Unmarshal(r.Body.Bytes(), &lista); err != nil || len(lista) != 1 {
-		t.Fatalf("lista de máquinas: %v %s", err, r.Body)
+	casos := []struct {
+		nome   string
+		corpo  []byte
+		status int
+		codigo string
+	}{
+		{"json malformado", []byte(`{"schema_version":`), 400, "invalid_json"},
+		{"schema desconhecido", schema99, 422, "unsupported_schema"},
+		{"hash fora do formato", hashRuim, 422, "invalid_hash"},
+		{"campo desconhecido é aceito", comExtra, 201, ""},
 	}
-	m := lista[0]
-	if m.Hostname != "itom-teste" || m.OSName != "Ubuntu" || m.ScanReceivedAt == nil || m.RebootPending == nil || !*m.RebootPending {
-		t.Errorf("resumo errado: %+v", m)
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			r := envia(h, "POST", "/api/v1/agent/inventory", m.Credential, c.corpo)
+			var e protocol.ErrorResponse
+			_ = json.Unmarshal(r.Body.Bytes(), &e)
+			if r.Code != c.status || e.Error.Code != c.codigo {
+				t.Errorf("esperado %d %q, veio %d %s", c.status, c.codigo, r.Code, r.Body)
+			}
+		})
 	}
 }
 
-func TestMetodoNaoPermitido(t *testing.T) {
-	r := envia(novoServidor(), "DELETE", caminhoInv, "", nil)
-	if r.Code != http.StatusMethodNotAllowed {
-		t.Errorf("DELETE não existe nessa rota: esperado 405, veio %d", r.Code)
+func TestContentTypeETamanho(t *testing.T) {
+	h, tok := ambiente(t)
+	m := registra(t, h, tok)
+
+	req := httptest.NewRequest("POST", "/api/v1/agent/inventory", bytes.NewReader(inventario(t, "1")))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Authorization", "Bearer "+m.Credential)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("Content-Type errado: esperado 415, veio %d", rec.Code)
+	}
+
+	enorme := []byte(`{"schema_version":1,"x":"` + strings.Repeat("a", 9<<20) + `"}`)
+	if r := envia(h, "POST", "/api/v1/agent/inventory", m.Credential, enorme); r.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("corpo grande demais: esperado 413, veio %d", r.Code)
 	}
 }

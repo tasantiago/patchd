@@ -1,21 +1,25 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
-// Memory guarda o último relatório de cada máquina na memória do processo. É o
-// armazenamento da Aula 4.1: tudo se perde ao reiniciar. O PostgreSQL entra na 4.2,
-// cumprindo a mesma interface, sem mudar a API.
+// Memory guarda tudo na memória do processo. Serve para desenvolvimento e para os
+// testes da API; em produção, o armazenamento é o PostgreSQL (Aula 4.2).
 type Memory struct {
-	mu       sync.RWMutex
-	machines map[string]*memMachine
-	now      func() time.Time
+	mu          sync.RWMutex
+	machines    map[string]*memMachine
+	tokens      []*memToken
+	credentials map[string]string // hash da credencial (como texto) → ID da máquina
+	now         func() time.Time
 }
 
 type memMachine struct {
@@ -26,11 +30,17 @@ type memMachine struct {
 	lastSeenAt         time.Time
 }
 
+type memToken struct {
+	identity.EnrollmentToken
+	hash []byte
+}
+
 // NewMemory cria um armazenamento vazio.
 func NewMemory() *Memory {
 	return &Memory{
-		machines: map[string]*memMachine{},
-		now:      func() time.Time { return time.Now().UTC() },
+		machines:    map[string]*memMachine{},
+		credentials: map[string]string{},
+		now:         func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -122,4 +132,76 @@ func (m *Memory) Machines(ctx context.Context) ([]protocol.MachineSummary, error
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	return list, nil
+}
+
+// CreateEnrollmentToken guarda um token novo (só o hash) e devolve o ID dele.
+func (m *Memory) CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t := &memToken{hash: hash, EnrollmentToken: identity.EnrollmentToken{
+		ID: int64(len(m.tokens) + 1), Note: note, CreatedAt: m.now(), ExpiresAt: expiresAt.UTC(), MaxUses: maxUses,
+	}}
+	m.tokens = append(m.tokens, t)
+	return t.ID, nil
+}
+
+// EnrollmentTokens lista os tokens, do mais novo para o mais antigo.
+func (m *Memory) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	list := make([]identity.EnrollmentToken, 0, len(m.tokens))
+	for i := len(m.tokens) - 1; i >= 0; i-- {
+		list = append(list, m.tokens[i].EnrollmentToken)
+	}
+	return list, nil
+}
+
+// RevokeEnrollmentToken revoga um token. Devolve false se o ID não existe.
+func (m *Memory) RevokeEnrollmentToken(ctx context.Context, id int64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range m.tokens {
+		if t.ID == id {
+			if t.RevokedAt == nil {
+				now := m.now()
+				t.RevokedAt = &now
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Enroll consome um uso do token e registra a máquina com a credencial.
+func (m *Memory) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var tok *memToken
+	for _, t := range m.tokens {
+		if bytes.Equal(t.hash, tokenHash) {
+			tok = t
+		}
+	}
+	if tok == nil {
+		return fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
+	}
+	if st := tok.Status(m.now()); st != "válido" {
+		return fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
+	}
+	if _, exists := m.machines[nm.ID]; exists {
+		return fmt.Errorf("ID de máquina repetido: %s", nm.ID)
+	}
+	tok.Uses++
+	m.machine(nm.ID).lastSeenAt = m.now()
+	m.credentials[string(nm.CredentialHash)] = nm.ID
+	return nil
+}
+
+// MachineByCredential devolve a máquina dona da credencial.
+func (m *Memory) MachineByCredential(ctx context.Context, credentialHash []byte) (string, bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	id, ok := m.credentials[string(credentialHash)]
+	return id, ok, nil
 }

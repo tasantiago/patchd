@@ -4,9 +4,9 @@ import "time"
 
 // SubmitResponse é a resposta do servidor ao receber um relatório.
 type SubmitResponse struct {
-	Status     string    `json:"status"`      // stored (gravado) ou unchanged (hash igual ao último)
-	Hash       string    `json:"hash,omitempty"`        // hash do relatório recebido
-	ServerTime time.Time `json:"server_time"` // relógio do servidor, para o agente medir o desvio do seu
+	Status     string    `json:"status"`         // stored (gravado) ou unchanged (hash igual ao último)
+	Hash       string    `json:"hash,omitempty"` // hash do relatório recebido
+	ServerTime time.Time `json:"server_time"`    // relógio do servidor, para o agente medir o desvio do seu
 }
 
 // ErrorResponse é o corpo de toda resposta de erro da API.
