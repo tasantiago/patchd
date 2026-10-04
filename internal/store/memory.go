@@ -141,6 +141,18 @@ func (m *Memory) Machines(ctx context.Context) ([]protocol.MachineSummary, error
 	return list, nil
 }
 
+// CheckIn registra o contato periódico e diz se o inventário atual tem o hash informado.
+func (m *Memory) CheckIn(ctx context.Context, id, agentVersion, inventoryHash string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mm := m.machines[id]
+	if mm == nil {
+		return false, fmt.Errorf("máquina %s desconhecida", id)
+	}
+	mm.lastSeenAt = m.now()
+	return mm.inventory != nil && mm.inventory.Hash == inventoryHash, nil
+}
+
 // CreateEnrollmentToken guarda um token novo (só o hash) e devolve o ID dele.
 func (m *Memory) CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error) {
 	m.mu.Lock()

@@ -32,3 +32,17 @@ type MachineSummary struct {
 	ScanReceivedAt     *time.Time `json:"scan_received_at,omitempty"`     // última busca de atualizações recebida
 	RebootPending      *bool      `json:"reboot_pending,omitempty"`       // da última busca; null = não sabe
 }
+
+// CheckinRequest é o contato periódico do agente: barato, sem o inventário. O servidor
+// atualiza o último contato e diz se já tem o inventário com esse hash.
+type CheckinRequest struct {
+	AgentVersion  string    `json:"agent_version"`
+	InventoryHash string    `json:"inventory_hash"` // hash do inventário que o agente acabou de coletar
+	SentAt        time.Time `json:"sent_at"`        // relógio do agente, para o desvio
+}
+
+// CheckinResponse diz ao agente se ele precisa enviar o inventário.
+type CheckinResponse struct {
+	InventoryKnown bool      `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
+	ServerTime     time.Time `json:"server_time"`
+}

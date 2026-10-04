@@ -34,6 +34,8 @@ type Store interface {
 	Enroll(ctx context.Context, tokenHash []byte, m identity.NewMachine) ([]protocol.IdentityLink, error)
 	MachineByCredential(ctx context.Context, credentialHash []byte) (machineID string, found bool, err error)
 	IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error)
+	// CheckIn registra o contato periódico e diz se o inventário atual tem o hash informado.
+	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string) (inventoryKnown bool, err error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -59,6 +61,7 @@ func New(st Store, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	// Agente.
 	mux.HandleFunc("POST /api/v1/enroll", a.enroll)
+	mux.Handle("POST /api/v1/agent/checkin", a.machineAuth(a.checkin))
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
 	// Leitura (painel; sem autenticação até o Módulo 7).
