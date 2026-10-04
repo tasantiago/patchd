@@ -154,7 +154,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger, fsys 
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("migration %04d_%s: commit: %w", m.version, m.name, err)
 		}
-		logger.Info("migration aplicada", "version", m.version, "name", m.name)
+		logger.Info("migration aplicada", "migration", m.version, "name", m.name)
 	}
 	logger.Info("banco na versão atual", "schema_version", len(list))
 	return nil
