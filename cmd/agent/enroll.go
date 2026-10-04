@@ -33,7 +33,8 @@ const (
 
 // runEnroll registra a máquina no servidor e grava a credencial na pasta de dados.
 // Aceita as mesmas opções do agente (-server, -data-dir...). O token de enrollment vem
-// do ambiente, nunca de flag: flags aparecem na lista de processos e no histórico do shell.
+// de um arquivo (-enroll-token-file ou PATCHD_ENROLL_TOKEN_FILE) ou do ambiente, nunca
+// de flag: flags aparecem na lista de processos e no histórico do shell.
 func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agentVersion string) int {
 	cfg, err := loadAgentConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
@@ -58,11 +59,19 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 	} else if why != "" {
 		fmt.Fprintf(stderr, "patchd-agent: aviso: registrando de dentro de um container por PATCHD_ALLOW_CONTAINER=1 (só para desenvolvimento): %s\n", why)
 	}
-	token, err := enrollToken(look)
+	token, err := enrollToken(cfg.EnrollTokenFile, look)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return exitConfig
 	}
+
+	// A mesma trava do install: dois registros simultâneos criariam duas máquinas.
+	unlock, err := lockDataDir(cfg.DataDir, installLockWait, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
+		return exitRuntime
+	}
+	defer unlock()
 
 	// Já registrada: não registra de novo por engano (criaria outra máquina no servidor).
 	if c, err := credential.Load(cfg.DataDir); err == nil {
@@ -73,9 +82,24 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return exitRuntime
 	}
-	if err := credential.CheckWritable(cfg.DataDir); err != nil {
+
+	c, err := enrollMachine(cfg.ServerURL, cfg.DataDir, token, agentVersion, stderr)
+	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return exitRuntime
+	}
+	fmt.Fprintf(stderr, "patchd-agent: máquina registrada; credencial gravada em %s\n", credential.Path(cfg.DataDir))
+	fmt.Fprintln(stdout, c.MachineID)
+	return exitOK
+}
+
+// enrollMachine faz o registro: coleta as evidências, envia ao servidor e grava a
+// credencial. Quem chama já conferiu que a máquina não está registrada e segura a trava.
+func enrollMachine(serverURL, dataDir, token, agentVersion string, stderr io.Writer) (credential.Credential, error) {
+	// Antes do registro: sem isso, uma pasta sem permissão faria o servidor registrar a
+	// máquina e consumir um uso do token, e a credencial emitida se perderia.
+	if err := credential.CheckWritable(dataDir); err != nil {
+		return credential.Credential{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), enrollTimeout)
@@ -86,10 +110,9 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 		fmt.Fprintf(stderr, "patchd-agent: aviso: %s\n", p)
 	}
 
-	resp, err := postEnroll(ctx, cfg.ServerURL, token, protocol.EnrollRequest{AgentVersion: agentVersion, Evidence: ev})
+	resp, err := postEnroll(ctx, serverURL, token, protocol.EnrollRequest{AgentVersion: agentVersion, Evidence: ev})
 	if err != nil {
-		fmt.Fprintf(stderr, "patchd-agent: registro falhou: %v\n", err)
-		return exitRuntime
+		return credential.Credential{}, fmt.Errorf("registro falhou: %w", err)
 	}
 	if skew := time.Since(resp.ServerTime); skew > enrollMaxSkew || skew < -enrollMaxSkew {
 		fmt.Fprintf(stderr, "patchd-agent: aviso: o relógio desta máquina difere do servidor em %s\n", skew.Round(time.Second))
@@ -98,36 +121,31 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 	c := credential.Credential{
 		MachineID:  resp.MachineID,
 		Credential: resp.Credential,
-		ServerURL:  cfg.ServerURL,
+		ServerURL:  serverURL,
 		EnrolledAt: time.Now().UTC(),
 	}
-	if err := credential.Save(cfg.DataDir, c); err != nil {
+	if err := credential.Save(dataDir, c); err != nil {
 		// O servidor já registrou a máquina; sem a credencial, ela vira um registro órfão.
-		fmt.Fprintf(stderr, "patchd-agent: o servidor registrou a máquina %s, mas a credencial não foi gravada: %v\n", resp.MachineID, err)
-		return exitRuntime
+		return c, fmt.Errorf("o servidor registrou a máquina %s, mas a credencial não foi gravada: %w", resp.MachineID, err)
 	}
-
-	fmt.Fprintf(stderr, "patchd-agent: máquina registrada; credencial gravada em %s\n", credential.Path(cfg.DataDir))
-	fmt.Fprintln(stdout, resp.MachineID)
-	return exitOK
+	return c, nil
 }
 
-// enrollToken lê o token de PATCHD_ENROLL_TOKEN_FILE (preferido: o arquivo pode ser
-// apagado pelo instalador logo depois) ou de PATCHD_ENROLL_TOKEN.
-func enrollToken(look config.Lookup) (string, error) {
-	file, hasFile := look("PATCHD_ENROLL_TOKEN_FILE")
+// enrollToken lê o token do arquivo (file: -enroll-token-file ou PATCHD_ENROLL_TOKEN_FILE,
+// o preferido, porque o instalador pode apagá-lo logo depois) ou de PATCHD_ENROLL_TOKEN.
+func enrollToken(file string, look config.Lookup) (string, error) {
 	value, hasValue := look("PATCHD_ENROLL_TOKEN")
 	switch {
-	case hasFile && hasValue:
-		return "", errors.New("defina PATCHD_ENROLL_TOKEN_FILE ou PATCHD_ENROLL_TOKEN, não os dois")
-	case hasFile:
+	case file != "" && hasValue:
+		return "", errors.New("informe o token por arquivo (-enroll-token-file ou PATCHD_ENROLL_TOKEN_FILE) ou por PATCHD_ENROLL_TOKEN, não pelos dois")
+	case file != "":
 		data, err := os.ReadFile(file)
 		if err != nil {
-			return "", fmt.Errorf("PATCHD_ENROLL_TOKEN_FILE: %w", err)
+			return "", fmt.Errorf("arquivo do token de enrollment: %w", err)
 		}
 		value = string(data)
 	case !hasValue:
-		return "", errors.New("token de enrollment ausente: defina PATCHD_ENROLL_TOKEN_FILE ou PATCHD_ENROLL_TOKEN")
+		return "", errors.New("token de enrollment ausente: use -enroll-token-file, PATCHD_ENROLL_TOKEN_FILE ou PATCHD_ENROLL_TOKEN")
 	}
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, identity.EnrollmentPrefix) {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -63,6 +64,9 @@ func installedBinary() string {
 	}
 	return filepath.Join(pf, "patchd", "patchd-agent.exe")
 }
+
+// installedPath é o installedBinary(), com a mesma forma de função do Linux e do macOS.
+func installedPath() string { return installedBinary() }
 
 // copyBinary copia o executável atual para dest (temporário + renomeação).
 func copyBinary(dest string) error {
@@ -187,7 +191,6 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "o serviço %s não está instalado\n", serviceName)
 		return exitOK
 	}
-	defer s.Close()
 
 	if st, err := s.Query(); err == nil && st.State != svc.Stopped {
 		if _, err := s.Control(svc.Stop); err != nil {
@@ -201,10 +204,16 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
-	if err := s.Delete(); err != nil {
+	err = s.Delete()
+	// O Delete só marca o serviço para remoção: ele sai do SCM quando o último handle
+	// fecha. Por isso o handle fecha aqui, e não num defer, e a espera vem em seguida;
+	// sem ela, a reinstalação do install acharia o serviço ainda lá.
+	s.Close()
+	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: remover o serviço: %v\n", err)
 		return exitRuntime
 	}
+	waitServiceGone(m, 30*time.Second)
 
 	// O processo pode levar um instante para soltar o executável.
 	bin := installedBinary()
@@ -221,6 +230,93 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 	_ = os.Remove(filepath.Dir(bin)) // só sai se estiver vazia
 	fmt.Fprintf(stdout, "serviço %s removido; a pasta de dados e a credencial foram mantidas\n", serviceName)
 	return exitOK
+}
+
+// waitServiceGone espera o SCM terminar de remover o serviço (até limit).
+func waitServiceGone(m *mgr.Mgr, limit time.Duration) {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		s, err := m.OpenService(serviceName)
+		if err != nil {
+			return
+		}
+		s.Close()
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// requireAdmin recusa instalar sem elevação. Sem ela, o install criaria a pasta de dados
+// como usuário comum e aplicaria nela uma DACL que tira o acesso do próprio usuário.
+func requireAdmin(stderr io.Writer) bool {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		fmt.Fprintln(stderr, "patchd-agent: instalar o agente exige um prompt elevado (Executar como administrador) ou a conta SYSTEM")
+		return false
+	}
+	return true
+}
+
+// serviceCommandLine reproduz a linha de comando que o mgr.CreateService grava no SCM.
+func serviceCommandLine(bin string, args []string) string {
+	s := syscall.EscapeArg(bin)
+	for _, a := range args {
+		s += " " + syscall.EscapeArg(a)
+	}
+	return s
+}
+
+// installedState compara o serviço e o executável instalados com os que este install
+// criaria: iguais, não há o que fazer; diferentes, o install reinstala.
+func installedState(cfg agentConfig, args []string) (serviceState, error) {
+	m, err := mgr.Connect()
+	if err != nil {
+		return 0, fmt.Errorf("gerenciador de serviços: %w", err)
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(serviceName)
+	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
+		return serviceMissing, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer s.Close()
+	c, err := s.Config()
+	if err != nil {
+		return 0, err
+	}
+	bin := installedBinary()
+	same, err := sameExecutable(bin)
+	if err != nil {
+		return 0, err
+	}
+	want := serviceCommandLine(bin, append([]string{"service", "run"}, args...))
+	if same && c.BinaryPathName == want && c.StartType == mgr.StartAutomatic {
+		return serviceCurrent, nil
+	}
+	return serviceOutdated, nil
+}
+
+// serviceStart inicia o serviço se estiver parado (depois de uma falha que esgotou a
+// recuperação, por exemplo). Em execução ou iniciando, não faz nada.
+func serviceStart() error {
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(serviceName)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	st, err := s.Query()
+	if err != nil {
+		return err
+	}
+	if st.State == svc.Stopped {
+		return s.Start()
+	}
+	return nil
 }
 
 // handler liga o laço de check-in ao gerenciador de serviços do Windows.

@@ -27,6 +27,9 @@ const (
 	serviceManagerEnv = "PATCHD_SERVICE_MANAGER"
 )
 
+// installedPath é o installedBinary, com a mesma forma de função do Windows.
+func installedPath() string { return installedBinary }
+
 func isServiceProcess() bool { return os.Getenv(serviceManagerEnv) != "" }
 
 // runAsService: no systemd e no launchd, a parada chega como SIGTERM; depois do prazo do
@@ -45,8 +48,8 @@ func protectDataDir(dir string) error {
 	return os.Chmod(dir, 0o700)
 }
 
-// requireRoot recusa instalar ou remover o serviço sem root.
-func requireRoot(stderr io.Writer) bool {
+// requireAdmin recusa instalar ou remover o serviço sem root.
+func requireAdmin(stderr io.Writer) bool {
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(stderr, "patchd-agent: instalar ou remover o serviço exige root (use sudo)")
 		return false

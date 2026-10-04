@@ -50,6 +50,10 @@ for arch in amd64 arm64; do
   echo "ok  $saida"
 done
 
+# O script de instalação da frota Windows vai junto: dist/ vira o pacote do ITOM e da GPO.
+cp deploy/agent/windows/instalar.cmd dist/
+echo "ok  dist/instalar.cmd"
+
 # Hashes para conferência ao copiar os binários para as máquinas de teste.
 (cd dist && sha256sum -- * > SHA256SUMS)
 echo "versão: $VERSAO"
