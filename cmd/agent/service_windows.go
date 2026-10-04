@@ -271,3 +271,11 @@ func runAsService(logger *slog.Logger, loop func(context.Context) int) int {
 	}
 	return exitOK
 }
+
+// serviceLog: sob o SCM não há terminal; o log vai para o arquivo rotativo da pasta de dados.
+func serviceLog(dataDir string, asService bool, stderr io.Writer) (io.Writer, func(), error) {
+	if !asService {
+		return stderr, func() {}, nil
+	}
+	return rotatingLog(dataDir)
+}

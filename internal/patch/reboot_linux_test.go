@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,5 +83,19 @@ func TestLinuxRebootContainerSemBoot(t *testing.T) {
 	st, _ := s.Reboot(context.Background())
 	if st.Pending != nil || st.Signals[0].Error == "" {
 		t.Errorf("sem /boot (container), o estado é desconhecido: %+v", st)
+	}
+}
+
+func TestLinuxRebootEmContainerEhDesconhecido(t *testing.T) {
+	// A situação da Aula 4.2: Debian em container, sem /run/reboot-required.
+	s := scannerDeReboot(map[string]string{
+		"/etc/os-release": "ID=debian\n",
+		runningKernelPath: "6.6.87.2-microsoft-standard-WSL2\n",
+	}, nil)
+	s.inContainer = func() (bool, string) { return true, "/.dockerenv" }
+
+	st, err := s.Reboot(context.Background())
+	if err != nil || st.Pending != nil || len(st.Signals) != 0 || !strings.Contains(st.Note, "container") {
+		t.Errorf("em container, o reinício pendente é desconhecido, com nota: %+v %v", st, err)
 	}
 }

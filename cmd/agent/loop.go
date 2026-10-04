@@ -11,6 +11,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/agent"
 	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/credential"
 	"github.com/tasantiago/patchd/internal/inventory"
 	"github.com/tasantiago/patchd/internal/patch"
@@ -24,12 +25,42 @@ type loopOptions struct {
 	ServerURL      string // vazio: usa o servidor gravado na credencial
 	OfflineCatalog string
 	Interval       time.Duration
+	AllowContainer bool // PATCHD_ALLOW_CONTAINER=1: só para desenvolvimento
+}
+
+// inContainer é a detecção de container; os testes a substituem.
+var inContainer = platform.InContainer
+
+// allowContainer lê a exceção de desenvolvimento PATCHD_ALLOW_CONTAINER=1.
+func allowContainer(look config.Lookup) bool {
+	v, ok := look("PATCHD_ALLOW_CONTAINER")
+	return ok && v == "1"
+}
+
+// containerCheck diz se o agente está num container (why) e se deve recusar (refuse).
+// Dentro de um container, os arquivos são os da imagem e o kernel é o do host (Aula 2.1):
+// o inventário, a busca e o reinício pendente descreveriam uma máquina que não existe, e
+// o enrollment criaria no servidor uma "máquina" que é só um container.
+func containerCheck(allow bool) (why string, refuse bool) {
+	in, why := inContainer()
+	if !in {
+		return "", false
+	}
+	return why, !allow
 }
 
 // runLoop roda o laço de check-in até o contexto acabar. É o mesmo laço no terminal
 // (Ctrl+C) e como serviço (parada pedida pelo gerenciador de serviços).
 func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	info := buildinfo.Get()
+
+	if why, refuse := containerCheck(opts.AllowContainer); refuse {
+		logger.Error("o agente não roda dentro de container: inventário, busca e reinício pendente descreveriam a imagem e o host",
+			"evidence", why)
+		return exitConfig
+	} else if why != "" {
+		logger.Warn("rodando dentro de container por PATCHD_ALLOW_CONTAINER=1 (só para desenvolvimento)", "evidence", why)
+	}
 
 	cred, err := credential.Load(opts.DataDir)
 	if errors.Is(err, credential.ErrNotEnrolled) {

@@ -83,6 +83,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	// Campos presentes em todas as linhas de log do agente.
 	logger = logger.With("app", "patchd-agent", "version", info.Version)
 	slog.SetDefault(logger)
+	if why, _ := containerCheck(true); why != "" {
+		logger.Warn("rodando dentro de container: o inventário e a busca descrevem a imagem e o host, não uma máquina", "evidence", why)
+	}
 
 	if cfg.Inventory {
 		// JSON limpo em stdout; eventuais logs continuam em stderr.
@@ -112,5 +115,6 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		ServerURL:      cfg.ServerURL,
 		OfflineCatalog: cfg.OfflineCatalog,
 		Interval:       cfg.CheckinInterval,
+		AllowContainer: allowContainer(look),
 	})
 }
