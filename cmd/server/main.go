@@ -35,13 +35,16 @@ func main() {
 func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
-	// Subcomandos de administração: "patchd-server token create|list|revoke" e
-	// "patchd-server release current|publish|withdraw".
+	// Subcomandos de administração: "patchd-server token create|list|revoke",
+	// "patchd-server release current|publish|withdraw" e "patchd-server catalog sync|list|builds".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "release" {
 		return runRelease(args[1:], look, stdout, stderr, info.Version)
+	}
+	if len(args) > 0 && args[0] == "catalog" {
+		return runCatalog(args[1:], look, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
