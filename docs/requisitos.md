@@ -6,6 +6,7 @@ Legenda de status:
 - **decidido**: escolha feita explicitamente.
 - **padrão**: adotado pelo valor sugerido na Aula 0.4; pode ser revisto a qualquer momento.
 - **pendente**: depende de um fato do ambiente ainda não levantado.
+- **futuro**: aceito para depois da v1; não entra no escopo do go-live.
 
 Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou certificado do ambiente real é escrito aqui. Esses valores ficam em variáveis de ambiente e no `.env` local (ignorado pelo git).
 
@@ -47,6 +48,8 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-32** O inventário de software vem das chaves Uninstall, nunca de um gerenciador de pacotes de terceiros.
 - **RF-33** O servidor pode distribuir LCU e .NET do próprio cache, com instalação pelo agente via DISM, ativada por anel, como substituto gradual do WSUS.
 - **RF-34** Lista de aplicativos gerenciados definida pela equipe; nada é instalado só por existir no catálogo.
+- **RF-35** Self-service: portal em que o usuário escolhe, entre os aplicativos homologados para o SO da própria máquina, o que quer instalar; o pedido vira job e o agente instala como SYSTEM, sem o usuário ser administrador. Com aprovação opcional por aplicativo, limite de pedidos e auditoria. **futuro (depois do go-live)**
+- **RF-36** Usuário com sessão ativa no inventário, para o vínculo usuário × máquina do self-service. **futuro**
 
 ## Não funcionais
 
