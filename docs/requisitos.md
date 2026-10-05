@@ -51,6 +51,8 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-35** Self-service: portal em que o usuário escolhe, entre os aplicativos homologados para o SO da própria máquina, o que quer instalar; o pedido vira job e o agente instala como SYSTEM, sem o usuário ser administrador. Com aprovação opcional por aplicativo, limite de pedidos e auditoria. **futuro (depois do go-live)**
 - **RF-36** Usuário com sessão ativa no inventário, para o vínculo usuário × máquina do self-service. **futuro**
 
+- **RF-37** Duas instâncias ativas: uma na rede interna e uma na nuvem, para quem está fora da rede (home office, viagem). O agente conhece os dois endereços e usa o disponível; os dados convergem para a instância interna, dona das decisões (P-01). A credencial vale para a implantação do patchd, não para um endereço. **futuro**
+
 ## Não funcionais
 
 - **RNF-01** Plataformas: Windows 10/11 amd64 (arm64 apenas compila); Ubuntu 26.04 e Fedora 44, amd64 e arm64; macOS 13 ou superior, arm64 e amd64 (piso imposto pelo Go 1.27).
@@ -65,6 +67,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RNF-10** Português do Brasil em logs, mensagens e painel.
 - **RNF-11** Cache com limite de espaço e limpeza por idade. **pendente**
 - **RNF-12** "Sem dado recente" após 7 dias sem check-in válido. **padrão**
+- **RNF-13** Instância exposta à internet: TLS obrigatório, registro de máquinas só pela rede interna, limite de requisições por IP, avaliação de certificado de cliente (mTLS) e conformidade com a política do tribunal para dados em nuvem pública. **futuro**
 
 ## Restrições do ambiente
 
