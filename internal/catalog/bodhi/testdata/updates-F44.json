@@ -1,0 +1,58 @@
+{
+  "updates": [
+    {
+      "alias": "FEDORA-2026-35b989661c",
+      "title": "chromium-154.0.8037.92-1.fc44",
+      "type": "security",
+      "severity": "urgent",
+      "status": "stable",
+      "date_submitted": "2026-10-03 09:08:51",
+      "date_pushed": "2026-10-05 01:05:36",
+      "date_stable": "2026-10-05 01:05:36",
+      "date_modified": null,
+      "release": {"name": "F44", "version": "44", "id_prefix": "FEDORA"},
+      "builds": [{"nvr": "chromium-154.0.8037.92-1.fc44", "epoch": 0, "type": "rpm", "signed": true}],
+      "bugs": [
+        {"bug_id": 2544457, "security": true, "title": "CVE-2026-102299 CVE-2026-102300 CVE-2026-102301 CVE-2026-102302 CVE-2026-102303 CVE-2026-102304 CVE-2026-102305 CVE-2026-102306 CVE-2026-102307 CVE-2026-102308 CVE-2026-102309 CVE-2026-102310 CVE-2026-102311 ... chromium: various flaws [epel-all]"},
+        {"bug_id": 2544459, "security": true, "title": "CVE-2026-102299 CVE-2026-102300 CVE-2026-102301 CVE-2026-102302 CVE-2026-102303 CVE-2026-102304 CVE-2026-102305 CVE-2026-102306 CVE-2026-102307 CVE-2026-102308 CVE-2026-102309 CVE-2026-102310 CVE-2026-102311 ... chromium: various flaws [fedora-all]"},
+        {"bug_id": 2544652, "security": true, "title": "CVE-2026-95274 CVE-2026-95275 CVE-2026-95276 CVE-2026-95277 CVE-2026-95278 CVE-2026-95279 CVE-2026-95280 CVE-2026-95281 CVE-2026-95282 CVE-2026-95283 CVE-2026-95284 CVE-2026-95285 CVE-2026-95286 CVE-2026-95287 ... chromium: various flaws [fedora-all]"},
+        {"bug_id": 2544667, "security": true, "title": "CVE-2026-95274 CVE-2026-95275 CVE-2026-95276 CVE-2026-95277 CVE-2026-95278 CVE-2026-95279 CVE-2026-95280 CVE-2026-95281 CVE-2026-95282 CVE-2026-95283 CVE-2026-95284 CVE-2026-95285 CVE-2026-95286 CVE-2026-95287 ... chromium: various flaws [epel-all]"}
+      ],
+      "comments": [{"text": "This update has been pushed to stable."}]
+    },
+    {
+      "alias": "FEDORA-2026-0000000001",
+      "title": "openssl-3.5.4-2.fc44 python-cryptography-45.0.7-2.fc44",
+      "severity": "high",
+      "date_pushed": "2026-10-02 18:00:00",
+      "date_stable": "2026-10-02 18:00:00",
+      "date_modified": "2026-10-03 10:00:00",
+      "release": {"name": "F44"},
+      "builds": [
+        {"nvr": "openssl-3.5.4-2.fc44", "epoch": 1, "type": "rpm"},
+        {"nvr": "python-cryptography-45.0.7-2.fc44", "epoch": null, "type": "rpm"}
+      ],
+      "bugs": [
+        {"bug_id": 1, "security": true, "title": "CVE-2026-42772 openssl: exemplo [fedora-all]"},
+        {"bug_id": 2, "security": false, "title": "CVE-2099-0001 citada num bug que não é de segurança"}
+      ]
+    },
+    {
+      "alias": "FEDORA-FLATPAK-2026-0000000002",
+      "title": "firefox-flatpak-150.0-1",
+      "severity": "medium",
+      "date_pushed": null,
+      "date_stable": null,
+      "release": {"name": "F44"},
+      "builds": [
+        {"nvr": "firefox-flatpak-150.0-1", "epoch": 0, "type": "flatpak"},
+        {"nvr": "sem-hifen", "epoch": 0, "type": "rpm"}
+      ],
+      "bugs": []
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "rows_per_page": 100,
+  "total": 3
+}

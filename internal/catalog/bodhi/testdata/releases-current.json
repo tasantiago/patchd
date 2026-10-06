@@ -1,0 +1,15 @@
+{
+  "releases": [
+    {"name": "EPEL-10.2", "long_name": "Fedora EPEL 10.2", "version": "10.2", "id_prefix": "FEDORA-EPEL", "dist_tag": "epel10.2", "state": "current"},
+    {"name": "EPEL-9N", "long_name": "Fedora EPEL 9 Next", "version": "9", "id_prefix": "FEDORA-EPEL-NEXT", "dist_tag": "epel9-next", "state": "current"},
+    {"name": "F43", "long_name": "Fedora 43", "version": "43", "id_prefix": "FEDORA", "dist_tag": "f43", "state": "current"},
+    {"name": "F43C", "long_name": "Fedora 43 Containers", "version": "43", "id_prefix": "FEDORA-CONTAINER", "dist_tag": "f43-container", "state": "current"},
+    {"name": "F43F", "long_name": "Fedora 43 Flatpaks", "version": "43", "id_prefix": "FEDORA-FLATPAK", "dist_tag": "f43-flatpak", "state": "current"},
+    {"name": "F44", "long_name": "Fedora 44", "version": "44", "id_prefix": "FEDORA", "dist_tag": "f44", "state": "current"},
+    {"name": "F44F", "long_name": "Fedora 44 Flatpaks", "version": "44", "id_prefix": "FEDORA-FLATPAK", "dist_tag": "f44-flatpak", "state": "current"}
+  ],
+  "page": 1,
+  "pages": 1,
+  "rows_per_page": 100,
+  "total": 7
+}
