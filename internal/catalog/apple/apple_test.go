@@ -125,3 +125,29 @@ func TestParseSOFA(t *testing.T) {
 		t.Errorf("explorada fora do mapa: %+v %v", f.Releases, err)
 	}
 }
+
+// O hash do gdmf depende do conteúdo, não da forma da resposta.
+func TestGDMFHash(t *testing.T) {
+	a := `{"PublicAssetSets": {"macOS": [
+	  {"ProductVersion": "26.7.1", "Build": "25G241", "PostingDate": "2026-09-28", "SupportedDevices": ["J1", "J2"]},
+	  {"ProductVersion": "15.8.1", "Build": "24H32", "PostingDate": "2026-09-28", "SupportedDevices": ["J1"]}]}}`
+	// A mesma coisa em outra ordem, com outra formatação e modelos listados em outra ordem.
+	b := `{"PublicAssetSets":{"macOS":[{"SupportedDevices":["J1"],"Build":"24H32","ProductVersion":"15.8.1","PostingDate":"2026-09-28"},
+	  {"ProductVersion":"26.7.1","Build":"25G241","PostingDate":"2026-09-28","SupportedDevices":["J2","J1"]}]},"iOS":[]}`
+	// Um modelo a mais no 26.7.1: o conteúdo mudou.
+	c := strings.Replace(a, `["J1", "J2"]`, `["J1", "J2", "J3"]`, 1)
+
+	hash := func(s string) string {
+		vs, err := ParseGDMF(strings.NewReader(s))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return GDMFHash(vs)
+	}
+	if hash(a) != hash(b) {
+		t.Error("mesmo conteúdo, hash diferente")
+	}
+	if hash(a) == hash(c) || len(hash(a)) != 64 {
+		t.Error("conteúdo diferente, mesmo hash")
+	}
+}

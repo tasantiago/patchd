@@ -3,9 +3,7 @@ package apple
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -51,7 +49,9 @@ func NewClient(userAgent string) (*Client, error) {
 	}, nil
 }
 
-// FetchGDMF baixa e lê o gdmf. O hash é o SHA-256 do corpo: o gdmf não tem campo de versão.
+// FetchGDMF baixa e lê o gdmf. O gdmf não tem campo de versão, e o corpo muda de uma
+// resposta para outra sem o conteúdo mudar (Aula 6.2, parte 4: "atualizado" com as mesmas
+// dez versões). Por isso o hash é o de GDMFHash, sobre o conteúdo já reduzido.
 func (c *Client) FetchGDMF(ctx context.Context) ([]GDMFVersion, string, error) {
 	data, err := c.get(ctx, c.GDMF, c.GDMFURL)
 	if err != nil {
@@ -61,8 +61,7 @@ func (c *Client) FetchGDMF(ctx context.Context) ([]GDMFVersion, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	sum := sha256.Sum256(data)
-	return vs, hex.EncodeToString(sum[:]), nil
+	return vs, GDMFHash(vs), nil
 }
 
 // FetchSOFA baixa e lê o feed do SOFA.
