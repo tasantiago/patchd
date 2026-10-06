@@ -82,3 +82,73 @@ func TestClient(t *testing.T) {
 		t.Errorf("limite de tamanho: %v", err)
 	}
 }
+
+// Como no laboratório: a conexão cai no meio da resposta, ou o Bodhi devolve 503. O
+// cliente repete; um 400 não se repete.
+func TestClientRepete(t *testing.T) {
+	releases, err := os.ReadFile("testdata/releases-current.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var (
+		pedidos int
+		falhas  int    // quantos pedidos falham antes do sucesso
+		modo    string // "reset", "503" ou "400"
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pedidos++
+		if pedidos <= falhas {
+			switch modo {
+			case "reset":
+				// Cabeçalhos e metade do corpo, depois a conexão cai.
+				w.Header().Set("Content-Length", "100000")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(releases[:50])
+				conn, _, _ := w.(http.Hijacker).Hijack()
+				conn.Close()
+				return
+			case "503":
+				http.Error(w, "indisponível", http.StatusServiceUnavailable)
+				return
+			case "400":
+				http.Error(w, "pedido ruim", http.StatusBadRequest)
+				return
+			}
+		}
+		_, _ = w.Write(releases)
+	}))
+	defer srv.Close()
+	c := NewClient("patchd-teste")
+	c.BaseURL = srv.URL
+	c.RetryWait = time.Millisecond
+	ctx := context.Background()
+
+	for _, caso := range []struct {
+		modo         string
+		falhas       int
+		querErro     bool
+		querPedidos  int
+		trechoDoErro string
+	}{
+		{"reset", 2, false, 3, ""},
+		{"503", 3, false, 4, ""},
+		{"503", 4, true, 4, "(4 tentativas)"},
+		{"400", 1, true, 1, "400"},
+	} {
+		pedidos, falhas, modo = 0, caso.falhas, caso.modo
+		_, err := c.Releases(ctx)
+		if (err != nil) != caso.querErro || pedidos != caso.querPedidos || (err != nil && !strings.Contains(err.Error(), caso.trechoDoErro)) {
+			t.Errorf("%s com %d falhas: erro=%v, %d pedidos (esperados %d)", caso.modo, caso.falhas, err, pedidos, caso.querPedidos)
+		}
+	}
+
+	// Contexto cancelado durante a espera: para na hora.
+	pedidos, falhas, modo = 0, 10, "503"
+	c.RetryWait = time.Hour
+	ctx2, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	inicio := time.Now()
+	if _, err := c.Releases(ctx2); err == nil || time.Since(inicio) > 5*time.Second || !strings.Contains(err.Error(), "interrompido") {
+		t.Errorf("cancelamento: %v em %s", err, time.Since(inicio))
+	}
+}
