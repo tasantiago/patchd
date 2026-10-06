@@ -17,3 +17,7 @@
 # Atualização do agente (Aula 5.4): a chave privada e a pasta de versões nunca entram no git
 *.key
 /releases/
+
+# Scripts de aplicação das aulas e marcas de download do Windows (WSL): nunca entram no git
+/aula-*.sh
+*:Zone.Identifier
