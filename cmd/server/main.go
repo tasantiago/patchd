@@ -36,7 +36,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
-	// "patchd-server release current|publish|withdraw" e "patchd-server catalog sync|list|builds|usn".
+	// "patchd-server release current|publish|withdraw" e "patchd-server catalog sync|list|builds|usn|fedora".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}

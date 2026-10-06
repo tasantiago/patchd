@@ -128,5 +128,5 @@ O servidor baixa os catálogos e cruza com o inventário localmente: o inventár
 |---|---|---|---|
 | MSRC (Windows) | `https://api.msrc.microsoft.com/cvrf/v3.0` | `CurrentReleaseDate` da lista `/updates` (a API responde `no-store`, sem ETag) | Documentos são revisados depois de publicados, inclusive meses antigos com KBs novos |
 | Ubuntu (USN) | `https://storage.googleapis.com/osv-vulnerabilities/Ubuntu/` | `modified_id.csv` (data com nanossegundos, guardada como texto) | Só a série `USN-*` mede conformidade; `UBUNTU-CVE-*` inclui o que não tem correção. Versões com época, como vieram |
-| Fedora | Bodhi (`https://bodhi.fedoraproject.org`) | `pushed_since` (o `modified_since` ignora updates nunca editados) | Parte 3 da Aula 6.2. CVEs só nos títulos dos bugs, cortados com `...` |
+| Fedora | Bodhi (`https://bodhi.fedoraproject.org`), versões `F<n>` em `current` | `pushed_since` a partir da maior `date_pushed` guardada, menos 24 h (o `modified_since` ignora updates nunca editados); `-full` baixa tudo de novo | CVEs só nos títulos dos bugs de segurança, cortados com `...`: lista marcada como incompleta. Builds pelo NVR do pacote fonte, com a época |
 | Apple | `gdmf.apple.com` (versões; raiz própria da Apple) e SOFA (CVEs e KEV) | `UpdateHash` do SOFA | Parte 4 da Aula 6.2. O `gdmf` lista versões sem suporte de segurança |

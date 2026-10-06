@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/catalog/bodhi"
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
 	"github.com/tasantiago/patchd/internal/catalog/osv"
 	"github.com/tasantiago/patchd/internal/config"
@@ -21,20 +22,25 @@ import (
 const catalogUsage = `uso: patchd-server catalog <comando> [opções]
 
 comandos:
-  sync [-source msrc,ubuntu] [-months N] [-max N] [-workers N]
+  sync [-source msrc,ubuntu,fedora] [-months N] [-max N] [-workers N] [-full]
                             baixa o que é novo ou foi revisado em cada fonte (padrão: todas)
                               -months: janela de meses do MSRC (padrão 12)
                               -max: teto de USNs baixadas nesta execução (padrão 0, sem teto)
                               -workers: downloads simultâneos do Ubuntu (padrão 4)
-  list                      lista os documentos do MSRC e resume o catálogo do Ubuntu
+                              -full: baixa de novo todos os updates do Fedora, ignorando
+                                     o ponto de parada (pega bugs ligados depois do stable)
+  list                      lista os documentos do MSRC e resume o Ubuntu e o Fedora
   builds [-product PREFIXO] maior build corrigido por produto e documento (padrão "Windows")
   usn -package NOME [-release VERSÃO]
                             avisos do Ubuntu de um pacote fonte; -release 26.04 filtra
                             pela versão (sem o Ubuntu Pro)
+  fedora -package NOME [-release F44]
+                            updates de segurança do Fedora de um pacote fonte
 
 A URL do banco vem da mesma configuração do servidor (PATCHD_DATABASE_URL ou _FILE).
 PATCHD_MSRC_URL troca a API do MSRC por outro endereço (padrão: https://api.msrc.microsoft.com/cvrf/v3.0).
 PATCHD_OSV_URL troca o bucket do OSV por outro endereço (padrão: https://storage.googleapis.com/osv-vulnerabilities).
+PATCHD_BODHI_URL troca o Bodhi por outro endereço (padrão: https://bodhi.fedoraproject.org).
 `
 
 // runCatalog administra o catálogo de segurança direto no banco.
@@ -56,12 +62,13 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	fs := flag.NewFlagSet("catalog "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	months := fs.Int("months", 12, "janela de meses do MSRC no sync")
-	sources := fs.String("source", "msrc,ubuntu", "fontes do sync, separadas por vírgula")
+	sources := fs.String("source", "msrc,ubuntu,fedora", "fontes do sync, separadas por vírgula")
 	maxUSN := fs.Int("max", 0, "teto de USNs baixadas no sync (0: sem teto)")
 	workers := fs.Int("workers", 4, "downloads simultâneos do Ubuntu no sync")
 	product := fs.String("product", "Windows", "prefixo do nome do produto no builds")
-	pkg := fs.String("package", "", "pacote fonte no usn")
-	release := fs.String("release", "", "versão do Ubuntu no usn, ex.: 26.04")
+	full := fs.Bool("full", false, "Fedora: baixa todos os updates de novo no sync")
+	pkg := fs.String("package", "", "pacote fonte no usn e no fedora")
+	release := fs.String("release", "", "versão no usn (26.04) e no fedora (F44)")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 		fmt.Fprint(stderr, catalogUsage)
 		return exitConfig
@@ -81,15 +88,19 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	wanted := map[string]bool{}
 	for _, s := range strings.Split(*sources, ",") {
 		switch s = strings.TrimSpace(s); s {
-		case "msrc", "ubuntu":
+		case "msrc", "ubuntu", "fedora":
 			wanted[s] = true
 		default:
-			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc e/ou ubuntu)\n", s)
+			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu e/ou fedora)\n", s)
 			return exitConfig
 		}
 	}
-	if args[0] == "usn" && *pkg == "" {
-		fmt.Fprintln(stderr, "patchd-server: o usn exige -package (o pacote fonte, ex.: openssl)")
+	if (args[0] == "usn" || args[0] == "fedora") && *pkg == "" {
+		fmt.Fprintf(stderr, "patchd-server: o %s exige -package (o pacote fonte, ex.: openssl)\n", args[0])
+		return exitConfig
+	}
+	if args[0] == "fedora" && *release != "" && !bodhi.ValidRelease(*release) {
+		fmt.Fprintf(stderr, "patchd-server: -release do fedora tem a forma F44 (recebido %q)\n", *release)
 		return exitConfig
 	}
 
@@ -145,6 +156,21 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 			}
 			failed = failed || res.Failed > 0
 		}
+		if wanted["fedora"] {
+			src := bodhi.NewClient(ua)
+			if u, ok := look("PATCHD_BODHI_URL"); ok && u != "" {
+				src.BaseURL = u
+			}
+			fmt.Fprintln(stdout, "Fedora (Bodhi):")
+			n, nfail, err := syncFedora(ctx, src, st, *full, stdout)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				failed = true
+			} else {
+				fmt.Fprintf(stdout, "  fedora: %d update(s) gravado(s), %d versão(ões) com falha\n", n, nfail)
+				failed = failed || nfail > 0
+			}
+		}
 		// Cada fonte roda mesmo que a anterior falhe; o código de saída diz se algo falhou.
 		if failed {
 			return exitRuntime
@@ -174,6 +200,19 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		}
 		fmt.Fprintf(stdout, "\nUbuntu: %d USNs (mais %d retiradas), %d correções (ecossistema × pacote fonte), %d CVEs distintas; USN mais nova publicada em %s (UTC)\n",
 			u.USNs, u.Withdrawn, u.Fixes, u.CVEs, newest)
+		fsum, err := st.FedoraSummary(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		for _, f := range fsum {
+			last := "-"
+			if !f.LastPushed.IsZero() {
+				last = f.LastPushed.Format("2006-01-02 15:04")
+			}
+			fmt.Fprintf(stdout, "Fedora %s: %d updates de segurança (%d com CVEs incompletas), %d CVEs distintas; último publicado em %s (UTC)\n",
+				f.Release, f.Updates, f.Partial, f.CVEs, last)
+		}
 		return exitOK
 	case "builds":
 		bs, err := st.MSRCBuilds(ctx, *product)
@@ -185,6 +224,31 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		fmt.Fprintln(tw, "PRODUTO\tDOCUMENTO\tBUILD CORRIGIDO\tKB")
 		for _, b := range bs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", b.Product, b.Document, b.Build, b.KBs)
+		}
+		tw.Flush()
+		return exitOK
+	case "fedora":
+		fx, err := st.FedoraFixes(ctx, *pkg, *release)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		if len(fx) == 0 {
+			fmt.Fprintf(stdout, "nenhum update de segurança para o pacote fonte %q\n", *pkg)
+			return exitOK
+		}
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "UPDATE\tVERSÃO\tESTÁVEL (UTC)\tSEVERIDADE\tBUILD (ÉPOCA:NVR)\tCVEs")
+		for _, f := range fx {
+			stable := "-"
+			if !f.Stable.IsZero() {
+				stable = f.Stable.Format("2006-01-02")
+			}
+			cves := fmt.Sprint(f.CVEs)
+			if f.CVEsPartial {
+				cves += "+ (incompleta)"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d:%s\t%s\n", f.Alias, f.Release, stable, f.Severity, f.Epoch, f.NVR, cves)
 		}
 		tw.Flush()
 		return exitOK
