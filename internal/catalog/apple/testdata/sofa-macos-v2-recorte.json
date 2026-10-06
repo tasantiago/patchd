@@ -1,0 +1,482 @@
+{
+ "SchemaVersion": "2026.04.11.2",
+ "Version": "2.0",
+ "UpdateHash": "cf08cfa704e292ab0074ab63a53317f86d08defbf2599b101650d4e3a6a153e6",
+ "LastCheck": "2026-10-05T01:19:31.109786633+00:00",
+ "OSVersions": [
+  {
+   "OSVersion": "Golden Gate 27",
+   "Latest": {
+    "UpdateName": "macOS Golden Gate 27.0.1",
+    "ProductName": "macOS",
+    "ProductVersion": "27.0.1",
+    "Build": "26A5434",
+    "AllBuilds": [
+     "26A5434",
+     "26A434"
+    ],
+    "ReleaseDate": "2026-09-28T00:00:00Z",
+    "ExpirationDate": "2027-01-03",
+    "ReleaseType": "OS",
+    "SecurityInfo": "https://support.apple.com/en-us/100100",
+    "SecurityInfoContext": "macOS Golden Gate has been updated to version 27.0.1, released on September 28, 2026. This update has no published CVE entries and is the most recent approved version. This update comes 14 days after the previous release.",
+    "ActivelyExploitedCVEs": [],
+    "UniqueCVEsCount": 0,
+    "DaysSincePreviousRelease": 14,
+    "DeviceScope": "universal",
+    "UpdateSummary": {
+     "Priority": "low",
+     "Summary": "Maintenance update with no published CVE entries",
+     "Recommendation": "Update recommended - may include unpublished security improvements",
+     "Stats": {
+      "Exploited": 0,
+      "Critical": 0,
+      "High": 0,
+      "Medium": 0,
+      "Low": 0,
+      "Remote": 0,
+      "Total": 0
+     }
+    },
+    "CVEs": {}
+   },
+   "SecurityReleases": [
+    {
+     "UpdateName": "macOS Golden Gate 27.0.1",
+     "ProductName": "macOS",
+     "ProductVersion": "27.0.1",
+     "Build": "26A5434",
+     "AllBuilds": [
+      "26A5434",
+      "26A434"
+     ],
+     "ReleaseDate": "2026-09-28T00:00:00Z",
+     "ExpirationDate": "2027-01-03",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/100100",
+     "SecurityInfoContext": "macOS has been updated to version 27.0.1, released on September 28, 2026. This update has no published CVE entries and is the most recent approved version.",
+     "CVEs": {},
+     "ActivelyExploitedCVEs": [],
+     "UniqueCVEsCount": 0,
+     "DaysSincePreviousRelease": 14,
+     "DeviceScope": "universal",
+     "UpdateSummary": {
+      "Priority": "low",
+      "Summary": "Maintenance update with no published CVE entries",
+      "Recommendation": "Update recommended - may include unpublished security improvements",
+      "Stats": {
+       "Exploited": 0,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 0
+      }
+     }
+    },
+    {
+     "UpdateName": "macOS Golden Gate 27",
+     "ProductName": "macOS",
+     "ProductVersion": "27.0",
+     "Build": "26A5428",
+     "AllBuilds": [
+      "26A5428",
+      "26A428"
+     ],
+     "ReleaseDate": "2026-09-14T00:00:00Z",
+     "ExpirationDate": "2026-12-27",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/149035",
+     "SecurityInfoContext": "macOS 27.0 was released on September 14, 2026. This release addressed 210 security issues. Newer updates are now available, so please check to see if they apply to your devices.",
+     "CVEs": {
+      "CVE-2022-3437": {},
+      "CVE-2026-20683": {},
+      "CVE-2026-28899": {},
+      "CVE-2026-65400": {
+       "NISTURL": "https://nvd.nist.gov/vuln/detail/CVE-2026-65400",
+       "ActivelyExploited": true,
+       "InKEV": true,
+       "Severity": "Critical"
+      }
+     },
+     "ActivelyExploitedCVEs": [
+      "CVE-2026-65400"
+     ],
+     "UniqueCVEsCount": 210,
+     "DaysSincePreviousRelease": 0,
+     "DeviceScope": "universal",
+     "SupersededBy": {
+      "ProductVersion": "27.0.1",
+      "Build": "26A5434",
+      "ReleaseDate": "2026-09-28T00:00:00Z",
+      "DaysLater": 14
+     },
+     "UpdateSummary": {
+      "Priority": "critical",
+      "Summary": "Contains 1 actively exploited vulnerability",
+      "Recommendation": "Update immediately - actively exploited vulnerabilities",
+      "Stats": {
+       "Exploited": 1,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 210
+      }
+     }
+    }
+   ],
+   "SupportedModels": []
+  },
+  {
+   "OSVersion": "Tahoe 26",
+   "Latest": {
+    "UpdateName": "macOS Tahoe 26.7.1",
+    "ProductName": "macOS",
+    "ProductVersion": "26.7.1",
+    "Build": "25G241",
+    "AllBuilds": [
+     "25G241"
+    ],
+    "ReleaseDate": "2026-09-28T00:00:00Z",
+    "ExpirationDate": "2027-01-03",
+    "ReleaseType": "OS",
+    "SecurityInfo": "https://support.apple.com/en-us/149228",
+    "SecurityInfoContext": "macOS Tahoe has been updated to version 26.7.1, released on September 28, 2026. This update addresses one security issue and is the most recent approved version. This update comes 14 days after the previous release.",
+    "ActivelyExploitedCVEs": [
+     "CVE-2026-86950"
+    ],
+    "UniqueCVEsCount": 1,
+    "DaysSincePreviousRelease": 14,
+    "DeviceScope": "universal",
+    "UpdateSummary": {
+     "Priority": "critical",
+     "Summary": "Contains 1 actively exploited vulnerability",
+     "Recommendation": "Update immediately - actively exploited vulnerabilities",
+     "Stats": {
+      "Exploited": 1,
+      "Critical": 0,
+      "High": 0,
+      "Medium": 0,
+      "Low": 0,
+      "Remote": 0,
+      "Total": 1
+     }
+    },
+    "CVEs": {}
+   },
+   "SecurityReleases": [
+    {
+     "UpdateName": "macOS Tahoe 26.7.1",
+     "ProductName": "macOS",
+     "ProductVersion": "26.7.1",
+     "Build": "25G241",
+     "AllBuilds": [
+      "25G241"
+     ],
+     "ReleaseDate": "2026-09-28T00:00:00Z",
+     "ExpirationDate": "2027-01-03",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/149228",
+     "SecurityInfoContext": "macOS has been updated to version 26.7.1, released on September 28, 2026. This update addresses one security issue and is the most recent approved version.",
+     "CVEs": {
+      "CVE-2026-86950": {
+       "NISTURL": "https://nvd.nist.gov/vuln/detail/CVE-2026-86950",
+       "ActivelyExploited": true,
+       "InKEV": true,
+       "Severity": "Critical"
+      }
+     },
+     "ActivelyExploitedCVEs": [
+      "CVE-2026-86950"
+     ],
+     "UniqueCVEsCount": 1,
+     "DaysSincePreviousRelease": 14,
+     "DeviceScope": "universal",
+     "UpdateSummary": {
+      "Priority": "critical",
+      "Summary": "Contains 1 actively exploited vulnerability",
+      "Recommendation": "Update immediately - actively exploited vulnerabilities",
+      "Stats": {
+       "Exploited": 1,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 1
+      }
+     }
+    },
+    {
+     "UpdateName": "macOS Tahoe 26.7",
+     "ProductName": "macOS",
+     "ProductVersion": "26.7",
+     "Build": "25G229",
+     "AllBuilds": [
+      "25G229"
+     ],
+     "ReleaseDate": "2026-09-14T00:00:00Z",
+     "ExpirationDate": "2026-12-27",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/149042",
+     "SecurityInfoContext": "macOS 26.7 was released on September 14, 2026. This release addressed 153 security issues. Newer updates are now available, so please check to see if they apply to your devices.",
+     "CVEs": {
+      "CVE-2022-3437": {},
+      "CVE-2026-20683": {},
+      "CVE-2026-28899": {},
+      "CVE-2026-65400": {
+       "NISTURL": "https://nvd.nist.gov/vuln/detail/CVE-2026-65400",
+       "ActivelyExploited": true,
+       "InKEV": true,
+       "Severity": "Critical"
+      }
+     },
+     "ActivelyExploitedCVEs": [
+      "CVE-2026-65400"
+     ],
+     "UniqueCVEsCount": 153,
+     "DaysSincePreviousRelease": 28,
+     "DeviceScope": "universal",
+     "SupersededBy": {
+      "ProductVersion": "26.7.1",
+      "Build": "25G241",
+      "ReleaseDate": "2026-09-28T00:00:00Z",
+      "DaysLater": 14
+     },
+     "UpdateSummary": {
+      "Priority": "critical",
+      "Summary": "Contains 1 actively exploited vulnerability",
+      "Recommendation": "Update immediately - actively exploited vulnerabilities",
+      "Stats": {
+       "Exploited": 1,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 153
+      }
+     }
+    },
+    {
+     "UpdateName": "macOS Tahoe 26.6.2",
+     "ProductName": "macOS",
+     "ProductVersion": "26.6.2",
+     "Build": "25G83",
+     "AllBuilds": [
+      "25G83"
+     ],
+     "ReleaseDate": "2026-08-17T00:00:00Z",
+     "ExpirationDate": "2027-01-03",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/148281",
+     "SecurityInfoContext": "macOS 26.6.2 was released on August 17, 2026. This release addressed 34 security issues. Newer updates are now available, so please check to see if they apply to your devices.",
+     "CVEs": {
+      "CVE-2026-28935": {},
+      "CVE-2026-43794": {},
+      "CVE-2026-43795": {}
+     },
+     "ActivelyExploitedCVEs": [],
+     "UniqueCVEsCount": 34,
+     "DaysSincePreviousRelease": 11,
+     "DeviceScope": "universal",
+     "SupersededBy": {
+      "ProductVersion": "26.7",
+      "Build": "25G229",
+      "ReleaseDate": "2026-09-14T00:00:00Z",
+      "DaysLater": 28
+     },
+     "UpdateSummary": {
+      "Priority": "high",
+      "Summary": "Addresses 34 security issues",
+      "Recommendation": "Update to stay secure - security fixes available",
+      "Stats": {
+       "Exploited": 0,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 34
+      }
+     }
+    }
+   ],
+   "SupportedModels": []
+  },
+  {
+   "OSVersion": "Sonoma 14",
+   "Latest": {
+    "UpdateName": "macOS Sonoma 14.8.9",
+    "ProductName": "macOS",
+    "ProductVersion": "14.8.9",
+    "Build": "23J631",
+    "AllBuilds": [
+     "23J631"
+    ],
+    "ReleaseDate": "2026-08-06T00:00:00Z",
+    "ExpirationDate": "2027-01-03",
+    "ReleaseType": "OS",
+    "SecurityInfo": "https://support.apple.com/en-us/148172",
+    "SecurityInfoContext": "macOS Sonoma has been updated to version 14.8.9, released on August 06, 2026. This update addresses one security issue and is the most recent approved version. This update comes 10 days after the previous release.",
+    "ActivelyExploitedCVEs": [
+     "CVE-2026-65400"
+    ],
+    "UniqueCVEsCount": 1,
+    "DaysSincePreviousRelease": 10,
+    "DeviceScope": "universal",
+    "UpdateSummary": {
+     "Priority": "critical",
+     "Summary": "Contains 1 actively exploited vulnerability",
+     "Recommendation": "Update immediately - actively exploited vulnerabilities",
+     "Stats": {
+      "Exploited": 1,
+      "Critical": 0,
+      "High": 0,
+      "Medium": 0,
+      "Low": 0,
+      "Remote": 0,
+      "Total": 1
+     }
+    },
+    "CVEs": {}
+   },
+   "SecurityReleases": [
+    {
+     "UpdateName": "macOS Sonoma 14.8.9",
+     "ProductName": "macOS",
+     "ProductVersion": "14.8.9",
+     "Build": "23J631",
+     "AllBuilds": [
+      "23J631"
+     ],
+     "ReleaseDate": "2026-08-06T00:00:00Z",
+     "ExpirationDate": "2027-01-03",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/148172",
+     "SecurityInfoContext": "macOS has been updated to version 14.8.9, released on August 06, 2026. This update addresses one security issue and is the most recent approved version.",
+     "CVEs": {
+      "CVE-2026-65400": {
+       "NISTURL": "https://nvd.nist.gov/vuln/detail/CVE-2026-65400",
+       "ActivelyExploited": true,
+       "InKEV": true,
+       "Severity": "Critical"
+      }
+     },
+     "ActivelyExploitedCVEs": [
+      "CVE-2026-65400"
+     ],
+     "UniqueCVEsCount": 1,
+     "DaysSincePreviousRelease": 10,
+     "DeviceScope": "universal",
+     "UpdateSummary": {
+      "Priority": "critical",
+      "Summary": "Contains 1 actively exploited vulnerability",
+      "Recommendation": "Update immediately - actively exploited vulnerabilities",
+      "Stats": {
+       "Exploited": 1,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 1
+      }
+     }
+    }
+   ],
+   "SupportedModels": []
+  },
+  {
+   "OSVersion": "Monterey 12",
+   "Latest": {
+    "UpdateName": "macOS Monterey 12.7.6",
+    "ProductName": "macOS",
+    "ProductVersion": "12.7.6",
+    "Build": "21H1320",
+    "AllBuilds": [
+     "21H1320"
+    ],
+    "ReleaseDate": "2024-07-29T00:00:00Z",
+    "ExpirationDate": "2027-01-03",
+    "ReleaseType": "OS",
+    "SecurityInfo": "https://support.apple.com/en-us/120910",
+    "SecurityInfoContext": "macOS Monterey has been updated to version 12.7.6, released on July 29, 2024. This update addresses 42 security issues and is the most recent approved version. This update comes 77 days after the previous release.",
+    "ActivelyExploitedCVEs": [
+     "CVE-2024-23296"
+    ],
+    "UniqueCVEsCount": 42,
+    "DaysSincePreviousRelease": 77,
+    "DeviceScope": "universal",
+    "UpdateSummary": {
+     "Priority": "critical",
+     "Summary": "Contains 1 actively exploited vulnerability",
+     "Recommendation": "Update immediately - actively exploited vulnerabilities",
+     "Stats": {
+      "Exploited": 1,
+      "Critical": 0,
+      "High": 0,
+      "Medium": 0,
+      "Low": 0,
+      "Remote": 0,
+      "Total": 42
+     }
+    },
+    "CVEs": {}
+   },
+   "SecurityReleases": [
+    {
+     "UpdateName": "macOS Monterey 12.7.6",
+     "ProductName": "macOS",
+     "ProductVersion": "12.7.6",
+     "Build": "21H1320",
+     "AllBuilds": [
+      "21H1320"
+     ],
+     "ReleaseDate": "2024-07-29T00:00:00Z",
+     "ExpirationDate": "2027-01-03",
+     "ReleaseType": "OS",
+     "SecurityInfo": "https://support.apple.com/en-us/120910",
+     "SecurityInfoContext": "macOS has been updated to version 12.7.6, released on July 29, 2024. This update addresses 42 security issues and is the most recent approved version.",
+     "CVEs": {
+      "CVE-2023-52356": {},
+      "CVE-2023-6277": {},
+      "CVE-2024-2004": {},
+      "CVE-2024-23296": {
+       "NISTURL": "https://nvd.nist.gov/vuln/detail/CVE-2024-23296",
+       "ActivelyExploited": true,
+       "InKEV": true,
+       "Severity": "Critical"
+      }
+     },
+     "ActivelyExploitedCVEs": [
+      "CVE-2024-23296"
+     ],
+     "UniqueCVEsCount": 42,
+     "DaysSincePreviousRelease": 77,
+     "DeviceScope": "universal",
+     "UpdateSummary": {
+      "Priority": "critical",
+      "Summary": "Contains 1 actively exploited vulnerability",
+      "Recommendation": "Update immediately - actively exploited vulnerabilities",
+      "Stats": {
+       "Exploited": 1,
+       "Critical": 0,
+       "High": 0,
+       "Medium": 0,
+       "Low": 0,
+       "Remote": 0,
+       "Total": 42
+      }
+     }
+    }
+   ],
+   "SupportedModels": []
+  }
+ ],
+ "XProtectPayloads": {},
+ "Models": {}
+}
