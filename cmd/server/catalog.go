@@ -14,6 +14,7 @@ import (
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/catalog/apple"
 	"github.com/tasantiago/patchd/internal/catalog/bodhi"
+	"github.com/tasantiago/patchd/internal/catalog/kev"
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
 	"github.com/tasantiago/patchd/internal/catalog/osv"
 	"github.com/tasantiago/patchd/internal/config"
@@ -23,7 +24,7 @@ import (
 const catalogUsage = `uso: patchd-server catalog <comando> [opções]
 
 comandos:
-  sync [-source msrc,ubuntu,fedora,apple] [-months N] [-max N] [-workers N] [-full]
+  sync [-source msrc,ubuntu,fedora,apple,kev] [-months N] [-max N] [-workers N] [-full]
                             baixa o que é novo ou foi revisado em cada fonte (padrão: todas)
                               -months: janela de meses do MSRC (padrão 12)
                               -max: teto de USNs baixadas nesta execução (padrão 0, sem teto)
@@ -31,6 +32,8 @@ comandos:
                               -full: baixa de novo todos os updates do Fedora, ignorando
                                      o ponto de parada (pega bugs ligados depois do stable)
   list                      lista os documentos do MSRC e resume o Ubuntu e o Fedora
+  kev [-days N]             CVEs exploradas (CISA KEV): cobertura de cada fonte e as incluídas
+                            nos últimos N dias (padrão 30), com onde aparecem no catálogo
   apple [-release N]        majors do macOS: a versão de segurança mais recente (SOFA) ao lado
                             da publicada pela Apple (gdmf); -release 26 lista as versões da major
   builds [-product PREFIXO] maior build corrigido por produto e documento (padrão "Windows")
@@ -47,6 +50,8 @@ PATCHD_BODHI_URL troca o Bodhi por outro endereço (padrão: https://bodhi.fedor
 PATCHD_GDMF_URL e PATCHD_SOFA_URL trocam as fontes da Apple (padrão: https://gdmf.apple.com/v2/pmv
 e https://sofafeed.macadmins.io/v2/macos_data_feed.json). O gdmf só é aceito com a cadeia da
 raiz "Apple Root CA", embutida no binário.
+PATCHD_KEV_URL troca o feed do KEV (padrão: o JSON da CISA; alternativa: o espelho oficial
+https://raw.githubusercontent.com/cisagov/kev-data/develop/known_exploited_vulnerabilities.json).
 `
 
 // runCatalog administra o catálogo de segurança direto no banco.
@@ -68,7 +73,8 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	fs := flag.NewFlagSet("catalog "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	months := fs.Int("months", 12, "janela de meses do MSRC no sync")
-	sources := fs.String("source", "msrc,ubuntu,fedora,apple", "fontes do sync, separadas por vírgula")
+	sources := fs.String("source", "msrc,ubuntu,fedora,apple,kev", "fontes do sync, separadas por vírgula")
+	days := fs.Int("days", 30, "kev: janela de dias das CVEs incluídas recentemente")
 	maxUSN := fs.Int("max", 0, "teto de USNs baixadas no sync (0: sem teto)")
 	workers := fs.Int("workers", 4, "downloads simultâneos do Ubuntu no sync")
 	product := fs.String("product", "Windows", "prefixo do nome do produto no builds")
@@ -94,15 +100,19 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	wanted := map[string]bool{}
 	for _, s := range strings.Split(*sources, ",") {
 		switch s = strings.TrimSpace(s); s {
-		case "msrc", "ubuntu", "fedora", "apple":
+		case "msrc", "ubuntu", "fedora", "apple", "kev":
 			wanted[s] = true
 		default:
-			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora e/ou apple)\n", s)
+			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora, apple e/ou kev)\n", s)
 			return exitConfig
 		}
 	}
 	if (args[0] == "usn" || args[0] == "fedora") && *pkg == "" {
 		fmt.Fprintf(stderr, "patchd-server: o %s exige -package (o pacote fonte, ex.: openssl)\n", args[0])
+		return exitConfig
+	}
+	if *days < 1 || *days > 3650 {
+		fmt.Fprintln(stderr, "patchd-server: -days deve ficar entre 1 e 3650")
 		return exitConfig
 	}
 	if args[0] == "apple" && *release != "" && !isDigits(*release) {
@@ -201,6 +211,19 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 			}
 			failed = failed || nfail > 0
 		}
+		if wanted["kev"] {
+			src := kev.NewClient(ua)
+			if u, ok := look("PATCHD_KEV_URL"); ok && u != "" {
+				src.URL = u
+			}
+			fmt.Fprintln(stdout, "CISA KEV:")
+			_, kfail, err := syncKEV(ctx, src, st, stdout)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				failed = true
+			}
+			failed = failed || kfail
+		}
 		// Cada fonte roda mesmo que a anterior falhe; o código de saída diz se algo falhou.
 		if failed {
 			return exitRuntime
@@ -256,6 +279,25 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", b.Product, b.Document, b.Build, b.KBs)
 		}
 		tw.Flush()
+		return exitOK
+	case "kev":
+		info, err := st.KEVInfo(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		cov, err := st.KEVCoverage(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		since := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -*days)
+		recent, err := st.KEVRecent(ctx, since)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		printKEV(info, cov, recent, *days, stdout)
 		return exitOK
 	case "apple":
 		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
