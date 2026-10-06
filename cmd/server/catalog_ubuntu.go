@@ -29,6 +29,7 @@ type ubuntuResult struct {
 	Saved     int
 	Withdrawn int // retiradas pelo Ubuntu: guardadas sem correções, fora das consultas
 	Failed    int
+	Missing   int // guardadas no banco e ausentes da lista: mantidas e avisadas
 }
 
 // maxShownFailures limita as falhas impressas: numa primeira carga com a rede instável,
@@ -51,6 +52,15 @@ func syncUbuntu(ctx context.Context, src ubuntuSource, st ubuntuStore, limit, wo
 		return res, err
 	}
 	res.Listed = len(list)
+	listed := make(map[string]bool, len(list))
+	for _, e := range list {
+		listed[e.ID] = true
+	}
+	for id := range known {
+		if !listed[id] {
+			res.Missing++
+		}
+	}
 
 	var todo []osv.Entry
 	for _, e := range list {
@@ -63,6 +73,9 @@ func syncUbuntu(ctx context.Context, src ubuntuSource, st ubuntuStore, limit, wo
 		todo = todo[:limit]
 	}
 	fmt.Fprintf(out, "  ubuntu: %d USNs na lista, %d novas ou alteradas, baixando %d\n", res.Listed, res.Pending, len(todo))
+	if res.Missing > 0 {
+		fmt.Fprintf(out, "  ubuntu: %d USN(s) guardadas estão AUSENTES da lista: mantidas no banco\n", res.Missing)
+	}
 	if len(todo) == 0 {
 		return res, nil
 	}
