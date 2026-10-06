@@ -119,3 +119,14 @@ As implementações foram conferidas contra `dpkg --compare-versions` e `rpm.ver
 - A atualização menor dentro da major e a atualização de major aparecem lado a lado no `softwareupdate --list`; `Action: restart` indica reboot.
 - O plist de preferências do `softwareupdate` não é documentado: dado auxiliar, nunca fonte principal.
 - O zsh interativo não aceita `#` como comentário sem `setopt interactivecomments`.
+
+## Catálogos do servidor (Módulo 6)
+
+O servidor baixa os catálogos e cruza com o inventário localmente: o inventário da frota nunca é enviado a uma API externa.
+
+| Fonte | Endereço | Como a sincronização sabe o que mudou | Observações |
+|---|---|---|---|
+| MSRC (Windows) | `https://api.msrc.microsoft.com/cvrf/v3.0` | `CurrentReleaseDate` da lista `/updates` (a API responde `no-store`, sem ETag) | Documentos são revisados depois de publicados, inclusive meses antigos com KBs novos |
+| Ubuntu (USN) | `https://storage.googleapis.com/osv-vulnerabilities/Ubuntu/` | `modified_id.csv` (data com nanossegundos, guardada como texto) | Só a série `USN-*` mede conformidade; `UBUNTU-CVE-*` inclui o que não tem correção. Versões com época, como vieram |
+| Fedora | Bodhi (`https://bodhi.fedoraproject.org`) | `pushed_since` (o `modified_since` ignora updates nunca editados) | Parte 3 da Aula 6.2. CVEs só nos títulos dos bugs, cortados com `...` |
+| Apple | `gdmf.apple.com` (versões; raiz própria da Apple) e SOFA (CVEs e KEV) | `UpdateHash` do SOFA | Parte 4 da Aula 6.2. O `gdmf` lista versões sem suporte de segurança |
