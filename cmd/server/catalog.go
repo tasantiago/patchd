@@ -363,7 +363,9 @@ type msrcStore interface {
 }
 
 // syncMSRC baixa a lista e, da janela pedida, só os documentos novos ou com data de
-// revisão diferente da guardada. A API do MSRC não aceita requisição condicional, então
+// revisão diferente da guardada. Um documento guardado que não está mais na lista é
+// avisado e mantido: em 06/10/2026 o MSRC tirou da lista o 2026-Aug e o 2026-Sep por
+// algumas horas, e o sync os ignorava em silêncio. A API do MSRC não aceita requisição condicional, então
 // a lista (pequena) é o que evita baixar dezenas de MB à toa. Um documento que falha não
 // impede os outros.
 func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time, out io.Writer) (synced, failed int, err error) {
@@ -411,6 +413,22 @@ func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time
 		}
 		fmt.Fprintf(out, "  %-9s %-8s %d CVEs (%d exploradas), %d correções (%d sem KB ignoradas), %s\n",
 			u.ID, state, len(d.Vulns), exploited, len(d.Fixes), d.SkippedFix, time.Since(start).Round(100*time.Millisecond))
+	}
+
+	listed := map[string]bool{}
+	for _, u := range updates {
+		listed[u.ID] = true
+	}
+	var missing []string
+	for id := range known {
+		if !listed[id] {
+			missing = append(missing, id)
+		}
+	}
+	slices.Sort(missing)
+	for _, id := range missing {
+		fmt.Fprintf(out, "  %-9s AUSENTE da lista do MSRC: a versão guardada (revisão de %s UTC) foi mantida\n",
+			id, known[id].Format("2006-01-02 15:04"))
 	}
 	return synced, failed, nil
 }

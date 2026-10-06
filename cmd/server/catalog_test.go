@@ -85,4 +85,15 @@ func TestSyncMSRCBaixaSoONovoOuRevisado(t *testing.T) {
 	if !banco.versoes["2026-Sep"].Equal(dia(10, 5)) || !banco.versoes["2026-Aug"].Equal(dia(10, 2)) {
 		t.Errorf("a data só avança no que foi gravado: %v", banco.versoes)
 	}
+
+	// Como em 06/10/2026: o MSRC tira o 2026-Aug da lista. Nada é apagado, e o sumiço aparece.
+	fonte.lista, fonte.falha = []msrc.Update{fonte.lista[0], fonte.lista[1]}, ""
+	fonte.baixados, out = nil, bytes.Buffer{}
+	_, falhas, err = syncMSRC(context.Background(), fonte, banco, desde, &out)
+	if err != nil || falhas != 0 || !strings.Contains(out.String(), "2026-Aug  AUSENTE da lista do MSRC") {
+		t.Errorf("documento ausente da lista: %d %v\n%s", falhas, err, out.String())
+	}
+	if _, ok := banco.versoes["2026-Aug"]; !ok {
+		t.Error("o documento ausente da lista não pode ser apagado")
+	}
 }

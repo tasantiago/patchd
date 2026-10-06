@@ -134,6 +134,15 @@ func TestSyncUbuntu(t *testing.T) {
 		t.Errorf("a retirada foi baixada de novo: %+v %v\n%s", res, fonte.baixados, out.String())
 	}
 
+	// Uma USN guardada some da lista: é mantida e contada.
+	listaCheia := fonte.lista
+	fonte.lista, out = fonte.lista[1:], bytes.Buffer{}
+	res, _ = syncUbuntu(ctx, fonte, banco, 0, 2, &out)
+	if res.Missing != 1 || !strings.Contains(out.String(), "1 USN(s) guardadas estão AUSENTES") {
+		t.Errorf("ausente da lista: %+v\n%s", res, out.String())
+	}
+	fonte.lista = listaCheia
+
 	// Falha na lista: erro, nada baixado.
 	fonte.erroLista, fonte.baixados = errors.New("bucket fora do ar"), nil
 	if _, err := syncUbuntu(ctx, fonte, banco, 0, 2, &bytes.Buffer{}); err == nil || len(fonte.baixados) != 0 {
