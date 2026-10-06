@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/catalog/apple"
 	"github.com/tasantiago/patchd/internal/catalog/bodhi"
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
 	"github.com/tasantiago/patchd/internal/catalog/osv"
@@ -22,7 +23,7 @@ import (
 const catalogUsage = `uso: patchd-server catalog <comando> [opções]
 
 comandos:
-  sync [-source msrc,ubuntu,fedora] [-months N] [-max N] [-workers N] [-full]
+  sync [-source msrc,ubuntu,fedora,apple] [-months N] [-max N] [-workers N] [-full]
                             baixa o que é novo ou foi revisado em cada fonte (padrão: todas)
                               -months: janela de meses do MSRC (padrão 12)
                               -max: teto de USNs baixadas nesta execução (padrão 0, sem teto)
@@ -30,6 +31,8 @@ comandos:
                               -full: baixa de novo todos os updates do Fedora, ignorando
                                      o ponto de parada (pega bugs ligados depois do stable)
   list                      lista os documentos do MSRC e resume o Ubuntu e o Fedora
+  apple [-release N]        majors do macOS: a versão de segurança mais recente (SOFA) ao lado
+                            da publicada pela Apple (gdmf); -release 26 lista as versões da major
   builds [-product PREFIXO] maior build corrigido por produto e documento (padrão "Windows")
   usn -package NOME [-release VERSÃO]
                             avisos do Ubuntu de um pacote fonte; -release 26.04 filtra
@@ -41,6 +44,9 @@ A URL do banco vem da mesma configuração do servidor (PATCHD_DATABASE_URL ou _
 PATCHD_MSRC_URL troca a API do MSRC por outro endereço (padrão: https://api.msrc.microsoft.com/cvrf/v3.0).
 PATCHD_OSV_URL troca o bucket do OSV por outro endereço (padrão: https://storage.googleapis.com/osv-vulnerabilities).
 PATCHD_BODHI_URL troca o Bodhi por outro endereço (padrão: https://bodhi.fedoraproject.org).
+PATCHD_GDMF_URL e PATCHD_SOFA_URL trocam as fontes da Apple (padrão: https://gdmf.apple.com/v2/pmv
+e https://sofafeed.macadmins.io/v2/macos_data_feed.json). O gdmf só é aceito com a cadeia da
+raiz "Apple Root CA", embutida no binário.
 `
 
 // runCatalog administra o catálogo de segurança direto no banco.
@@ -62,13 +68,13 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	fs := flag.NewFlagSet("catalog "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	months := fs.Int("months", 12, "janela de meses do MSRC no sync")
-	sources := fs.String("source", "msrc,ubuntu,fedora", "fontes do sync, separadas por vírgula")
+	sources := fs.String("source", "msrc,ubuntu,fedora,apple", "fontes do sync, separadas por vírgula")
 	maxUSN := fs.Int("max", 0, "teto de USNs baixadas no sync (0: sem teto)")
 	workers := fs.Int("workers", 4, "downloads simultâneos do Ubuntu no sync")
 	product := fs.String("product", "Windows", "prefixo do nome do produto no builds")
 	full := fs.Bool("full", false, "Fedora: baixa todos os updates de novo no sync")
 	pkg := fs.String("package", "", "pacote fonte no usn e no fedora")
-	release := fs.String("release", "", "versão no usn (26.04) e no fedora (F44)")
+	release := fs.String("release", "", "versão no usn (26.04), no fedora (F44) e no apple (26)")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 		fmt.Fprint(stderr, catalogUsage)
 		return exitConfig
@@ -88,15 +94,19 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	wanted := map[string]bool{}
 	for _, s := range strings.Split(*sources, ",") {
 		switch s = strings.TrimSpace(s); s {
-		case "msrc", "ubuntu", "fedora":
+		case "msrc", "ubuntu", "fedora", "apple":
 			wanted[s] = true
 		default:
-			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu e/ou fedora)\n", s)
+			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora e/ou apple)\n", s)
 			return exitConfig
 		}
 	}
 	if (args[0] == "usn" || args[0] == "fedora") && *pkg == "" {
 		fmt.Fprintf(stderr, "patchd-server: o %s exige -package (o pacote fonte, ex.: openssl)\n", args[0])
+		return exitConfig
+	}
+	if args[0] == "apple" && *release != "" && !isDigits(*release) {
+		fmt.Fprintf(stderr, "patchd-server: -release do apple é o número da major, ex.: 26 (recebido %q)\n", *release)
 		return exitConfig
 	}
 	if args[0] == "fedora" && *release != "" && !bodhi.ValidRelease(*release) {
@@ -171,6 +181,26 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 				failed = failed || nfail > 0
 			}
 		}
+		if wanted["apple"] {
+			fmt.Fprintln(stdout, "Apple (gdmf e SOFA):")
+			src, err := apple.NewClient(ua)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				return exitRuntime
+			}
+			if u, ok := look("PATCHD_GDMF_URL"); ok && u != "" {
+				src.GDMFURL = u
+			}
+			if u, ok := look("PATCHD_SOFA_URL"); ok && u != "" {
+				src.SOFAURL = u
+			}
+			_, nfail, err := syncApple(ctx, src, st, stdout)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				failed = true
+			}
+			failed = failed || nfail > 0
+		}
 		// Cada fonte roda mesmo que a anterior falhe; o código de saída diz se algo falhou.
 		if failed {
 			return exitRuntime
@@ -224,6 +254,51 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		fmt.Fprintln(tw, "PRODUTO\tDOCUMENTO\tBUILD CORRIGIDO\tKB")
 		for _, b := range bs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", b.Product, b.Document, b.Build, b.KBs)
+		}
+		tw.Flush()
+		return exitOK
+	case "apple":
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		if *release == "" {
+			ms, err := st.AppleMajors(ctx)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				return exitRuntime
+			}
+			fmt.Fprintln(tw, "MAJOR\tSEGURANÇA MAIS RECENTE (SOFA)\tBUILDS\tDATA\tEXPLORADAS\tPUBLICADA (GDMF)\tCONFERE")
+			for _, m := range ms {
+				confere := "sim"
+				switch {
+				case m.GDMFLatest == "":
+					confere = "fora do gdmf"
+				case m.GDMFLatest != m.Latest:
+					confere = "não"
+				}
+				gd := "-"
+				if m.GDMFLatest != "" {
+					gd = m.GDMFLatest + " " + strings.Join(m.GDMFBuilds, ",")
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", m.Major, m.Latest, strings.Join(m.Builds, ","),
+					m.Date.Format("2006-01-02"), m.Exploited, gd, confere)
+			}
+		} else {
+			rs, err := st.AppleReleases(ctx, *release)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				return exitRuntime
+			}
+			if len(rs) == 0 {
+				fmt.Fprintf(stdout, "nenhuma versão de segurança para a major %s\n", *release)
+				return exitOK
+			}
+			fmt.Fprintln(tw, "VERSÃO\tBUILDS\tDATA\tCVEs\tEXPLORADAS\tBOLETIM")
+			for _, r := range rs {
+				b := strings.Join(r.Builds, ",")
+				if b == "" {
+					b = "-"
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\n", r.Version, b, r.Date.Format("2006-01-02"), r.CVEs, r.Exploited, r.URL)
+			}
 		}
 		tw.Flush()
 		return exitOK
@@ -338,4 +413,17 @@ func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time
 			u.ID, state, len(d.Vulns), exploited, len(d.Fixes), d.SkippedFix, time.Since(start).Round(100*time.Millisecond))
 	}
 	return synced, failed, nil
+}
+
+// isDigits diz se s é um número sem sinal (o número de uma major do macOS).
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

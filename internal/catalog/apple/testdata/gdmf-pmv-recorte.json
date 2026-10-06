@@ -1,0 +1,158 @@
+{
+ "PublicAssetSets": {
+  "macOS": [
+   {
+    "ProductVersion": "14.8.9",
+    "Build": "23J631",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J132AP",
+     "J137AP",
+     "J140AAP"
+    ]
+   },
+   {
+    "ProductVersion": "27.0.1",
+    "Build": "26A434",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J180dAP",
+     "J274AP",
+     "J293AP"
+    ]
+   },
+   {
+    "ProductVersion": "26.7.1",
+    "Build": "25G241",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J152FAP",
+     "J160AP",
+     "J180dAP"
+    ]
+   },
+   {
+    "ProductVersion": "12.7.6",
+    "Build": "21H1320",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J132AP",
+     "J137AP",
+     "J140AAP"
+    ]
+   },
+   {
+    "ProductVersion": "11.7.11",
+    "Build": "20G1443",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J132AP",
+     "J137AP",
+     "J140AAP"
+    ]
+   },
+   {
+    "ProductVersion": "27.0.1",
+    "Build": "26A5434",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J180dAP",
+     "J274AP",
+     "J293AP"
+    ]
+   },
+   {
+    "ProductVersion": "13.7.8",
+    "Build": "22H730",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J132AP",
+     "J137AP",
+     "J140AAP"
+    ]
+   },
+   {
+    "ProductVersion": "15.8.1",
+    "Build": "24H32",
+    "PostingDate": "2026-09-28",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J132AP",
+     "J137AP",
+     "J152FAP"
+    ]
+   }
+  ],
+  "iOS": [
+   {
+    "ProductVersion": "17.7.11",
+    "Build": "21H461",
+    "PostingDate": "2026-10-02",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "iPad7,1",
+     "iPad7,2"
+    ]
+   }
+  ]
+ },
+ "AssetSets": {
+  "macOS": [
+   {
+    "ProductVersion": "15.7.7",
+    "Build": "24G720",
+    "PostingDate": "2026-06-29",
+    "ExpirationDate": "2026-10-25",
+    "SupportedDevices": [
+     "J132AP",
+     "J137AP"
+    ]
+   },
+   {
+    "ProductVersion": "26.6.2",
+    "Build": "25G83",
+    "PostingDate": "2026-08-17",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J152FAP",
+     "J160AP"
+    ]
+   }
+  ]
+ },
+ "PublicBackgroundSecurityImprovements": {
+  "macOS": [
+   {
+    "ProductVersion": "26.3.2",
+    "Build": "25D771400a",
+    "ProductVersionExtra": "(a)",
+    "PrerequisiteBuild": "25D2140",
+    "PostingDate": "2026-03-17",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J700AP"
+    ]
+   },
+   {
+    "ProductVersion": "26.3.1",
+    "Build": "25D771280a",
+    "ProductVersionExtra": "(a)",
+    "PrerequisiteBuild": "25D2128",
+    "PostingDate": "2026-03-17",
+    "ExpirationDate": "2027-01-03",
+    "SupportedDevices": [
+     "J152FAP",
+     "J160AP",
+     "J180dAP"
+    ]
+   }
+  ]
+ }
+}
