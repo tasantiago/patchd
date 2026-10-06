@@ -13,6 +13,8 @@
 package apple
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,6 +81,19 @@ func ParseGDMF(r io.Reader) ([]GDMFVersion, error) {
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+// GDMFHash resume o conteúdo das versões, sem depender da ordem nem da formatação da
+// resposta: as versões são ordenadas e serializadas só com os campos que o patchd guarda.
+// Muda quando muda uma versão, um build, uma data ou a quantidade de modelos.
+func GDMFHash(vs []GDMFVersion) string {
+	sorted := slices.Clone(vs)
+	slices.SortFunc(sorted, func(a, b GDMFVersion) int {
+		return strings.Compare(a.ProductVersion+"\x00"+a.Build+"\x00"+a.Extra, b.ProductVersion+"\x00"+b.Build+"\x00"+b.Extra)
+	})
+	data, _ := json.Marshal(sorted) // só tipos simples: não falha
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func parseDay(s string) (time.Time, error) {

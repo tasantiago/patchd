@@ -23,9 +23,9 @@ type appleStore interface {
 }
 
 // syncApple baixa as duas fontes (pequenas, sem pedido condicional) e grava cada uma só
-// quando o conteúdo mudou: o SHA-256 do corpo no gdmf, o UpdateHash no SOFA. Uma resposta
-// vazia é recusada: um feed quebrado não pode apagar o catálogo que está no banco. Uma
-// fonte que falha não impede a outra.
+// quando o conteúdo mudou: o GDMFHash (conteúdo reduzido e ordenado) no gdmf, o UpdateHash
+// no SOFA. Uma resposta vazia é recusada: um feed quebrado não pode apagar o catálogo que
+// está no banco. Uma fonte que falha não impede a outra.
 func syncApple(ctx context.Context, src appleSource, st appleStore, out io.Writer) (changed, failed int, err error) {
 	// gdmf: o que a Apple publica para instalar.
 	vs, hash, ferr := src.FetchGDMF(ctx)
