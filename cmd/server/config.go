@@ -13,6 +13,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/repocache"
 )
 
 // serverConfig é a configuração efetiva do servidor, depois de aplicar padrão, ambiente e flags.
@@ -25,8 +26,12 @@ type serverConfig struct {
 	// CatalogInterval: de quanto em quanto tempo o servidor sincroniza o catálogo (Aula 6.6);
 	// zero desliga (o catalog sync manual continua funcionando).
 	CatalogInterval time.Duration
-	ShowVersion     bool
-	HealthCheck     bool // modo usado pelo HEALTHCHECK do Docker
+	// RepoCacheDir liga o cache dos repositórios Ubuntu (Aula 6.6, parte 4b); vazio desliga.
+	// RepoCacheHosts são as origens que o cache aceita.
+	RepoCacheDir   string
+	RepoCacheHosts string
+	ShowVersion    bool
+	HealthCheck    bool // modo usado pelo HEALTHCHECK do Docker
 }
 
 // loadServerConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -47,6 +52,10 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"pasta das versões assinadas do agente; vazia desliga a atualização automática (env PATCHD_RELEASES_DIR)")
 	catalogInterval := fs.String("catalog-interval", config.String(look, "PATCHD_CATALOG_INTERVAL", "6h"),
 		"intervalo da sincronização do catálogo, ex.: 6h; 0 desliga (env PATCHD_CATALOG_INTERVAL)")
+	fs.StringVar(&cfg.RepoCacheDir, "repo-cache-dir", config.String(look, "PATCHD_REPO_CACHE_DIR", ""),
+		"pasta do cache dos repositórios Ubuntu; vazia desliga o cache (env PATCHD_REPO_CACHE_DIR)")
+	fs.StringVar(&cfg.RepoCacheHosts, "repo-cache-hosts", config.String(look, "PATCHD_REPO_CACHE_HOSTS", repocache.DefaultHosts),
+		"origens aceitas pelo cache, separadas por vírgula (env PATCHD_REPO_CACHE_HOSTS)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
 		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
@@ -73,6 +82,15 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	}
 	if cfg.ReleasesDir != "" && !filepath.IsAbs(cfg.ReleasesDir) {
 		problems = append(problems, fmt.Errorf("-releases-dir/PATCHD_RELEASES_DIR: o caminho precisa ser absoluto (recebido %q)", cfg.ReleasesDir))
+	}
+
+	if cfg.RepoCacheDir != "" {
+		if !filepath.IsAbs(cfg.RepoCacheDir) {
+			problems = append(problems, fmt.Errorf("-repo-cache-dir/PATCHD_REPO_CACHE_DIR: o caminho precisa ser absoluto (recebido %q)", cfg.RepoCacheDir))
+		}
+		if _, err := repocache.ParseHosts(cfg.RepoCacheHosts); err != nil {
+			problems = append(problems, err)
+		}
 	}
 
 	// Segredo: nunca por flag (a linha de comando é visível para outros usuários).

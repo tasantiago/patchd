@@ -21,3 +21,5 @@
 # Scripts de aplicação das aulas e marcas de download do Windows (WSL): nunca entram no git
 /aula-*.sh
 *:Zone.Identifier
+/lab-*.sh
+/explora-*.sh

@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/repocache"
 )
 
 // Tempos do servidor HTTP.
@@ -27,14 +29,29 @@ const (
 
 // newHandler monta as rotas: /healthz (fora do log de acesso, chamado a cada 15 s pelo
 // Docker) e a API em /api/.
-func newHandler(apiHandler http.Handler) http.Handler {
+//
+// Pedidos de proxy (forma absoluta, "GET http://archive.ubuntu.com/..."; ou CONNECT) vão
+// para o cache de repositórios (Aula 6.6, parte 4b) quando ligado, e são recusados quando
+// não: sem isso, o ServeMux casaria só o caminho e um "GET http://qualquer/api/..." cairia
+// na API.
+func newHandler(apiHandler, repoCache http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("/api/", apiHandler)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !repocache.IsProxyRequest(r) {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		if repoCache == nil {
+			http.Error(w, "o cache de repositórios está desligado (PATCHD_REPO_CACHE_DIR)", http.StatusForbidden)
+			return
+		}
+		repoCache.ServeHTTP(w, r)
+	})
 }
 
 // serve atende HTTP em addr até ctx ser cancelado (SIGTERM ou SIGINT) e então encerra

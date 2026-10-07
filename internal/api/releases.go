@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 
+	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/version"
 )
@@ -71,5 +72,5 @@ func (a *api) releaseFile(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	a.logger.Info("download de versão do agente", "machine_id", id, "release", v, "file", name, "request_id", RequestID(r.Context()))
-	http.ServeContent(w, r, name, fi.ModTime(), f)
+	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, name, fi.ModTime(), f)
 }
