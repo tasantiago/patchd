@@ -5,12 +5,18 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/catalog/apple"
 	"github.com/tasantiago/patchd/internal/catalog/kev"
+	"github.com/tasantiago/patchd/internal/catalog/msrc"
+	"github.com/tasantiago/patchd/internal/catalog/osv"
+	"github.com/tasantiago/patchd/internal/catalog/retry"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
@@ -205,5 +211,48 @@ func TestPrintCatalogStatus(t *testing.T) {
 		if !strings.Contains(out.String(), trecho) {
 			t.Errorf("faltou %q em:\n%s", trecho, out.String())
 		}
+	}
+}
+
+func TestSyncCatalogContaRepeticoes(t *testing.T) {
+	banco := novoBanco()
+	srcs := fontesDeTeste(t)
+	srcs.Retries = new(atomic.Int64)
+	// A fonte falsa do KEV "repete" dois pedidos, como faria o transporte com repetição.
+	srcs.KEV = kevQueRepete{kevFalso: srcs.KEV.(*kevFalso), contador: srcs.Retries}
+	var vistos []string
+	opts := syncOptions{Sources: map[string]bool{"kev": true}, Trigger: "manual", Done: func(r sourceResult) { vistos = append(vistos, r.Source) }}
+	res := syncCatalog(context.Background(), srcs, banco, opts, &bytes.Buffer{})
+	if len(res) != 1 || res[0].Detail != "atualizado; 2 pedido(s) repetido(s)" || len(vistos) != 1 {
+		t.Errorf("repetições no resumo: %+v %v", res, vistos)
+	}
+}
+
+type kevQueRepete struct {
+	*kevFalso
+	contador *atomic.Int64
+}
+
+func (k kevQueRepete) Fetch(ctx context.Context) (kev.Catalog, error) {
+	k.contador.Add(2)
+	return k.kevFalso.Fetch(ctx)
+}
+
+func TestNewCatalogSourcesComRepeticao(t *testing.T) {
+	srcs := newCatalogSources(func(string) (string, bool) { return "", false })
+	for nome, hc := range map[string]*http.Client{
+		"msrc": srcs.MSRC.(*msrc.Client).HTTP, "osv": srcs.Ubuntu.(*osv.Client).HTTP, "kev": srcs.KEV.(*kev.Client).HTTP,
+		"gdmf": srcs.Apple.(*apple.Client).GDMF, "sofa": srcs.Apple.(*apple.Client).SOFA, "terceiros": srcs.Third.(*thirdparty.Client).HTTP,
+	} {
+		if _, ok := hc.Transport.(*retry.Transport); !ok {
+			t.Errorf("%s sem repetição: %T", nome, hc.Transport)
+		}
+	}
+	// O gdmf continua com o transporte que só aceita a raiz da Apple, por baixo da repetição.
+	if base := srcs.Apple.(*apple.Client).GDMF.Transport.(*retry.Transport).Base; base == nil {
+		t.Error("gdmf perdeu o transporte com a raiz da Apple")
+	}
+	if srcs.ManifestErr != nil || srcs.Retries == nil {
+		t.Errorf("manifesto: %v, contador: %v", srcs.ManifestErr, srcs.Retries)
 	}
 }

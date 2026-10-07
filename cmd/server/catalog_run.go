@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/kev"
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
 	"github.com/tasantiago/patchd/internal/catalog/osv"
+	"github.com/tasantiago/patchd/internal/catalog/retry"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
@@ -31,11 +34,14 @@ const catalogStale = 48 * time.Hour
 // syncOptions são as opções da sincronização. O agendamento usa os padrões do catalog sync.
 type syncOptions struct {
 	Sources map[string]bool
-	Months  int // janela do MSRC
-	MaxUSN  int // teto de USNs por execução (0: sem teto)
-	Workers int // downloads simultâneos do Ubuntu
-	Full    bool
+	Months  int    // janela do MSRC
+	MaxUSN  int    // teto de USNs por execução (0: sem teto)
+	Workers int    // downloads simultâneos do Ubuntu
+	Full    bool   // MSRC: todos os documentos da janela; Fedora: todos os updates
 	Trigger string // agendada ou manual
+	// Done, quando definido, recebe o resultado de cada fonte assim que ela termina (o
+	// agendamento escreve no log na hora, não só no fim da execução).
+	Done func(sourceResult)
 }
 
 func defaultSyncOptions(trigger string) syncOptions {
@@ -57,6 +63,15 @@ type catalogSources struct {
 	Third       thirdpartySource
 	Manifest    thirdparty.Manifest
 	ManifestErr error
+	// Retries conta os pedidos repetidos pelos clientes (nil nos testes: nenhum).
+	Retries *atomic.Int64
+}
+
+func (s catalogSources) retries() int64 {
+	if s.Retries == nil {
+		return 0
+	}
+	return s.Retries.Load()
 }
 
 // newCatalogSources monta os clientes reais, com os endereços trocados pelo ambiente.
@@ -67,11 +82,17 @@ func newCatalogSources(look config.Lookup) catalogSources {
 		return v, ok && v != ""
 	}
 	var s catalogSources
+	s.Retries = new(atomic.Int64)
+	// Repetição de pedidos (erro de rede, 429, 5xx) em todas as fontes, menos o Bodhi, que
+	// já tem a sua desde a Aula 6.2.
+	count := func(*http.Request, int, string) { s.Retries.Add(1) }
 	m := msrc.NewClient(ua)
+	m.HTTP = retry.Wrap(m.HTTP, count)
 	if u, ok := env("PATCHD_MSRC_URL"); ok {
 		m.BaseURL = u
 	}
 	o := osv.NewClient("Ubuntu", ua)
+	o.HTTP = retry.Wrap(o.HTTP, count)
 	if u, ok := env("PATCHD_OSV_URL"); ok {
 		o.BaseURL = u
 	}
@@ -81,6 +102,8 @@ func newCatalogSources(look config.Lookup) catalogSources {
 	}
 	a, err := apple.NewClient(ua)
 	if err == nil {
+		a.GDMF = retry.Wrap(a.GDMF, count) // mantém o transporte com a raiz da Apple, por baixo
+		a.SOFA = retry.Wrap(a.SOFA, count)
 		if u, ok := env("PATCHD_GDMF_URL"); ok {
 			a.GDMFURL = u
 		}
@@ -91,12 +114,15 @@ func newCatalogSources(look config.Lookup) catalogSources {
 	}
 	s.AppleErr = err
 	k := kev.NewClient(ua)
+	k.HTTP = retry.Wrap(k.HTTP, count)
 	if u, ok := env("PATCHD_KEV_URL"); ok {
 		k.URL = u
 	}
 	path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
 	s.Manifest, s.ManifestErr = thirdparty.Load(path)
-	s.MSRC, s.Ubuntu, s.Fedora, s.KEV, s.Third = m, o, b, k, thirdparty.NewClient(ua)
+	t := thirdparty.NewClient(ua)
+	t.HTTP = retry.Wrap(t.HTTP, count)
+	s.MSRC, s.Ubuntu, s.Fedora, s.KEV, s.Third = m, o, b, k, t
 	return s
 }
 
@@ -113,10 +139,11 @@ type catalogStore interface {
 
 // sourceResult é o resultado de uma fonte numa execução.
 type sourceResult struct {
-	Source   string
-	OK       bool
-	Detail   string
-	Duration time.Duration
+	Source    string
+	OK        bool
+	Detail    string
+	Duration  time.Duration
+	RecordErr error // o registro em catalog_runs falhou: a fonte pode aparecer como atrasada sem estar
 }
 
 // syncCatalog roda as fontes pedidas, em sequência, e registra cada uma em catalog_runs.
@@ -130,11 +157,18 @@ func syncCatalog(ctx context.Context, srcs catalogSources, st catalogStore, opts
 		if ctx.Err() != nil {
 			break // encerramento: o que não rodou não é registrado como falha
 		}
-		started := time.Now()
+		started, before := time.Now(), srcs.retries()
 		ok, detail := syncOneSource(ctx, name, srcs, st, opts, out)
+		if n := srcs.retries() - before; n > 0 {
+			detail += fmt.Sprintf("; %d pedido(s) repetido(s)", n)
+		}
 		r := sourceResult{Source: name, OK: ok, Detail: detail, Duration: time.Since(started).Round(time.Millisecond)}
-		if err := st.RecordCatalogRun(ctx, name, opts.Trigger, started.UTC(), time.Now().UTC(), ok, detail); err != nil {
-			fmt.Fprintf(out, "  (o registro da execução de %s falhou: %v)\n", name, err)
+		r.RecordErr = st.RecordCatalogRun(ctx, name, opts.Trigger, started.UTC(), time.Now().UTC(), ok, detail)
+		if r.RecordErr != nil {
+			fmt.Fprintf(out, "  (o registro da execução de %s falhou: %v)\n", name, r.RecordErr)
+		}
+		if opts.Done != nil {
+			opts.Done(r)
 		}
 		results = append(results, r)
 	}
@@ -151,12 +185,16 @@ func syncOneSource(ctx context.Context, name string, srcs catalogSources, st cat
 	case "msrc":
 		fmt.Fprintln(out, "MSRC:")
 		since := time.Now().UTC().AddDate(0, -opts.Months, 0)
-		synced, nfail, err := syncMSRC(ctx, srcs.MSRC, st, since, out)
+		r, err := syncMSRCWith(ctx, srcs.MSRC, st, since, opts.Full, out)
 		if err != nil {
 			return failure(err)
 		}
-		fmt.Fprintf(out, "%d documento(s) gravado(s), %d com falha\n", synced, nfail)
-		return nfail == 0, fmt.Sprintf("%d documento(s) gravado(s), %d com falha", synced, nfail)
+		summary := fmt.Sprintf("%d documento(s) gravado(s), %d com falha", r.Synced, r.Failed)
+		if r.Missing > 0 {
+			summary += fmt.Sprintf(", %d ausente(s) da lista (mantidos)", r.Missing)
+		}
+		fmt.Fprintln(out, summary)
+		return r.Failed == 0, summary
 	case "ubuntu":
 		fmt.Fprintln(out, "Ubuntu (OSV):")
 		res, err := syncUbuntu(ctx, srcs.Ubuntu, st, opts.MaxUSN, opts.Workers, out)
@@ -273,6 +311,16 @@ func catalogLoopWith(ctx context.Context, logger *slog.Logger, st catalogSchedul
 func runScheduledSync(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, opts syncOptions) {
 	started := time.Now()
 	var results []sourceResult
+	opts.Done = func(r sourceResult) {
+		if r.OK {
+			logger.Info("catálogo sincronizado", "fonte", r.Source, "duracao", r.Duration.String(), "resumo", r.Detail)
+		} else {
+			logger.Warn("catálogo com falha", "fonte", r.Source, "duracao", r.Duration.String(), "resumo", r.Detail)
+		}
+		if r.RecordErr != nil {
+			logger.Error("registro da sincronização falhou: a fonte pode aparecer como atrasada", "fonte", r.Source, "error", r.RecordErr)
+		}
+	}
 	err := withCatalogLock(ctx, st, func() {
 		logger.Info("sincronização agendada iniciada")
 		// A saída detalhada (uma linha por documento, por USN com falha...) não vai para o
@@ -291,11 +339,8 @@ func runScheduledSync(ctx context.Context, logger *slog.Logger, st catalogSchedu
 	}
 	failed := 0
 	for _, r := range results {
-		if r.OK {
-			logger.Info("catálogo sincronizado", "fonte", r.Source, "duracao", r.Duration.String(), "resumo", r.Detail)
-		} else {
+		if !r.OK {
 			failed++
-			logger.Warn("catálogo com falha", "fonte", r.Source, "duracao", r.Duration.String(), "resumo", r.Detail)
 		}
 	}
 	logger.Info("sincronização agendada concluída", "fontes", len(results), "com_falha", failed,

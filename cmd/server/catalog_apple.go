@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/catalog/apple"
 	"github.com/tasantiago/patchd/internal/store"
@@ -20,7 +21,12 @@ type appleStore interface {
 	FeedHash(ctx context.Context, source string) (string, error)
 	SaveAppleVersions(ctx context.Context, vs []apple.GDMFVersion, hash string) error
 	SaveSOFA(ctx context.Context, f apple.SOFAFeed) error
+	AppleMajors(ctx context.Context) ([]store.AppleMajor, error)
 }
+
+// sofaVanishWindow: uma major com versão de segurança nos últimos 365 dias não pode sumir do
+// SOFA de uma hora para outra; se sumir, o feed está quebrado.
+const sofaVanishWindow = 365 * 24 * time.Hour
 
 // syncApple baixa as duas fontes (pequenas, sem pedido condicional) e grava cada uma só
 // quando o conteúdo mudou: o GDMFHash (conteúdo reduzido e ordenado) no gdmf, o UpdateHash
@@ -66,6 +72,29 @@ func syncApple(ctx context.Context, src appleSource, st appleStore, out io.Write
 	cves, exploited := 0, map[string]bool{}
 	for _, r := range f.Releases {
 		majors[r.MajorNumber] = true
+	}
+	// A gravação do SOFA substitui tudo: uma major que sumisse do feed sumiria do catálogo, e a
+	// avaliação dos Macs nela mudaria (fim de suporte contado pela posição, Aula 6.4). Major
+	// recente que some: o feed é recusado. Major antiga (sem versão há mais de um ano): sai,
+	// com aviso.
+	stored, err := st.AppleMajors(ctx)
+	if err != nil {
+		return changed, failed, err
+	}
+	for _, m := range stored {
+		if majors[m.Number] {
+			continue
+		}
+		if time.Since(m.Date) < sofaVanishWindow {
+			failed++
+			fmt.Fprintf(out, "  sofa RECUSADO: a major %s (%s, última versão em %s) sumiu do feed; o catálogo atual fica\n",
+				m.Number, m.Major, m.Date.Format("2006-01-02"))
+			return changed, failed, nil
+		}
+		fmt.Fprintf(out, "  sofa: a major %s (%s, última versão em %s) saiu do feed e sai do catálogo\n",
+			m.Number, m.Major, m.Date.Format("2006-01-02"))
+	}
+	for _, r := range f.Releases {
 		cves += len(r.CVEs)
 		for _, c := range r.CVEs {
 			if c.Exploited {
