@@ -97,3 +97,23 @@ func TestSyncMSRCBaixaSoONovoOuRevisado(t *testing.T) {
 		t.Error("o documento ausente da lista não pode ser apagado")
 	}
 }
+
+func TestSyncMSRCFullEAusentes(t *testing.T) {
+	fonte := &fonteFalsa{lista: []msrc.Update{
+		{ID: "2026-Sep", InitialReleaseDate: dia(9, 8), CurrentReleaseDate: dia(10, 4)},
+		{ID: "2026-Aug", InitialReleaseDate: dia(8, 11), CurrentReleaseDate: dia(10, 2)},
+	}}
+	// Tudo em dia no banco, mais um documento que não está na lista.
+	banco := &bancoFalso{versoes: map[string]time.Time{"2026-Sep": dia(10, 4), "2026-Aug": dia(10, 2), "2026-Jul": dia(7, 14)}}
+	var out bytes.Buffer
+	r, err := syncMSRCWith(context.Background(), fonte, banco, dia(1, 1), false, &out)
+	if err != nil || r.Synced != 0 || r.Missing != 1 || len(fonte.baixados) != 0 {
+		t.Fatalf("sem full: %+v %v %v", r, err, fonte.baixados)
+	}
+	// Com full, os dois da janela são baixados de novo, mesmo com a data igual.
+	out = bytes.Buffer{}
+	r, err = syncMSRCWith(context.Background(), fonte, banco, dia(1, 1), true, &out)
+	if err != nil || r.Synced != 2 || r.Missing != 1 || strings.Count(out.String(), "de novo") != 2 {
+		t.Errorf("com full: %+v %v\n%s", r, err, out.String())
+	}
+}

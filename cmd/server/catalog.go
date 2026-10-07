@@ -26,8 +26,10 @@ comandos:
                               -months: janela de meses do MSRC (padrão 12)
                               -max: teto de USNs baixadas nesta execução (padrão 0, sem teto)
                               -workers: downloads simultâneos do Ubuntu (padrão 4)
-                              -full: baixa de novo todos os updates do Fedora, ignorando
-                                     o ponto de parada (pega bugs ligados depois do stable)
+                              -full: baixa de novo tudo, ignorando o que está guardado: no
+                                     Fedora, todos os updates (pega bugs ligados depois do
+                                     stable); no MSRC, todos os documentos da janela. Use com
+                                     -source, para não baixar as duas fontes inteiras juntas
   status                    situação de cada fonte: último sucesso, última falha e se está atrasada
                             (sem sucesso há mais de 48 h); o servidor sincroniza sozinho a cada
                             PATCHD_CATALOG_INTERVAL (padrão 6h)
@@ -83,7 +85,7 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	maxUSN := fs.Int("max", 0, "teto de USNs baixadas no sync (0: sem teto)")
 	workers := fs.Int("workers", 4, "downloads simultâneos do Ubuntu no sync")
 	product := fs.String("product", "Windows", "prefixo do nome do produto no builds")
-	full := fs.Bool("full", false, "Fedora: baixa todos os updates de novo no sync")
+	full := fs.Bool("full", false, "Fedora e MSRC: baixa tudo de novo no sync")
 	pkg := fs.String("package", "", "pacote fonte no usn e no fedora")
 	release := fs.String("release", "", "versão no usn (26.04), no fedora (F44) e no apple (26)")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
@@ -371,13 +373,26 @@ type msrcStore interface {
 // a lista (pequena) é o que evita baixar dezenas de MB à toa. Um documento que falha não
 // impede os outros.
 func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time, out io.Writer) (synced, failed int, err error) {
+	r, err := syncMSRCWith(ctx, src, st, since, false, out)
+	return r.Synced, r.Failed, err
+}
+
+// msrcResult resume uma sincronização do MSRC.
+type msrcResult struct {
+	Synced, Failed, Missing int
+}
+
+// syncMSRCWith é o syncMSRC com a ressincronização: full baixa de novo todos os documentos
+// da janela, mesmo os com a data de revisão igual à guardada (um documento gravado errado,
+// ou um parser novo que extrai mais campos).
+func syncMSRCWith(ctx context.Context, src msrcSource, st msrcStore, since time.Time, full bool, out io.Writer) (res msrcResult, err error) {
 	updates, err := src.Updates(ctx)
 	if err != nil {
-		return 0, 0, fmt.Errorf("lista do MSRC: %w", err)
+		return res, fmt.Errorf("lista do MSRC: %w", err)
 	}
 	known, err := st.MSRCVersions(ctx)
 	if err != nil {
-		return 0, 0, err
+		return res, err
 	}
 	// Do mais velho para o mais novo, numa cópia: a lista recebida não é alterada.
 	updates = slices.Clone(updates)
@@ -388,7 +403,7 @@ func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time
 			continue
 		}
 		prev, seen := known[u.ID]
-		if seen && prev.Equal(u.CurrentReleaseDate) {
+		if seen && prev.Equal(u.CurrentReleaseDate) && !full {
 			fmt.Fprintf(out, "  %-9s em dia\n", u.ID)
 			continue
 		}
@@ -398,13 +413,16 @@ func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time
 			err = st.SaveMSRCDocument(ctx, d, u.CurrentReleaseDate)
 		}
 		if err != nil {
-			failed++
+			res.Failed++
 			fmt.Fprintf(out, "  %-9s FALHOU: %v\n", u.ID, err)
 			continue
 		}
-		synced++
+		res.Synced++
 		state := "novo"
-		if seen {
+		switch {
+		case seen && prev.Equal(u.CurrentReleaseDate):
+			state = "de novo"
+		case seen:
 			state = "revisado"
 		}
 		exploited := 0
@@ -432,7 +450,8 @@ func syncMSRC(ctx context.Context, src msrcSource, st msrcStore, since time.Time
 		fmt.Fprintf(out, "  %-9s AUSENTE da lista do MSRC: a versão guardada (revisão de %s UTC) foi mantida\n",
 			id, known[id].Format("2006-01-02 15:04"))
 	}
-	return synced, failed, nil
+	res.Missing = len(missing)
+	return res, nil
 }
 
 // isDigits diz se s é um número sem sinal (o número de uma major do macOS).

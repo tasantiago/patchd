@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/catalog/apple"
 	"github.com/tasantiago/patchd/internal/store"
@@ -27,6 +28,11 @@ func (a *appleFalso) FetchSOFA(context.Context) (apple.SOFAFeed, error) { return
 type bancoAppleFalso struct {
 	hashes    map[string]string
 	gravacoes int
+	majors    []store.AppleMajor
+}
+
+func (b *bancoAppleFalso) AppleMajors(context.Context) ([]store.AppleMajor, error) {
+	return b.majors, nil
 }
 
 func (b *bancoAppleFalso) FeedHash(_ context.Context, source string) (string, error) {
@@ -93,5 +99,37 @@ func TestSyncApple(t *testing.T) {
 	_, falhas, _ = syncApple(ctx, fonte, banco, &bytes.Buffer{})
 	if falhas != 2 {
 		t.Errorf("gdmf vazio: %d falhas", falhas)
+	}
+}
+
+func TestSyncAppleMajorQueSome(t *testing.T) {
+	ctx := context.Background()
+	agora := time.Now()
+	fonte := &appleFalso{
+		versoes:  []apple.GDMFVersion{{ProductVersion: "26.7.1", Build: "25G241"}},
+		hashGDMF: "g1",
+		feed: apple.SOFAFeed{UpdateHash: "s2", Releases: []apple.Release{
+			{MajorNumber: "27", ProductVersion: "27.0.1"}, {MajorNumber: "26", ProductVersion: "26.7.1"}, {MajorNumber: "15", ProductVersion: "15.8.1"},
+		}},
+	}
+	// O Sonoma (última versão há dois meses) sumiu do feed: recusado, nada é gravado.
+	banco := &bancoAppleFalso{hashes: map[string]string{store.FeedAppleSOFA: "s1"}, majors: []store.AppleMajor{
+		{Major: "Tahoe 26", Number: "26", Date: agora.AddDate(0, 0, -9)},
+		{Major: "Sonoma 14", Number: "14", Date: agora.AddDate(0, -2, 0)},
+	}}
+	var out bytes.Buffer
+	_, falhas, err := syncApple(ctx, fonte, banco, &out)
+	if err != nil || falhas != 1 || banco.hashes[store.FeedAppleSOFA] != "s1" ||
+		!strings.Contains(out.String(), "sofa RECUSADO: a major 14 (Sonoma 14, última versão em") {
+		t.Errorf("major recente que some: %d %v\n%s", falhas, err, out.String())
+	}
+
+	// O Monterey (última versão há dois anos) sai com aviso, e o feed é gravado.
+	banco.majors = []store.AppleMajor{{Major: "Monterey 12", Number: "12", Date: agora.AddDate(-2, 0, 0)}}
+	out = bytes.Buffer{}
+	_, falhas, err = syncApple(ctx, fonte, banco, &out)
+	if err != nil || falhas != 0 || banco.hashes[store.FeedAppleSOFA] != "s2" ||
+		!strings.Contains(out.String(), "a major 12 (Monterey 12, última versão em") || !strings.Contains(out.String(), "sai do catálogo") {
+		t.Errorf("major antiga que some: %d %v\n%s", falhas, err, out.String())
 	}
 }

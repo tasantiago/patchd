@@ -126,6 +126,8 @@ O servidor baixa os catálogos e cruza com o inventário localmente: o inventár
 
 O servidor sincroniza todas as fontes sozinho, a cada `PATCHD_CATALOG_INTERVAL` (padrão `6h`; `0` desliga), com a primeira execução entre 1 e 5 minutos depois da partida. Uma trava no PostgreSQL (`pg_try_advisory_lock`) impede duas sincronizações ao mesmo tempo no mesmo banco, seja o agendamento, um `catalog sync` manual ou outra instância. Cada fonte de cada execução fica registrada em `catalog_runs` (90 dias); uma fonte sem sucesso há mais de 48 h aparece como atrasada no `catalog status` e gera aviso no `compliance` (Aula 6.6).
 
+Todas as fontes, menos o Bodhi (que tem a própria repetição), passam por uma repetição de pedidos GET: erro de rede, inclusive a conexão que cai no meio do corpo, 429 e 5xx, até 4 tentativas (5, 10 e 15 s de espera, ou o `Retry-After`). As repetições aparecem no resumo de cada fonte. Um feed do SOFA em que some uma major com versão de segurança no último ano é recusado (a gravação substituiria o catálogo inteiro); uma major antiga que sai do feed sai do catálogo, com aviso. O `catalog sync -source msrc -full` baixa de novo todos os documentos da janela.
+
 | Fonte | Endereço | Como a sincronização sabe o que mudou | Observações |
 |---|---|---|---|
 | MSRC (Windows) | `https://api.msrc.microsoft.com/cvrf/v3.0` | `CurrentReleaseDate` da lista `/updates` (a API responde `no-store`, sem ETag) | Documentos são revisados depois de publicados, inclusive meses antigos com KBs novos. Um documento pode sumir da lista por algumas horas (2026-Aug e 2026-Sep, em 06/10/2026): o guardado é mantido e o sumiço é avisado |
