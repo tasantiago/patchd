@@ -26,6 +26,8 @@ func TestPedidosDeProxyNaoChegamNaAPI(t *testing.T) {
 		{"CONNECT com o cache desligado", nil, "CONNECT", "archive.ubuntu.com:443", 403, "desligado"},
 		{"proxy com o cache ligado", repo, "GET", "http://archive.ubuntu.com/ubuntu/dists/resolute/InRelease", 200, "cache"},
 		{"API com o cache ligado", repo, "GET", "/api/v1/machines", 200, "api"},
+		{"Fedora com o cache ligado", repo, "GET", "/repo/fedora/updates/44/x86_64/repodata/repomd.xml", 200, "cache"},
+		{"Fedora com o cache desligado", nil, "GET", "/repo/fedora/updates/44/x86_64/repodata/repomd.xml", 404, "not found"},
 	}
 	for _, c := range casos {
 		h := newHandler(api, c.repo)

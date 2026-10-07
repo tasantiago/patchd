@@ -1,5 +1,5 @@
-// Package repocache é o cache sob demanda dos repositórios Ubuntu (Aula 6.6, parte 4b;
-// RF-29). O apt das máquinas usa o patchd-server como proxy HTTP só para os hosts das
+// Package repocache é o cache sob demanda dos repositórios Ubuntu (Aula 6.6, parte 4b) e
+// Fedora (parte 4c; ver fedora.go), o RF-29. O apt das máquinas usa o patchd-server como proxy HTTP só para os hosts das
 // fontes (Acquire::http::Proxy::<host>): o pedido chega na forma absoluta
 // ("GET http://archive.ubuntu.com/ubuntu/dists/...") e o servidor responde do disco ou
 // busca na origem.
@@ -55,7 +55,14 @@ const (
 	idleTimeout   = 2 * time.Minute  // sem bytes por esse tempo, na origem ou no cliente
 	headerTimeout = time.Minute      // espera pelos cabeçalhos da origem
 	cacheHeader   = "X-Patchd-Cache" // HIT, MISS, FRESH, REVALIDATED, KEPT, STALE, PASS
+	// originBackoff: depois de uma falha da origem (rede, DNS, 5xx), os índices guardados
+	// são servidos na hora por esse tempo, sem esperar outra falha (um DNS fora levava 24 s
+	// por pedido, Aula 6.6 parte 4b).
+	originBackoff = time.Minute
 )
+
+// results são os resultados contados em /repo/stats.
+var results = []string{"HIT", "MISS", "FRESH", "REVALIDATED", "KEPT", "STALE", "PASS"}
 
 // Cache atende os pedidos de proxy do apt. Os campos são exportados para os testes.
 type Cache struct {
@@ -65,10 +72,22 @@ type Cache struct {
 	Logger *slog.Logger
 	Idle   time.Duration
 
+	// MetalinkURL é o metalink do Fedora (parte 4c).
+	MetalinkURL string
+
 	now      func() time.Time
 	base     func(host string) string // testes: aponta a origem para um servidor local
+	httpOK   bool                     // testes: aceita espelhos http:// no metalink
 	mu       sync.Mutex
 	inflight map[string]*call
+
+	downMu    sync.Mutex
+	downUntil map[string]time.Time // origem → até quando ela é considerada fora
+
+	metaMu sync.Mutex
+	metas  map[string]*metalinkInfo // repositório Fedora → último metalink lido
+
+	counts map[string]*atomic.Int64 // resultado → pedidos (fixo depois do New)
 }
 
 // New monta o cache com as origens permitidas (lista separada por vírgulas).
@@ -82,7 +101,7 @@ func New(dir, hosts, userAgent string, logger *slog.Logger) (*Cache, error) {
 	}
 	t := http.DefaultTransport.(*http.Transport).Clone() // mantém o proxy do ambiente
 	t.ResponseHeaderTimeout = headerTimeout
-	c := &Cache{Dir: dir, Hosts: hs, Logger: logger, Idle: idleTimeout,
+	c := &Cache{Dir: dir, Hosts: hs, Logger: logger, Idle: idleTimeout, MetalinkURL: DefaultMetalinkURL,
 		HTTP: &http.Client{Transport: &userAgentTransport{next: t, ua: userAgent},
 			// A origem não redireciona o apt para outro lugar através do cache.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
@@ -90,6 +109,10 @@ func New(dir, hosts, userAgent string, logger *slog.Logger) (*Cache, error) {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o750); err != nil {
 			return nil, err
 		}
+	}
+	c.counts = map[string]*atomic.Int64{}
+	for _, r := range results {
+		c.counts[r] = new(atomic.Int64)
 	}
 	return c, nil
 }
@@ -159,8 +182,20 @@ func classify(p string) (kind, string) {
 	return kindPass, ""
 }
 
-// ServeHTTP atende um pedido de proxy do apt.
+// ServeHTTP atende os pedidos de proxy do apt (forma absoluta) e, pelo caminho, o Fedora
+// (/repo/fedora/...) e as contagens (/repo/stats).
 func (c *Cache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !IsProxyRequest(r) {
+		switch {
+		case r.URL.Path == "/repo/stats" && r.Method == http.MethodGet:
+			c.serveStats(w)
+		case strings.HasPrefix(r.URL.Path, fedoraPrefix):
+			c.serveFedora(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+		return
+	}
 	start := c.clock()
 	w = httpx.ExtendWrites(w, c.idle())
 	host := strings.ToLower(r.URL.Hostname())
@@ -196,11 +231,20 @@ func (c *Cache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case kindIndex:
 		result, n, err = c.serveIndex(w, r, host, p)
 	case kindByHash:
-		result, n, err = c.serveObject(w, r, host, p, filepath.Join(c.Dir, "sha256", sum[:2], sum), sum)
+		result, n, err = c.serveObject(w, r, host, []string{c.origin(host, p)}, c.shaFile(sum), sum)
 	case kindPool:
-		result, n, err = c.serveObject(w, r, host, p, filepath.Join(c.Dir, "pool", host, filepath.FromSlash(p)), "")
+		result, n, err = c.serveObject(w, r, host, []string{c.origin(host, p)}, filepath.Join(c.Dir, "pool", host, filepath.FromSlash(p)), "")
 	default:
-		result, n, err = c.pass(w, r, host, p)
+		result, n, err = c.pass(w, r, host, c.origin(host, p))
+	}
+	c.logResult(r, start, result, host, p, n, err)
+}
+
+// logResult conta o resultado e registra: falhas em Warn, o que foi à origem (ou deveria
+// ter ido) em Info, o resto em Debug (uma atualização faz centenas de pedidos).
+func (c *Cache) logResult(r *http.Request, start time.Time, result, host, p string, n int64, err error) {
+	if ct, ok := c.counts[result]; ok {
+		ct.Add(1)
 	}
 	attrs := []any{"result", result, "host", host, "path", p, "bytes", n,
 		"duration_ms", c.clock().Sub(start).Milliseconds(), "remote", r.RemoteAddr}
@@ -212,6 +256,41 @@ func (c *Cache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		c.Logger.Debug("cache de repositórios", attrs...)
 	}
+}
+
+// serveStats responde as contagens desde a partida do servidor.
+func (c *Cache) serveStats(w http.ResponseWriter) {
+	out := map[string]int64{}
+	for r, ct := range c.counts {
+		out[r] = ct.Load()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (c *Cache) shaFile(sum string) string { return filepath.Join(c.Dir, "sha256", sum[:2], sum) }
+
+// isDown diz se a origem falhou há menos de originBackoff.
+func (c *Cache) isDown(origin string) bool {
+	c.downMu.Lock()
+	defer c.downMu.Unlock()
+	return c.clock().Before(c.downUntil[origin])
+}
+
+// markDown e markUp registram a falha e a volta de uma origem.
+func (c *Cache) markDown(origin string) {
+	c.downMu.Lock()
+	defer c.downMu.Unlock()
+	if c.downUntil == nil {
+		c.downUntil = map[string]time.Time{}
+	}
+	c.downUntil[origin] = c.clock().Add(originBackoff)
+}
+
+func (c *Cache) markUp(origin string) {
+	c.downMu.Lock()
+	defer c.downMu.Unlock()
+	delete(c.downUntil, origin)
 }
 
 // clock é o relógio (substituível nos testes; nunca escrito durante o atendimento).
@@ -255,6 +334,9 @@ func (c *Cache) serveIndex(w http.ResponseWriter, r *http.Request, host, p strin
 	if stored && c.clock().Sub(meta.CheckedAt) < indexFresh {
 		return c.serveFile(w, r, file, "FRESH")
 	}
+	if stored && c.isDown(host) {
+		return c.stale(w, r, file, true, errors.New("a origem falhou há menos de 1 minuto; sem nova tentativa"))
+	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, c.origin(host, p), nil)
 	if err != nil {
@@ -270,9 +352,15 @@ func (c *Cache) serveIndex(w http.ResponseWriter, r *http.Request, host, p strin
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		c.markDown(host)
 		return c.stale(w, r, file, stored, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+		c.markDown(host)
+	} else {
+		c.markUp(host)
+	}
 	switch {
 	case resp.StatusCode == http.StatusNotModified && stored:
 		meta.CheckedAt = c.clock().UTC()
@@ -364,9 +452,18 @@ type call struct {
 	err  error
 }
 
-func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host, p, file, sum string) (string, int64, error) {
+// serveObject entrega um arquivo imutável: do disco, ou da primeira origem que o tiver
+// (origins: uma para o apt; os espelhos do metalink para o Fedora).
+func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host string, origins []string, file, sum string) (string, int64, error) {
 	if _, err := os.Stat(file); err == nil {
 		return c.serveFile(w, r, file, "HIT")
+	}
+	if r.Header.Get("Range") != "" {
+		// Um pedaço de um arquivo que ainda não está no disco (a retomada do apt, o zchunk
+		// do dnf): o pedaço vem da origem agora, e o arquivo inteiro é guardado em segundo
+		// plano para os próximos pedidos.
+		c.fillAsync(host, origins, file, sum)
+		return c.pass(w, r, host, origins[0])
 	}
 	key := file
 	c.mu.Lock()
@@ -393,7 +490,7 @@ func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host, p, fil
 	c.inflight[key] = cl
 	c.mu.Unlock()
 
-	n, err := c.fetchObject(w, r, host, p, file, sum)
+	n, err := c.fetchObject(r.Context(), w, host, origins, file, sum)
 	cl.err = err
 	c.mu.Lock()
 	delete(c.inflight, key)
@@ -402,53 +499,109 @@ func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host, p, fil
 	return "MISS", n, err
 }
 
-// fetchObject baixa da origem, entrega ao apt enquanto grava e só guarda se o arquivo
-// chegou inteiro e (by-hash) com o SHA-256 do nome. O download continua até o fim mesmo
-// que o apt desista: o próximo pedido encontra o arquivo pronto.
-func (c *Cache) fetchObject(w http.ResponseWriter, r *http.Request, host, p, file, sum string) (int64, error) {
-	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+// fillAsync guarda o arquivo em segundo plano, se ninguém já estiver baixando.
+func (c *Cache) fillAsync(host string, origins []string, file, sum string) {
+	c.mu.Lock()
+	if c.inflight == nil {
+		c.inflight = map[string]*call{}
+	}
+	if _, ok := c.inflight[file]; ok {
+		c.mu.Unlock()
+		return
+	}
+	cl := &call{done: make(chan struct{})}
+	c.inflight[file] = cl
+	c.mu.Unlock()
+	go func() {
+		start := c.clock()
+		n, err := c.fetchObject(context.Background(), nil, host, origins, file, sum)
+		cl.err = err
+		c.mu.Lock()
+		delete(c.inflight, file)
+		c.mu.Unlock()
+		close(cl.done)
+		attrs := []any{"file", filepath.Base(file), "bytes", n, "duration_ms", c.clock().Sub(start).Milliseconds()}
+		if err != nil {
+			c.Logger.Warn("cache de repositórios: preenchimento em segundo plano falhou", append(attrs, "error", err)...)
+			return
+		}
+		c.Logger.Info("cache de repositórios: guardado em segundo plano", attrs...)
+	}()
+}
+
+// fetchObject baixa da primeira origem que responder 200, entrega ao cliente (w; nil em
+// segundo plano) enquanto grava, e só guarda se o arquivo chegou inteiro e, quando o nome
+// traz o hash, com esse SHA-256. O download continua até o fim mesmo que o cliente desista:
+// o próximo pedido encontra o arquivo pronto.
+func (c *Cache) fetchObject(parent context.Context, w http.ResponseWriter, host string, origins []string, file, sum string) (int64, error) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.origin(host, p), nil)
-	if err != nil {
+	fail := func(status int, msg string, err error) (int64, error) {
+		if w != nil {
+			w.Header().Set(cacheHeader, "MISS")
+			http.Error(w, msg, status)
+		}
 		return 0, err
 	}
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		w.Header().Set(cacheHeader, "MISS")
-		http.Error(w, "origem indisponível", http.StatusBadGateway)
-		return 0, err
+	var resp *http.Response
+	var lastErr error
+	notFound, serverFail := 0, false
+	for _, u := range origins {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return fail(http.StatusInternalServerError, "erro interno do cache", err)
+		}
+		rs, err := c.HTTP.Do(req)
+		if err != nil {
+			lastErr, serverFail = err, true
+			continue
+		}
+		if rs.StatusCode == http.StatusOK {
+			resp = rs
+			break
+		}
+		rs.Body.Close()
+		switch {
+		case rs.StatusCode == http.StatusNotFound:
+			notFound++
+		case rs.StatusCode >= 500 || rs.StatusCode == http.StatusTooManyRequests:
+			serverFail = true
+		}
+		lastErr = fmt.Errorf("origem respondeu %s", rs.Status)
+	}
+	if resp == nil {
+		if notFound == len(origins) {
+			return fail(http.StatusNotFound, "a origem não tem o arquivo", nil) // não é falha do cache
+		}
+		if serverFail && host != "" {
+			c.markDown(host)
+		}
+		return fail(http.StatusBadGateway, "origem indisponível", lastErr)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		w.Header().Set(cacheHeader, "MISS")
-		http.Error(w, "origem respondeu "+resp.Status, passStatus(resp.StatusCode))
-		if resp.StatusCode == http.StatusNotFound {
-			return 0, nil // não é falha do cache: o arquivo não existe na origem
-		}
-		return 0, fmt.Errorf("origem respondeu %s", resp.Status)
-	}
 	if resp.ContentLength > maxObjectSize {
-		w.Header().Set(cacheHeader, "MISS")
-		http.Error(w, "arquivo maior que o limite do cache", http.StatusBadGateway)
-		return 0, fmt.Errorf("Content-Length %d acima do limite", resp.ContentLength)
+		return fail(http.StatusBadGateway, "arquivo maior que o limite do cache", fmt.Errorf("Content-Length %d acima do limite", resp.ContentLength))
 	}
 
 	tmp, err := os.CreateTemp(filepath.Join(c.Dir, "tmp"), "obj-*")
 	if err != nil {
-		return 0, err
+		return fail(http.StatusInternalServerError, "erro interno do cache", err)
 	}
 	defer os.Remove(tmp.Name()) // depois do Rename, não há mais o que apagar
 
-	for _, h := range []string{"Content-Type", "Content-Length", "Last-Modified"} {
-		if v := resp.Header.Get(h); v != "" {
-			w.Header().Set(h, v)
+	var client io.Writer = io.Discard
+	if w != nil {
+		for _, h := range []string{"Content-Type", "Content-Length", "Last-Modified"} {
+			if v := resp.Header.Get(h); v != "" {
+				w.Header().Set(h, v)
+			}
 		}
+		w.Header().Set(cacheHeader, "MISS")
+		w.WriteHeader(http.StatusOK)
+		client = &bestEffort{w: w}
 	}
-	w.Header().Set(cacheHeader, "MISS")
-	w.WriteHeader(http.StatusOK)
 
 	h := sha256.New()
-	client := &bestEffort{w: w}
 	body := newStallReader(resp.Body, c.idle(), cancel)
 	n, cerr := io.Copy(io.MultiWriter(tmp, h, client), io.LimitReader(body, maxObjectSize+1))
 	body.stop()
@@ -465,7 +618,7 @@ func (c *Cache) fetchObject(w http.ResponseWriter, r *http.Request, host, p, fil
 	case resp.ContentLength >= 0 && n != resp.ContentLength:
 		return n, fmt.Errorf("a origem mandou %d de %d bytes", n, resp.ContentLength)
 	case sum != "" && hex.EncodeToString(h.Sum(nil)) != sum:
-		// O apt também vai recusar (ele confere o hash); aqui só não guardamos.
+		// O cliente também vai recusar (ele confere o hash); aqui só não guardamos.
 		return n, fmt.Errorf("o conteúdo não tem o SHA-256 do nome (%s...)", sum[:16])
 	}
 	if t, err := http.ParseTime(resp.Header.Get("Last-Modified")); err == nil {
@@ -494,11 +647,11 @@ func (b *bestEffort) Write(p []byte) (int, error) {
 
 // ---- repasse ----
 
-// pass busca na origem e repassa sem guardar (listas sem by-hash, Contents, ícones...).
-func (c *Cache) pass(w http.ResponseWriter, r *http.Request, host, p string) (string, int64, error) {
+// pass busca na origem (u) e repassa sem guardar (listas sem by-hash, Contents, ícones...).
+func (c *Cache) pass(w http.ResponseWriter, r *http.Request, host, u string) (string, int64, error) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, r.Method, c.origin(host, p), nil)
+	req, err := http.NewRequestWithContext(ctx, r.Method, u, nil)
 	if err != nil {
 		return "PASS", 0, err
 	}
@@ -509,6 +662,7 @@ func (c *Cache) pass(w http.ResponseWriter, r *http.Request, host, p string) (st
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		c.markDown(host)
 		w.Header().Set(cacheHeader, "PASS")
 		http.Error(w, "origem indisponível", http.StatusBadGateway)
 		return "PASS", 0, err
