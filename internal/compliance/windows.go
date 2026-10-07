@@ -254,10 +254,10 @@ func EvaluateWindows(machine WindowsBuild, rows []WindowsFix) WindowsResult {
 		if b.UBR == machine.UBR && res.Evidence == "" {
 			res.Evidence = "KB" + r.KB
 		}
-		if !has[r.CVE] || b.UBR < c.Min.UBR {
+		if !has[r.CVE] || b.UBR < c.Min.UBR || (b.UBR == c.Min.UBR && prefer(b, c.Min, machine)) {
 			c.Min, c.MinKB = b, r.KB
 		}
-		if !has[r.CVE] || b.UBR > c.Max.UBR {
+		if !has[r.CVE] || b.UBR > c.Max.UBR || (b.UBR == c.Max.UBR && prefer(b, c.Max, machine)) {
 			c.Max, c.MaxKB = b, r.KB
 		}
 		has[r.CVE] = true
@@ -280,13 +280,21 @@ func EvaluateWindows(machine WindowsBuild, rows []WindowsFix) WindowsResult {
 	}
 
 	res.CVEs = len(byCVE)
-	for _, c := range byCVE {
+	// Ordem fixa: o alvo não pode depender da ordem de um map (no empate de UBR, o build
+	// escolhido mudava de uma execução para outra).
+	ids := make([]string, 0, len(byCVE))
+	for id := range byCVE {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		c := byCVE[id]
 		switch {
 		case !has[c.CVE]:
 			res.NoFix = append(res.NoFix, *c)
 		case machine.UBR < c.Min.UBR:
 			res.Pending = append(res.Pending, *c)
-			if c.Max.UBR > res.Target.UBR {
+			if c.Max.UBR > res.Target.UBR || (c.Max.UBR == res.Target.UBR && prefer(c.Max, res.Target, machine)) {
 				res.Target, res.TargetKB = c.Max, c.MaxKB
 			}
 		case machine.UBR < c.Max.UBR:
@@ -306,6 +314,16 @@ func EvaluateWindows(machine WindowsBuild, rows []WindowsFix) WindowsResult {
 	slices.SortFunc(res.Rereleased, order)
 	slices.SortFunc(res.NoFix, order)
 	return res
+}
+
+// prefer decide o empate entre dois builds com o mesmo UBR (o mesmo KB em 26100 e 26200):
+// vale o da linha da máquina; fora dela, o de número maior. Assim o resultado não depende da
+// ordem em que as linhas chegam.
+func prefer(a, b, machine WindowsBuild) bool {
+	if (a.Major == machine.Major) != (b.Major == machine.Major) {
+		return a.Major == machine.Major
+	}
+	return a.Major > b.Major
 }
 
 func boolInt(b bool) int {
