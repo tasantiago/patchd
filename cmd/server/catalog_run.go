@@ -1,0 +1,374 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"math/rand/v2"
+	"text/tabwriter"
+	"time"
+
+	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/catalog/apple"
+	"github.com/tasantiago/patchd/internal/catalog/bodhi"
+	"github.com/tasantiago/patchd/internal/catalog/kev"
+	"github.com/tasantiago/patchd/internal/catalog/msrc"
+	"github.com/tasantiago/patchd/internal/catalog/osv"
+	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
+)
+
+// catalogSourceNames são as fontes, na ordem em que rodam.
+var catalogSourceNames = []string{"msrc", "ubuntu", "fedora", "apple", "kev", "terceiros"}
+
+// catalogStale: uma fonte sem sincronização bem-sucedida há mais que isso está atrasada.
+// Com o agendamento padrão de 6 h, são oito execuções perdidas seguidas.
+const catalogStale = 48 * time.Hour
+
+// syncOptions são as opções da sincronização. O agendamento usa os padrões do catalog sync.
+type syncOptions struct {
+	Sources map[string]bool
+	Months  int // janela do MSRC
+	MaxUSN  int // teto de USNs por execução (0: sem teto)
+	Workers int // downloads simultâneos do Ubuntu
+	Full    bool
+	Trigger string // agendada ou manual
+}
+
+func defaultSyncOptions(trigger string) syncOptions {
+	all := map[string]bool{}
+	for _, s := range catalogSourceNames {
+		all[s] = true
+	}
+	return syncOptions{Sources: all, Months: 12, Workers: 4, Trigger: trigger}
+}
+
+// catalogSources são as fontes da sincronização; os testes passam versões falsas.
+type catalogSources struct {
+	MSRC        msrcSource
+	Ubuntu      ubuntuSource
+	Fedora      fedoraSource
+	Apple       appleSource
+	AppleErr    error // o cliente da Apple não pôde ser montado (a raiz embutida)
+	KEV         kevSource
+	Third       thirdpartySource
+	Manifest    thirdparty.Manifest
+	ManifestErr error
+}
+
+// newCatalogSources monta os clientes reais, com os endereços trocados pelo ambiente.
+func newCatalogSources(look config.Lookup) catalogSources {
+	ua := "patchd-server/" + buildinfo.Get().Version
+	env := func(name string) (string, bool) {
+		v, ok := look(name)
+		return v, ok && v != ""
+	}
+	var s catalogSources
+	m := msrc.NewClient(ua)
+	if u, ok := env("PATCHD_MSRC_URL"); ok {
+		m.BaseURL = u
+	}
+	o := osv.NewClient("Ubuntu", ua)
+	if u, ok := env("PATCHD_OSV_URL"); ok {
+		o.BaseURL = u
+	}
+	b := bodhi.NewClient(ua)
+	if u, ok := env("PATCHD_BODHI_URL"); ok {
+		b.BaseURL = u
+	}
+	a, err := apple.NewClient(ua)
+	if err == nil {
+		if u, ok := env("PATCHD_GDMF_URL"); ok {
+			a.GDMFURL = u
+		}
+		if u, ok := env("PATCHD_SOFA_URL"); ok {
+			a.SOFAURL = u
+		}
+		s.Apple = a
+	}
+	s.AppleErr = err
+	k := kev.NewClient(ua)
+	if u, ok := env("PATCHD_KEV_URL"); ok {
+		k.URL = u
+	}
+	path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
+	s.Manifest, s.ManifestErr = thirdparty.Load(path)
+	s.MSRC, s.Ubuntu, s.Fedora, s.KEV, s.Third = m, o, b, k, thirdparty.NewClient(ua)
+	return s
+}
+
+// catalogStore é o banco da sincronização inteira.
+type catalogStore interface {
+	msrcStore
+	ubuntuStore
+	fedoraStore
+	appleStore
+	kevStore
+	thirdpartyStore
+	RecordCatalogRun(ctx context.Context, source, trigger string, started, finished time.Time, ok bool, detail string) error
+}
+
+// sourceResult é o resultado de uma fonte numa execução.
+type sourceResult struct {
+	Source   string
+	OK       bool
+	Detail   string
+	Duration time.Duration
+}
+
+// syncCatalog roda as fontes pedidas, em sequência, e registra cada uma em catalog_runs.
+// Uma fonte que falha não impede as outras. A saída detalhada de cada fonte vai para out.
+func syncCatalog(ctx context.Context, srcs catalogSources, st catalogStore, opts syncOptions, out io.Writer) []sourceResult {
+	var results []sourceResult
+	for _, name := range catalogSourceNames {
+		if !opts.Sources[name] {
+			continue
+		}
+		if ctx.Err() != nil {
+			break // encerramento: o que não rodou não é registrado como falha
+		}
+		started := time.Now()
+		ok, detail := syncOneSource(ctx, name, srcs, st, opts, out)
+		r := sourceResult{Source: name, OK: ok, Detail: detail, Duration: time.Since(started).Round(time.Millisecond)}
+		if err := st.RecordCatalogRun(ctx, name, opts.Trigger, started.UTC(), time.Now().UTC(), ok, detail); err != nil {
+			fmt.Fprintf(out, "  (o registro da execução de %s falhou: %v)\n", name, err)
+		}
+		results = append(results, r)
+	}
+	return results
+}
+
+// syncOneSource roda uma fonte e devolve se deu certo e o resumo.
+func syncOneSource(ctx context.Context, name string, srcs catalogSources, st catalogStore, opts syncOptions, out io.Writer) (bool, string) {
+	failure := func(err error) (bool, string) {
+		fmt.Fprintf(out, "  %s FALHOU: %v\n", name, err)
+		return false, err.Error()
+	}
+	switch name {
+	case "msrc":
+		fmt.Fprintln(out, "MSRC:")
+		since := time.Now().UTC().AddDate(0, -opts.Months, 0)
+		synced, nfail, err := syncMSRC(ctx, srcs.MSRC, st, since, out)
+		if err != nil {
+			return failure(err)
+		}
+		fmt.Fprintf(out, "%d documento(s) gravado(s), %d com falha\n", synced, nfail)
+		return nfail == 0, fmt.Sprintf("%d documento(s) gravado(s), %d com falha", synced, nfail)
+	case "ubuntu":
+		fmt.Fprintln(out, "Ubuntu (OSV):")
+		res, err := syncUbuntu(ctx, srcs.Ubuntu, st, opts.MaxUSN, opts.Workers, out)
+		if err != nil {
+			return failure(err)
+		}
+		if remaining := res.Pending - res.Saved - res.Withdrawn - res.Failed; remaining > 0 {
+			fmt.Fprintf(out, "  ubuntu: %d ficam para a próxima execução (-max)\n", remaining)
+		}
+		return res.Failed == 0, fmt.Sprintf("%d USN(s) gravada(s), %d retirada(s), %d com falha, %d ausente(s) da lista",
+			res.Saved, res.Withdrawn, res.Failed, res.Missing)
+	case "fedora":
+		fmt.Fprintln(out, "Fedora (Bodhi):")
+		n, nfail, err := syncFedora(ctx, srcs.Fedora, st, opts.Full, out)
+		if err != nil {
+			return failure(err)
+		}
+		fmt.Fprintf(out, "  fedora: %d update(s) gravado(s), %d versão(ões) com falha\n", n, nfail)
+		return nfail == 0, fmt.Sprintf("%d update(s) gravado(s), %d versão(ões) com falha", n, nfail)
+	case "apple":
+		fmt.Fprintln(out, "Apple (gdmf e SOFA):")
+		if srcs.AppleErr != nil {
+			return failure(srcs.AppleErr)
+		}
+		changed, nfail, err := syncApple(ctx, srcs.Apple, st, out)
+		if err != nil {
+			return failure(err)
+		}
+		return nfail == 0, fmt.Sprintf("%d fonte(s) atualizada(s), %d com falha", changed, nfail)
+	case "kev":
+		fmt.Fprintln(out, "CISA KEV:")
+		changed, kfail, err := syncKEV(ctx, srcs.KEV, st, out)
+		switch {
+		case err != nil:
+			return failure(err)
+		case kfail:
+			return false, "o feed falhou; o catálogo atual fica"
+		case changed:
+			return true, "atualizado"
+		}
+		return true, "em dia"
+	case "terceiros":
+		fmt.Fprintln(out, "Programas de terceiros:")
+		if srcs.ManifestErr != nil {
+			return failure(srcs.ManifestErr)
+		}
+		saved, tfail, err := syncThirdParty(ctx, srcs.Manifest, srcs.Third, st, out)
+		if err != nil {
+			return failure(err)
+		}
+		return tfail == 0, fmt.Sprintf("%d versão(ões) gravada(s), %d com falha", saved, tfail)
+	}
+	return failure(fmt.Errorf("fonte desconhecida"))
+}
+
+// catalogLocker é a trava que impede duas sincronizações ao mesmo tempo no mesmo banco.
+type catalogLocker interface {
+	TryCatalogLock(ctx context.Context) (unlock func(), ok bool, err error)
+}
+
+// errCatalogBusy: outra sincronização (o agendamento do servidor, outro catalog sync ou
+// outra instância) está em andamento.
+var errCatalogBusy = errors.New("outra sincronização do catálogo está em andamento neste banco (o agendamento do servidor ou outro catalog sync); tente de novo depois")
+
+// withCatalogLock roda fn com a trava do catálogo, ou devolve errCatalogBusy sem esperar.
+func withCatalogLock(ctx context.Context, l catalogLocker, fn func()) error {
+	unlock, ok, err := l.TryCatalogLock(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errCatalogBusy
+	}
+	defer unlock()
+	fn()
+	return nil
+}
+
+// catalogScheduler é o que o agendamento usa do banco.
+type catalogScheduler interface {
+	catalogStore
+	catalogLocker
+	PruneCatalogRuns(ctx context.Context, before time.Time) (int64, error)
+}
+
+// catalogRunsRetention: por quanto tempo o registro das execuções é guardado.
+const catalogRunsRetention = 90 * 24 * time.Hour
+
+// catalogLoop sincroniza o catálogo dentro do servidor: a primeira vez depois de first, e
+// depois a cada interval. Cada execução disputa a trava do banco; se outro processo estiver
+// sincronizando, esta pula a vez. O resultado de cada fonte vai para o log.
+func catalogLoop(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, interval, first time.Duration) {
+	catalogLoopWith(ctx, logger, st, srcs, defaultSyncOptions("agendada"), interval, first)
+}
+
+// catalogLoopWith é o laço do agendamento, com as opções como parâmetro (os testes limitam
+// as fontes).
+func catalogLoopWith(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, opts syncOptions, interval, first time.Duration) {
+	logger.Info("sincronização do catálogo agendada", "primeira_em", first.Round(time.Second).String(), "intervalo", interval.String())
+	timer := time.NewTimer(first)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		runScheduledSync(ctx, logger, st, srcs, opts)
+		timer.Reset(interval)
+	}
+}
+
+// runScheduledSync faz uma execução agendada.
+func runScheduledSync(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, opts syncOptions) {
+	started := time.Now()
+	var results []sourceResult
+	err := withCatalogLock(ctx, st, func() {
+		logger.Info("sincronização agendada iniciada")
+		// A saída detalhada (uma linha por documento, por USN com falha...) não vai para o
+		// log: o resumo de cada fonte vai, e o detalhe fica no catalog sync manual.
+		results = syncCatalog(ctx, srcs, st, opts, io.Discard)
+	})
+	switch {
+	case errors.Is(err, errCatalogBusy):
+		logger.Info("sincronização agendada pulada: outra está em andamento")
+		return
+	case err != nil:
+		if ctx.Err() == nil {
+			logger.Error("sincronização agendada falhou", "error", err)
+		}
+		return
+	}
+	failed := 0
+	for _, r := range results {
+		if r.OK {
+			logger.Info("catálogo sincronizado", "fonte", r.Source, "duracao", r.Duration.String(), "resumo", r.Detail)
+		} else {
+			failed++
+			logger.Warn("catálogo com falha", "fonte", r.Source, "duracao", r.Duration.String(), "resumo", r.Detail)
+		}
+	}
+	logger.Info("sincronização agendada concluída", "fontes", len(results), "com_falha", failed,
+		"duracao", time.Since(started).Round(time.Second).String())
+	if n, err := st.PruneCatalogRuns(ctx, time.Now().Add(-catalogRunsRetention)); err != nil && ctx.Err() == nil {
+		logger.Error("limpeza do registro de sincronizações falhou", "error", err)
+	} else if n > 0 {
+		logger.Info("registro de sincronizações antigas apagado", "count", n)
+	}
+}
+
+// firstCatalogRun espalha a primeira execução entre 1 e 5 minutos depois da partida: o
+// servidor já está atendendo, e várias instâncias (ou reinícios seguidos) não batem nas
+// fontes no mesmo instante.
+func firstCatalogRun() time.Duration {
+	return time.Minute + rand.N(4*time.Minute)
+}
+
+// printCatalogStatus escreve o "catalog status".
+func printCatalogStatus(ss []store.CatalogSourceStatus, now time.Time, out io.Writer) {
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FONTE\tSITUAÇÃO\tÚLTIMO SUCESSO (UTC)\tÚLTIMA FALHA (UTC)\tEXECUÇÕES\tÚLTIMA EXECUÇÃO")
+	day := func(t time.Time) string {
+		if t.IsZero() {
+			return "-"
+		}
+		return t.Format("2006-01-02 15:04")
+	}
+	for _, s := range ss {
+		last := "-"
+		if s.Runs > 0 {
+			last = s.Trigger + ": " + s.Detail
+			if r := []rune(last); len(r) > 90 {
+				last = string(r[:87]) + "..."
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n", s.Source, catalogState(s, now), day(s.LastOK), day(s.LastFail), s.Runs, last)
+	}
+	tw.Flush()
+}
+
+// catalogState resume a situação de uma fonte.
+func catalogState(s store.CatalogSourceStatus, now time.Time) string {
+	switch {
+	case s.LastOK.IsZero():
+		return "NUNCA SINCRONIZADA"
+	case now.Sub(s.LastOK) > catalogStale:
+		return fmt.Sprintf("ATRASADA (%s)", ago(now.Sub(s.LastOK)))
+	case !s.Latest:
+		return "em dia, mas a última falhou"
+	}
+	return "em dia"
+}
+
+// ago escreve uma duração como "3 dias" ou "5 h".
+func ago(d time.Duration) string {
+	if d >= 48*time.Hour {
+		return fmt.Sprintf("há %d dias", int(d.Hours()/24))
+	}
+	return fmt.Sprintf("há %d h", int(d.Hours()))
+}
+
+// catalogWarnings devolve os avisos de catálogo atrasado para as fontes de uma avaliação.
+func catalogWarnings(ss []store.CatalogSourceStatus, now time.Time) []string {
+	var out []string
+	for _, s := range ss {
+		switch {
+		case s.LastOK.IsZero():
+			out = append(out, fmt.Sprintf("catálogo %s sem sincronização bem-sucedida registrada (o registro começou na Aula 6.6)", s.Source))
+		case now.Sub(s.LastOK) > catalogStale:
+			out = append(out, fmt.Sprintf("catálogo %s sincronizado com sucesso pela última vez %s; a avaliação pode estar perdendo correções novas",
+				s.Source, ago(now.Sub(s.LastOK))))
+		}
+	}
+	return out
+}

@@ -17,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/release"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // Códigos de saída do servidor.
@@ -105,6 +106,14 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	defer closeStore()
 	if p, ok := st.(scanPruner); ok {
 		go pruneScansLoop(ctx, logger, p)
+	}
+	switch pg, ok := st.(*store.Postgres); {
+	case !ok:
+		// Sem banco não há catálogo.
+	case cfg.CatalogInterval == 0:
+		logger.Info("sincronização do catálogo desligada (PATCHD_CATALOG_INTERVAL=0): use patchd-server catalog sync")
+	default:
+		go catalogLoop(ctx, logger, pg, newCatalogSources(look), cfg.CatalogInterval, firstCatalogRun())
 	}
 
 	var apiOpts []api.Option

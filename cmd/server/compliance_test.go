@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/kev"
 	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
@@ -31,6 +32,19 @@ type bancoComplianceFalso struct {
 	modelos  map[string]compliance.MacModel
 	extras   map[string]compliance.MacExtra
 	refs     []thirdparty.Ref
+	situacao map[string]store.CatalogSourceStatus
+}
+
+func (b *bancoComplianceFalso) CatalogStatus(_ context.Context, sources []string) ([]store.CatalogSourceStatus, error) {
+	var out []store.CatalogSourceStatus
+	for _, s := range sources {
+		st, ok := b.situacao[s]
+		if !ok {
+			st = store.CatalogSourceStatus{Source: s}
+		}
+		out = append(out, st)
+	}
+	return out, nil
 }
 
 func (b *bancoComplianceFalso) ThirdPartyVersions(context.Context) ([]thirdparty.Ref, error) {
@@ -480,5 +494,39 @@ func TestEvaluateMachineTerceiros(t *testing.T) {
 	ev, err = evaluateMachine(context.Background(), banco, "7aa6", evalOptions{Now: agora, Manifest: &manifesto})
 	if err != nil || ev.Third != nil {
 		t.Errorf("Ubuntu: %+v %v", ev.Third, err)
+	}
+}
+
+func TestEvaluateMachineCatalogoAtrasado(t *testing.T) {
+	agora := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	banco := &bancoComplianceFalso{
+		inv: map[string]protocol.InventoryReport{
+			"287d1717-win": {SchemaVersion: 1, CollectedAt: agora.Add(-time.Hour),
+				OS: protocol.OSInfo{ID: "windows", Name: "Windows 11 Pro", Version: "26H2", Build: "26300.9457", Arch: "amd64", Edition: "Professional"}},
+		},
+		situacao: map[string]store.CatalogSourceStatus{
+			"msrc": {Source: "msrc", LastOK: agora.Add(-75 * time.Hour), Runs: 3},
+			"kev":  {Source: "kev", LastOK: agora.Add(-2 * time.Hour), Latest: true, Runs: 9},
+		},
+	}
+	ev, err := evaluateMachine(context.Background(), banco, "287d", evalOptions{Now: agora})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	printEval(ev, false, agora, &out)
+	for _, trecho := range []string{
+		"ATENÇÃO: catálogo msrc sincronizado com sucesso pela última vez há 3 dias",
+		"ATENÇÃO: catálogo terceiros sem sincronização bem-sucedida registrada",
+	} {
+		if !strings.Contains(out.String(), trecho) {
+			t.Errorf("faltou %q em:\n%s", trecho, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "catálogo kev") {
+		t.Errorf("o KEV está em dia e não deveria aparecer:\n%s", out.String())
+	}
+	if len(catalogSourcesFor("debian")) != 0 || !slices.Equal(catalogSourcesFor("ubuntu"), []string{"ubuntu", "kev"}) {
+		t.Error("fontes por SO")
 	}
 }
