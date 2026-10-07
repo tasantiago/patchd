@@ -65,6 +65,7 @@ type complianceStore interface {
 	AppleModelsCount(ctx context.Context) (int, error)
 	AppleExtraBuild(ctx context.Context, build string) (compliance.MacExtra, bool, error)
 	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
+	CatalogStatus(ctx context.Context, sources []string) ([]store.CatalogSourceStatus, error)
 }
 
 // evalOptions são as opções do operador que mudam a avaliação.
@@ -91,7 +92,8 @@ type machineEval struct {
 	Simulated bool // Windows: o build veio de -build
 	NoMachine bool // simulação sem máquina (-macos)
 	Third     *thirdparty.Result
-	Note      string // por que não houve avaliação (SO ainda não suportado, versão fora do catálogo)
+	Warnings  []string // fontes do catálogo atrasadas (Aula 6.6)
+	Note      string   // por que não houve avaliação (SO ainda não suportado, versão fora do catálogo)
 }
 
 // macEval é a avaliação de um Mac.
@@ -178,6 +180,9 @@ func evaluateMachine(ctx context.Context, st complianceStore, prefix string, opt
 	}
 	if opts.MacOS != "" {
 		ev := machineEval{NoMachine: true, OS: protocol.OSInfo{ID: "macos", Name: "macOS", Version: opts.MacOS, Build: opts.Build}}
+		if err := checkCatalog(ctx, st, []string{"apple", "kev"}, opts.Now, &ev); err != nil {
+			return ev, err
+		}
 		return ev, evaluateMacOS(ctx, st, ev.OS, opts.Model, opts.Now, &ev)
 	}
 	id, ok, err := st.ResolveMachine(ctx, prefix)
@@ -199,6 +204,9 @@ func evaluateMachine(ctx context.Context, st complianceStore, prefix string, opt
 	ev.OS, ev.Collected = inv.OS, inv.CollectedAt
 	if (opts.Assume != "" || opts.Build != "") && inv.OS.ID != "windows" {
 		return ev, fmt.Errorf("-como e -build só valem para máquinas Windows (esta é %s)", inv.OS.ID)
+	}
+	if err := checkCatalog(ctx, st, catalogSourcesFor(inv.OS.ID), opts.Now, &ev); err != nil {
+		return ev, err
 	}
 
 	sources := sourcePackages(inv.Software)
@@ -266,6 +274,35 @@ func evaluateMachine(ctx context.Context, st complianceStore, prefix string, opt
 		ev.Third = &r
 	}
 	return ev, nil
+}
+
+// catalogSourcesFor devolve as fontes do catálogo que a avaliação de um SO usa.
+func catalogSourcesFor(osID string) []string {
+	switch osID {
+	case "ubuntu":
+		return []string{"ubuntu", "kev"}
+	case "fedora":
+		return []string{"fedora", "kev"}
+	case "windows":
+		return []string{"msrc", "kev", "terceiros"}
+	case "macos":
+		return []string{"apple", "kev", "terceiros"}
+	}
+	return nil
+}
+
+// checkCatalog avisa das fontes atrasadas: a avaliação continua, mas pode estar perdendo
+// correções publicadas depois da última sincronização.
+func checkCatalog(ctx context.Context, st complianceStore, sources []string, now time.Time, ev *machineEval) error {
+	if len(sources) == 0 {
+		return nil
+	}
+	ss, err := st.CatalogStatus(ctx, sources)
+	if err != nil {
+		return err
+	}
+	ev.Warnings = catalogWarnings(ss, now)
+	return nil
 }
 
 // evaluateWindows escolhe o produto do MSRC e compara o build da máquina, CVE por CVE.
@@ -428,6 +465,9 @@ func printEval(ev machineEval, verbose bool, now time.Time, out io.Writer) {
 			fmt.Fprintf(out, " (ATENÇÃO: há %d dias; a avaliação vale para aquele momento)", int(age.Hours()/24))
 		}
 		fmt.Fprintln(out)
+	}
+	for _, w := range ev.Warnings {
+		fmt.Fprintf(out, "ATENÇÃO: %s\n", w)
 	}
 	if ev.Note != "" {
 		fmt.Fprintf(out, "Sem avaliação: %s\n", ev.Note)

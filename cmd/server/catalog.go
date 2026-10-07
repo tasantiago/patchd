@@ -11,12 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/tasantiago/patchd/internal/buildinfo"
-	"github.com/tasantiago/patchd/internal/catalog/apple"
 	"github.com/tasantiago/patchd/internal/catalog/bodhi"
-	"github.com/tasantiago/patchd/internal/catalog/kev"
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
-	"github.com/tasantiago/patchd/internal/catalog/osv"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
@@ -32,6 +28,9 @@ comandos:
                               -workers: downloads simultâneos do Ubuntu (padrão 4)
                               -full: baixa de novo todos os updates do Fedora, ignorando
                                      o ponto de parada (pega bugs ligados depois do stable)
+  status                    situação de cada fonte: último sucesso, última falha e se está atrasada
+                            (sem sucesso há mais de 48 h); o servidor sincroniza sozinho a cada
+                            PATCHD_CATALOG_INTERVAL (padrão 6h)
   list                      lista os documentos do MSRC e resume o Ubuntu e o Fedora
   kev [-days N]             CVEs exploradas (CISA KEV): cobertura de cada fonte e as incluídas
                             nos últimos N dias (padrão 30), com onde aparecem no catálogo
@@ -156,102 +155,31 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 
 	switch args[0] {
 	case "sync":
-		ua := "patchd-server/" + buildinfo.Get().Version
-		failed := false
-		if wanted["msrc"] {
-			src := msrc.NewClient(ua)
-			// Outro endereço (um espelho interno, por exemplo); o padrão é a API pública do MSRC.
-			if u, ok := look("PATCHD_MSRC_URL"); ok && u != "" {
-				src.BaseURL = u
-			}
-			fmt.Fprintln(stdout, "MSRC:")
-			since := time.Now().UTC().AddDate(0, -*months, 0)
-			synced, nfail, err := syncMSRC(ctx, src, st, since, stdout)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				failed = true
-			} else {
-				fmt.Fprintf(stdout, "%d documento(s) gravado(s), %d com falha\n", synced, nfail)
-				failed = failed || nfail > 0
-			}
-		}
-		if wanted["ubuntu"] {
-			src := osv.NewClient("Ubuntu", ua)
-			if u, ok := look("PATCHD_OSV_URL"); ok && u != "" {
-				src.BaseURL = u
-			}
-			fmt.Fprintln(stdout, "Ubuntu (OSV):")
-			res, err := syncUbuntu(ctx, src, st, *maxUSN, *workers, stdout)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				failed = true
-			}
-			if remaining := res.Pending - res.Saved - res.Withdrawn - res.Failed; remaining > 0 && err == nil {
-				fmt.Fprintf(stdout, "  ubuntu: %d ficam para a próxima execução (-max)\n", remaining)
-			}
-			failed = failed || res.Failed > 0
-		}
-		if wanted["fedora"] {
-			src := bodhi.NewClient(ua)
-			if u, ok := look("PATCHD_BODHI_URL"); ok && u != "" {
-				src.BaseURL = u
-			}
-			fmt.Fprintln(stdout, "Fedora (Bodhi):")
-			n, nfail, err := syncFedora(ctx, src, st, *full, stdout)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				failed = true
-			} else {
-				fmt.Fprintf(stdout, "  fedora: %d update(s) gravado(s), %d versão(ões) com falha\n", n, nfail)
-				failed = failed || nfail > 0
-			}
-		}
-		if wanted["apple"] {
-			fmt.Fprintln(stdout, "Apple (gdmf e SOFA):")
-			src, err := apple.NewClient(ua)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				return exitRuntime
-			}
-			if u, ok := look("PATCHD_GDMF_URL"); ok && u != "" {
-				src.GDMFURL = u
-			}
-			if u, ok := look("PATCHD_SOFA_URL"); ok && u != "" {
-				src.SOFAURL = u
-			}
-			_, nfail, err := syncApple(ctx, src, st, stdout)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				failed = true
-			}
-			failed = failed || nfail > 0
-		}
-		if wanted["kev"] {
-			src := kev.NewClient(ua)
-			if u, ok := look("PATCHD_KEV_URL"); ok && u != "" {
-				src.URL = u
-			}
-			fmt.Fprintln(stdout, "CISA KEV:")
-			_, kfail, err := syncKEV(ctx, src, st, stdout)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				failed = true
-			}
-			failed = failed || kfail
-		}
-		if wanted["terceiros"] {
-			fmt.Fprintln(stdout, "Programas de terceiros:")
-			_, tfail, err := syncThirdParty(ctx, manifest, thirdparty.NewClient(ua), st, stdout)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				failed = true
-			}
-			failed = failed || tfail > 0
-		}
-		// Cada fonte roda mesmo que a anterior falhe; o código de saída diz se algo falhou.
-		if failed {
+		opts := syncOptions{Sources: wanted, Months: *months, MaxUSN: *maxUSN, Workers: *workers, Full: *full, Trigger: "manual"}
+		var results []sourceResult
+		// A trava do banco impede que o agendamento do servidor e este comando sincronizem
+		// ao mesmo tempo.
+		err := withCatalogLock(ctx, st, func() {
+			results = syncCatalog(ctx, newCatalogSources(look), st, opts, stdout)
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitRuntime
 		}
+		// Cada fonte roda mesmo que a anterior falhe; o código de saída diz se algo falhou.
+		for _, r := range results {
+			if !r.OK {
+				return exitRuntime
+			}
+		}
+		return exitOK
+	case "status":
+		ss, err := st.CatalogStatus(ctx, catalogSourceNames)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		printCatalogStatus(ss, time.Now(), stdout)
 		return exitOK
 	case "terceiros":
 		refs, err := st.ThirdPartyVersions(ctx)

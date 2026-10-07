@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
@@ -21,8 +22,11 @@ type serverConfig struct {
 	LogLevel    string
 	LogFormat   string
 	ReleasesDir string // pasta das versões do agente (Aula 5.4); vazia: sem atualização automática
-	ShowVersion bool
-	HealthCheck bool // modo usado pelo HEALTHCHECK do Docker
+	// CatalogInterval: de quanto em quanto tempo o servidor sincroniza o catálogo (Aula 6.6);
+	// zero desliga (o catalog sync manual continua funcionando).
+	CatalogInterval time.Duration
+	ShowVersion     bool
+	HealthCheck     bool // modo usado pelo HEALTHCHECK do Docker
 }
 
 // loadServerConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -41,6 +45,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"formato de log: json ou text (env PATCHD_LOG_FORMAT)")
 	fs.StringVar(&cfg.ReleasesDir, "releases-dir", config.String(look, "PATCHD_RELEASES_DIR", ""),
 		"pasta das versões assinadas do agente; vazia desliga a atualização automática (env PATCHD_RELEASES_DIR)")
+	catalogInterval := fs.String("catalog-interval", config.String(look, "PATCHD_CATALOG_INTERVAL", "6h"),
+		"intervalo da sincronização do catálogo, ex.: 6h; 0 desliga (env PATCHD_CATALOG_INTERVAL)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
 		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
@@ -59,6 +65,11 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	}
 	if err := validateListenAddr(cfg.ListenAddr); err != nil {
 		problems = append(problems, err)
+	}
+	if d, err := parseCatalogInterval(*catalogInterval); err != nil {
+		problems = append(problems, err)
+	} else {
+		cfg.CatalogInterval = d
 	}
 	if cfg.ReleasesDir != "" && !filepath.IsAbs(cfg.ReleasesDir) {
 		problems = append(problems, fmt.Errorf("-releases-dir/PATCHD_RELEASES_DIR: o caminho precisa ser absoluto (recebido %q)", cfg.ReleasesDir))
@@ -80,6 +91,20 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		problems = append(problems, err)
 	}
 	return cfg, errors.Join(problems...)
+}
+
+// parseCatalogInterval aceita "0" (desligado) ou uma duração entre 15 minutos e 7 dias: menos
+// que isso só sobrecarrega as fontes (e a API do GitHub limita os pedidos); mais, e o
+// catálogo atrasa sem ninguém notar.
+func parseCatalogInterval(v string) (time.Duration, error) {
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 15*time.Minute || d > 7*24*time.Hour {
+		return 0, fmt.Errorf("-catalog-interval/PATCHD_CATALOG_INTERVAL: use 0 (desligado) ou uma duração entre 15m e 168h, ex.: 6h (recebido %q)", v)
+	}
+	return d, nil
 }
 
 // validateListenAddr aceita "host:porta" ou ":porta", com porta entre 1 e 65535.

@@ -124,6 +124,8 @@ As implementações foram conferidas contra `dpkg --compare-versions` e `rpm.ver
 
 O servidor baixa os catálogos e cruza com o inventário localmente: o inventário da frota nunca é enviado a uma API externa.
 
+O servidor sincroniza todas as fontes sozinho, a cada `PATCHD_CATALOG_INTERVAL` (padrão `6h`; `0` desliga), com a primeira execução entre 1 e 5 minutos depois da partida. Uma trava no PostgreSQL (`pg_try_advisory_lock`) impede duas sincronizações ao mesmo tempo no mesmo banco, seja o agendamento, um `catalog sync` manual ou outra instância. Cada fonte de cada execução fica registrada em `catalog_runs` (90 dias); uma fonte sem sucesso há mais de 48 h aparece como atrasada no `catalog status` e gera aviso no `compliance` (Aula 6.6).
+
 | Fonte | Endereço | Como a sincronização sabe o que mudou | Observações |
 |---|---|---|---|
 | MSRC (Windows) | `https://api.msrc.microsoft.com/cvrf/v3.0` | `CurrentReleaseDate` da lista `/updates` (a API responde `no-store`, sem ETag) | Documentos são revisados depois de publicados, inclusive meses antigos com KBs novos. Um documento pode sumir da lista por algumas horas (2026-Aug e 2026-Sep, em 06/10/2026): o guardado é mantido e o sumiço é avisado |
