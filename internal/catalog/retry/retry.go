@@ -21,7 +21,7 @@ import (
 const (
 	DefaultAttempts = 4
 	DefaultWait     = 5 * time.Second
-	DefaultMaxBody  = 512 << 20 // acima disso, o corpo segue sem leitura antecipada
+	DefaultMaxBody  = 512 << 20 // acima disso, o corpo segue em fluxo, sem leitura antecipada
 	maxRetryAfter   = time.Minute
 )
 
@@ -80,15 +80,25 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 			resp.Body.Close()
 		case resp.StatusCode >= 200 && resp.StatusCode < 300 && req.Method == http.MethodGet:
+			if resp.ContentLength > maxBody {
+				return resp, nil // grande demais para a memória: segue em fluxo, sem repetição do corpo
+			}
 			data, rerr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-			resp.Body.Close()
 			switch {
 			case rerr != nil:
+				resp.Body.Close()
 				reason = "corpo interrompido: " + rerr.Error()
 				err = rerr
 			case int64(len(data)) > maxBody:
-				return nil, fmt.Errorf("%s: resposta maior que %d bytes", req.URL.Redacted(), maxBody)
+				// Sem Content-Length e maior que o limite: o que já foi lido volta na frente
+				// do resto, em fluxo (a Aula 6.6, parte 2, devolvia erro aqui).
+				resp.Body = struct {
+					io.Reader
+					io.Closer
+				}{io.MultiReader(bytes.NewReader(data), resp.Body), resp.Body}
+				return resp, nil
 			default:
+				resp.Body.Close()
 				resp.Body = io.NopCloser(bytes.NewReader(data))
 				resp.ContentLength = int64(len(data))
 				return resp, nil

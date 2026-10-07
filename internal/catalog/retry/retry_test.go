@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -129,6 +130,31 @@ func TestRetryAfter(t *testing.T) {
 	for _, in := range []string{"", "-1", "Wed, 21 Oct 2026 07:28:00 GMT"} {
 		if _, ok := retryAfter(in); ok {
 			t.Errorf("%q deveria ser ignorado", in)
+		}
+	}
+}
+
+func TestCorpoGrandeSegueEmFluxo(t *testing.T) {
+	grande := strings.Repeat("x", 3000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/com-tamanho" {
+			w.Header().Set("Content-Length", strconv.Itoa(len(grande)))
+		} else {
+			w.(http.Flusher).Flush() // sem Content-Length: corpo em pedaços
+		}
+		w.Write([]byte(grande))
+	}))
+	defer srv.Close()
+	hc := &http.Client{Transport: &Transport{MaxBody: 1000, Wait: time.Millisecond}}
+	for _, caminho := range []string{"/com-tamanho", "/sem-tamanho"} {
+		resp, err := hc.Get(srv.URL + caminho)
+		if err != nil {
+			t.Fatalf("%s: %v", caminho, err)
+		}
+		corpo, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil || string(corpo) != grande {
+			t.Errorf("%s: %d bytes, %v", caminho, len(corpo), err)
 		}
 	}
 }

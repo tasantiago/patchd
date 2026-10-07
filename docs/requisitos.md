@@ -74,7 +74,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **R-01** Frota Windows gerenciada por WSUS interno via GPO, com instalação automática agendada diariamente.
 - **R-02** Estações Fedora ingressadas no Active Directory (SSSD).
 - **R-03** macOS sem MDM, com os limites do `softwareupdate` (Aula 8.4).
-- **R-04** A rede faz inspeção TLS com CA corporativa; os containers precisam confiar nela. Saída do servidor para a internet (direta ou por proxy): **pendente**.
+- **R-04** A rede faz inspeção TLS com CA corporativa; os containers precisam confiar nela. Saída do servidor para a internet (direta ou por proxy): **pendente** para produção. No laboratório (Aula 6.6): saída direta, sem variáveis de proxy, e os certificados das fontes do catálogo chegam com os emissores públicos (sem inspeção nesse caminho). Se a produção tiver proxy, o servidor usa `HTTPS_PROXY`; com inspeção, o `gdmf.apple.com` precisa de exceção no proxy, porque a raiz da Apple é fixada no binário.
 - **R-05** Nada roda em produção antes do Módulo 8, e lá só no anel piloto.
 - **R-06** Sem cache de atualizações do macOS pelo patchd; só via Content Caching da Apple, fora do projeto.
 
