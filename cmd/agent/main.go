@@ -44,8 +44,8 @@ func main() {
 func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
-	// Subcomandos: "identity", "enroll [opções]", "install [opções]" e
-	// "service install|uninstall|run [opções]".
+	// Subcomandos: "identity", "enroll [opções]", "install [opções]",
+	// "service install|uninstall|run [opções]" e "verify-cab [arquivo]".
 	if len(args) > 0 {
 		switch args[0] {
 		case "identity":
@@ -56,6 +56,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return runInstall(args[1:], look, stdout, stderr, info.Version)
 		case "service":
 			return runService(args[1:], look, stdout, stderr)
+		case "verify-cab":
+			return runVerifyCab(args[1:], look, stdout, stderr)
 		}
 	}
 
@@ -102,6 +104,10 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if cfg.Scan {
 		scanner := patch.New(platform.ExecRunner{Timeout: scanCommandTimeout})
 		opts := patch.Options{OfflineCatalog: cfg.OfflineCatalog}
+		if opts.OfflineCatalog == "" {
+			// O catálogo que o serviço baixou do servidor (Windows), se houver.
+			opts.OfflineCatalog = localOfflineCab(cfg.DataDir)
+		}
 		if err := printScan(context.Background(), stdout, scanner, opts, info.Version); err != nil {
 			logger.Error("falha na busca de atualizações", "error", err)
 			return exitRuntime

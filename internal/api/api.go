@@ -56,6 +56,9 @@ type api struct {
 
 	releases      release.Dir // vazia: sem atualização automática
 	serverVersion string
+
+	contentDir string        // vazio: o servidor não distribui o catálogo offline
+	content    ContentSource // a versão atual de cada arquivo distribuído
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -72,6 +75,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
 	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
+	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
 	// Leitura (painel; sem autenticação até o Módulo 7).
 	mux.HandleFunc("GET /api/v1/machines/{id}/inventory", a.getInventory)
 	mux.HandleFunc("GET /api/v1/machines/{id}/scan", a.getScan)

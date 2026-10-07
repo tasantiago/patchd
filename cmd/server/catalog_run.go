@@ -148,14 +148,21 @@ func newCatalogSources(look config.Lookup) catalogSources {
 		w.URL = u
 	}
 	s.WSUS = w
-	if dir, ok := env("PATCHD_CONTENT_DIR"); ok {
-		if !filepath.IsAbs(dir) {
-			s.ContentDirErr = fmt.Errorf("PATCHD_CONTENT_DIR precisa ser um caminho absoluto (recebido %q)", dir)
-		} else {
-			s.ContentDir = dir
-		}
-	}
+	s.ContentDir, s.ContentDirErr = contentDir(look)
 	return s
+}
+
+// contentDir lê PATCHD_CONTENT_DIR: a pasta onde o servidor guarda e de onde distribui o
+// wsusscn2.cab. Vazio: sem distribuição.
+func contentDir(look config.Lookup) (string, error) {
+	dir, ok := look("PATCHD_CONTENT_DIR")
+	if !ok || dir == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("PATCHD_CONTENT_DIR precisa ser um caminho absoluto (recebido %q)", dir)
+	}
+	return dir, nil
 }
 
 // catalogStore é o banco da sincronização inteira.

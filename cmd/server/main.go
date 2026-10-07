@@ -121,6 +121,17 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 
 	var apiOpts []api.Option
+	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
+	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).
+	if pg, ok := st.(*store.Postgres); ok {
+		switch dir, err := contentDir(look); {
+		case err != nil:
+			logger.Error("catálogo offline não distribuído", "error", err)
+		case dir != "":
+			apiOpts = append(apiOpts, api.WithContent(dir, pg))
+			logger.Info("catálogo offline do Windows distribuído aos agentes", "content_dir", dir)
+		}
+	}
 	if cfg.ReleasesDir != "" {
 		apiOpts = append(apiOpts, api.WithReleases(release.Dir(cfg.ReleasesDir), info.Version))
 		logReleases(logger, release.Dir(cfg.ReleasesDir), info.Version)

@@ -43,11 +43,25 @@ type CheckinRequest struct {
 }
 
 // CheckinResponse diz ao agente se ele precisa enviar o inventário e, quando há uma
-// versão do agente publicada diferente da dele, qual é (Aula 5.4).
+// versão do agente publicada diferente da dele, qual é (Aula 5.4). Quando o servidor
+// distribui o catálogo offline do Windows, diz qual é o atual (Aula 6.6).
 type CheckinResponse struct {
-	InventoryKnown bool         `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
-	ServerTime     time.Time    `json:"server_time"`
-	AgentUpdate    *AgentUpdate `json:"agent_update,omitempty"`
+	InventoryKnown bool            `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
+	ServerTime     time.Time       `json:"server_time"`
+	AgentUpdate    *AgentUpdate    `json:"agent_update,omitempty"`
+	OfflineCatalog *OfflineCatalog `json:"offline_catalog,omitempty"`
+}
+
+// OfflineCatalogPath é o caminho do download do catálogo offline; o SHA-256 vem no fim.
+const OfflineCatalogPath = "/api/v1/agent/content/wsusscn2/"
+
+// OfflineCatalog é o wsusscn2.cab que o servidor distribui. O agente do Windows baixa de
+// OfflineCatalogPath + SHA256, confere o tamanho, o SHA-256 e a assinatura da Microsoft,
+// e só então passa a usá-lo na busca offline. Os outros agentes ignoram.
+type OfflineCatalog struct {
+	SHA256      string    `json:"sha256"`
+	Size        int64     `json:"size"`
+	PublishedAt time.Time `json:"published_at"` // publicação pela Microsoft (Last-Modified)
 }
 
 // AgentUpdate é a oferta de atualização. É só uma sugestão: o agente baixa o manifesto,

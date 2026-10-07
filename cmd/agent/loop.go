@@ -87,6 +87,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	scanOpts := patch.Options{OfflineCatalog: opts.OfflineCatalog}
 
 	client := agent.NewClient(cred.ServerURL, cred.Credential, info.Version)
+	cab := newOfflineCab(logger, client, opts)
 	ag := &agent.Agent{
 		Client: client,
 		// O inventário passa pela mesma função do "-inventory": o check-in envia exatamente
@@ -101,7 +102,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			return rep, err
 		},
 		Scan: func(ctx context.Context) protocol.PatchScanReport {
-			return collectScan(ctx, scanner, scanOpts, info.Version)
+			o := scanOpts
+			if o.OfflineCatalog == "" && cab != nil {
+				o.OfflineCatalog = cab.Path() // o último baixado e conferido; "" se ainda não há
+			}
+			return collectScan(ctx, scanner, o, info.Version)
 		},
 		DataDir:   opts.DataDir,
 		Interval:  opts.Interval,
@@ -109,6 +114,13 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Logger:    logger,
 	}
 
+	if cab != nil {
+		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {
+			if err := cab.Sync(ctx, adv); err != nil && ctx.Err() == nil {
+				logger.Warn("catálogo offline", "error", err)
+			}
+		}
+	}
 	if opts.AutoUpdate {
 		ag.Update = newUpdater(logger, client, opts, info.Version)
 	}
