@@ -21,8 +21,9 @@ import (
 const catalogUsage = `uso: patchd-server catalog <comando> [opções]
 
 comandos:
-  sync [-source msrc,ubuntu,fedora,apple,kev,terceiros] [-months N] [-max N] [-workers N] [-full]
-                            baixa o que é novo ou foi revisado em cada fonte (padrão: todas)
+  sync [-source msrc,ubuntu,fedora,apple,kev,terceiros,wsusscn2] [-months N] [-max N] [-workers N] [-full]
+                            baixa o que é novo ou foi revisado em cada fonte (padrão: todas; o
+                            wsusscn2 só com PATCHD_CONTENT_DIR)
                               -months: janela de meses do MSRC (padrão 12)
                               -max: teto de USNs baixadas nesta execução (padrão 0, sem teto)
                               -workers: downloads simultâneos do Ubuntu (padrão 4)
@@ -56,6 +57,9 @@ e https://sofafeed.macadmins.io/v2/macos_data_feed.json). O gdmf só é aceito c
 raiz "Apple Root CA", embutida no binário.
 PATCHD_KEV_URL troca o feed do KEV (padrão: o JSON da CISA; alternativa: o espelho oficial
 https://raw.githubusercontent.com/cisagov/kev-data/develop/known_exploited_vulnerabilities.json).
+PATCHD_CONTENT_DIR é a pasta (absoluta) onde o servidor guarda o que distribui aos agentes: o
+wsusscn2.cab, catálogo offline do Windows Update (cerca de 650 MB, baixado com retomada e só
+quando o ETag muda). PATCHD_WSUSSCN2_URL troca o endereço da Microsoft.
 PATCHD_THIRDPARTY_MANIFEST aponta um manifesto local de programas de terceiros, somado ao embutido
 (regras com o mesmo id e SO substituem as do embutido). As fontes dos terceiros são as APIs do
 Google (Chrome), da Mozilla (Firefox), do GitHub (winget-pkgs) e do Homebrew.
@@ -80,7 +84,11 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	fs := flag.NewFlagSet("catalog "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	months := fs.Int("months", 12, "janela de meses do MSRC no sync")
-	sources := fs.String("source", "msrc,ubuntu,fedora,apple,kev,terceiros", "fontes do sync, separadas por vírgula")
+	defaultSources := "msrc,ubuntu,fedora,apple,kev,terceiros"
+	if dir, ok := look("PATCHD_CONTENT_DIR"); ok && dir != "" {
+		defaultSources += ",wsusscn2" // com onde guardar, o catálogo offline do Windows entra no padrão
+	}
+	sources := fs.String("source", defaultSources, "fontes do sync, separadas por vírgula")
 	days := fs.Int("days", 30, "kev: janela de dias das CVEs incluídas recentemente")
 	maxUSN := fs.Int("max", 0, "teto de USNs baixadas no sync (0: sem teto)")
 	workers := fs.Int("workers", 4, "downloads simultâneos do Ubuntu no sync")
@@ -107,10 +115,10 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	wanted := map[string]bool{}
 	for _, s := range strings.Split(*sources, ",") {
 		switch s = strings.TrimSpace(s); s {
-		case "msrc", "ubuntu", "fedora", "apple", "kev", "terceiros":
+		case "msrc", "ubuntu", "fedora", "apple", "kev", "terceiros", "wsusscn2":
 			wanted[s] = true
 		default:
-			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora, apple, kev e/ou terceiros)\n", s)
+			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora, apple, kev, terceiros e/ou wsusscn2)\n", s)
 			return exitConfig
 		}
 	}

@@ -113,7 +113,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	case cfg.CatalogInterval == 0:
 		logger.Info("sincronização do catálogo desligada (PATCHD_CATALOG_INTERVAL=0): use patchd-server catalog sync")
 	default:
-		go catalogLoop(ctx, logger, pg, newCatalogSources(look), cfg.CatalogInterval, firstCatalogRun())
+		srcs := newCatalogSources(look)
+		if srcs.ContentDirErr != nil {
+			logger.Error("o wsusscn2.cab fica fora do agendamento", "error", srcs.ContentDirErr)
+		}
+		go catalogLoop(ctx, logger, pg, srcs, cfg.CatalogInterval, firstCatalogRun())
 	}
 
 	var apiOpts []api.Option

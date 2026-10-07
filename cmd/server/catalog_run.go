@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"path/filepath"
 	"sync/atomic"
 	"text/tabwriter"
 	"time"
@@ -19,13 +20,14 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
 	"github.com/tasantiago/patchd/internal/catalog/osv"
 	"github.com/tasantiago/patchd/internal/catalog/retry"
+	"github.com/tasantiago/patchd/internal/catalog/wsusscan"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 // catalogSourceNames são as fontes, na ordem em que rodam.
-var catalogSourceNames = []string{"msrc", "ubuntu", "fedora", "apple", "kev", "terceiros"}
+var catalogSourceNames = []string{"msrc", "ubuntu", "fedora", "apple", "kev", "terceiros", "wsusscn2"}
 
 // catalogStale: uma fonte sem sincronização bem-sucedida há mais que isso está atrasada.
 // Com o agendamento padrão de 6 h, são oito execuções perdidas seguidas.
@@ -44,12 +46,24 @@ type syncOptions struct {
 	Done func(sourceResult)
 }
 
-func defaultSyncOptions(trigger string) syncOptions {
+// O wsusscn2 só entra quando há onde guardar o arquivo (PATCHD_CONTENT_DIR).
+func defaultSyncOptions(trigger string, withContent bool) syncOptions {
 	all := map[string]bool{}
 	for _, s := range catalogSourceNames {
-		all[s] = true
+		all[s] = s != "wsusscn2" || withContent
 	}
 	return syncOptions{Sources: all, Months: 12, Workers: 4, Trigger: trigger}
+}
+
+// wsusscanSource baixa o wsusscn2.cab para o diretório de conteúdo.
+type wsusscanSource interface {
+	Sync(ctx context.Context, dir string, prev *wsusscan.File, progress func(string)) (wsusscan.File, bool, error)
+}
+
+// contentStore guarda a descrição dos arquivos distribuídos.
+type contentStore interface {
+	ContentFile(ctx context.Context, name string) (wsusscan.File, bool, error)
+	SaveContentFile(ctx context.Context, name string, f wsusscan.File) error
 }
 
 // catalogSources são as fontes da sincronização; os testes passam versões falsas.
@@ -65,6 +79,10 @@ type catalogSources struct {
 	ManifestErr error
 	// Retries conta os pedidos repetidos pelos clientes (nil nos testes: nenhum).
 	Retries *atomic.Int64
+	// WSUS baixa o wsusscn2.cab para ContentDir (vazio: sem diretório de conteúdo).
+	WSUS          wsusscanSource
+	ContentDir    string
+	ContentDirErr error
 }
 
 func (s catalogSources) retries() int64 {
@@ -123,6 +141,20 @@ func newCatalogSources(look config.Lookup) catalogSources {
 	t := thirdparty.NewClient(ua)
 	t.HTTP = retry.Wrap(t.HTTP, count)
 	s.MSRC, s.Ubuntu, s.Fedora, s.KEV, s.Third = m, o, b, k, t
+	// O wsusscn2.cab tem a própria repetição, com retomada: centenas de MB não passam pela
+	// leitura em memória do retry.
+	w := wsusscan.NewClient(ua)
+	if u, ok := env("PATCHD_WSUSSCN2_URL"); ok {
+		w.URL = u
+	}
+	s.WSUS = w
+	if dir, ok := env("PATCHD_CONTENT_DIR"); ok {
+		if !filepath.IsAbs(dir) {
+			s.ContentDirErr = fmt.Errorf("PATCHD_CONTENT_DIR precisa ser um caminho absoluto (recebido %q)", dir)
+		} else {
+			s.ContentDir = dir
+		}
+	}
 	return s
 }
 
@@ -134,6 +166,7 @@ type catalogStore interface {
 	appleStore
 	kevStore
 	thirdpartyStore
+	contentStore
 	RecordCatalogRun(ctx context.Context, source, trigger string, started, finished time.Time, ok bool, detail string) error
 }
 
@@ -246,6 +279,36 @@ func syncOneSource(ctx context.Context, name string, srcs catalogSources, st cat
 			return failure(err)
 		}
 		return tfail == 0, fmt.Sprintf("%d versão(ões) gravada(s), %d com falha", saved, tfail)
+	case "wsusscn2":
+		fmt.Fprintln(out, "Windows Update offline (wsusscn2.cab):")
+		switch {
+		case srcs.ContentDirErr != nil:
+			return failure(srcs.ContentDirErr)
+		case srcs.ContentDir == "":
+			return failure(errors.New("defina PATCHD_CONTENT_DIR: a pasta absoluta onde o servidor guarda o arquivo"))
+		}
+		var prev *wsusscan.File
+		if f, ok, err := st.ContentFile(ctx, "wsusscn2"); err != nil {
+			return failure(err)
+		} else if ok {
+			prev = &f
+		}
+		started := time.Now()
+		f, changed, err := srcs.WSUS.Sync(ctx, srcs.ContentDir, prev, func(line string) { fmt.Fprintf(out, "  %s\n", line) })
+		if err != nil {
+			return failure(err)
+		}
+		state := "em dia"
+		if changed {
+			if err := st.SaveContentFile(ctx, "wsusscn2", f); err != nil {
+				return failure(err)
+			}
+			state = fmt.Sprintf("baixado em %s", time.Since(started).Round(time.Second))
+		}
+		summary := fmt.Sprintf("%s: %s, %.1f MiB, publicado pela Microsoft em %s UTC, sha256 %s...",
+			state, f.Name, float64(f.Size)/(1<<20), f.LastModified.Format("2006-01-02 15:04"), f.SHA256[:16])
+		fmt.Fprintf(out, "  wsusscn2: %s\n", summary)
+		return true, summary
 	}
 	return failure(fmt.Errorf("fonte desconhecida"))
 }
@@ -287,7 +350,7 @@ const catalogRunsRetention = 90 * 24 * time.Hour
 // depois a cada interval. Cada execução disputa a trava do banco; se outro processo estiver
 // sincronizando, esta pula a vez. O resultado de cada fonte vai para o log.
 func catalogLoop(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, interval, first time.Duration) {
-	catalogLoopWith(ctx, logger, st, srcs, defaultSyncOptions("agendada"), interval, first)
+	catalogLoopWith(ctx, logger, st, srcs, defaultSyncOptions("agendada", srcs.ContentDir != ""), interval, first)
 }
 
 // catalogLoopWith é o laço do agendamento, com as opções como parâmetro (os testes limitam

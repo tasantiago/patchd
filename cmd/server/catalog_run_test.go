@@ -17,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/msrc"
 	"github.com/tasantiago/patchd/internal/catalog/osv"
 	"github.com/tasantiago/patchd/internal/catalog/retry"
+	"github.com/tasantiago/patchd/internal/catalog/wsusscan"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
@@ -28,6 +29,7 @@ type bancoCatalogoFalso struct {
 	ubuntuStore
 	fedoraStore
 	appleStore
+	contentStore
 	*bancoKEVFalso
 	*bancoTerceirosFalso
 
@@ -254,5 +256,70 @@ func TestNewCatalogSourcesComRepeticao(t *testing.T) {
 	}
 	if srcs.ManifestErr != nil || srcs.Retries == nil {
 		t.Errorf("manifesto: %v, contador: %v", srcs.ManifestErr, srcs.Retries)
+	}
+}
+
+type wsusFalso struct {
+	arquivo wsusscan.File
+	mudou   bool
+	recebeu *wsusscan.File
+	pasta   string
+}
+
+func (w *wsusFalso) Sync(_ context.Context, dir string, prev *wsusscan.File, progress func(string)) (wsusscan.File, bool, error) {
+	w.recebeu, w.pasta = prev, dir
+	progress(" 50% (321.6 MiB de 643.2 MiB)")
+	return w.arquivo, w.mudou, nil
+}
+
+type bancoConteudoFalso struct {
+	*bancoCatalogoFalso
+	arquivos map[string]wsusscan.File
+}
+
+func (b *bancoConteudoFalso) ContentFile(_ context.Context, name string) (wsusscan.File, bool, error) {
+	f, ok := b.arquivos[name]
+	return f, ok, nil
+}
+
+func (b *bancoConteudoFalso) SaveContentFile(_ context.Context, name string, f wsusscan.File) error {
+	b.arquivos[name] = f
+	return nil
+}
+
+func TestSyncWsusscn2(t *testing.T) {
+	arquivo := wsusscan.File{Name: "wsusscn2-0123456789abcdef.cab", Size: 674424266, SHA256: "0123456789abcdef99",
+		ETag: `"0325ba4d352dd1:0"`, LastModified: time.Date(2026, 10, 3, 1, 8, 4, 0, time.UTC)}
+	banco := &bancoConteudoFalso{bancoCatalogoFalso: novoBanco(), arquivos: map[string]wsusscan.File{}}
+	fonte := &wsusFalso{arquivo: arquivo, mudou: true}
+	opts := syncOptions{Sources: map[string]bool{"wsusscn2": true}, Trigger: "manual"}
+
+	// Sem PATCHD_CONTENT_DIR: falha com o motivo.
+	res := syncCatalog(context.Background(), catalogSources{WSUS: fonte}, banco, opts, &bytes.Buffer{})
+	if len(res) != 1 || res[0].OK || !strings.Contains(res[0].Detail, "defina PATCHD_CONTENT_DIR") {
+		t.Fatalf("sem pasta: %+v", res)
+	}
+
+	// Primeira vez: baixa e grava; o andamento vai para a saída.
+	var out bytes.Buffer
+	srcs := catalogSources{WSUS: fonte, ContentDir: "/srv/patchd/conteudo"}
+	res = syncCatalog(context.Background(), srcs, banco, opts, &out)
+	if !res[0].OK || !strings.HasPrefix(res[0].Detail, "baixado em ") || banco.arquivos["wsusscn2"] != arquivo || fonte.recebeu != nil ||
+		fonte.pasta != "/srv/patchd/conteudo" || !strings.Contains(out.String(), "  50% (321.6 MiB") {
+		t.Errorf("primeira: %+v\n%s", res, out.String())
+	}
+	if !strings.Contains(res[0].Detail, "wsusscn2-0123456789abcdef.cab, 643.2 MiB, publicado pela Microsoft em 2026-10-03 01:08 UTC, sha256 0123456789abcdef...") {
+		t.Errorf("resumo: %s", res[0].Detail)
+	}
+
+	// Depois: a versão guardada vai para a fonte, que responde "não mudou".
+	fonte.mudou = false
+	res = syncCatalog(context.Background(), srcs, banco, opts, &bytes.Buffer{})
+	if !res[0].OK || !strings.HasPrefix(res[0].Detail, "em dia: ") || fonte.recebeu == nil || *fonte.recebeu != arquivo {
+		t.Errorf("em dia: %+v (recebeu %+v)", res, fonte.recebeu)
+	}
+
+	if defaultSyncOptions("agendada", false).Sources["wsusscn2"] || !defaultSyncOptions("agendada", true).Sources["wsusscn2"] {
+		t.Error("o wsusscn2 só entra no padrão com a pasta de conteúdo")
 	}
 }
