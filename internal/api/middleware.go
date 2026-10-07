@@ -65,6 +65,10 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Unwrap deixa o http.ResponseController (prazo de escrita dos downloads grandes, Aula
+// 6.6) alcançar a conexão por baixo do registro.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // withAccessLog registra cada requisição: método, caminho, status, tamanho, duração e ID.
 func withAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/catalog/wsusscan"
+	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -17,6 +19,10 @@ import (
 type ContentSource interface {
 	ContentFile(ctx context.Context, name string) (wsusscan.File, bool, error)
 }
+
+// downloadIdle: nos downloads grandes, o prazo de escrita vale por escrita, não pela
+// resposta inteira (o WriteTimeout de 60 s do servidor cortaria 650 MB numa rede lenta).
+const downloadIdle = 2 * time.Minute
 
 // sha256Pattern: o SHA-256 em hexadecimal minúsculo, como o servidor anuncia.
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -82,5 +88,5 @@ func (a *api) offlineCatalogFile(w http.ResponseWriter, r *http.Request, id stri
 	w.Header().Set("ETag", `"`+sum+`"`)
 	a.logger.Info("download do catálogo offline", "machine_id", id, "sha256", sum[:16], "range", r.Header.Get("Range"),
 		"request_id", RequestID(r.Context()))
-	http.ServeContent(w, r, "", fi.ModTime(), f)
+	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }

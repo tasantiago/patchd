@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/release"
+	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/store"
 )
 
@@ -136,7 +138,18 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		apiOpts = append(apiOpts, api.WithReleases(release.Dir(cfg.ReleasesDir), info.Version))
 		logReleases(logger, release.Dir(cfg.ReleasesDir), info.Version)
 	}
-	handler := newHandler(api.New(st, logger, apiOpts...))
+	var repo http.Handler
+	if cfg.RepoCacheDir != "" {
+		c, err := repocache.New(cfg.RepoCacheDir, cfg.RepoCacheHosts, "patchd-server/"+info.Version, logger)
+		if err != nil {
+			logger.Error("cache de repositórios", "error", err)
+			return exitConfig
+		}
+		repo = c
+		logger.Info("cache de repositórios ligado (proxy HTTP do apt nesta mesma porta)",
+			"dir", cfg.RepoCacheDir, "hosts", cfg.RepoCacheHosts)
+	}
+	handler := newHandler(api.New(st, logger, apiOpts...), repo)
 	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {
 		logger.Error("servidor parou com erro", "error", err)
 		return exitRuntime
