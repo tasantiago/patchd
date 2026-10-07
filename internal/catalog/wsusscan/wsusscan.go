@@ -53,6 +53,9 @@ type File struct {
 	Cabinet      int64     // cbCabinet: o gabinete sem a assinatura anexada
 }
 
+// FileName é o nome do catálogo publicado com esse SHA-256 (64 dígitos hexadecimais).
+func FileName(sha256hex string) string { return "wsusscn2-" + sha256hex[:16] + ".cab" }
+
 // Remote é o que o HEAD diz do arquivo da Microsoft.
 type Remote struct {
 	Size         int64
@@ -164,7 +167,7 @@ func (c *Client) Sync(ctx context.Context, dir string, prev *File, progress func
 		os.Remove(part + ".etag")
 		return File{}, false, err
 	}
-	f.Name = "wsusscn2-" + f.SHA256[:16] + ".cab"
+	f.Name = FileName(f.SHA256)
 	if err := os.Rename(part, filepath.Join(dir, f.Name)); err != nil {
 		return File{}, false, err
 	}

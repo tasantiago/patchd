@@ -26,6 +26,9 @@ type Agent struct {
 	Logger    *slog.Logger
 	// Update recebe a versão oferecida no check-in (Aula 5.4); nil: o agente não se atualiza.
 	Update func(ctx context.Context, version string)
+	// OfflineCatalog recebe o catálogo offline anunciado no check-in (Aula 6.6), antes da
+	// busca: uma busca devida neste ciclo já usa o arquivo novo. nil: anúncio ignorado.
+	OfflineCatalog func(ctx context.Context, adv protocol.OfflineCatalog)
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -131,7 +134,17 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		a.Logger.Info("inventário enviado", "status", r.Status, "hash", r.Hash, "software", len(inv.Software))
 	}
 
-	// 3. Busca de atualizações, quando devida.
+	// 3. Catálogo offline anunciado pelo servidor (só o agente do Windows o usa). Uma falha
+	// não interrompe o ciclo: a busca segue com o catálogo anterior, e o download continua
+	// de onde parou no próximo check-in.
+	if resp.OfflineCatalog != nil && a.OfflineCatalog != nil {
+		a.OfflineCatalog(ctx, *resp.OfflineCatalog)
+		if ctx.Err() != nil {
+			return outcomeTransient
+		}
+	}
+
+	// 4. Busca de atualizações, quando devida.
 	state, err := loadState(a.DataDir)
 	if err != nil {
 		a.Logger.Warn("estado do agente ilegível; recomeçando a agenda", "error", err)
@@ -165,7 +178,7 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	a.Logger.Info("check-in concluído", "inventory_sent", inventorySent, "scan_sent", scanSent,
 		"duration", a.now().Sub(start).Round(time.Millisecond).String())
 
-	// 4. Atualização do agente, por último: os relatórios deste ciclo já foram entregues.
+	// 5. Atualização do agente, por último: os relatórios deste ciclo já foram entregues.
 	if resp.AgentUpdate != nil && a.Update != nil {
 		a.Update(ctx, resp.AgentUpdate.Version)
 	}
