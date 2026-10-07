@@ -189,7 +189,8 @@ func normalizeSubType(s string) string {
 	}, strings.ToLower(strings.TrimSpace(s)))
 }
 
-var severityRank = map[string]int{"critical": 4, "important": 3, "moderate": 2, "low": 1}
+// severityRank junta as escalas do MSRC (Important, Moderate) e do SOFA (High, Medium).
+var severityRank = map[string]int{"critical": 4, "important": 3, "high": 3, "moderate": 2, "medium": 2, "low": 1}
 
 // EvaluateWindows compara o build da máquina com as correções do produto.
 //

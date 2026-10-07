@@ -478,5 +478,113 @@
   }
  ],
  "XProtectPayloads": {},
- "Models": {}
+ "Models": {
+  "Mac14,14": {
+   "MarketingName": "Mac Studio (M2 Ultra, 2023)",
+   "SupportedOS": [
+    "Golden Gate 27",
+    "Tahoe 26",
+    "Sequoia 15",
+    "Sonoma 14",
+    "Ventura 13"
+   ],
+   "OSVersions": [
+    27,
+    26,
+    15,
+    14,
+    13
+   ]
+  },
+  "Mac15,3": {
+   "MarketingName": "MacBook Pro (14-inch, M3, Nov 2023)",
+   "SupportedOS": [
+    "Golden Gate 27",
+    "Tahoe 26",
+    "Sequoia 15",
+    "Sonoma 14",
+    "Ventura 13"
+   ],
+   "OSVersions": [
+    27,
+    26,
+    15,
+    14,
+    13
+   ]
+  },
+  "Mac16,1": {
+   "MarketingName": "MacBook Pro (14-inch, M4, Nov 2024)",
+   "SupportedOS": [
+    "Golden Gate 27",
+    "Tahoe 26",
+    "Sequoia 15"
+   ],
+   "OSVersions": [
+    27,
+    26,
+    15
+   ]
+  },
+  "MacBookPro16,1": {
+   "MarketingName": "MacBook Pro (16-inch, 2019)",
+   "SupportedOS": [
+    "Tahoe 26",
+    "Sequoia 15",
+    "Sonoma 14",
+    "Ventura 13",
+    "Monterey 12"
+   ],
+   "OSVersions": [
+    26,
+    15,
+    14,
+    13,
+    12
+   ]
+  },
+  "MacBookPro15,1": {
+   "MarketingName": "MacBook Pro (15-inch, 2018)",
+   "SupportedOS": [
+    "Sequoia 15",
+    "Sonoma 14",
+    "Ventura 13",
+    "Monterey 12"
+   ],
+   "OSVersions": [
+    15,
+    14,
+    13,
+    12
+   ]
+  },
+  "MacBookAir8,1": {
+   "MarketingName": "MacBook Air (Retina, 13-inch, 2018)",
+   "SupportedOS": [
+    "Sonoma 14",
+    "Ventura 13",
+    "Monterey 12"
+   ],
+   "OSVersions": [
+    14,
+    13,
+    12
+   ]
+  },
+  "iMac19,1": {
+   "MarketingName": "iMac (Retina 5K, 27-inch, 2019)",
+   "SupportedOS": [
+    "Sequoia 15",
+    "Sonoma 14",
+    "Ventura 13",
+    "Monterey 12"
+   ],
+   "OSVersions": [
+    15,
+    14,
+    13,
+    12
+   ]
+  }
+ }
 }

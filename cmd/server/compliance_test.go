@@ -23,6 +23,39 @@ type bancoComplianceFalso struct {
 	produtos []compliance.MSRCProduct
 	windows  []compliance.WindowsFix
 	pedidoW  []string
+	majors   []compliance.MacOSMajor
+	macFixes map[int][]compliance.MacOSFix
+	semCorr  []compliance.MacOSCVE
+	desde    time.Time
+	modelos  map[string]compliance.MacModel
+	extras   map[string]compliance.MacExtra
+}
+
+func (b *bancoComplianceFalso) MacOSMajors(context.Context) ([]compliance.MacOSMajor, error) {
+	return b.majors, nil
+}
+
+func (b *bancoComplianceFalso) MacOSFixes(_ context.Context, major int) ([]compliance.MacOSFix, error) {
+	return b.macFixes[major], nil
+}
+
+func (b *bancoComplianceFalso) MacOSUnfixed(_ context.Context, _ int, since time.Time) ([]compliance.MacOSCVE, error) {
+	b.desde = since
+	return slices.Clone(b.semCorr), nil
+}
+
+func (b *bancoComplianceFalso) AppleModel(_ context.Context, id string) (compliance.MacModel, bool, error) {
+	m, ok := b.modelos[id]
+	return m, ok, nil
+}
+
+func (b *bancoComplianceFalso) AppleModelsCount(context.Context) (int, error) {
+	return len(b.modelos), nil
+}
+
+func (b *bancoComplianceFalso) AppleExtraBuild(_ context.Context, build string) (compliance.MacExtra, bool, error) {
+	x, ok := b.extras[build]
+	return x, ok, nil
 }
 
 func (b *bancoComplianceFalso) ResolveMachine(_ context.Context, prefix string) (string, bool, error) {
@@ -258,5 +291,112 @@ func TestEvaluateMachineWindows(t *testing.T) {
 		"server":        {"cccc", evalOptions{}, "Windows Server (ServerDatacenter) ainda não é avaliado"},
 	} {
 		confere(nome, roda(caso.prefixo, caso.opts, false), "Sem avaliação: "+caso.trecho)
+	}
+}
+
+func TestEvaluateMachineMacOS(t *testing.T) {
+	d := func(s string) time.Time { v, _ := time.Parse("2006-01-02", s); return v }
+	hoje := d("2026-10-07")
+	mac := func(version, build, model string) protocol.InventoryReport {
+		return protocol.InventoryReport{SchemaVersion: 1, CollectedAt: hoje.Add(-2 * time.Hour),
+			OS:       protocol.OSInfo{ID: "macos", Name: "macOS", Version: version, Build: build, Arch: "arm64"},
+			Hardware: &protocol.Hardware{Manufacturer: "Apple", Model: model}}
+	}
+	banco := &bancoComplianceFalso{
+		inv: map[string]protocol.InventoryReport{
+			"aaaa-studio": mac("26.6.2", "25G83", "Mac14,14"),
+			"bbbb-air":    mac("14.8.9", "23J631", "MacBookAir8,1"),
+			"cccc-bsi":    mac("26.3.1", "25D771280a", "Mac99,9"),
+		},
+		majors: []compliance.MacOSMajor{
+			{Number: 27, Name: "Golden Gate 27", Launched: d("2026-09-14"), Latest: "27.0.1", LatestDate: d("2026-09-28")},
+			{Number: 26, Name: "Tahoe 26", Launched: d("2025-09-15"), Latest: "26.7.1", LatestDate: d("2026-09-28")},
+			{Number: 15, Name: "Sequoia 15", Launched: d("2024-09-16"), Latest: "15.8.1", LatestDate: d("2026-09-28")},
+			{Number: 14, Name: "Sonoma 14", Launched: d("2023-09-26"), Latest: "14.8.9", LatestDate: d("2026-08-06")},
+		},
+		macFixes: map[int][]compliance.MacOSFix{
+			26: {
+				{Version: "26.6.1", Released: d("2026-08-06"), CVE: "CVE-2026-65400", Exploited: true, KEV: true},
+				{Version: "26.7", Released: d("2026-09-14"), CVE: "CVE-2026-65400", Exploited: true, KEV: true},
+				{Version: "26.7", Released: d("2026-09-14"), CVE: "CVE-2026-60001", Severity: "Critical"},
+				{Version: "26.7.1", Released: d("2026-09-28"), CVE: "CVE-2026-86950", Exploited: true, KEV: true},
+			},
+			14: {{Version: "14.8.9", Released: d("2026-08-06"), CVE: "CVE-2026-65400", Exploited: true, KEV: true}},
+		},
+		semCorr: []compliance.MacOSCVE{{CVE: "CVE-2026-86950", Exploited: true, KEV: true, Released: d("2026-09-28"), Elsewhere: []string{"26.7.1", "15.8.1"}}},
+		modelos: map[string]compliance.MacModel{
+			"Mac14,14":      {ID: "Mac14,14", Name: "Mac Studio (M2 Ultra, 2023)", Majors: []int{27, 26, 15, 14, 13}},
+			"MacBookAir8,1": {ID: "MacBookAir8,1", Name: "MacBook Air (Retina, 13-inch, 2018)", Majors: []int{14, 13, 12}},
+		},
+		extras: map[string]compliance.MacExtra{"25D771280a": {Build: "25D771280a", Version: "26.3.1", Extra: "(a)", Prerequisite: "25D2128"}},
+	}
+	ctx := context.Background()
+	roda := func(prefixo string, opts evalOptions, verbose bool) string {
+		t.Helper()
+		opts.Now = hoje
+		ev, err := evaluateMachine(ctx, banco, prefixo, opts)
+		if err != nil {
+			t.Fatalf("%s %+v: %v", prefixo, opts, err)
+		}
+		var out bytes.Buffer
+		printEval(ev, verbose, hoje, &out)
+		return out.String()
+	}
+	confere := func(nome, saida string, trechos ...string) {
+		t.Helper()
+		for _, tr := range trechos {
+			if !strings.Contains(saida, tr) {
+				t.Errorf("%s: faltou %q em:\n%s", nome, tr, saida)
+			}
+		}
+	}
+
+	confere("Tahoe", roda("aaaa", evalOptions{}, true),
+		"Máquina aaaa-studio (macOS 26.6.2)",
+		"Catálogo: macOS Tahoe 26 (SOFA): última versão de segurança 26.7.1, de 2026-09-28",
+		"Suporte: com suporte (recebeu a 26.7.1 em 2026-09-28, no ciclo do macOS 27",
+		"Modelo: Mac14,14 (Mac Studio (M2 Ultra, 2023)): o modelo aceita até o macOS 27 (atualizar a major é opcional",
+		"3 CVEs corrigidas na major, no catálogo; 2 pendentes (1 exploradas, 1 no KEV)",
+		"Alvo: 26.7.1",
+		"KEV        CVE-2026-86950  -           26.7.1",
+		"CVE-2026-60001  Critical    26.7",
+	)
+
+	saida := roda("bbbb", evalOptions{}, false)
+	confere("Sonoma", saida,
+		"Suporte: FIM DE SUPORTE: a última versão de segurança é a 14.8.9, de 2026-08-06, anterior ao lançamento do macOS 27 (2026-09-14)",
+		"HARDWARE FORA DE SUPORTE: a major mais nova que o modelo aceita (macOS 14)",
+		"1 CVEs corrigidas na major, no catálogo; 0 pendentes",
+		"1 CVE(s) explorada(s) corrigida(s) depois de 2026-08-06 só em outras majors",
+		"Exploradas sem correção nesta major:",
+		"KEV        CVE-2026-86950  -           26.7.1, 15.8.1",
+	)
+	if !banco.desde.Equal(d("2026-08-06")) {
+		t.Errorf("as sem correção devem ser buscadas depois da última do Sonoma: %v", banco.desde)
+	}
+
+	// A melhoria (a) é reconhecida pelo build; o modelo fora do SOFA é dito.
+	confere("(a)", roda("cccc", evalOptions{}, false),
+		"Build 25D771280a: melhoria de segurança em segundo plano 26.3.1 (a), sobre o 25D2128",
+		"Modelo: o modelo Mac99,9 não está na lista do SOFA",
+		"3 pendentes",
+	)
+
+	// Simulação sem máquina: o mesmo Mac Studio parado no Sonoma deve atualizar a major.
+	confere("simulação", roda("", evalOptions{MacOS: "14.8.9", Model: "Mac14,14"}, false),
+		"Simulação, sem máquina: macOS 14.8.9, modelo Mac14,14",
+		"ATUALIZAR A MAJOR: o modelo aceita até o macOS 27, que tem suporte",
+	)
+	confere("simulação sem modelo", roda("", evalOptions{MacOS: "26.7.1"}, false),
+		"Modelo: o inventário não informa o modelo do Mac",
+		"0 pendentes",
+	)
+	confere("major mais nova que o catálogo", roda("", evalOptions{MacOS: "28.0"}, false),
+		"Sem avaliação: o macOS 28 é mais novo que o catálogo do SOFA",
+	)
+
+	// -como e -build não valem numa máquina macOS real.
+	if _, err := evaluateMachine(ctx, banco, "aaaa", evalOptions{Build: "25G83", Now: hoje}); err == nil {
+		t.Error("-build numa máquina macOS deveria ser recusado")
 	}
 }

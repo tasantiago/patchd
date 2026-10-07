@@ -73,7 +73,8 @@ func (p *Postgres) SaveAppleVersions(ctx context.Context, vs []apple.GDMFVersion
 	return tx.Commit(ctx)
 }
 
-// SaveSOFA substitui as versões de segurança e as CVEs, e o UpdateHash junto, numa transação.
+// SaveSOFA substitui as versões de segurança, as CVEs e os modelos, e o UpdateHash junto,
+// numa transação.
 func (p *Postgres) SaveSOFA(ctx context.Context, f apple.SOFAFeed) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -106,6 +107,24 @@ func (p *Postgres) SaveSOFA(ctx context.Context, f apple.SOFAFeed) error {
 	for _, c := range copies {
 		if _, err := tx.CopyFrom(ctx, pgx.Identifier{c.table}, c.cols, pgx.CopyFromRows(c.rows)); err != nil {
 			return fmt.Errorf("%s: %w", c.table, err)
+		}
+	}
+	// Feed sem a seção Models (formato antigo, ou recorte): os modelos guardados ficam.
+	if len(f.Models) > 0 {
+		if _, err := tx.Exec(ctx, `DELETE FROM apple_models`); err != nil {
+			return err
+		}
+		models := make([][]any, 0, len(f.Models))
+		for _, m := range f.Models {
+			majors := m.Majors
+			if majors == nil {
+				majors = []int{}
+			}
+			models = append(models, []any{m.ID, m.MarketingName, majors})
+		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"apple_models"}, []string{"model", "marketing_name", "majors"},
+			pgx.CopyFromRows(models)); err != nil {
+			return fmt.Errorf("apple_models: %w", err)
 		}
 	}
 	if err := saveFeedHash(ctx, tx, FeedAppleSOFA, f.UpdateHash); err != nil {

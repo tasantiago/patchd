@@ -53,7 +53,7 @@ func TestSyncApple(t *testing.T) {
 		feed: apple.SOFAFeed{UpdateHash: "s1", Releases: []apple.Release{
 			{MajorNumber: "26", ProductVersion: "26.7.1", CVEs: []apple.CVE{{ID: "CVE-2026-86950", Exploited: true}}},
 			{MajorNumber: "15", ProductVersion: "15.8.1", CVEs: []apple.CVE{{ID: "CVE-2026-86950", Exploited: true}, {ID: "CVE-2026-1"}}},
-		}},
+		}, Models: []apple.Model{{ID: "Mac14,14", Majors: []int{27, 26}}}},
 	}
 	banco := &bancoAppleFalso{hashes: map[string]string{}}
 	var out bytes.Buffer
@@ -63,7 +63,7 @@ func TestSyncApple(t *testing.T) {
 		t.Fatalf("primeira: %d %d %v\n%s", mudou, falhas, err, out.String())
 	}
 	for _, trecho := range []string{"gdmf: 1 versões publicadas do macOS (1 melhorias em segundo plano), atualizado",
-		"sofa: 2 majors, 2 versões de segurança, 3 CVEs (1 exploradas distintas), atualizado"} {
+		"sofa: 2 majors, 2 versões de segurança, 3 CVEs (1 exploradas distintas), 1 modelos de Mac, atualizado"} {
 		if !strings.Contains(out.String(), trecho) {
 			t.Errorf("faltou %q em:\n%s", trecho, out.String())
 		}
