@@ -19,12 +19,13 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/osv"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 const catalogUsage = `uso: patchd-server catalog <comando> [opções]
 
 comandos:
-  sync [-source msrc,ubuntu,fedora,apple,kev] [-months N] [-max N] [-workers N] [-full]
+  sync [-source msrc,ubuntu,fedora,apple,kev,terceiros] [-months N] [-max N] [-workers N] [-full]
                             baixa o que é novo ou foi revisado em cada fonte (padrão: todas)
                               -months: janela de meses do MSRC (padrão 12)
                               -max: teto de USNs baixadas nesta execução (padrão 0, sem teto)
@@ -36,6 +37,8 @@ comandos:
                             nos últimos N dias (padrão 30), com onde aparecem no catálogo
   apple [-release N]        majors do macOS: a versão de segurança mais recente (SOFA) ao lado
                             da publicada pela Apple (gdmf); -release 26 lista as versões da major
+  terceiros                 regras do manifesto de programas de terceiros e a versão de referência
+                            guardada de cada uma
   builds [-product PREFIXO] maior build corrigido por produto e documento (padrão "Windows")
   usn -package NOME [-release VERSÃO]
                             avisos do Ubuntu de um pacote fonte; -release 26.04 filtra
@@ -52,6 +55,9 @@ e https://sofafeed.macadmins.io/v2/macos_data_feed.json). O gdmf só é aceito c
 raiz "Apple Root CA", embutida no binário.
 PATCHD_KEV_URL troca o feed do KEV (padrão: o JSON da CISA; alternativa: o espelho oficial
 https://raw.githubusercontent.com/cisagov/kev-data/develop/known_exploited_vulnerabilities.json).
+PATCHD_THIRDPARTY_MANIFEST aponta um manifesto local de programas de terceiros, somado ao embutido
+(regras com o mesmo id e SO substituem as do embutido). As fontes dos terceiros são as APIs do
+Google (Chrome), da Mozilla (Firefox), do GitHub (winget-pkgs) e do Homebrew.
 `
 
 // runCatalog administra o catálogo de segurança direto no banco.
@@ -73,7 +79,7 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	fs := flag.NewFlagSet("catalog "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	months := fs.Int("months", 12, "janela de meses do MSRC no sync")
-	sources := fs.String("source", "msrc,ubuntu,fedora,apple,kev", "fontes do sync, separadas por vírgula")
+	sources := fs.String("source", "msrc,ubuntu,fedora,apple,kev,terceiros", "fontes do sync, separadas por vírgula")
 	days := fs.Int("days", 30, "kev: janela de dias das CVEs incluídas recentemente")
 	maxUSN := fs.Int("max", 0, "teto de USNs baixadas no sync (0: sem teto)")
 	workers := fs.Int("workers", 4, "downloads simultâneos do Ubuntu no sync")
@@ -100,10 +106,10 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	wanted := map[string]bool{}
 	for _, s := range strings.Split(*sources, ",") {
 		switch s = strings.TrimSpace(s); s {
-		case "msrc", "ubuntu", "fedora", "apple", "kev":
+		case "msrc", "ubuntu", "fedora", "apple", "kev", "terceiros":
 			wanted[s] = true
 		default:
-			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora, apple e/ou kev)\n", s)
+			fmt.Fprintf(stderr, "patchd-server: fonte desconhecida %q em -source (use msrc, ubuntu, fedora, apple, kev e/ou terceiros)\n", s)
 			return exitConfig
 		}
 	}
@@ -122,6 +128,15 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	if args[0] == "fedora" && *release != "" && !bodhi.ValidRelease(*release) {
 		fmt.Fprintf(stderr, "patchd-server: -release do fedora tem a forma F44 (recebido %q)\n", *release)
 		return exitConfig
+	}
+
+	var manifest thirdparty.Manifest
+	if args[0] == "terceiros" || (args[0] == "sync" && wanted["terceiros"]) {
+		path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
+		if manifest, err = thirdparty.Load(path); err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitConfig
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
@@ -224,10 +239,27 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 			}
 			failed = failed || kfail
 		}
+		if wanted["terceiros"] {
+			fmt.Fprintln(stdout, "Programas de terceiros:")
+			_, tfail, err := syncThirdParty(ctx, manifest, thirdparty.NewClient(ua), st, stdout)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				failed = true
+			}
+			failed = failed || tfail > 0
+		}
 		// Cada fonte roda mesmo que a anterior falhe; o código de saída diz se algo falhou.
 		if failed {
 			return exitRuntime
 		}
+		return exitOK
+	case "terceiros":
+		refs, err := st.ThirdPartyVersions(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		printThirdPartyRules(manifest, refs, stdout)
 		return exitOK
 	case "list":
 		docs, err := st.MSRCDocuments(ctx)
