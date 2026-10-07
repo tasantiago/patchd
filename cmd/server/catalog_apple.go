@@ -80,8 +80,8 @@ func syncApple(ctx context.Context, src appleSource, st appleStore, out io.Write
 	if state == "atualizado" {
 		changed++
 	}
-	fmt.Fprintf(out, "  sofa: %d majors, %d versões de segurança, %d CVEs (%d exploradas distintas), %s\n",
-		len(majors), len(f.Releases), cves, len(exploited), state)
+	fmt.Fprintf(out, "  sofa: %d majors, %d versões de segurança, %d CVEs (%d exploradas distintas), %d modelos de Mac, %s\n",
+		len(majors), len(f.Releases), cves, len(exploited), len(f.Models), state)
 	return changed, failed, nil
 }
 

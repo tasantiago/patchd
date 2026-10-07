@@ -20,6 +20,7 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -111,6 +112,15 @@ func parseDay(s string) (time.Time, error) {
 type SOFAFeed struct {
 	UpdateHash string // muda quando o conteúdo muda: é o que a sincronização compara
 	Releases   []Release
+	Models     []Model // em ordem de ID; vazio se o feed não trouxer a seção Models
+}
+
+// Model é um modelo de Mac e as majors que ele aceita. O ID é o identificador do modelo
+// ("Mac14,14"), o mesmo que o agente lê do system_profiler; o gdmf usa outro (o board ID).
+type Model struct {
+	ID            string
+	MarketingName string // "Mac Studio (M2 Ultra, 2023)"
+	Majors        []int  // da mais nova para a mais antiga: [27 26 15 14 13]
 }
 
 // Release é uma versão de segurança do macOS.
@@ -160,11 +170,31 @@ func ParseSOFA(r io.Reader) (SOFAFeed, error) {
 				} `json:"CVEs"`
 			} `json:"SecurityReleases"`
 		} `json:"OSVersions"`
+		Models map[string]struct {
+			MarketingName string   `json:"MarketingName"`
+			SupportedOS   []string `json:"SupportedOS"` // "Golden Gate 27", "Tahoe 26"...
+			OSVersions    []int    `json:"OSVersions"`  // 27, 26...
+		} `json:"Models"`
 	}
 	if err := json.NewDecoder(r).Decode(&raw); err != nil {
 		return SOFAFeed{}, fmt.Errorf("feed do SOFA ilegível: %w", err)
 	}
 	feed := SOFAFeed{UpdateHash: raw.UpdateHash}
+	for id, m := range raw.Models {
+		majors := slices.Clone(m.OSVersions)
+		if len(majors) == 0 {
+			// Sem a lista numérica, o número sai do nome ("Tahoe 26").
+			for _, name := range m.SupportedOS {
+				if n, err := strconv.Atoi(majorNumber.FindString(name)); err == nil {
+					majors = append(majors, n)
+				}
+			}
+		}
+		slices.Sort(majors)
+		slices.Reverse(majors)
+		feed.Models = append(feed.Models, Model{ID: id, MarketingName: m.MarketingName, Majors: slices.Compact(majors)})
+	}
+	slices.SortFunc(feed.Models, func(a, b Model) int { return strings.Compare(a.ID, b.ID) })
 	seen := map[string]bool{}
 	for _, o := range raw.OSVersions {
 		m := majorNumber.FindString(o.OSVersion)

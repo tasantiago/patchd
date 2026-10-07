@@ -2,6 +2,7 @@ package apple
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,25 @@ func TestParseSOFA(t *testing.T) {
 		if _, err := ParseSOFA(strings.NewReader(ruim)); err == nil {
 			t.Errorf("%s deveria ser recusado", ruim)
 		}
+	}
+
+	// Modelos: os sete reais do recorte, em ordem de ID, com as majors da mais nova para a
+	// mais antiga.
+	if len(f.Models) != 7 || f.Models[0].ID != "Mac14,14" {
+		t.Fatalf("modelos: %+v", f.Models)
+	}
+	modelos := map[string]Model{}
+	for _, m := range f.Models {
+		modelos[m.ID] = m
+	}
+	if m := modelos["MacBookAir8,1"]; m.MarketingName != "MacBook Air (Retina, 13-inch, 2018)" || !slices.Equal(m.Majors, []int{14, 13, 12}) {
+		t.Errorf("MacBookAir8,1: %+v", m)
+	}
+	// Sem OSVersions, as majors saem dos nomes; repetidas e fora de ordem, normalizadas.
+	f, err = ParseSOFA(strings.NewReader(`{"UpdateHash": "x", "OSVersions": [], "Models": {
+	  "Mac99,1": {"MarketingName": "Mac", "SupportedOS": ["Sequoia 15", "Golden Gate 27", "Tahoe 26", "Tahoe 26"]}}}`))
+	if err != nil || len(f.Models) != 1 || !slices.Equal(f.Models[0].Majors, []int{27, 26, 15}) {
+		t.Errorf("majors pelos nomes: %+v %v", f.Models, err)
 	}
 
 	// Explorada citada fora do mapa de CVEs entra assim mesmo.
