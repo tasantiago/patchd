@@ -36,7 +36,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
-	// "patchd-server release current|publish|withdraw" e "patchd-server catalog sync|list|builds|usn|fedora|apple|kev".
+	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"
+	// e "patchd-server compliance -machine ID".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -45,6 +46,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "catalog" {
 		return runCatalog(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "compliance" {
+		return runCompliance(args[1:], look, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
