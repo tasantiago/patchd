@@ -184,6 +184,16 @@ func TestEvaluateWindows(t *testing.T) {
 	if r = EvaluateWindows(WindowsBuild{26100, 9445}, linhasDoProduto()); r.Foreign || len(r.Pending) != 0 {
 		t.Errorf("24H2 na linha do 25H2: %+v", r)
 	}
+	// Empate de UBR (KB5124008 em 26200.9445 e em 26100.9445): o alvo é o da linha da máquina,
+	// sempre. Antes, dependia da ordem de um map e o teste falhava de vez em quando.
+	for i := 0; i < 50; i++ {
+		if r = EvaluateWindows(WindowsBuild{26100, 9350}, linhasDoProduto()); r.Target != (WindowsBuild{26100, 9445}) {
+			t.Fatalf("alvo no 24H2 (rodada %d): %v", i, r.Target)
+		}
+		if r = EvaluateWindows(WindowsBuild{26200, 9350}, linhasDoProduto()); r.Target != (WindowsBuild{26200, 9445}) {
+			t.Fatalf("alvo no 25H2 (rodada %d): %v", i, r.Target)
+		}
+	}
 }
 
 func TestNormalizeSubType(t *testing.T) {
