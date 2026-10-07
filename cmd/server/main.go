@@ -146,7 +146,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return exitConfig
 		}
 		repo = c
-		logger.Info("cache de repositórios ligado (proxy HTTP do apt nesta mesma porta)",
+		logger.Info("cache de repositórios ligado (apt: proxy HTTP nesta porta; Fedora: /repo/fedora/; contagens: /repo/stats)",
 			"dir", cfg.RepoCacheDir, "hosts", cfg.RepoCacheHosts)
 	}
 	handler := newHandler(api.New(st, logger, apiOpts...), repo)

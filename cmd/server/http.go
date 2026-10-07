@@ -32,8 +32,9 @@ const (
 //
 // Pedidos de proxy (forma absoluta, "GET http://archive.ubuntu.com/..."; ou CONNECT) vão
 // para o cache de repositórios (Aula 6.6, parte 4b) quando ligado, e são recusados quando
-// não: sem isso, o ServeMux casaria só o caminho e um "GET http://qualquer/api/..." cairia
-// na API.
+// não: sem essa separação, o ServeMux casaria só o caminho e um
+// "GET http://qualquer/api/..." cairia na API. Com o cache ligado, /repo/ (o Fedora e
+// /repo/stats, parte 4c) também é dele.
 func newHandler(apiHandler, repoCache http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +42,10 @@ func newHandler(apiHandler, repoCache http.Handler) http.Handler {
 		fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("/api/", apiHandler)
+	if repoCache != nil {
+		// Fedora (baseurl apontando para o servidor) e as contagens do cache.
+		mux.Handle("/repo/", repoCache)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !repocache.IsProxyRequest(r) {
 			mux.ServeHTTP(w, r)
