@@ -18,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/version"
 )
 
@@ -39,6 +40,10 @@ máquina, desde que case com uma só.
   do Mac permite (atualizar a major ou trocar o hardware). -v lista todas as pendentes.
     -macos VERSÃO simulação sem máquina (ex.: 14.8.9), com -modelo (ex.: Mac14,14) e -build
                   opcionais.
+  Programas de terceiros (Windows e macOS): cada programa reconhecido pelo manifesto, com a
+  situação (desatualizado, abaixo do mínimo, fora de suporte, coberto pelo catálogo do SO,
+  em dia). As versões de referência vêm do catalog sync -source terceiros. -v lista também
+  os programas sem regra. PATCHD_THIRDPARTY_MANIFEST acrescenta um manifesto local.
 A URL do banco vem da mesma configuração do servidor (PATCHD_DATABASE_URL ou _FILE).
 `
 
@@ -59,6 +64,7 @@ type complianceStore interface {
 	AppleModel(ctx context.Context, model string) (compliance.MacModel, bool, error)
 	AppleModelsCount(ctx context.Context) (int, error)
 	AppleExtraBuild(ctx context.Context, build string) (compliance.MacExtra, bool, error)
+	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
 }
 
 // evalOptions são as opções do operador que mudam a avaliação.
@@ -68,6 +74,8 @@ type evalOptions struct {
 	MacOS  string    // -macos: simulação de um Mac, sem máquina
 	Model  string    // -modelo: o modelo do Mac simulado
 	Now    time.Time // relógio da avaliação (zero: agora); os testes fixam
+	// Manifesto dos programas de terceiros; nil: não avalia os terceiros.
+	Manifest *thirdparty.Manifest
 }
 
 // machineEval é a avaliação de uma máquina, pronta para imprimir.
@@ -80,8 +88,9 @@ type machineEval struct {
 	Windows   *compliance.WindowsResult
 	WinTarget compliance.WindowsTarget
 	MacOS     *macEval
-	Simulated bool   // Windows: o build veio de -build
-	NoMachine bool   // simulação sem máquina (-macos)
+	Simulated bool // Windows: o build veio de -build
+	NoMachine bool // simulação sem máquina (-macos)
+	Third     *thirdparty.Result
 	Note      string // por que não houve avaliação (SO ainda não suportado, versão fora do catálogo)
 }
 
@@ -121,6 +130,13 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 		fmt.Fprintln(stderr, "patchd-server: -modelo só vale com -macos (numa máquina real, o modelo vem do inventário)")
 		return exitConfig
 	}
+	path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
+	manifest, err := thirdparty.Load(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		return exitConfig
+	}
+	opts.Manifest = &manifest
 	cfg, err := loadServerConfig(nil, look, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: configuração inválida:\n%v\n", err)
@@ -237,7 +253,17 @@ func evaluateMachine(ctx context.Context, st complianceStore, prefix string, opt
 			return ev, err
 		}
 	default:
-		ev.Note = fmt.Sprintf("a avaliação de %s %s entra nas próximas partes da Aula 6.4", inv.OS.Name, inv.OS.Version)
+		ev.Note = fmt.Sprintf("%s %s: o patchd não tem catálogo para este sistema", inv.OS.Name, inv.OS.Version)
+	}
+
+	// Programas de terceiros (Windows e macOS), mesmo quando o SO ficou sem avaliação.
+	if (inv.OS.ID == "windows" || inv.OS.ID == "macos") && opts.Manifest != nil && inv.Software != nil {
+		refs, err := st.ThirdPartyVersions(ctx)
+		if err != nil {
+			return ev, err
+		}
+		r := thirdparty.Evaluate(inv.OS.ID, inv.Software, *opts.Manifest, refs)
+		ev.Third = &r
 	}
 	return ev, nil
 }
@@ -393,6 +419,8 @@ func printEval(ev machineEval, verbose bool, now time.Time, out io.Writer) {
 		}
 		fmt.Fprintln(out)
 	}
+	// Os terceiros saem no fim, depois do que o SO tiver (ou da nota de sem avaliação).
+	defer printThirdParty(ev, verbose, now, out)
 	if !ev.Collected.IsZero() {
 		age := now.Sub(ev.Collected)
 		fmt.Fprintf(out, "Inventário coletado em %s UTC", ev.Collected.UTC().Format("2006-01-02 15:04"))
@@ -701,4 +729,76 @@ func pendentes(n int) string {
 		return "1 pendente"
 	}
 	return fmt.Sprintf("%d pendentes", n)
+}
+
+// printThirdParty escreve a avaliação dos programas de terceiros.
+func printThirdParty(ev machineEval, verbose bool, now time.Time, out io.Writer) {
+	r := ev.Third
+	if r == nil {
+		return
+	}
+	fmt.Fprintf(out, "\nProgramas de terceiros (%d regras para %s): %d no inventário, %d identificados, %d auxiliares, %d sem regra\n",
+		r.Rules, ev.OS.ID, r.Programs, len(r.Findings), r.Auxiliary, len(r.Unmatched))
+	var counts []string
+	for _, c := range []struct{ state, label string }{
+		{thirdparty.StateOutdated, "desatualizado"}, {thirdparty.StateBelowMinimum, "abaixo do mínimo"},
+		{thirdparty.StateEOL, "fora de suporte"}, {thirdparty.StateBadVersion, "com versão ilegível"},
+		{thirdparty.StateNoReference, "sem referência"}, {thirdparty.StateOSVendor, "no catálogo do SO"},
+		{thirdparty.StateCurrent, "em dia"},
+	} {
+		if n := r.Count(c.state); n > 0 {
+			counts = append(counts, fmt.Sprintf("%d %s", n, c.label))
+		}
+	}
+	if len(counts) > 0 {
+		fmt.Fprintf(out, "  %s\n", strings.Join(counts, ", "))
+	}
+	if r.Count(thirdparty.StateNoReference) > 0 {
+		fmt.Fprintln(out, "  sem referência: rode patchd-server catalog sync -source terceiros")
+	}
+	if len(r.Findings) > 0 {
+		tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "SITUAÇÃO\tPROGRAMA\tINSTALADA\tREFERÊNCIA\tORIGEM")
+		for _, f := range r.Findings {
+			name := f.Software.Name
+			if f.Software.Scope == "user" {
+				name += " (por usuário)"
+			}
+			installed := f.Installed
+			if installed == "" {
+				installed = fmt.Sprintf("%q", f.Software.Version)
+			}
+			ref, origin := f.Reference, ""
+			switch {
+			case f.Ref != nil:
+				origin = fmt.Sprintf("%s, %s", f.Ref.Source, f.Ref.Fetched.Format("2006-01-02"))
+				if now.Sub(f.Ref.Fetched) > 7*24*time.Hour {
+					origin += " (antiga)"
+				}
+			case f.App.Category == thirdparty.CategoryMinimum:
+				origin = "mínimo do manifesto"
+			case f.App.Category == thirdparty.CategoryFeed:
+				origin = f.App.Source.String()
+			}
+			if ref == "" {
+				ref = "-"
+			}
+			if f.App.Note != "" && (f.State == thirdparty.StateEOL || f.State == thirdparty.StateOSVendor || verbose) {
+				if origin != "" {
+					origin += "; "
+				}
+				origin += f.App.Note
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", f.State, name, installed, ref, origin)
+		}
+		tw.Flush()
+	}
+	if verbose && len(r.Unmatched) > 0 {
+		fmt.Fprintln(out, "\nSem regra no manifesto:")
+		tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+		for _, s := range r.Unmatched {
+			fmt.Fprintf(tw, "  %s\t%s\t%s\n", s.Name, s.Version, s.Publisher)
+		}
+		tw.Flush()
+	}
 }

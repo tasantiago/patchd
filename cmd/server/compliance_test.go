@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/kev"
 	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 type bancoComplianceFalso struct {
@@ -29,6 +30,11 @@ type bancoComplianceFalso struct {
 	desde    time.Time
 	modelos  map[string]compliance.MacModel
 	extras   map[string]compliance.MacExtra
+	refs     []thirdparty.Ref
+}
+
+func (b *bancoComplianceFalso) ThirdPartyVersions(context.Context) ([]thirdparty.Ref, error) {
+	return b.refs, nil
 }
 
 func (b *bancoComplianceFalso) MacOSMajors(context.Context) ([]compliance.MacOSMajor, error) {
@@ -398,5 +404,81 @@ func TestEvaluateMachineMacOS(t *testing.T) {
 	// -como e -build não valem numa máquina macOS real.
 	if _, err := evaluateMachine(ctx, banco, "aaaa", evalOptions{Build: "25G83", Now: hoje}); err == nil {
 		t.Error("-build numa máquina macOS deveria ser recusado")
+	}
+}
+
+func TestEvaluateMachineTerceiros(t *testing.T) {
+	agora := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	manifesto, err := thirdparty.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := thirdparty.Parse([]byte(`{"version": 1, "apps": [
+	  {"id": "java-8", "os": "windows", "name": "Java 8", "category": "minimum", "publisher": "^Oracle", "match": "^Java 8 Update", "min_version": "8.0.5040"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifesto = manifesto.Merge(local)
+	sw := []protocol.Software{
+		{Name: "Google Chrome", Version: "154.0.8037.93", Publisher: "Google LLC", Scope: "machine"},
+		{Name: "PowerShell 7.6.6.0-x64", Version: "7.6.6.0", Publisher: "Microsoft Corporation", Scope: "machine"},
+		{Name: "Python 3.14.3", Version: "3.14-64", Publisher: "Python Software Foundation", Scope: "user"},
+		{Name: "Java 8 Update 503 (64-bit)", Version: "8.0.5030.1", Publisher: "Oracle Corporation", Scope: "machine"},
+		{Name: "Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729.6161", Version: "9.0.30729.6161", Publisher: "Microsoft Corporation", Scope: "machine"},
+		{Name: "Microsoft Edge", Version: "154.0.4258.53", Publisher: "Microsoft Corporation", Scope: "machine"},
+		{Name: "Mozilla Maintenance Service", Version: "156.0", Publisher: "Mozilla", Scope: "machine"},
+		{Name: "Spotify", Version: "1.2.99.317.g9bd8c54d", Publisher: "Spotify AB", Scope: "user"},
+	}
+	banco := &bancoComplianceFalso{
+		inv: map[string]protocol.InventoryReport{
+			"287d1717-win": {SchemaVersion: 1, CollectedAt: agora.Add(-time.Hour), Software: sw,
+				OS: protocol.OSInfo{ID: "windows", Name: "Windows 11 Pro", Version: "26H2", Build: "26300.9457", Arch: "amd64", Edition: "Professional"}},
+			"7aa604f7-vm": {SchemaVersion: 1, CollectedAt: agora, Software: sw,
+				OS: protocol.OSInfo{ID: "ubuntu", Name: "Ubuntu", Version: "26.04"}},
+		},
+		produtos: []compliance.MSRCProduct{{ID: "20438", Name: "Windows 11 Version 25H2 for x64-based Systems"}},
+		refs: []thirdparty.Ref{
+			{App: "google-chrome", OS: "windows", Version: "155.0.8059.40", Source: "chrome:win64", Fetched: agora.Add(-2 * time.Hour)},
+			{App: "powershell-7", OS: "windows", Version: "7.6.6.0", Source: "winget:Microsoft.PowerShell", Fetched: agora.AddDate(0, 0, -10)},
+		},
+	}
+	ev, err := evaluateMachine(context.Background(), banco, "287d", evalOptions{Now: agora, Manifest: &manifesto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	printEval(ev, true, agora, &out)
+	saida := out.String()
+	for _, trecho := range []string{
+		// O Windows ficou sem avaliação (26H2), mas os terceiros saem assim mesmo, depois.
+		"Sem avaliação: Windows 11 26H2 (amd64) não está no catálogo do MSRC",
+		"Programas de terceiros (",
+		"8 no inventário, 6 identificados, 1 auxiliares, 1 sem regra",
+		"1 desatualizado, 1 abaixo do mínimo, 1 fora de suporte, 1 sem referência, 1 no catálogo do SO, 1 em dia",
+		"sem referência: rode",
+		"DESATUALIZADO     Google Chrome",
+		"155.0.8059.40",
+		"chrome:win64, 2026-10-07",
+		"ABAIXO DO MÍNIMO  Java 8 Update 503 (64-bit)",
+		"mínimo do manifesto",
+		"FORA DE SUPORTE   Microsoft Visual C++ 2008",
+		"fim do suporte estendido em 2018-04-10",
+		"CATÁLOGO DO SO    Microsoft Edge",
+		"winget:Microsoft.PowerShell, 2026-09-27 (antiga)",
+		"Sem regra no manifesto:",
+		"Spotify",
+	} {
+		if !strings.Contains(saida, trecho) {
+			t.Errorf("faltou %q em:\n%s", trecho, saida)
+		}
+	}
+	if strings.Index(saida, "Sem avaliação") > strings.Index(saida, "Programas de terceiros") {
+		t.Errorf("os terceiros deveriam vir depois da avaliação do SO:\n%s", saida)
+	}
+
+	// Ubuntu: os terceiros não se aplicam (os pacotes já vêm pela distribuição).
+	ev, err = evaluateMachine(context.Background(), banco, "7aa6", evalOptions{Now: agora, Manifest: &manifesto})
+	if err != nil || ev.Third != nil {
+		t.Errorf("Ubuntu: %+v %v", ev.Third, err)
 	}
 }
