@@ -63,6 +63,21 @@ type Facts struct {
 	NewerKernel   bool      // Linux: kernel mais novo instalado e não carregado
 }
 
+// Unit põe a unidade no singular quando n é 1 ("1 pacote", "1 CVE").
+func Unit(n int, plural string) string {
+	if n == 1 {
+		switch plural {
+		case "pacotes":
+			return "pacote"
+		case "CVEs":
+			return "CVE"
+		case "itens":
+			return "item"
+		}
+	}
+	return plural
+}
+
 // Classify aplica o RF-23 com o P-02 (compliance = resultado bom + dado fresco):
 //  1. sem contato há mais de StaleAfter: sem dado recente, seja qual for o último resultado;
 //  2. sem inventário ou sem avaliação: desconhecido;
@@ -94,7 +109,7 @@ func Classify(f Facts, now time.Time) (State, []string) {
 		if unit == "" {
 			unit = "itens"
 		}
-		reasons = append(reasons, fmt.Sprintf("%d %s com correção pendente (%d com exploração conhecida)", f.Pending, unit, f.Exploited))
+		reasons = append(reasons, fmt.Sprintf("%d %s com correção pendente (%d com exploração conhecida)", f.Pending, Unit(f.Pending, unit), f.Exploited))
 	}
 	if f.SupportEnded {
 		reasons = append(reasons, "a versão principal do sistema não recebe mais correções")

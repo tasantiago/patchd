@@ -49,7 +49,7 @@ func (a *api) machineAuth(next func(http.ResponseWriter, *http.Request, string))
 			return
 		}
 		if !found {
-			a.logger.Warn("envio recusado", "reason", "credencial desconhecida (revogada ou de outro servidor)",
+			a.logger.Warn("envio recusado", "reason", "credencial desconhecida (revogada, de máquina aposentada ou de outro servidor)",
 				"request_id", RequestID(r.Context()), "remote", r.RemoteAddr)
 			unauthorized(w, "credencial da máquina ausente ou inválida")
 			return

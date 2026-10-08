@@ -42,7 +42,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
 	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"
 	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune",
-	// "patchd-server user create|list|delete|password" e "patchd-server ad check".
+	// "patchd-server user create|list|delete|password", "patchd-server ad check" e
+	// "patchd-server machine list|retire|restore".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -63,6 +64,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "ad" {
 		return runAD(args[1:], look, os.Stdin, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "machine" {
+		return runMachine(args[1:], look, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)

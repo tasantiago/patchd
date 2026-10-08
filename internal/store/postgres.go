@@ -187,34 +187,57 @@ func (p *Postgres) latest(ctx context.Context, query, id string, dst any) (bool,
 	return true, nil
 }
 
-// Machines resume as máquinas em ordem de ID. COLLATE "C" ordena byte a byte, como o Go,
-// sem depender do locale do banco.
+// Machines resume as máquinas da frota (sem as aposentadas) em ordem de ID. COLLATE "C"
+// ordena byte a byte, como o Go, sem depender do locale do banco.
 func (p *Postgres) Machines(ctx context.Context) ([]protocol.MachineSummary, error) {
+	list, err := p.machines(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]protocol.MachineSummary, len(list))
+	for i, m := range list {
+		out[i] = m.MachineSummary
+	}
+	return out, nil
+}
+
+// RetiredMachines lista as máquinas aposentadas (Aula 7.5).
+func (p *Postgres) RetiredMachines(ctx context.Context) ([]RetiredMachine, error) {
+	return p.machines(ctx, true)
+}
+
+func (p *Postgres) machines(ctx context.Context, retired bool) ([]RetiredMachine, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT m.id, m.last_seen_at, m.agent_version,
 		       i.hostname, i.os_name, i.os_version, i.hash, i.received_at,
-		       s.received_at, s.reboot_pending
+		       s.received_at, s.reboot_pending, m.retired_at, coalesce(m.retired_reason, '')
 		FROM machines m
 		LEFT JOIN inventory_reports i ON i.id = m.current_inventory_id
 		LEFT JOIN scan_reports s      ON s.id = m.current_scan_id
-		ORDER BY m.id COLLATE "C"`)
+		WHERE (m.retired_at IS NOT NULL) = $1
+		ORDER BY m.id COLLATE "C"`, retired)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	list := []protocol.MachineSummary{}
+	list := []RetiredMachine{}
 	for rows.Next() {
-		var s protocol.MachineSummary
+		var r RetiredMachine
+		s := &r.MachineSummary
 		var hostname, osName, osVersion, hash *string
-		var invAt, scanAt *time.Time
-		if err := rows.Scan(&s.ID, &s.LastSeenAt, &s.AgentVersion, &hostname, &osName, &osVersion, &hash, &invAt, &scanAt, &s.RebootPending); err != nil {
+		var invAt, scanAt, retiredAt *time.Time
+		if err := rows.Scan(&s.ID, &s.LastSeenAt, &s.AgentVersion, &hostname, &osName, &osVersion, &hash, &invAt, &scanAt,
+			&s.RebootPending, &retiredAt, &r.Reason); err != nil {
 			return nil, err
 		}
 		s.LastSeenAt = s.LastSeenAt.UTC()
 		s.Hostname, s.OSName, s.OSVersion, s.InventoryHash = deref(hostname), deref(osName), deref(osVersion), deref(hash)
 		s.InventoryChangedAt, s.ScanReceivedAt = utc(invAt), utc(scanAt)
-		list = append(list, s)
+		if retiredAt != nil {
+			r.RetiredAt = retiredAt.UTC()
+		}
+		list = append(list, r)
 	}
 	return list, rows.Err()
 }

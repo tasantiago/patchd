@@ -179,10 +179,11 @@ func (p *Postgres) IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, 
 	return list, rows.Err()
 }
 
-// MachineByCredential devolve a máquina dona da credencial.
+// MachineByCredential devolve a máquina dona da credencial. A de uma máquina aposentada
+// não vale (Aula 7.5): o agente dela recebe 401 até a máquina ser restaurada.
 func (p *Postgres) MachineByCredential(ctx context.Context, credentialHash []byte) (string, bool, error) {
 	var id string
-	err := p.pool.QueryRow(ctx, "SELECT id FROM machines WHERE credential_hash = $1", credentialHash).Scan(&id)
+	err := p.pool.QueryRow(ctx, "SELECT id FROM machines WHERE credential_hash = $1 AND retired_at IS NULL", credentialHash).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
