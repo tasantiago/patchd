@@ -12,7 +12,7 @@ import (
 // a avaliação usa o catálogo inteiro; o servidor passa a implementação em WithCompliance.
 type ComplianceSource interface {
 	Fleet(ctx context.Context) (protocol.ComplianceFleet, error)
-	Machine(ctx context.Context, id string) (protocol.ComplianceStatus, bool, error)
+	Detail(ctx context.Context, id string) (protocol.ComplianceDetail, bool, error)
 }
 
 // WithCompliance liga as rotas de compliance e as contagens no painel.
@@ -54,7 +54,7 @@ func (a *api) machineCompliance(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
 	defer cancel()
-	cs, found, err := a.compliance.Machine(ctx, id)
+	cs, found, err := a.compliance.Detail(ctx, id)
 	if err != nil {
 		a.internalError(w, r, "avaliar a máquina", err)
 		return

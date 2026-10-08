@@ -39,6 +39,10 @@ type Store interface {
 	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string) (inventoryKnown bool, err error)
 	// Usuários e sessões do painel.
 	PanelStore
+	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
+	RetiredMachines(ctx context.Context) ([]protocol.RetiredMachine, error)
+	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
+	RestoreMachine(ctx context.Context, id string) (bool, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -90,7 +94,11 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /painel/entrar", a.loginForm)
 	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))
 	mux.Handle("POST /painel/sair", a.sameOrigin(a.logout))
-	mux.Handle("GET /painel/{$}", a.panelPage(a.home))
+	mux.Handle("GET /painel/{$}", a.panelPage(a.fleetPage))
+	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
+	mux.Handle("GET /painel/aposentadas", a.panelPage(a.retiredPage))
+	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
+	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))

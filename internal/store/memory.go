@@ -37,6 +37,7 @@ type memMachine struct {
 	agentVersion       string
 	retiredAt          time.Time // zero: na frota
 	retiredReason      string
+	retiredBy          string
 }
 
 type memKeys struct {
@@ -155,7 +156,7 @@ func (m *Memory) summaries(retired bool) []RetiredMachine {
 				s.RebootPending = mm.scan.Reboot.Pending
 			}
 		}
-		list = append(list, RetiredMachine{MachineSummary: s, RetiredAt: mm.retiredAt, Reason: mm.retiredReason})
+		list = append(list, RetiredMachine{MachineSummary: s, RetiredAt: mm.retiredAt, Reason: mm.retiredReason, RetiredBy: mm.retiredBy})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	return list
