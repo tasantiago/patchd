@@ -25,6 +25,7 @@ import (
 const complianceUsage = `uso: patchd-server compliance -machine ID [-v] [-como VERSÃO] [-build BUILD]
      patchd-server compliance -macos VERSÃO [-modelo ID] [-build BUILD] [-v]
      patchd-server compliance -all [-resumo]
+Com -tempos, no fim, quanto cada consulta ao banco levou e quanto foi comparação em Go.
 
 -all: o estado de compliance de cada máquina (RF-23): faltando, reboot pendente, sem dado
 recente (sem contato há mais de 7 dias), desconhecido ou em dia, com os motivos. -resumo
@@ -129,6 +130,7 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 	fs.StringVar(&opts.Model, "modelo", "", "com -macos: o modelo do Mac (ex.: Mac14,14)")
 	all := fs.Bool("all", false, "o estado de compliance de todas as máquinas")
 	summary := fs.Bool("resumo", false, "com -all: só as contagens por estado")
+	timings := fs.Bool("tempos", false, "mostra quanto cada consulta ao banco levou")
 	modes := 0
 	err := fs.Parse(args)
 	for _, on := range []bool{*machine != "", opts.MacOS != "", *all} {
@@ -187,21 +189,34 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 		return exitRuntime
 	}
 
+	var st fleetStore = store.NewPostgres(pool)
+	var times *stepTimes
+	if *timings {
+		times = newStepTimes()
+		st = timedStore{st: st, t: times}
+	}
+	start := time.Now()
 	if *all {
-		fleet, err := newComplianceService(store.NewPostgres(pool), logger).Fleet(ctx)
+		fleet, err := newComplianceService(st, logger).Fleet(ctx)
 		if err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitRuntime
 		}
 		printFleet(fleet, *summary, stdout)
+		if times != nil {
+			times.print(stdout, time.Since(start))
+		}
 		return exitOK
 	}
-	ev, err := evaluateMachine(ctx, store.NewPostgres(pool), *machine, opts)
+	ev, err := evaluateMachine(ctx, st, *machine, opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
 	printEval(ev, *verbose, time.Now(), stdout)
+	if times != nil {
+		times.print(stdout, time.Since(start))
+	}
 	return exitOK
 }
 
