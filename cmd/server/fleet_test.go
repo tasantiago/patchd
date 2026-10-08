@@ -175,6 +175,8 @@ func TestComplianceAllFlags(t *testing.T) {
 		{"-resumo", "-machine", "x"},
 		{"-all", "-v"},
 		{"-all", "-como", "25H2"},
+		{"-csv", "-machine", "x"},
+		{"-all", "-csv", "-resumo"},
 	} {
 		var errOut bytes.Buffer
 		if code := runCompliance(args, lookMap(nil), io.Discard, &errOut); code != exitConfig {

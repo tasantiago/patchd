@@ -415,7 +415,7 @@ button{padding:.35rem .9rem;cursor:pointer}
 {{if .Reasons}}<tr><td></td><td colspan="6"><ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul></td></tr>{{end}}
 {{end}}</tbody></table>
 {{else}}<p class="muted">Nenhuma máquina{{if .Filter}} neste estado{{end}}.</p>{{end}}
-<p class="muted">Avaliado em {{.EvaluatedAt}} · <a href="/api/v1/compliance">JSON</a></p>
+<p class="muted">Avaliado em {{.EvaluatedAt}} · <a href="/painel/frota.csv{{if .Filter}}?estado={{.Filter}}{{end}}">Exportar CSV</a> · <a href="/api/v1/compliance">JSON</a></p>
 {{end}}
 {{template "fim"}}{{end}}
 
@@ -439,7 +439,8 @@ button{padding:.35rem .9rem;cursor:pointer}
 <thead><tr><th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>
 <tbody>{{range .Items}}<tr><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td><code>{{.ID}}</code></td>
 <td>{{.Severity}}</td><td>{{.Installed}}</td><td>{{.FixedIn}}</td><td>{{.Note}}</td></tr>{{end}}</tbody></table>
-{{if .More}}<p class="muted">E mais {{.More}}: a lista completa está em <a href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a>.</p>{{end}}
+{{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
+<p class="muted"><a href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">Exportar pendências (CSV)</a> · <a href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></p>
 </section>{{end}}
 {{if .Links}}<section><h2>Alertas de identidade</h2><ul>
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
