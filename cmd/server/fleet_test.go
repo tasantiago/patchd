@@ -123,12 +123,31 @@ func TestEstadoDaFrota(t *testing.T) {
 		t.Error("o erro de uma máquina vai para o log")
 	}
 
-	// Uma máquina só.
-	if cs, ok, err := s.Machine(context.Background(), "win-em-dia"); err != nil || !ok || cs.State != "em_dia" || cs.Reasons == nil {
-		t.Errorf("máquina: %+v %t %v", cs, ok, err)
+	// Uma máquina só, com as pendências.
+	d, ok, err := s.Detail(context.Background(), "ubuntu-pendente")
+	if err != nil || !ok || d.State != "faltando" || len(d.Items) != 1 {
+		t.Fatalf("detalhe: %+v %t %v", d, ok, err)
 	}
-	if _, ok, _ := s.Machine(context.Background(), "win"); ok {
+	if it := d.Items[0]; it.ID != "curl" || !it.Exploited || it.Installed != "8.18.0-1ubuntu2.7" || it.FixedIn != "8.18.0-1ubuntu2.10" || it.Note != "USN-9002-1" {
+		t.Errorf("pendência do Ubuntu: %+v", it)
+	}
+	if d, ok, _ := s.Detail(context.Background(), "win-em-dia"); !ok || d.State != "em_dia" || d.Items == nil || len(d.Items) != 0 || d.Target != "" {
+		t.Errorf("em dia: %+v", d)
+	}
+	if d, ok, _ := s.Detail(context.Background(), "com-erro"); !ok || d.State != "desconhecido" || len(d.Items) != 0 {
+		t.Errorf("com erro: %+v", d)
+	}
+	if _, ok, _ := s.Detail(context.Background(), "win"); ok {
 		t.Error("o ID tem de ser o completo (sem prefixo)")
+	}
+	// Windows com pendência: o alvo e a CVE.
+	b.inv["win-velho"] = protocol.InventoryReport{SchemaVersion: 1, CollectedAt: coleta,
+		OS: protocol.OSInfo{ID: "windows", Name: "Windows 11 Pro", Version: "25H2", Build: "26200.9300", Arch: "amd64", Edition: "Professional"}}
+	b.maquinas = append(b.maquinas, m("win-velho", "pc-win3", time.Hour, &nao))
+	d, _, _ = s.Detail(context.Background(), "win-velho")
+	if d.State != "faltando" || d.Target != "KB5124008 (build 26200.9445)" || len(d.Items) != 1 || d.Items[0].ID != "CVE-2026-50500" ||
+		!d.Items[0].Exploited || d.Items[0].FixedIn != "26200.9445 (KB5124008)" || d.Items[0].Installed != "26200.9300" {
+		t.Errorf("Windows pendente: %+v", d)
 	}
 
 	// Impressão: a tabela tem nomes; o resumo, não.

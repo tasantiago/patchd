@@ -18,6 +18,7 @@ import (
 
 type complianceFalso struct {
 	fleet protocol.ComplianceFleet
+	itens map[string][]protocol.PendingItem
 	err   error
 }
 
@@ -25,13 +26,13 @@ func (c *complianceFalso) Fleet(context.Context) (protocol.ComplianceFleet, erro
 	return c.fleet, c.err
 }
 
-func (c *complianceFalso) Machine(_ context.Context, id string) (protocol.ComplianceStatus, bool, error) {
+func (c *complianceFalso) Detail(_ context.Context, id string) (protocol.ComplianceDetail, bool, error) {
 	for _, m := range c.fleet.Machines {
 		if m.MachineID == id {
-			return m, true, c.err
+			return protocol.ComplianceDetail{ComplianceStatus: m, Items: c.itens[id]}, true, c.err
 		}
 	}
-	return protocol.ComplianceStatus{}, false, c.err
+	return protocol.ComplianceDetail{}, false, c.err
 }
 
 func TestRotasDeCompliance(t *testing.T) {
@@ -77,7 +78,8 @@ func TestRotasDeCompliance(t *testing.T) {
 	}
 
 	// O painel mostra as contagens.
-	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), "faltando: 1") || !strings.Contains(r.Body.String(), "em dia: 1") {
+	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), `<b>1</b><span class="estado faltando">faltando</span>`) ||
+		!strings.Contains(r.Body.String(), `<b>1</b><span class="estado em_dia">em dia</span>`) {
 		t.Errorf("painel:\n%s", r.Body)
 	}
 
@@ -86,7 +88,7 @@ func TestRotasDeCompliance(t *testing.T) {
 	if r := le(h, "/api/v1/compliance"); r.Code != http.StatusInternalServerError || strings.Contains(r.Body.String(), "banco fora") {
 		t.Errorf("erro: %d %s", r.Code, r.Body)
 	}
-	if r := le(h, "/painel/"); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "avaliação indisponível") {
+	if r := le(h, "/painel/"); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "A avaliação da frota falhou") {
 		t.Errorf("painel com erro: %d", r.Code)
 	}
 }
@@ -96,7 +98,7 @@ func TestComplianceSemPostgres(t *testing.T) {
 	if r := le(h, "/api/v1/compliance"); r.Code != http.StatusServiceUnavailable || !strings.Contains(r.Body.String(), "PostgreSQL") {
 		t.Errorf("sem fonte: %d %s", r.Code, r.Body)
 	}
-	if r := le(h, "/painel/"); strings.Contains(r.Body.String(), "Compliance") {
-		t.Error("sem fonte, o painel não mostra a seção")
+	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), "exige o PostgreSQL") {
+		t.Error("sem fonte, o painel explica por que não há estado")
 	}
 }

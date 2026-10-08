@@ -28,7 +28,7 @@ func TestMaquinaAposentada(t *testing.T) {
 		t.Fatalf("inventário: %d", r.Code)
 	}
 
-	if ok, err := st.RetireMachine(context.Background(), m.MachineID, "registro antigo"); !ok || err != nil {
+	if ok, err := st.RetireMachine(context.Background(), m.MachineID, "registro antigo", "teste"); !ok || err != nil {
 		t.Fatal(err)
 	}
 	// O agente da aposentada recebe 401; a lista da frota não a mostra.

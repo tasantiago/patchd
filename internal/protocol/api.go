@@ -106,3 +106,30 @@ type ComplianceFleet struct {
 	Counts      map[string]int     `json:"counts"` // por estado, com os cinco sempre presentes
 	Machines    []ComplianceStatus `json:"machines"`
 }
+
+// PendingItem é uma pendência da máquina: um pacote fonte (Linux) ou uma CVE (Windows,
+// macOS) abaixo da correção (Aula 7.6).
+type PendingItem struct {
+	ID        string `json:"id"`                 // nome do pacote fonte ou CVE
+	Severity  string `json:"severity,omitempty"` // como a fonte informa
+	Exploited bool   `json:"exploited"`          // KEV, MSRC ou exploração inferida
+	Installed string `json:"installed,omitempty"`
+	FixedIn   string `json:"fixed_in,omitempty"` // versão, build ou KB que corrige
+	Note      string `json:"note,omitempty"`     // avisos (USN, FEDORA-...) ou título da CVE
+}
+
+// ComplianceDetail é o estado de uma máquina com as pendências (Aula 7.6).
+type ComplianceDetail struct {
+	ComplianceStatus
+	AgentVersion string        `json:"agent_version,omitempty"`
+	Target       string        `json:"target,omitempty"` // a atualização que resolve todas as pendências
+	Items        []PendingItem `json:"items"`
+}
+
+// RetiredMachine é uma máquina aposentada (Aula 7.5): fora da frota, quando, por quê e por quem.
+type RetiredMachine struct {
+	MachineSummary
+	RetiredAt time.Time `json:"retired_at"`
+	Reason    string    `json:"reason"`
+	RetiredBy string    `json:"retired_by,omitempty"` // usuário do painel ou "linha de comando"
+}

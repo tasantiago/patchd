@@ -16,7 +16,7 @@ type contratoAposentadoria interface {
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	RetiredMachines(ctx context.Context) ([]RetiredMachine, error)
 	MachineByCredential(ctx context.Context, credentialHash []byte) (string, bool, error)
-	RetireMachine(ctx context.Context, id, reason string) (bool, error)
+	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
 	RestoreMachine(ctx context.Context, id string) (bool, error)
 }
 
@@ -41,13 +41,13 @@ func testarAposentadoria(t *testing.T, st contratoAposentadoria) {
 		}
 	}
 
-	if ok, err := st.RetireMachine(ctx, "antiga-0001", "registro antigo da VM reinstalada"); !ok || err != nil {
+	if ok, err := st.RetireMachine(ctx, "antiga-0001", "registro antigo da VM reinstalada", "thyago"); !ok || err != nil {
 		t.Fatalf("aposentar: %t %v", ok, err)
 	}
-	if ok, _ := st.RetireMachine(ctx, "antiga-0001", "de novo"); ok {
+	if ok, _ := st.RetireMachine(ctx, "antiga-0001", "de novo", "x"); ok {
 		t.Error("aposentar de novo não muda nada")
 	}
-	if ok, _ := st.RetireMachine(ctx, "nao-existe", "x"); ok {
+	if ok, _ := st.RetireMachine(ctx, "nao-existe", "x", "x"); ok {
 		t.Error("máquina inexistente")
 	}
 
@@ -57,7 +57,7 @@ func testarAposentadoria(t *testing.T, st contratoAposentadoria) {
 	}
 	ap, err := st.RetiredMachines(ctx)
 	if err != nil || len(ap) != 1 || ap[0].ID != "antiga-0001" || ap[0].Reason != "registro antigo da VM reinstalada" ||
-		ap[0].RetiredAt.IsZero() || ap[0].Hostname != "vm-lab" {
+		ap[0].RetiredAt.IsZero() || ap[0].Hostname != "vm-lab" || ap[0].RetiredBy != "thyago" {
 		t.Errorf("aposentadas: %+v %v", ap, err)
 	}
 	if _, found, _ := st.MachineByCredential(ctx, cred["antiga-0001"]); found {

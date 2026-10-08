@@ -37,7 +37,7 @@ type machineStore interface {
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	RetiredMachines(ctx context.Context) ([]store.RetiredMachine, error)
 	IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error)
-	RetireMachine(ctx context.Context, id, reason string) (bool, error)
+	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
 	RestoreMachine(ctx context.Context, id string) (bool, error)
 }
 
@@ -118,7 +118,7 @@ func machineCommand(ctx context.Context, st machineStore, args []string, now tim
 		}
 		var changed bool
 		if reason != nil {
-			changed, err = st.RetireMachine(ctx, id, strings.TrimSpace(*reason))
+			changed, err = st.RetireMachine(ctx, id, strings.TrimSpace(*reason), "linha de comando")
 		} else {
 			changed, err = st.RestoreMachine(ctx, id)
 		}
@@ -201,7 +201,7 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 		header = append(header[:1], header[2:]...)
 	}
 	if retired {
-		header = append(header, "APOSENTADA (UTC)", "MOTIVO")
+		header = append(header, "APOSENTADA (UTC)", "POR", "MOTIVO")
 	}
 	header = append(header, "LIGADA A")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
@@ -220,7 +220,7 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 	}
 	if retired {
 		for _, r := range old {
-			row(r.MachineSummary, r.RetiredAt.Format("2006-01-02 15:04"), r.Reason)
+			row(r.MachineSummary, r.RetiredAt.Format("2006-01-02 15:04"), orDash(r.RetiredBy), r.Reason)
 		}
 	} else {
 		for _, m := range active {

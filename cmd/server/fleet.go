@@ -68,34 +68,50 @@ func (s *complianceService) Fleet(ctx context.Context) (protocol.ComplianceFleet
 	return fleet, nil
 }
 
-// Machine avalia uma máquina pelo ID completo.
-func (s *complianceService) Machine(ctx context.Context, id string) (protocol.ComplianceStatus, bool, error) {
+// Detail avalia uma máquina pelo ID completo, com a lista das pendências (Aula 7.6).
+// Máquina aposentada ou desconhecida: found = false.
+func (s *complianceService) Detail(ctx context.Context, id string) (protocol.ComplianceDetail, bool, error) {
 	list, err := s.st.Machines(ctx)
 	if err != nil {
-		return protocol.ComplianceStatus{}, false, err
+		return protocol.ComplianceDetail{}, false, err
 	}
 	for _, m := range list {
-		if m.ID == id {
-			return s.status(ctx, m, s.now()), true, nil
+		if m.ID != id {
+			continue
 		}
+		now := s.now()
+		cs, ev := s.evaluate(ctx, m, now)
+		d := protocol.ComplianceDetail{ComplianceStatus: cs, AgentVersion: m.AgentVersion, Items: []protocol.PendingItem{}}
+		if ev != nil {
+			d.Target, d.Items = pendingItems(*ev)
+		}
+		return d, true, nil
 	}
-	return protocol.ComplianceStatus{}, false, nil
+	return protocol.ComplianceDetail{}, false, nil
 }
 
 // status avalia uma máquina. Um erro na avaliação de uma máquina não derruba a frota:
 // ela fica "desconhecido" e o erro vai para o log.
 func (s *complianceService) status(ctx context.Context, m protocol.MachineSummary, now time.Time) protocol.ComplianceStatus {
+	cs, _ := s.evaluate(ctx, m, now)
+	return cs
+}
+
+// evaluate devolve o estado e a avaliação (nil se a avaliação falhou).
+func (s *complianceService) evaluate(ctx context.Context, m protocol.MachineSummary, now time.Time) (protocol.ComplianceStatus, *machineEval) {
 	cs := protocol.ComplianceStatus{
 		MachineID: m.ID, Hostname: m.Hostname, OS: strings.TrimSpace(m.OSName + " " + m.OSVersion),
 		LastSeenAt: m.LastSeenAt, EvaluatedAt: now,
 	}
 	f := compliance.Facts{LastSeen: m.LastSeenAt, RebootPending: m.RebootPending}
 	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now})
+	var evp *machineEval
 	if err != nil {
 		s.logger.Error("avaliação de compliance", "machine_id", m.ID, "error", err)
 		f.Unevaluated = "erro na avaliação (veja o log do servidor)"
 	} else {
 		fillFacts(&f, &cs, ev)
+		evp = &ev
 	}
 	state, reasons := compliance.Classify(f, now)
 	cs.State = string(state)
@@ -103,7 +119,62 @@ func (s *complianceService) status(ctx context.Context, m protocol.MachineSummar
 	if cs.Reasons == nil {
 		cs.Reasons = []string{}
 	}
-	return cs
+	return cs, evp
+}
+
+// pendingItems lista as pendências da avaliação, exploradas primeiro (a ordem da
+// avaliação já é essa), e a atualização que resolve todas.
+func pendingItems(ev machineEval) (string, []protocol.PendingItem) {
+	items := []protocol.PendingItem{}
+	switch {
+	case ev.Note != "":
+		return "", items
+	case ev.Linux != nil:
+		for _, f := range ev.Linux.Findings {
+			ids := make([]string, 0, len(f.Advisories))
+			sev := ""
+			for _, a := range f.Advisories {
+				ids = append(ids, a.ID)
+				if sev == "" {
+					sev = a.Severity
+				}
+			}
+			note := strings.Join(ids, ", ")
+			if len(ids) > 3 {
+				note = strings.Join(ids[:3], ", ") + fmt.Sprintf(" e mais %d", len(ids)-3)
+			}
+			items = append(items, protocol.PendingItem{ID: f.Source, Severity: sev, Exploited: f.Exploited() || f.InferredExploited(),
+				Installed: f.Installed, FixedIn: f.Target, Note: note})
+		}
+		return "", items
+	case ev.Windows != nil:
+		r := ev.Windows
+		for _, c := range r.Pending {
+			fixed := ""
+			if c.MinKB != "" {
+				fixed = fmt.Sprintf("%d.%d (KB%s)", c.Min.Major, c.Min.UBR, c.MinKB)
+			}
+			items = append(items, protocol.PendingItem{ID: c.CVE, Severity: c.Severity, Exploited: c.Explored(),
+				Installed: r.Build.String(), FixedIn: fixed, Note: c.Title})
+		}
+		target := ""
+		if len(r.Pending) > 0 && r.TargetKB != "" {
+			target = fmt.Sprintf("KB%s (build %s)", r.TargetKB, r.Target)
+		}
+		return target, items
+	case ev.MacOS != nil:
+		r := ev.MacOS.Result
+		for _, c := range r.Pending {
+			items = append(items, protocol.PendingItem{ID: c.CVE, Severity: c.Severity, Exploited: c.Exploited || c.KEV,
+				Installed: r.Version, FixedIn: c.Min})
+		}
+		target := ""
+		if r.Target != "" {
+			target = "macOS " + r.Target
+		}
+		return target, items
+	}
+	return "", items
 }
 
 // fillFacts extrai da avaliação o que a classificação precisa e o que a resposta mostra.
