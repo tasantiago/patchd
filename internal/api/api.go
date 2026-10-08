@@ -97,6 +97,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/{$}", a.panelPage(a.fleetPage))
 	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
 	mux.Handle("GET /painel/aposentadas", a.panelPage(a.retiredPage))
+	mux.Handle("GET /painel/frota.csv", a.panelPage(a.fleetCSV))
+	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	// Leitura: exigem a sessão do painel.
