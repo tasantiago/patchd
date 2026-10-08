@@ -50,6 +50,15 @@ type CheckinResponse struct {
 	ServerTime     time.Time       `json:"server_time"`
 	AgentUpdate    *AgentUpdate    `json:"agent_update,omitempty"`
 	OfflineCatalog *OfflineCatalog `json:"offline_catalog,omitempty"`
+	// RepoCache: o cache de repositórios que o agente Linux deve configurar (Aula 6.6);
+	// ausente, o agente remove a configuração que tiver gravado.
+	RepoCache *RepoCache `json:"repo_cache,omitempty"`
+}
+
+// RepoCache diz onde as máquinas Linux alcançam o cache de repositórios do servidor.
+type RepoCache struct {
+	URL      string   `json:"url"`       // ex.: http://patchd.exemplo:8080 (sem caminho)
+	AptHosts []string `json:"apt_hosts"` // origens do apt que passam pelo cache (proxy por host)
 }
 
 // OfflineCatalogPath é o caminho do download do catálogo offline; o SHA-256 vem no fim.

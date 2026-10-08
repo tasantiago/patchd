@@ -51,7 +51,13 @@ func TestConfigDoCacheDeRepositorios(t *testing.T) {
 	if err != nil || cfg.RepoCacheDir != "/var/cache/patchd-repo" || cfg.RepoCacheHosts != "archive.ubuntu.com,security.ubuntu.com" {
 		t.Errorf("padrão: %+v %v", cfg, err)
 	}
+	cfg, err = loadServerConfig(nil, look(map[string]string{"PATCHD_REPO_CACHE_DIR": "/c", "PATCHD_REPO_CACHE_URL": "http://patchd.exemplo:8080"}), io.Discard)
+	if ann := cfg.RepoCacheAnnouncement(); err != nil || ann.URL != "http://patchd.exemplo:8080" || len(ann.AptHosts) != 2 {
+		t.Errorf("anúncio: %+v %v", ann, err)
+	}
 	for _, env := range []map[string]string{
+		{"PATCHD_REPO_CACHE_URL": "http://patchd.exemplo:8080"},                                // sem o cache ligado
+		{"PATCHD_REPO_CACHE_DIR": "/c", "PATCHD_REPO_CACHE_URL": "http://patchd.exemplo/repo"}, // com caminho
 		{"PATCHD_REPO_CACHE_DIR": "relativo"},
 		{"PATCHD_REPO_CACHE_DIR": "/abs", "PATCHD_REPO_CACHE_HOSTS": "http://archive.ubuntu.com"},
 	} {

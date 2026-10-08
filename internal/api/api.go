@@ -59,6 +59,8 @@ type api struct {
 
 	contentDir string        // vazio: o servidor não distribui o catálogo offline
 	content    ContentSource // a versão atual de cada arquivo distribuído
+
+	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.

@@ -45,7 +45,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	info := buildinfo.Get()
 
 	// Subcomandos: "identity", "enroll [opções]", "install [opções]",
-	// "service install|uninstall|run [opções]" e "verify-cab [arquivo]".
+	// "service install|uninstall|run [opções]", "verify-cab [arquivo]" e
+	// "repo-cache show|apply|remove".
 	if len(args) > 0 {
 		switch args[0] {
 		case "identity":
@@ -58,6 +59,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return runService(args[1:], look, stdout, stderr)
 		case "verify-cab":
 			return runVerifyCab(args[1:], look, stdout, stderr)
+		case "repo-cache":
+			return runRepoCache(args[1:], stdout, stderr)
 		}
 	}
 

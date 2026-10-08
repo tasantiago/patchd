@@ -121,6 +121,20 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			}
 		}
 	}
+	if rc := newRepoConfig(); rc != nil {
+		ag.RepoCache = func(ctx context.Context, adv *protocol.RepoCache) {
+			res, err := rc.Sync(ctx, adv)
+			switch {
+			case err != nil && adv != nil:
+				logger.Warn("cache de repositórios anunciado, mas não aplicado (a máquina busca direto na origem)",
+					"url", adv.URL, "error", err, "result", res.Summary())
+			case err != nil:
+				logger.Warn("cache de repositórios: remoção da configuração falhou", "error", err)
+			case res.Changed():
+				logger.Info("cache de repositórios: configuração atualizada", "result", res.Summary())
+			}
+		}
+	}
 	if opts.AutoUpdate {
 		ag.Update = newUpdater(logger, client, opts, info.Version)
 	}

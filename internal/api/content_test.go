@@ -139,3 +139,21 @@ func TestDownloadDoCatalogoOffline(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckinAnunciaCacheDeRepositorios(t *testing.T) {
+	st := store.NewMemory()
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateEnrollmentToken(context.Background(), hash, "teste", time.Now().Add(time.Hour), 2); err != nil {
+		t.Fatal(err)
+	}
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)),
+		api.WithRepoCache("http://patchd.exemplo:8080", []string{"security.ubuntu.com", "archive.ubuntu.com"}))
+	rc := checkin(t, h, registra(t, h, tok).Credential).RepoCache
+	if rc == nil || rc.URL != "http://patchd.exemplo:8080" || len(rc.AptHosts) != 2 || rc.AptHosts[0] != "archive.ubuntu.com" {
+		t.Errorf("anúncio: %+v", rc)
+	}
+	h2, tok2 := ambiente(t)
+	if rc := checkin(t, h2, registra(t, h2, tok2).Credential).RepoCache; rc != nil {
+		t.Errorf("sem WithRepoCache: %+v", rc)
+	}
+}

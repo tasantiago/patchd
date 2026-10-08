@@ -31,5 +31,6 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		resp.AgentUpdate = &protocol.AgentUpdate{Version: v}
 	}
 	resp.OfflineCatalog = a.offlineCatalog(r)
+	resp.RepoCache = a.repoCache
 	writeJSON(w, http.StatusOK, resp)
 }

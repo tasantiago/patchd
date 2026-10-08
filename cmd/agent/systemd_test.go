@@ -30,6 +30,9 @@ func TestSystemdUnit(t *testing.T) {
 		"Environment=PATCHD_SERVICE_MANAGER=systemd",
 		"Restart=on-failure",
 		"WantedBy=multi-user.target",
+		// Com ProtectSystem=full, o /etc é só leitura: sem isto, o agente não grava a
+		// configuração do cache de repositórios.
+		"ReadWritePaths=-/etc/apt/apt.conf.d -/etc/dnf",
 	} {
 		if !strings.Contains(u, quer) {
 			t.Errorf("a unidade deveria conter %q:\n%s", quer, u)
