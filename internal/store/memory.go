@@ -35,6 +35,8 @@ type memMachine struct {
 	scanReceivedAt     time.Time
 	lastSeenAt         time.Time
 	agentVersion       string
+	retiredAt          time.Time // zero: na frota
+	retiredReason      string
 }
 
 type memKeys struct {
@@ -117,13 +119,26 @@ func (m *Memory) LatestScan(ctx context.Context, id string) (protocol.PatchScanR
 	return *mm.scan, true, nil
 }
 
-// Machines resume as máquinas conhecidas, em ordem de ID.
+// Machines resume as máquinas da frota (sem as aposentadas), em ordem de ID.
 func (m *Memory) Machines(ctx context.Context) ([]protocol.MachineSummary, error) {
+	list := m.summaries(false)
+	out := make([]protocol.MachineSummary, len(list))
+	for i, r := range list {
+		out[i] = r.MachineSummary
+	}
+	return out, nil
+}
+
+// summaries monta o resumo das máquinas ativas ou das aposentadas.
+func (m *Memory) summaries(retired bool) []RetiredMachine {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	list := make([]protocol.MachineSummary, 0, len(m.machines))
+	list := make([]RetiredMachine, 0, len(m.machines))
 	for id, mm := range m.machines {
+		if mm.retiredAt.IsZero() == retired {
+			continue
+		}
 		s := protocol.MachineSummary{ID: id, LastSeenAt: mm.lastSeenAt, AgentVersion: mm.agentVersion}
 		if mm.inventory != nil {
 			s.Hostname = mm.inventory.OS.Hostname
@@ -140,10 +155,10 @@ func (m *Memory) Machines(ctx context.Context) ([]protocol.MachineSummary, error
 				s.RebootPending = mm.scan.Reboot.Pending
 			}
 		}
-		list = append(list, s)
+		list = append(list, RetiredMachine{MachineSummary: s, RetiredAt: mm.retiredAt, Reason: mm.retiredReason})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
-	return list, nil
+	return list
 }
 
 // CheckIn registra o contato periódico e diz se o inventário atual tem o hash informado.
@@ -247,5 +262,8 @@ func (m *Memory) MachineByCredential(ctx context.Context, credentialHash []byte)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	id, ok := m.credentials[string(credentialHash)]
+	if mm := m.machines[id]; ok && mm != nil && !mm.retiredAt.IsZero() {
+		return "", false, nil // aposentada: a credencial não vale (Aula 7.5)
+	}
 	return id, ok, nil
 }

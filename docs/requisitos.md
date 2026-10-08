@@ -37,7 +37,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-21** Catálogo de vulnerabilidades: MSRC CVRF, USN/OSV (Ubuntu), advisories do Fedora, releases de segurança da Apple, CISA KEV. Relação advisory ↔ pacote muitos-para-muitos.
 - **RF-22** Nível alvo por SO: UBR mínimo; versão de pacote corrigida segundo o advisory da distro (nunca a versão do upstream); versão mínima do macOS por major.
 - **RF-23** Estados de compliance: em dia, faltando, reboot pendente, sem dado recente, desconhecido. Regra (Aula 7.4), em ordem: sem contato há mais de 7 dias (RNF-12) = sem dado recente; sem inventário ou sem catálogo para o SO = desconhecido; correção pendente (ou major do macOS sem suporte) = faltando; reinício pendente (pela busca ou por kernel mais novo instalado) = reboot pendente; senão, em dia. Os programas de terceiros ficam fora do estado por enquanto.
-- **RF-24** Identidade sem duplicatas: casamento por evidências, alerta em colisão (nunca fusão silenciosa), formatação = nova instalação ligada ao mesmo ativo.
+- **RF-24** Identidade sem duplicatas: casamento por evidências, alerta em colisão (nunca fusão silenciosa), formatação = nova instalação ligada ao mesmo ativo. A decisão do administrador diante do alerta é aposentar o registro antigo (`patchd-server machine retire`, Aula 7.5): ele sai da frota e a credencial dele deixa de valer, sem apagar o histórico; `restore` desfaz.
 - **RF-25** Fila de jobs com máquina de estados, anéis (piloto primeiro), janelas e aviso de reboot.
 - **RF-26** Painel web e exportações CSV e Google Sheets.
 - **RF-27** Distinguir "faltando" de "publicado pela Microsoft, mas não aprovado no WSUS".

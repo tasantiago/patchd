@@ -136,7 +136,7 @@ func TestEstadoDaFrota(t *testing.T) {
 	printFleet(fleet, false, &out)
 	for _, tr := range []string{
 		"Frota: 7 máquina(s): faltando 1 · reboot pendente 1 · sem dado recente 1 · desconhecido 3 · em dia 1",
-		"faltando          ubuntu-p  SO 1  1 pacotes",
+		"faltando          ubuntu-p  SO 1  1 pacote ", "1 pacote com correção pendente",
 		"há 30 min", "há 10 dias", "pc-ubuntu",
 	} {
 		if !strings.Contains(out.String(), tr) {

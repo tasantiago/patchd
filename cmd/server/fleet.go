@@ -170,7 +170,7 @@ func printFleet(fleet protocol.ComplianceFleet, summary bool, out io.Writer) {
 		}
 		pend := "-"
 		if m.Pending > 0 {
-			pend = fmt.Sprintf("%d %s", m.Pending, m.PendingUnit)
+			pend = fmt.Sprintf("%d %s", m.Pending, compliance.Unit(m.Pending, m.PendingUnit))
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", compliance.State(m.State).Label(), id, orDash(m.OS), pend, m.Exploited,
 			since(fleet.EvaluatedAt.Sub(m.LastSeenAt)), orDash(m.Hostname), strings.Join(m.Reasons, "; "))

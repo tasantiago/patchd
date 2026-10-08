@@ -55,3 +55,14 @@ func TestOrdemERotulos(t *testing.T) {
 		}
 	}
 }
+
+func TestUnidadeNoSingular(t *testing.T) {
+	for _, c := range []struct {
+		n          int
+		plural, ok string
+	}{{1, "pacotes", "pacote"}, {2, "pacotes", "pacotes"}, {1, "CVEs", "CVE"}, {0, "CVEs", "CVEs"}, {1, "itens", "item"}, {1, "outro", "outro"}} {
+		if got := Unit(c.n, c.plural); got != c.ok {
+			t.Errorf("%d %s: %s", c.n, c.plural, got)
+		}
+	}
+}
