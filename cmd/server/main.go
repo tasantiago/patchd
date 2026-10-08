@@ -146,6 +146,13 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return exitConfig
 		}
 		repo = c
+		if cfg.RepoCacheURL != "" {
+			ann := cfg.RepoCacheAnnouncement()
+			apiOpts = append(apiOpts, api.WithRepoCache(ann.URL, ann.AptHosts))
+			logger.Info("cache de repositórios anunciado aos agentes Linux no check-in", "url", ann.URL)
+		} else {
+			logger.Info("cache de repositórios sem anúncio: defina PATCHD_REPO_CACHE_URL para os agentes Linux se configurarem")
+		}
 		logger.Info("cache de repositórios ligado (apt: proxy HTTP nesta porta; Fedora: /repo/fedora/; contagens: /repo/stats)",
 			"dir", cfg.RepoCacheDir, "hosts", cfg.RepoCacheHosts)
 	}

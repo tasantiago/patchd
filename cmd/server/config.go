@@ -13,6 +13,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/repocache"
 )
 
@@ -30,8 +31,11 @@ type serverConfig struct {
 	// RepoCacheHosts são as origens que o cache aceita.
 	RepoCacheDir   string
 	RepoCacheHosts string
-	ShowVersion    bool
-	HealthCheck    bool // modo usado pelo HEALTHCHECK do Docker
+	// RepoCacheURL: como as máquinas alcançam o cache; com ele, o check-in anuncia o cache
+	// e os agentes Linux se configuram (Aula 6.6). Vazio: o cache funciona, sem anúncio.
+	RepoCacheURL string
+	ShowVersion  bool
+	HealthCheck  bool // modo usado pelo HEALTHCHECK do Docker
 }
 
 // loadServerConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -56,6 +60,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"pasta do cache dos repositórios Ubuntu; vazia desliga o cache (env PATCHD_REPO_CACHE_DIR)")
 	fs.StringVar(&cfg.RepoCacheHosts, "repo-cache-hosts", config.String(look, "PATCHD_REPO_CACHE_HOSTS", repocache.DefaultHosts),
 		"origens aceitas pelo cache, separadas por vírgula (env PATCHD_REPO_CACHE_HOSTS)")
+	fs.StringVar(&cfg.RepoCacheURL, "repo-cache-url", config.String(look, "PATCHD_REPO_CACHE_URL", ""),
+		"URL pela qual as máquinas alcançam o cache, anunciada no check-in, ex.: http://patchd.exemplo:8080 (env PATCHD_REPO_CACHE_URL)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
 		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
@@ -90,6 +96,13 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		}
 		if _, err := repocache.ParseHosts(cfg.RepoCacheHosts); err != nil {
 			problems = append(problems, err)
+		}
+	}
+	if cfg.RepoCacheURL != "" {
+		if cfg.RepoCacheDir == "" {
+			problems = append(problems, errors.New("-repo-cache-url/PATCHD_REPO_CACHE_URL: anunciar o cache exige PATCHD_REPO_CACHE_DIR"))
+		} else if err := cfg.RepoCacheAnnouncement().Validate(); err != nil {
+			problems = append(problems, fmt.Errorf("-repo-cache-url/PATCHD_REPO_CACHE_URL: %w", err))
 		}
 	}
 
@@ -171,4 +184,14 @@ func redactDatabaseURL(raw string) string {
 		u.RawQuery = q.Encode()
 	}
 	return u.Redacted()
+}
+
+// RepoCacheAnnouncement é o anúncio do check-in montado da configuração.
+func (c serverConfig) RepoCacheAnnouncement() protocol.RepoCache {
+	hs, _ := repocache.ParseHosts(c.RepoCacheHosts)
+	list := make([]string, 0, len(hs))
+	for h := range hs {
+		list = append(list, h)
+	}
+	return protocol.RepoCache{URL: c.RepoCacheURL, AptHosts: list}
 }

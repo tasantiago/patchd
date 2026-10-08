@@ -29,6 +29,9 @@ type Agent struct {
 	// OfflineCatalog recebe o catálogo offline anunciado no check-in (Aula 6.6), antes da
 	// busca: uma busca devida neste ciclo já usa o arquivo novo. nil: anúncio ignorado.
 	OfflineCatalog func(ctx context.Context, adv protocol.OfflineCatalog)
+	// RepoCache recebe, a cada check-in, o cache de repositórios anunciado (nil: o servidor
+	// não anuncia, e a configuração gravada antes deve sair). nil: o agente não mexe nisso.
+	RepoCache func(ctx context.Context, adv *protocol.RepoCache)
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -139,6 +142,14 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// de onde parou no próximo check-in.
 	if resp.OfflineCatalog != nil && a.OfflineCatalog != nil {
 		a.OfflineCatalog(ctx, *resp.OfflineCatalog)
+		if ctx.Err() != nil {
+			return outcomeTransient
+		}
+	}
+
+	// O cache de repositórios vem antes da busca: o apt e o dnf da busca já passam por ele.
+	if a.RepoCache != nil {
+		a.RepoCache(ctx, resp.RepoCache)
 		if ctx.Err() != nil {
 			return outcomeTransient
 		}
