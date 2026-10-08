@@ -36,6 +36,18 @@ func TestComplianceLinuxConsultas(t *testing.T) {
 	if _, ok, err := st.ResolveMachine(ctx, "ffff"); ok || err != nil {
 		t.Errorf("inexistente: %t %v", ok, err)
 	}
+	// O ID inteiro vence mesmo sendo o começo de outro; "_" no prefixo é texto, não curinga.
+	for _, id := range []string{"pc1", "pc10", "lab_a", "labxa"} {
+		if _, err := st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: id, CollectedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if id, ok, err := st.ResolveMachine(ctx, "pc1"); err != nil || !ok || id != "pc1" {
+		t.Errorf("ID inteiro que é prefixo de outro: %q %t %v", id, ok, err)
+	}
+	if id, ok, err := st.ResolveMachine(ctx, "lab_"); err != nil || !ok || id != "lab_a" {
+		t.Errorf("sublinhado como texto: %q %t %v", id, ok, err)
+	}
 
 	// Ubuntu: a USN do openssl (26.04) e a do gst (com Pro); a CVE do openssl no KEV.
 	if err := st.SaveUbuntuUSN(ctx, usnDoTestdata(t, "USN-8861-1"), "m1"); err != nil {

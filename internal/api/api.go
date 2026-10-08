@@ -64,9 +64,10 @@ type api struct {
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 
-	directory Directory     // nil: só usuários locais
-	limiter   loginLimiter  // falhas de login por usuário+IP e por IP
-	hashSlots chan struct{} // conferências de senha simultâneas
+	directory  Directory        // nil: só usuários locais
+	compliance ComplianceSource // nil: sem estado de compliance (armazenamento em memória)
+	limiter    loginLimiter     // falhas de login por usuário+IP e por IP
+	hashSlots  chan struct{}    // conferências de senha simultâneas
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -95,6 +96,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))
 	mux.Handle("GET /api/v1/machines", a.sessionAuth(a.listMachines))
 	mux.Handle("GET /api/v1/identity-links", a.sessionAuth(a.listIdentityLinks))
+	mux.Handle("GET /api/v1/machines/{id}/compliance", a.sessionAuth(a.machineCompliance))
+	mux.Handle("GET /api/v1/compliance", a.sessionAuth(a.fleetCompliance))
 
 	// Ordem: o ID existe antes do log; o log enxerga o 500 produzido pela recuperação.
 	return withRequestID(withAccessLog(logger, withRecover(logger, mux)))

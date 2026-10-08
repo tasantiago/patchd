@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/panel"
 )
@@ -364,8 +365,15 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 type homeData struct {
-	Session  panel.Session
-	Machines int
+	Session    panel.Session
+	Machines   int
+	Compliance []stateCount // vazio: sem estado de compliance
+	Failed     bool         // a avaliação falhou (o erro vai para o log)
+}
+
+type stateCount struct {
+	Label string
+	N     int
 }
 
 // home é a página inicial do painel (as telas de verdade chegam nas próximas aulas).
@@ -376,8 +384,23 @@ func (a *api) home(w http.ResponseWriter, r *http.Request) {
 		a.internalError(w, r, "listar máquinas", err)
 		return
 	}
+	d := homeData{Session: s, Machines: len(list)}
+	if a.compliance != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
+		defer cancel()
+		fleet, err := a.compliance.Fleet(ctx)
+		if err != nil {
+			a.logger.Error("falha interna", "op", "avaliar a frota", "error", err, "request_id", RequestID(r.Context()))
+			d.Failed = true
+		}
+		for _, st := range compliance.States {
+			if err == nil {
+				d.Compliance = append(d.Compliance, stateCount{st.Label(), fleet.Counts[string(st)]})
+			}
+		}
+	}
 	pageHeaders(w)
-	_ = homeTemplate.Execute(w, homeData{Session: s, Machines: len(list)})
+	_ = homeTemplate.Execute(w, d)
 }
 
 const pageStyle = `<style>
@@ -408,8 +431,10 @@ var homeTemplate = template.Must(template.New("painel").Parse(`<!doctype html>
 <dt>Perfil</dt><dd>{{.Session.Role}}</dd>
 <dt>Sessão vence</dt><dd>{{.Session.ExpiresAt.Format "02/01/2006 15:04"}} UTC, ou após 30 min sem uso</dd>
 <dt>Máquinas registradas</dt><dd>{{.Machines}}</dd>
+{{if .Compliance}}<dt>Compliance</dt><dd>{{range .Compliance}}{{.Label}}: {{.N}}<br>{{end}}</dd>{{end}}
+{{if .Failed}}<dt>Compliance</dt><dd class="erro">avaliação indisponível (veja o log do servidor)</dd>{{end}}
 </dl>
-<p><a href="/api/v1/machines">/api/v1/machines</a> · <a href="/api/v1/identity-links">/api/v1/identity-links</a></p>
+<p><a href="/api/v1/machines">/api/v1/machines</a> · <a href="/api/v1/compliance">/api/v1/compliance</a> · <a href="/api/v1/identity-links">/api/v1/identity-links</a></p>
 <form method="post" action="/painel/sair"><button type="submit">Sair</button></form>
 </body></html>
 `))

@@ -79,3 +79,30 @@ type OfflineCatalog struct {
 type AgentUpdate struct {
 	Version string `json:"version"`
 }
+
+// ComplianceStatus é o estado de compliance de uma máquina (RF-23, Aula 7.4).
+type ComplianceStatus struct {
+	MachineID string `json:"machine_id"`
+	Hostname  string `json:"hostname,omitempty"`
+	OS        string `json:"os,omitempty"` // nome e versão, como o inventário informa
+	// State: em_dia, faltando, reboot_pendente, sem_dado_recente ou desconhecido.
+	State       string    `json:"state"`
+	Reasons     []string  `json:"reasons"`
+	Pending     int       `json:"pending"`                // com correção pendente
+	PendingUnit string    `json:"pending_unit,omitempty"` // pacotes (Linux) ou CVEs (Windows, macOS)
+	Exploited   int       `json:"exploited"`              // dos pendentes, com exploração conhecida ou inferida
+	Catalog     string    `json:"catalog,omitempty"`      // contra o que foi avaliada (ecossistema, produto, major)
+	LastSeenAt  time.Time `json:"last_seen_at"`
+	// InventoryCollectedAt: quando o inventário avaliado foi coletado na máquina.
+	InventoryCollectedAt *time.Time `json:"inventory_collected_at,omitempty"`
+	// CatalogWarnings: fontes do catálogo atrasadas; a avaliação pode estar perdendo correções.
+	CatalogWarnings []string  `json:"catalog_warnings,omitempty"`
+	EvaluatedAt     time.Time `json:"evaluated_at"`
+}
+
+// ComplianceFleet é o estado da frota inteira.
+type ComplianceFleet struct {
+	EvaluatedAt time.Time          `json:"evaluated_at"`
+	Counts      map[string]int     `json:"counts"` // por estado, com os cinco sempre presentes
+	Machines    []ComplianceStatus `json:"machines"`
+}

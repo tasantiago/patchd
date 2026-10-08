@@ -24,6 +24,11 @@ import (
 
 const complianceUsage = `uso: patchd-server compliance -machine ID [-v] [-como VERSÃO] [-build BUILD]
      patchd-server compliance -macos VERSÃO [-modelo ID] [-build BUILD] [-v]
+     patchd-server compliance -all [-resumo]
+
+-all: o estado de compliance de cada máquina (RF-23): faltando, reboot pendente, sem dado
+recente (sem contato há mais de 7 dias), desconhecido ou em dia, com os motivos. -resumo
+mostra só as contagens por estado, sem nomes de máquina.
 
 Avalia o inventário atual de uma máquina contra o catálogo. ID pode ser o começo do ID da
 máquina, desde que case com uma só.
@@ -94,6 +99,8 @@ type machineEval struct {
 	Third     *thirdparty.Result
 	Warnings  []string // fontes do catálogo atrasadas (Aula 6.6)
 	Note      string   // por que não houve avaliação (SO ainda não suportado, versão fora do catálogo)
+	// NoInventory: a máquina nunca enviou inventário (Note explica).
+	NoInventory bool
 }
 
 // macEval é a avaliação de um Mac.
@@ -120,8 +127,25 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 	fs.StringVar(&opts.Build, "build", "", "simula este build (Windows: 26200.8875; macOS: 25G83)")
 	fs.StringVar(&opts.MacOS, "macos", "", "simula um Mac nesta versão, sem máquina (ex.: 14.8.9)")
 	fs.StringVar(&opts.Model, "modelo", "", "com -macos: o modelo do Mac (ex.: Mac14,14)")
-	if err := fs.Parse(args); err != nil || fs.NArg() > 0 || (*machine == "") == (opts.MacOS == "") {
+	all := fs.Bool("all", false, "o estado de compliance de todas as máquinas")
+	summary := fs.Bool("resumo", false, "com -all: só as contagens por estado")
+	modes := 0
+	err := fs.Parse(args)
+	for _, on := range []bool{*machine != "", opts.MacOS != "", *all} {
+		if on {
+			modes++
+		}
+	}
+	if err != nil || fs.NArg() > 0 || modes != 1 {
 		fmt.Fprint(stderr, complianceUsage)
+		return exitConfig
+	}
+	if *summary && !*all {
+		fmt.Fprintln(stderr, "patchd-server: -resumo só vale com -all")
+		return exitConfig
+	}
+	if *all && (opts.Assume != "" || opts.Build != "" || opts.Model != "" || *verbose) {
+		fmt.Fprintln(stderr, "patchd-server: -all não aceita -como, -build, -modelo nem -v (use -machine para o detalhe)")
 		return exitConfig
 	}
 	if opts.MacOS != "" && opts.Assume != "" {
@@ -163,6 +187,15 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 		return exitRuntime
 	}
 
+	if *all {
+		fleet, err := newComplianceService(store.NewPostgres(pool), logger).Fleet(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		printFleet(fleet, *summary, stdout)
+		return exitOK
+	}
 	ev, err := evaluateMachine(ctx, store.NewPostgres(pool), *machine, opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
@@ -192,13 +225,21 @@ func evaluateMachine(ctx context.Context, st complianceStore, prefix string, opt
 	if !ok {
 		return machineEval{}, fmt.Errorf("%q: %w", prefix, errNoMachine)
 	}
+	return evaluateID(ctx, st, id, opts)
+}
+
+// evaluateID avalia a máquina pelo ID completo (o estado da frota não passa pelo prefixo).
+func evaluateID(ctx context.Context, st complianceStore, id string, opts evalOptions) (machineEval, error) {
+	if opts.Now.IsZero() {
+		opts.Now = time.Now()
+	}
 	inv, ok, err := st.LatestInventory(ctx, id)
 	if err != nil {
 		return machineEval{}, err
 	}
 	ev := machineEval{ID: id}
 	if !ok {
-		ev.Note = "a máquina ainda não enviou inventário"
+		ev.Note, ev.NoInventory = "a máquina ainda não enviou inventário", true
 		return ev, nil
 	}
 	ev.OS, ev.Collected = inv.OS, inv.CollectedAt

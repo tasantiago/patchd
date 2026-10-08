@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -16,8 +17,18 @@ import (
 var ErrMachineAmbiguous = errors.New("o prefixo casa com mais de uma máquina")
 
 // ResolveMachine devolve o ID completo da máquina a partir de um prefixo (ou do ID inteiro).
+// O ID inteiro vence sempre, mesmo sendo o começo de outro ("pc1" e "pc10"); no prefixo,
+// "_" e "%" valem como texto, não como curingas do LIKE.
 func (p *Postgres) ResolveMachine(ctx context.Context, prefix string) (string, bool, error) {
-	rows, err := p.pool.Query(ctx, `SELECT id FROM machines WHERE id LIKE $1 || '%' ORDER BY id LIMIT 2`, prefix)
+	var exact bool
+	if err := p.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM machines WHERE id = $1)`, prefix).Scan(&exact); err != nil {
+		return "", false, err
+	}
+	if exact {
+		return prefix, true, nil
+	}
+	pattern := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix) + "%"
+	rows, err := p.pool.Query(ctx, `SELECT id FROM machines WHERE id LIKE $1 ORDER BY id LIMIT 2`, pattern)
 	if err != nil {
 		return "", false, err
 	}
