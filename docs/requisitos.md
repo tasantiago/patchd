@@ -52,6 +52,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-36** Usuário com sessão ativa no inventário, para o vínculo usuário × máquina do self-service. **futuro**
 
 - **RF-37** Duas instâncias ativas: uma na rede interna e uma na nuvem, para quem está fora da rede (home office, viagem). O agente conhece os dois endereços e usa o disponível; os dados convergem para a instância interna, dona das decisões (P-01). A credencial vale para a implantação do patchd, não para um endereço. **futuro**
+- **RF-38** Login do painel com dois perfis, admin e leitura. Na v1: usuários do AD por LDAPS, com o perfil vindo de grupos (Aula 7.3), e usuários locais de contingência, com senha em PBKDF2 (Aula 7.2). Em produção: RHBK (Red Hat build of Keycloak) por OIDC. Sessão no servidor, com cookie `HttpOnly` e `SameSite=Strict`, prazo de 8 h e 30 min de inatividade; as rotas de leitura da API exigem a sessão. **decidido**
 
 ## Não funcionais
 

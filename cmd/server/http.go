@@ -28,7 +28,7 @@ const (
 )
 
 // newHandler monta as rotas: /healthz (fora do log de acesso, chamado a cada 15 s pelo
-// Docker) e a API em /api/.
+// Docker), a API em /api/ e o painel em /painel/ (a raiz leva ao painel).
 //
 // Pedidos de proxy (forma absoluta, "GET http://archive.ubuntu.com/..."; ou CONNECT) vão
 // para o cache de repositórios (Aula 6.6, parte 4b) quando ligado, e são recusados quando
@@ -42,6 +42,8 @@ func newHandler(apiHandler, repoCache http.Handler) http.Handler {
 		fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("/api/", apiHandler)
+	mux.Handle("/painel/", apiHandler)
+	mux.Handle("GET /{$}", http.RedirectHandler("/painel/", http.StatusFound))
 	if repoCache != nil {
 		// Fedora (baseurl apontando para o servidor) e as contagens do cache.
 		mux.Handle("/repo/", repoCache)

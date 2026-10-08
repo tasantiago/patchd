@@ -15,11 +15,13 @@ import (
 
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 )
 
-// ambiente monta a API sobre a memória, com um token de enrollment de 5 usos.
+// ambiente monta a API sobre a memória, com um token de enrollment de 5 usos e a sessão
+// de painel sessaoTeste aberta (perfil leitura).
 func ambiente(t *testing.T) (http.Handler, string) {
 	t.Helper()
 	st := store.NewMemory()
@@ -27,7 +29,31 @@ func ambiente(t *testing.T) (http.Handler, string) {
 	if _, err := st.CreateEnrollmentToken(context.Background(), hash, "teste", time.Now().Add(time.Hour), 5); err != nil {
 		t.Fatal(err)
 	}
+	abreSessao(t, st, sessaoTeste, time.Now().UTC())
 	return api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil))), tok
+}
+
+// sessaoTeste é o cookie da sessão aberta por ambiente.
+const sessaoTeste = panel.SessionPrefix + "sessao-de-teste"
+
+// abreSessao grava direto no armazenamento uma sessão de leitura usada pela última vez em
+// visto (sem passar pelo login, que confere o PBKDF2 e é lento).
+func abreSessao(t *testing.T, st *store.Memory, cookie string, visto time.Time) {
+	t.Helper()
+	s := panel.Session{Username: "consulta", Role: panel.RoleRead, Source: panel.SourceLocal,
+		CreatedAt: visto, ExpiresAt: visto.Add(panel.SessionMaxAge), LastSeenAt: visto}
+	if err := st.CreatePanelSession(context.Background(), identity.Hash(cookie), s); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// le faz um GET com o cookie da sessão de teste: as rotas de leitura exigem o painel.
+func le(h http.Handler, path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("GET", path, nil)
+	req.AddCookie(&http.Cookie{Name: "patchd_sessao", Value: sessaoTeste})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }
 
 func envia(h http.Handler, method, path, bearer string, body []byte) *httptest.ResponseRecorder {
@@ -108,11 +134,11 @@ func TestFluxoCompleto(t *testing.T) {
 	}
 
 	// O relatório ficou na máquina emitida no enrollment, e não em um ID escolhido pelo cliente.
-	r = envia(h, "GET", "/api/v1/machines/"+m.MachineID+"/inventory", "", nil)
+	r = le(h, "/api/v1/machines/"+m.MachineID+"/inventory")
 	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "libcares2") {
 		t.Errorf("leitura pelo ID emitido: %d %s", r.Code, r.Body)
 	}
-	r = envia(h, "GET", "/api/v1/machines", "", nil)
+	r = le(h, "/api/v1/machines")
 	var lista []protocol.MachineSummary
 	_ = json.Unmarshal(r.Body.Bytes(), &lista)
 	if len(lista) != 1 || lista[0].ID != m.MachineID || lista[0].RebootPending == nil || !*lista[0].RebootPending {
@@ -128,8 +154,8 @@ func TestDuasMaquinasNaoSeMisturam(t *testing.T) {
 	}
 	envia(h, "POST", "/api/v1/agent/inventory", a.Credential, inventario(t, "A"))
 	envia(h, "POST", "/api/v1/agent/inventory", b.Credential, inventario(t, "B"))
-	ra := envia(h, "GET", "/api/v1/machines/"+a.MachineID+"/inventory", "", nil)
-	rb := envia(h, "GET", "/api/v1/machines/"+b.MachineID+"/inventory", "", nil)
+	ra := le(h, "/api/v1/machines/"+a.MachineID+"/inventory")
+	rb := le(h, "/api/v1/machines/"+b.MachineID+"/inventory")
 	if !strings.Contains(ra.Body.String(), `"version":"A"`) || !strings.Contains(rb.Body.String(), `"version":"B"`) {
 		t.Errorf("cada credencial grava na própria máquina:\nA: %s\nB: %s", ra.Body, rb.Body)
 	}
@@ -259,7 +285,7 @@ func TestAlertaDeIdentidadeNaoVazaParaOCliente(t *testing.T) {
 	h, tok := ambiente(t)
 	a := registra(t, h, tok)
 	b := registra(t, h, tok) // mesmo install_id ("guid-1"): reenrollment de A
-	r := envia(h, "GET", "/api/v1/identity-links", "", nil)
+	r := le(h, "/api/v1/identity-links")
 	var links []protocol.IdentityLink
 	if err := json.Unmarshal(r.Body.Bytes(), &links); err != nil || len(links) != 1 {
 		t.Fatalf("esperado um alerta: %v %s", err, r.Body)
