@@ -114,6 +114,9 @@ func New(dir, hosts, userAgent string, logger *slog.Logger) (*Cache, error) {
 	for _, r := range results {
 		c.counts[r] = new(atomic.Int64)
 	}
+	if err := c.upgradeTimes(); err != nil {
+		return nil, fmt.Errorf("cache de repositórios: %w", err)
+	}
 	return c, nil
 }
 
@@ -455,7 +458,8 @@ type call struct {
 // serveObject entrega um arquivo imutável: do disco, ou da primeira origem que o tiver
 // (origins: uma para o apt; os espelhos do metalink para o Fedora).
 func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host string, origins []string, file, sum string) (string, int64, error) {
-	if _, err := os.Stat(file); err == nil {
+	if fi, err := os.Stat(file); err == nil {
+		c.touch(file, fi.ModTime())
 		return c.serveFile(w, r, file, "HIT")
 	}
 	if r.Header.Get("Range") != "" {
@@ -621,9 +625,8 @@ func (c *Cache) fetchObject(parent context.Context, w http.ResponseWriter, host 
 		// O cliente também vai recusar (ele confere o hash); aqui só não guardamos.
 		return n, fmt.Errorf("o conteúdo não tem o SHA-256 do nome (%s...)", sum[:16])
 	}
-	if t, err := http.ParseTime(resp.Header.Get("Last-Modified")); err == nil {
-		_ = os.Chtimes(tmp.Name(), t, t)
-	}
+	// A data do arquivo é o último uso (não a da origem): é por ela que a limpeza decide o
+	// que sai (prune.go).
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
 		return n, err
 	}

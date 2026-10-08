@@ -40,7 +40,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
 	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"
-	// e "patchd-server compliance -machine ID".
+	// "patchd-server compliance -machine ID" e "patchd-server repo-cache status|prune".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -52,6 +52,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "compliance" {
 		return runCompliance(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "repo-cache" {
+		return runRepoCache(args[1:], look, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
@@ -146,6 +149,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return exitConfig
 		}
 		repo = c
+		limits, err := repoCacheLimits(look)
+		if err != nil {
+			logger.Error("limpeza do cache de repositórios", "error", err)
+			return exitConfig
+		}
+		go pruneRepoCacheLoop(ctx, logger, c, limits)
 		if cfg.RepoCacheURL != "" {
 			ann := cfg.RepoCacheAnnouncement()
 			apiOpts = append(apiOpts, api.WithRepoCache(ann.URL, ann.AptHosts))

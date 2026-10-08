@@ -97,6 +97,9 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		if _, err := repocache.ParseHosts(cfg.RepoCacheHosts); err != nil {
 			problems = append(problems, err)
 		}
+		if _, err := repoCacheLimits(look); err != nil {
+			problems = append(problems, err)
+		}
 	}
 	if cfg.RepoCacheURL != "" {
 		if cfg.RepoCacheDir == "" {
