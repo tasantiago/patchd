@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +14,9 @@ import (
 	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
+
+// slowEvaluation: acima disso, a avaliação de uma máquina vai para o log como lenta.
+const slowEvaluation = time.Second
 
 // fleetStore é o que o estado da frota usa do banco: a avaliação e a lista de máquinas.
 type fleetStore interface {
@@ -104,12 +108,21 @@ func (s *complianceService) evaluate(ctx context.Context, m protocol.MachineSumm
 		LastSeenAt: m.LastSeenAt, EvaluatedAt: now,
 	}
 	f := compliance.Facts{LastSeen: m.LastSeenAt, RebootPending: m.RebootPending}
+	start := time.Now()
 	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now})
+	if d := time.Since(start); d > slowEvaluation && err == nil {
+		s.logger.Warn("avaliação de compliance lenta", "machine_id", m.ID, "duration_ms", d.Milliseconds(),
+			"dica", "patchd-server compliance -machine ID -tempos mostra a consulta responsável")
+	}
 	var evp *machineEval
-	if err != nil {
+	switch {
+	case errors.Is(err, context.Canceled):
+		// O cliente desistiu (recarregou a página): não é falha do servidor.
+		f.Unevaluated = "avaliação interrompida"
+	case err != nil:
 		s.logger.Error("avaliação de compliance", "machine_id", m.ID, "error", err)
 		f.Unevaluated = "erro na avaliação (veja o log do servidor)"
-	} else {
+	default:
 		fillFacts(&f, &cs, ev)
 		evp = &ev
 	}

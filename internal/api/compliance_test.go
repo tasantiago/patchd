@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -100,5 +101,22 @@ func TestComplianceSemPostgres(t *testing.T) {
 	}
 	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), "exige o PostgreSQL") {
 		t.Error("sem fonte, o painel explica por que não há estado")
+	}
+}
+
+func TestClienteQueDesiste(t *testing.T) {
+	st := store.NewMemory()
+	abreSessao(t, st, sessaoTeste, time.Now().UTC())
+	log := &syncBuffer{}
+	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(&complianceFalso{err: context.Canceled}))
+	for _, p := range []string{"/painel/", "/api/v1/compliance"} {
+		ctx, cancel := context.WithCancel(context.Background())
+		req := httptest.NewRequest("GET", p, nil).WithContext(ctx)
+		req.AddCookie(&http.Cookie{Name: "patchd_sessao", Value: sessaoTeste})
+		cancel()
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if l := log.String(); strings.Contains(l, "falha interna") || strings.Count(l, "pedido cancelado pelo cliente") != 2 {
+		t.Errorf("log:\n%s", l)
 	}
 }

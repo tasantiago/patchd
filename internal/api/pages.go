@@ -115,6 +115,9 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
 	defer cancel()
 	fleet, err := a.compliance.Fleet(ctx)
+	if a.canceled(r, err) {
+		return
+	}
 	if err != nil {
 		a.logger.Error("falha interna", "op", "avaliar a frota", "error", err, "request_id", RequestID(r.Context()))
 		v.Unavailable = "A avaliação da frota falhou; veja o log do servidor."
@@ -181,6 +184,9 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
 	defer cancel()
 	d, found, err := a.compliance.Detail(ctx, id)
+	if a.canceled(r, err) {
+		return
+	}
 	if err != nil {
 		a.internalError(w, r, "avaliar a máquina", err)
 		return

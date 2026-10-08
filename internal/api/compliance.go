@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -24,6 +25,16 @@ func WithCompliance(c ComplianceSource) Option {
 // escrita do servidor é de 60 s).
 const complianceTimeout = 45 * time.Second
 
+// canceled diz se o erro é o cliente que desistiu do pedido (fechou ou recarregou a
+// página). Não é falha do servidor: vai para o log como informação, e nada é respondido.
+func (a *api) canceled(r *http.Request, err error) bool {
+	if !errors.Is(err, context.Canceled) || r.Context().Err() == nil {
+		return false
+	}
+	a.logger.Info("pedido cancelado pelo cliente", "path", r.URL.Path, "request_id", RequestID(r.Context()))
+	return true
+}
+
 func (a *api) complianceOff(w http.ResponseWriter) bool {
 	if a.compliance == nil {
 		writeError(w, http.StatusServiceUnavailable, "compliance_unavailable",
@@ -40,6 +51,9 @@ func (a *api) fleetCompliance(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
 	defer cancel()
 	fleet, err := a.compliance.Fleet(ctx)
+	if a.canceled(r, err) {
+		return
+	}
 	if err != nil {
 		a.internalError(w, r, "avaliar a frota", err)
 		return
@@ -55,6 +69,9 @@ func (a *api) machineCompliance(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
 	defer cancel()
 	cs, found, err := a.compliance.Detail(ctx, id)
+	if a.canceled(r, err) {
+		return
+	}
 	if err != nil {
 		a.internalError(w, r, "avaliar a máquina", err)
 		return
