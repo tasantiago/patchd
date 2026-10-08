@@ -40,7 +40,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
 	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"
-	// "patchd-server compliance -machine ID" e "patchd-server repo-cache status|prune".
+	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune" e
+	// "patchd-server user create|list|delete|password".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -55,6 +56,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "repo-cache" {
 		return runRepoCache(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "user" {
+		return runUser(args[1:], look, os.Stdin, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
@@ -100,7 +104,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		"listen", cfg.ListenAddr,
 		"database", redactDatabaseURL(cfg.DatabaseURL),
 	)
-	logger.Warn("API sem autenticação: mantenha a porta restrita a 127.0.0.1 (enrollment na 4.3, TLS na 9.1)")
+	logger.Warn("sem TLS: a senha e o cookie do painel trafegam em texto claro; mantenha a porta restrita a 127.0.0.1 (TLS na 9.1)")
 
 	// Banco primeiro: conecta, aplica as migrations e só então a porta é aberta.
 	st, closeStore, err := openStore(ctx, logger, cfg.DatabaseURL)
@@ -109,6 +113,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	defer closeStore()
+	checkPanelUsers(ctx, logger, st)
 	if p, ok := st.(scanPruner); ok {
 		go pruneScansLoop(ctx, logger, p)
 	}

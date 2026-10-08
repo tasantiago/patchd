@@ -28,6 +28,11 @@ func TestPedidosDeProxyNaoChegamNaAPI(t *testing.T) {
 		{"API com o cache ligado", repo, "GET", "/api/v1/machines", 200, "api"},
 		{"Fedora com o cache ligado", repo, "GET", "/repo/fedora/updates/44/x86_64/repodata/repomd.xml", 200, "cache"},
 		{"Fedora com o cache desligado", nil, "GET", "/repo/fedora/updates/44/x86_64/repodata/repomd.xml", 404, "not found"},
+		{"painel", nil, "GET", "/painel/entrar", 200, "api"},
+		{"painel com o cache ligado", repo, "POST", "/painel/sair", 200, "api"},
+		{"raiz leva ao painel", nil, "GET", "/", 302, "/painel/"},
+		{"forma absoluta apontando para o painel", repo, "GET", "http://outro.exemplo/painel/", 200, "cache"},
+		{"caminho desconhecido", nil, "GET", "/qualquer", 404, "not found"},
 	}
 	for _, c := range casos {
 		h := newHandler(api, c.repo)

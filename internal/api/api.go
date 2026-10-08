@@ -4,9 +4,9 @@
 // os envios (/api/v1/agent/...) exigem a credencial da máquina, e a máquina é a dona da
 // credencial, nunca um ID vindo da URL.
 //
-// ATENÇÃO: as rotas de leitura (/api/v1/machines...) ainda não têm autenticação. Elas
-// são do painel, e o login do painel chega no Módulo 7. TLS na 9.1. Até lá, a porta
-// fica restrita a 127.0.0.1.
+// Painel (Aula 7.2): /painel/entrar abre uma sessão (cookie patchd_sessao) e as rotas de
+// leitura (/api/v1/machines..., /api/v1/identity-links) exigem a sessão. Sem TLS (Aula
+// 9.1), a senha e o cookie trafegam em texto claro: a porta fica restrita a 127.0.0.1.
 package api
 
 import (
@@ -37,6 +37,8 @@ type Store interface {
 	IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error)
 	// CheckIn registra o contato periódico e diz se o inventário atual tem o hash informado.
 	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string) (inventoryKnown bool, err error)
+	// Usuários e sessões do painel.
+	PanelStore
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -61,11 +63,15 @@ type api struct {
 	content    ContentSource // a versão atual de cada arquivo distribuído
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
+
+	limiter   loginLimiter  // falhas de login por usuário+IP e por IP
+	hashSlots chan struct{} // conferências de senha simultâneas
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
 func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
-	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() }}
+	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() },
+		hashSlots: make(chan struct{}, loginConcurrent)}
 	for _, o := range opts {
 		o(a)
 	}
@@ -78,11 +84,16 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
 	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
 	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
-	// Leitura (painel; sem autenticação até o Módulo 7).
-	mux.HandleFunc("GET /api/v1/machines/{id}/inventory", a.getInventory)
-	mux.HandleFunc("GET /api/v1/machines/{id}/scan", a.getScan)
-	mux.HandleFunc("GET /api/v1/machines", a.listMachines)
-	mux.HandleFunc("GET /api/v1/identity-links", a.listIdentityLinks)
+	// Painel (Aula 7.2).
+	mux.HandleFunc("GET /painel/entrar", a.loginForm)
+	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))
+	mux.Handle("POST /painel/sair", a.sameOrigin(a.logout))
+	mux.Handle("GET /painel/{$}", a.panelPage(a.home))
+	// Leitura: exigem a sessão do painel.
+	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
+	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))
+	mux.Handle("GET /api/v1/machines", a.sessionAuth(a.listMachines))
+	mux.Handle("GET /api/v1/identity-links", a.sessionAuth(a.listIdentityLinks))
 
 	// Ordem: o ID existe antes do log; o log enxerga o 500 produzido pela recuperação.
 	return withRequestID(withAccessLog(logger, withRecover(logger, mux)))

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -22,6 +23,9 @@ type Memory struct {
 	keys        []memKeys         // chaves de identidade, na ordem de registro
 	links       []protocol.IdentityLink
 	now         func() time.Time
+
+	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
+	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
 }
 
 type memMachine struct {
