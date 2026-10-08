@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/tasantiago/patchd/internal/ad"
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
@@ -40,8 +41,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
 	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"
-	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune" e
-	// "patchd-server user create|list|delete|password".
+	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune",
+	// "patchd-server user create|list|delete|password" e "patchd-server ad check".
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -59,6 +60,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "user" {
 		return runUser(args[1:], look, os.Stdin, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "ad" {
+		return runAD(args[1:], look, os.Stdin, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
@@ -113,7 +117,22 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	defer closeStore()
-	checkPanelUsers(ctx, logger, st)
+
+	var apiOpts []api.Option
+	// Login pelo AD (Aula 7.3): a configuração já foi validada em loadServerConfig.
+	adCfg, adOn, _ := adConfig(look)
+	if adOn {
+		dir, err := ad.New(adCfg)
+		if err != nil {
+			logger.Error("login pelo AD", "error", err)
+			return exitConfig
+		}
+		apiOpts = append(apiOpts, api.WithDirectory(dir))
+		// Sem o servidor, o domínio e os grupos: esses valores ficam no .env.
+		logger.Info("login pelo AD ligado (LDAPS, bind como o próprio usuário)",
+			"grupo_admin", adCfg.AdminGroup != "", "grupo_leitura", adCfg.ReadGroup != "", "base_explicita", adCfg.BaseDN != "")
+	}
+	checkPanelUsers(ctx, logger, st, adOn)
 	if p, ok := st.(scanPruner); ok {
 		go pruneScansLoop(ctx, logger, p)
 	}
@@ -130,7 +149,6 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		go catalogLoop(ctx, logger, pg, srcs, cfg.CatalogInterval, firstCatalogRun())
 	}
 
-	var apiOpts []api.Option
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
 	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).
 	if pg, ok := st.(*store.Postgres); ok {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"html/template"
 	"net"
 	"net/http"
@@ -201,6 +202,7 @@ func pageHeaders(w http.ResponseWriter) {
 type loginData struct {
 	Username string
 	Error    string
+	AD       bool // o login é pelo AD: a dica diz para usar o usuário da rede
 }
 
 func (a *api) renderLogin(w http.ResponseWriter, status int, d loginData) {
@@ -215,7 +217,7 @@ func (a *api) loginForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/painel/", http.StatusSeeOther)
 		return
 	}
-	a.renderLogin(w, http.StatusOK, loginData{})
+	a.renderLogin(w, http.StatusOK, loginData{AD: a.directory != nil})
 }
 
 // login confere usuário e senha e abre a sessão. A mensagem de erro é sempre a mesma:
@@ -223,7 +225,7 @@ func (a *api) loginForm(w http.ResponseWriter, r *http.Request) {
 func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBody)
 	if err := r.ParseForm(); err != nil {
-		a.renderLogin(w, http.StatusBadRequest, loginData{Error: "Formulário inválido."})
+		a.renderLogin(w, http.StatusBadRequest, loginData{Error: "Formulário inválido.", AD: a.directory != nil})
 		return
 	}
 	user := panel.NormalizeUsername(r.PostFormValue("usuario"))
@@ -236,19 +238,19 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 
 	if a.limiter.blocked(user, ip, now) {
 		a.logger.Warn("login bloqueado: tentativas demais", "username", logUser, "remote", ip, "request_id", RequestID(r.Context()))
-		a.renderLogin(w, http.StatusTooManyRequests, loginData{Username: user, Error: "Tentativas demais. Aguarde 15 minutos."})
+		a.renderLogin(w, http.StatusTooManyRequests, loginData{Username: user, Error: "Tentativas demais. Aguarde 15 minutos.", AD: a.directory != nil})
 		return
 	}
 
-	u, ok, err := a.checkLocal(r.Context(), user, pw)
+	res, err := a.authenticate(r, user, pw)
 	if err != nil {
 		a.internalError(w, r, "conferir usuário do painel", err)
 		return
 	}
-	if !ok {
+	if !res.ok {
 		a.limiter.fail(user, ip, now)
-		a.logger.Warn("login recusado", "username", logUser, "remote", ip, "request_id", RequestID(r.Context()))
-		a.renderLogin(w, http.StatusUnauthorized, loginData{Username: user, Error: "Usuário ou senha inválidos."})
+		a.logger.Warn("login recusado", "username", logUser, "reason", res.reason, "remote", ip, "request_id", RequestID(r.Context()))
+		a.renderLogin(w, http.StatusUnauthorized, loginData{Username: user, Error: "Usuário ou senha inválidos.", AD: a.directory != nil})
 		return
 	}
 	a.limiter.succeed(user, ip)
@@ -260,7 +262,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	// Segredo novo a cada login: um cookie antigo plantado no navegador nunca vira sessão.
 	plain, hash := identity.NewSecret(panel.SessionPrefix)
-	s := panel.Session{Username: u.Name, Role: u.Role, Source: panel.SourceLocal,
+	s := panel.Session{Username: user, Role: res.role, Source: res.source,
 		CreatedAt: now, ExpiresAt: now.Add(panel.SessionMaxAge), LastSeenAt: now}
 	if err := a.store.CreatePanelSession(r.Context(), hash, s); err != nil {
 		a.internalError(w, r, "abrir sessão do painel", err)
@@ -270,9 +272,54 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		Name: sessionCookie, Value: plain, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
 	})
-	a.logger.Info("login no painel", "username", u.Name, "role", u.Role, "source", s.Source,
+	a.logger.Info("login no painel", "username", s.Username, "role", s.Role, "source", s.Source,
 		"remote", ip, "request_id", RequestID(r.Context()))
 	http.Redirect(w, r, "/painel/", http.StatusSeeOther)
+}
+
+// Directory confere a senha num diretório externo (o AD, Aula 7.3) e devolve o perfil.
+// Erros: panel.ErrBadCredentials e panel.ErrNoRole recusam o login; qualquer outro quer
+// dizer "não foi possível conferir", e só aí a conta local de contingência é tentada.
+type Directory interface {
+	Authenticate(ctx context.Context, user, password string) (role string, err error)
+}
+
+// WithDirectory liga o login pelo AD.
+func WithDirectory(d Directory) Option {
+	return func(a *api) { a.directory = d }
+}
+
+type authResult struct {
+	ok           bool
+	role, source string
+	reason       string // por que foi recusado (só para o log)
+}
+
+// authenticate decide quem confere a senha. Com o AD ligado, só ele; a conta local
+// entra apenas quando o AD não pôde responder (rede, certificado, configuração). Se a
+// conta local valesse sempre, seria uma porta lateral fora do ciclo de vida do AD
+// (desligamento, bloqueio, troca de senha).
+func (a *api) authenticate(r *http.Request, user, pw string) (authResult, error) {
+	if a.directory != nil {
+		role, err := a.directory.Authenticate(r.Context(), user, pw)
+		switch {
+		case err == nil:
+			return authResult{ok: true, role: role, source: panel.SourceAD}, nil
+		case errors.Is(err, panel.ErrBadCredentials), errors.Is(err, panel.ErrNoRole):
+			return authResult{reason: "AD: " + err.Error()}, nil
+		}
+		a.logger.Warn("AD indisponível: o login tenta a conta local de contingência",
+			"error", err.Error(), "request_id", RequestID(r.Context()))
+	}
+	u, ok, err := a.checkLocal(r.Context(), user, pw)
+	if err != nil || !ok {
+		reason := "conta local recusada"
+		if a.directory != nil {
+			reason = "AD indisponível e conta local recusada"
+		}
+		return authResult{reason: reason}, err
+	}
+	return authResult{ok: true, role: u.Role, source: panel.SourceLocal}, nil
 }
 
 // checkLocal confere a senha do usuário local. Senha vazia nunca confere (no AD, um bind
@@ -346,6 +393,7 @@ var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
 {{if .Error}}<p class="erro" role="alert">{{.Error}}</p>{{end}}
 <form method="post" action="/painel/entrar">
 <label>Usuário <input name="usuario" value="{{.Username}}" autocomplete="username" required autofocus></label>
+{{if .AD}}<small>O usuário da rede, sem o domínio.</small>{{end}}
 <label>Senha <input name="senha" type="password" autocomplete="current-password" required></label>
 <button type="submit">Entrar</button>
 </form></body></html>

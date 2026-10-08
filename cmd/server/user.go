@@ -119,8 +119,17 @@ func parseUserFlags(cmd string, args []string, withRole bool, stderr io.Writer) 
 }
 
 // readPassword lê a senha da primeira linha da entrada padrão e confere a política.
-// Recusa o terminal: sem desligar o eco, a senha apareceria na tela.
 func readPassword(stdin io.Reader) (string, error) {
+	pw, err := readSecret(stdin)
+	if err != nil {
+		return "", err
+	}
+	return pw, panel.CheckPasswordPolicy(pw)
+}
+
+// readSecret lê a primeira linha da entrada padrão, sem o fim de linha. Recusa o
+// terminal: sem desligar o eco, a senha apareceria na tela.
+func readSecret(stdin io.Reader) (string, error) {
 	if f, ok := stdin.(*os.File); ok {
 		if fi, err := f.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
 			return "", errors.New("a senha vem pela entrada padrão redirecionada, não do terminal (veja o exemplo em \"patchd-server user\")")
@@ -134,7 +143,7 @@ func readPassword(stdin io.Reader) (string, error) {
 	if pw == "" {
 		return "", errors.New("nenhuma senha na entrada padrão")
 	}
-	return pw, panel.CheckPasswordPolicy(pw)
+	return pw, nil
 }
 
 func userCreate(ctx context.Context, st userStore, args []string, stdin io.Reader, stderr io.Writer) int {
@@ -239,8 +248,9 @@ func countAdmins(list []panel.User) int {
 	return n
 }
 
-// checkPanelUsers avisa, na partida, quando ninguém consegue entrar no painel.
-func checkPanelUsers(ctx context.Context, logger *slog.Logger, st any) {
+// checkPanelUsers avisa, na partida, quando ninguém consegue entrar no painel. Com o AD
+// ligado, os usuários locais são só a contingência.
+func checkPanelUsers(ctx context.Context, logger *slog.Logger, st any, adOn bool) {
 	if _, ok := st.(*store.Memory); ok {
 		logger.Warn("armazenamento em memória: o painel não tem usuários (use o PostgreSQL e patchd-server user create)")
 		return
@@ -253,8 +263,12 @@ func checkPanelUsers(ctx context.Context, logger *slog.Logger, st any) {
 	switch {
 	case err != nil:
 		logger.Error("usuários do painel", "error", err)
+	case len(list) == 0 && adOn:
+		logger.Warn("sem conta local de contingência: se o AD ficar indisponível, ninguém entra no painel (patchd-server user create)")
 	case len(list) == 0:
 		logger.Warn("nenhum usuário no painel: crie o primeiro administrador com patchd-server user create -name NOME -role admin")
+	case adOn:
+		logger.Info("usuários locais do painel: só entram com o AD indisponível (contingência)", "total", len(list), "admins", countAdmins(list))
 	default:
 		logger.Info("usuários locais do painel", "total", len(list), "admins", countAdmins(list))
 	}

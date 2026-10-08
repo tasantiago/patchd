@@ -64,6 +64,7 @@ type api struct {
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 
+	directory Directory     // nil: só usuários locais
 	limiter   loginLimiter  // falhas de login por usuário+IP e por IP
 	hashSlots chan struct{} // conferências de senha simultâneas
 }

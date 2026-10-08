@@ -62,6 +62,13 @@ func (s Session) Valid(now time.Time) bool {
 // ErrUserExists: já há um usuário local com o nome.
 var ErrUserExists = errors.New("o usuário já existe")
 
+// Erros de quem confere a senha (o AD, na Aula 7.3). Qualquer outro erro quer dizer
+// "não foi possível conferir": é quando a conta local de contingência pode entrar.
+var (
+	ErrBadCredentials = errors.New("credenciais recusadas")
+	ErrNoRole         = errors.New("o usuário não está em nenhum grupo do painel")
+)
+
 // usernamePattern: minúsculas, dígitos, ponto, hífen e sublinhado, de 2 a 64 caracteres.
 // Cabe no sAMAccountName do AD (Aula 7.3) e nunca precisa de escape no log ou no HTML.
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)

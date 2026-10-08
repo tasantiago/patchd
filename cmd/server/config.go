@@ -121,6 +121,10 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		}
 	}
 
+	if _, _, err := adConfig(look); err != nil {
+		problems = append(problems, err)
+	}
+
 	if err := logging.Check(cfg.LogLevel, cfg.LogFormat); err != nil {
 		problems = append(problems, err)
 	}
