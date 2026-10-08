@@ -131,6 +131,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		// Sem o servidor, o domínio e os grupos: esses valores ficam no .env.
 		logger.Info("login pelo AD ligado (LDAPS, bind como o próprio usuário)",
 			"grupo_admin", adCfg.AdminGroup != "", "grupo_leitura", adCfg.ReadGroup != "", "base_explicita", adCfg.BaseDN != "")
+	} else {
+		logger.Info("login pelo AD desligado (sem PATCHD_LDAP_HOST): o painel aceita só usuários locais")
 	}
 	checkPanelUsers(ctx, logger, st, adOn)
 	if p, ok := st.(scanPruner); ok {
@@ -149,6 +151,10 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		go catalogLoop(ctx, logger, pg, srcs, cfg.CatalogInterval, firstCatalogRun())
 	}
 
+	// Estado de compliance (RF-23, Aula 7.4): avaliado contra o catálogo do mesmo banco.
+	if pg, ok := st.(*store.Postgres); ok {
+		apiOpts = append(apiOpts, api.WithCompliance(newComplianceService(pg, logger)))
+	}
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
 	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).
 	if pg, ok := st.(*store.Postgres); ok {
