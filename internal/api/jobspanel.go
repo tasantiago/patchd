@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 // Jobs no painel (Aula 8.2): a lista de jobs, os jobs de cada máquina e, para o perfil
@@ -53,10 +54,10 @@ func typeLabel(t string) string {
 }
 
 type jobRowView struct {
-	ID                                              int64
-	MachineID, Short, Name, Type, State, StateLabel string
-	Created, By, Delivered, Finished, Detail        string
-	CanCancel                                       bool
+	ID                                               int64
+	MachineID, Short, Name, Type, State, StateLabel  string
+	Window, Created, By, Delivered, Finished, Detail string
+	CanCancel                                        bool
 }
 
 func (a *api) jobRows(list []store.JobRow, names map[string]string, admin bool) []jobRowView {
@@ -75,11 +76,34 @@ func (a *api) jobRows(list []store.JobRow, names map[string]string, admin bool) 
 			name = n
 		}
 		rows = append(rows, jobRowView{ID: j.ID, MachineID: j.MachineID, Short: short(j.MachineID), Name: name,
-			Type: typeLabel(j.Type), State: j.State, StateLabel: stateLabel(j.State), Created: at(&created), By: j.CreatedBy,
+			Type: typeLabel(j.Type), State: j.State, StateLabel: stateLabel(j.State), Window: windowStart(j.NotBefore, now),
+			Created: at(&created), By: j.CreatedBy,
 			Delivered: at(j.DeliveredAt), Finished: at(j.FinishedAt), Detail: dash(j.Detail),
 			CanCancel: admin && j.State == jobs.StatePending})
 	}
 	return rows
+}
+
+// untilText escreve quanto falta: "40 min", "2 h 59 min", "3 dias".
+func untilText(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h %02d min", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%d dias", int(d.Hours()/24))
+}
+
+// windowStart diz quando a janela do job abre (ou abriu).
+func windowStart(t *time.Time, now time.Time) string {
+	switch {
+	case t == nil:
+		return "—"
+	case t.After(now):
+		return "abre em " + untilText(t.Sub(now))
+	}
+	return "abriu " + ago(now.Sub(*t))
 }
 
 // expireJobs fecha os jobs vencidos antes de listar, como o "job list" da linha de
@@ -242,4 +266,31 @@ func (a *api) cancelJobAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	}
 	a.logger.Info("job cancelado pelo painel", "job_id", id, "username", s.Username, "request_id", RequestID(r.Context()))
 	http.Redirect(w, r, fmt.Sprintf("%s?cancelado=1&job=%d", back, id), http.StatusSeeOther)
+}
+
+// ringView preenche o anel e a janela da máquina no detalhe (Aula 8.3).
+func (a *api) ringView(r *http.Request, id string, v *machineView) error {
+	ring, ok, err := a.store.MachineRing(r.Context(), id)
+	if err != nil || !ok {
+		return err
+	}
+	v.Ring = strconv.Itoa(ring)
+	if ring == store.PilotRing {
+		v.Ring += " (piloto)"
+	}
+	windows, err := a.store.Windows(r.Context())
+	if err != nil {
+		return err
+	}
+	if rw, ok := store.WindowFor(windows, ring); ok {
+		v.Window = rw.Window.String()
+		s, e := rw.Window.Next(a.now(), window.MinDuration)
+		loc := rw.Window.Location
+		if s.After(a.now()) {
+			v.NextWindow = "a próxima abre " + s.In(loc).Format("02/01 15:04")
+		} else {
+			v.NextWindow = "aberta até " + e.In(loc).Format("15:04")
+		}
+	}
+	return nil
 }

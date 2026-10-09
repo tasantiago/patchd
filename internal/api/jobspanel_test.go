@@ -10,6 +10,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 func local(r interface{ Header() http.Header }) string { return r.Header().Get("Location") }
@@ -135,5 +136,33 @@ func TestPainelSemChaveDeJobs(t *testing.T) {
 	}
 	if l, _ := st.Jobs(context.Background(), "", 10); len(l) != 0 {
 		t.Error("sem chave, nenhum job")
+	}
+}
+
+func TestAnelEJanelaNoDetalhe(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	maq := "/painel/maquinas/60ef97e4-0001"
+	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); !strings.Contains(b, "<dt>Anel</dt><dd>1</dd>") || !strings.Contains(b, "jobs com janela não podem") {
+		t.Errorf("anel padrão, sem janela:\n%s", b)
+	}
+	if ok, _ := st.SetMachineRing(ctx, "60ef97e4-0001", 0); !ok {
+		t.Fatal("anel")
+	}
+	pvh, _ := time.LoadLocation("America/Porto_Velho")
+	if err := st.SetWindow(ctx, 0, window.Window{Days: window.AllDays, Start: 3 * time.Hour, Duration: 10 * time.Minute, Location: pvh}, "t"); err != nil {
+		t.Fatal(err)
+	}
+	// Um job com janela daqui a 3 h aparece como "abre em 3 h".
+	inicio := time.Now().UTC().Add(3 * time.Hour)
+	if _, err := jobs.Issue(ctx, st, priv, jobs.Request{MachineID: "60ef97e4-0001", Type: jobs.TypeRescan, TTL: time.Hour, By: "t", NotBefore: inicio}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String()
+	for _, tr := range []string{"<dt>Anel</dt><dd>0 (piloto)</dd>", "todos 03:00-03:10 (America/Porto_Velho)", "<td>abre em 2 h 59 min</td>"} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("faltou %q", tr)
+		}
 	}
 }

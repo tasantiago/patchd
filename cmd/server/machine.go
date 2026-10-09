@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -196,9 +197,9 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 	}
 
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	header := []string{"MÁQUINA", "NOME", "SO", "ÚLTIMO CONTATO", "INVENTÁRIO"}
+	header := []string{"MÁQUINA", "ANEL", "NOME", "SO", "ÚLTIMO CONTATO", "INVENTÁRIO"}
 	if noName {
-		header = append(header[:1], header[2:]...)
+		header = append(header[:2], header[3:]...)
 	}
 	if retired {
 		header = append(header, "APOSENTADA (UTC)", "POR", "MOTIVO")
@@ -210,9 +211,9 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 		if m.InventoryHash != "" {
 			inv = "sim"
 		}
-		cols := []string{short(m.ID), orDash(m.Hostname), orDash(strings.TrimSpace(m.OSName + " " + m.OSVersion)), since(now.Sub(m.LastSeenAt)), inv}
+		cols := []string{short(m.ID), strconv.Itoa(m.Ring), orDash(m.Hostname), orDash(strings.TrimSpace(m.OSName + " " + m.OSVersion)), since(now.Sub(m.LastSeenAt)), inv}
 		if noName {
-			cols = append(cols[:1], cols[2:]...)
+			cols = append(cols[:2], cols[3:]...)
 		}
 		cols = append(cols, extra...)
 		cols = append(cols, orDash(strings.Join(related[m.ID], "; ")))

@@ -23,6 +23,7 @@ type JobRow struct {
 	State       string
 	CreatedBy   string
 	CreatedAt   time.Time
+	NotBefore   *time.Time // início da janela (Aula 8.3); nil = sem janela
 	NotAfter    time.Time
 	DeliveredAt *time.Time
 	FinishedAt  *time.Time
@@ -45,10 +46,10 @@ func (p *Postgres) NextJobID(ctx context.Context) (int64, error) {
 // escolha no painel e a gravação, ela pode ter sido aposentada.
 func (p *Postgres) CreateJob(ctx context.Context, j NewJob) error {
 	tag, err := p.pool.Exec(ctx, `
-		INSERT INTO jobs (id, machine_id, type, state, payload, signature, created_by, not_after)
-		SELECT $1, m.id, $3, 'pendente', $4, $5, $6, $7
+		INSERT INTO jobs (id, machine_id, type, state, payload, signature, created_by, not_after, not_before)
+		SELECT $1, m.id, $3, 'pendente', $4, $5, $6, $7, $8
 		FROM machines m WHERE m.id = $2 AND m.retired_at IS NULL`,
-		j.ID, j.MachineID, j.Type, j.Signed.Payload, j.Signed.Signature, j.CreatedBy, j.NotAfter)
+		j.ID, j.MachineID, j.Type, j.Signed.Payload, j.Signed.Signature, j.CreatedBy, j.NotAfter, nullTime(j.NotBefore))
 	if err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func (p *Postgres) ExpireJobs(ctx context.Context, now time.Time) (int64, error)
 	return tag.RowsAffected(), err
 }
 
-// DeliverJobs entrega os jobs pendentes da máquina (no máximo maxJobsPerCheckin, em ordem
+// DeliverJobs entrega os jobs pendentes da máquina (os com janela, só a partir do início dela) (no máximo maxJobsPerCheckin, em ordem
 // de ID) e os marca como entregues. Entrega no máximo uma vez: um job entregue e sem
 // resultado não volta a ser entregue; ele expira. Para mexer numa máquina, "no máximo
 // uma vez" é mais seguro que "pelo menos uma vez".
@@ -74,6 +75,7 @@ func (p *Postgres) DeliverJobs(ctx context.Context, machineID string, now time.T
 	rows, err := p.pool.Query(ctx, `
 		UPDATE jobs SET state = 'entregue', delivered_at = $2
 		WHERE id IN (SELECT id FROM jobs WHERE machine_id = $1 AND state = 'pendente' AND not_after > $2
+		             AND (not_before IS NULL OR not_before <= $2)
 		             ORDER BY id LIMIT $3 FOR UPDATE SKIP LOCKED)
 		RETURNING id, payload, signature`, machineID, now, maxJobsPerCheckin)
 	if err != nil {
@@ -107,9 +109,9 @@ func (p *Postgres) DeliverJobs(ctx context.Context, machineID string, now time.T
 func (p *Postgres) JobForMachine(ctx context.Context, machineID string, id int64) (JobRow, bool, error) {
 	var j JobRow
 	err := p.pool.QueryRow(ctx, `
-		SELECT id, machine_id, type, state, created_by, created_at, not_after, delivered_at, finished_at, detail
+		SELECT id, machine_id, type, state, created_by, created_at, not_before, not_after, delivered_at, finished_at, detail
 		FROM jobs WHERE id = $1 AND machine_id = $2`, id, machineID).
-		Scan(&j.ID, &j.MachineID, &j.Type, &j.State, &j.CreatedBy, &j.CreatedAt, &j.NotAfter, &j.DeliveredAt, &j.FinishedAt, &j.Detail)
+		Scan(&j.ID, &j.MachineID, &j.Type, &j.State, &j.CreatedBy, &j.CreatedAt, &j.NotBefore, &j.NotAfter, &j.DeliveredAt, &j.FinishedAt, &j.Detail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return j, false, nil
 	}
@@ -139,15 +141,16 @@ func (p *Postgres) ScanReceivedAt(ctx context.Context, machineID string) (*time.
 // Jobs lista os jobs, do mais novo para o mais antigo; machineID vazio: todas as máquinas.
 func (p *Postgres) Jobs(ctx context.Context, machineID string, limit int) ([]JobRow, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, machine_id, type, state, created_by, created_at, not_after, delivered_at, finished_at, detail
+		SELECT id, machine_id, type, state, created_by, created_at, not_before, not_after, delivered_at, finished_at, detail
 		FROM jobs WHERE ($1 = '' OR machine_id = $1) ORDER BY id DESC LIMIT $2`, machineID, limit)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (JobRow, error) {
 		var j JobRow
-		err := r.Scan(&j.ID, &j.MachineID, &j.Type, &j.State, &j.CreatedBy, &j.CreatedAt, &j.NotAfter, &j.DeliveredAt, &j.FinishedAt, &j.Detail)
+		err := r.Scan(&j.ID, &j.MachineID, &j.Type, &j.State, &j.CreatedBy, &j.CreatedAt, &j.NotBefore, &j.NotAfter, &j.DeliveredAt, &j.FinishedAt, &j.Detail)
 		j.CreatedAt, j.NotAfter, j.DeliveredAt, j.FinishedAt = j.CreatedAt.UTC(), j.NotAfter.UTC(), utc(j.DeliveredAt), utc(j.FinishedAt)
+		j.NotBefore = utc(j.NotBefore)
 		return j, err
 	})
 }

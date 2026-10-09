@@ -32,7 +32,7 @@ func (m *Memory) CreateJob(ctx context.Context, j NewJob) error {
 		return jobs.ErrMachineUnavailable
 	}
 	m.jobs = append(m.jobs, &memJob{JobRow: JobRow{ID: j.ID, MachineID: j.MachineID, Type: j.Type, State: "pendente",
-		CreatedBy: j.CreatedBy, CreatedAt: m.now(), NotAfter: j.NotAfter}, signed: j.Signed})
+		CreatedBy: j.CreatedBy, CreatedAt: m.now(), NotBefore: nullTime(j.NotBefore), NotAfter: j.NotAfter}, signed: j.Signed})
 	return nil
 }
 
@@ -62,7 +62,7 @@ func (m *Memory) DeliverJobs(ctx context.Context, machineID string, now time.Tim
 		if len(out) == maxJobsPerCheckin {
 			break
 		}
-		if j.MachineID == machineID && j.State == "pendente" && j.NotAfter.After(now) {
+		if j.MachineID == machineID && j.State == "pendente" && j.NotAfter.After(now) && (j.NotBefore == nil || !j.NotBefore.After(now)) {
 			j.State = "entregue"
 			t := now
 			j.DeliveredAt = &t
