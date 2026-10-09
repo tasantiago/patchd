@@ -28,7 +28,8 @@ func NewInstaller(run platform.Runner) Installer {
 	return linuxInstaller{run: run, readFile: os.ReadFile}
 }
 
-// Install confere cada pacote contra uma busca feita agora e só então instala, numa
+// Install atualiza as listas de pacotes, confere cada pacote contra uma busca feita agora
+// e só então instala. Atualizar as listas e instalar rodam numa
 // unidade transitória do systemd: o serviço do agente roda com ProtectSystem=full (/usr e
 // /etc só leitura), e uma instalação parada no meio pelo stop do serviço deixaria o dpkg
 // pela metade. A unidade continua mesmo se o agente parar.
@@ -47,8 +48,20 @@ func (l linuxInstaller) Install(ctx context.Context, jobID int64, pkgs []jobs.Pa
 	for i, p := range pkgs {
 		names[i] = p.Name
 	}
+	// unit roda o comando numa unidade transitória e espera o fim (a saída vem pelo --pipe).
+	unit := func(suffix string, cmd ...string) ([]byte, error) {
+		args := append([]string{"--unit=patchd-job-" + fmt.Sprint(jobID) + suffix, "--wait", "--pipe", "--collect", "--quiet",
+			"--setenv=LC_ALL=C"}, cmd...)
+		return l.run.Run(ctx, systemdRunPath, args...)
+	}
+	// A conferência precisa das listas de pacotes de agora: com as da última atualização
+	// automática (que pode ter dias), uma correção já publicada não aparece, e o pedido é
+	// recusado sem motivo (Aula 8.4, o bluez do laboratório).
 	switch manager {
 	case "dpkg":
+		if out, err := unit("-listas", "--", aptGetPath, "update", "-o", "DPkg::Lock::Timeout=300"); err != nil {
+			return lastLines(out, 2), fmt.Errorf("atualizar as listas do apt: %w", err)
+		}
 		out, err := l.run.Run(ctx, aptGetPath, "-s", "dist-upgrade")
 		if err != nil {
 			return "", fmt.Errorf("conferir pendências: %w", err)
@@ -62,6 +75,9 @@ func (l linuxInstaller) Install(ctx context.Context, jobID int64, pkgs []jobs.Pa
 		install = append([]string{"--setenv=DEBIAN_FRONTEND=noninteractive", "--", aptGetPath, "install", "-y", "--only-upgrade",
 			"-o", "DPkg::Lock::Timeout=300", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}, names...)
 	case "rpm":
+		if out, err := unit("-listas", "--", dnfPath, "makecache", "--refresh"); err != nil {
+			return lastLines(out, 2), fmt.Errorf("atualizar os metadados do dnf: %w", err)
+		}
 		out, err := l.run.Run(ctx, dnfPath, "advisory", "list", "--security", "--json")
 		if err != nil {
 			return "", fmt.Errorf("conferir pendências: %w", err)
@@ -79,9 +95,7 @@ func (l linuxInstaller) Install(ctx context.Context, jobID int64, pkgs []jobs.Pa
 		return "", err
 	}
 
-	args := append([]string{"--unit=patchd-job-" + fmt.Sprint(jobID), "--wait", "--pipe", "--collect", "--quiet",
-		"--setenv=LC_ALL=C"}, install...)
-	out, err := l.run.Run(ctx, systemdRunPath, args...)
+	out, err := unit("", install...)
 	if err != nil {
 		return lastLines(out, 2), fmt.Errorf("%s: %w", tool, err)
 	}

@@ -26,6 +26,8 @@ const aptInstalar = "/usr/bin/systemd-run --unit=patchd-job-7 --wait --pipe --co
 func TestInstalarNoUbuntu(t *testing.T) {
 	ctx := context.Background()
 	run := runnerFalso{
+		"/usr/bin/systemd-run --unit=patchd-job-7-listas --wait --pipe --collect --quiet --setenv=LC_ALL=C -- /usr/bin/apt-get update -o DPkg::Lock::Timeout=300": {},
+		"/usr/bin/systemd-run --unit=patchd-job-8-listas --wait --pipe --collect --quiet --setenv=LC_ALL=C -- /usr/bin/apt-get update -o DPkg::Lock::Timeout=300": {},
 		"/usr/bin/apt-get -s dist-upgrade": {saida: aptSimulacao},
 		aptInstalar:                        {saida: "Reading package lists...\n2 upgraded, 0 newly installed, 0 to remove and 2 not upgraded.\nSetting up openssl ...\nProcessing triggers for libc-bin (2.39-0ubuntu8.9) ...\n"},
 	}
@@ -48,6 +50,21 @@ func TestInstalarNoUbuntu(t *testing.T) {
 		}
 	}
 
+	// As listas não atualizam (rede fora): falhou, sem conferir nem instalar.
+	listas := "/usr/bin/systemd-run --unit=patchd-job-7-listas --wait --pipe --collect --quiet --setenv=LC_ALL=C -- /usr/bin/apt-get update -o DPkg::Lock::Timeout=300"
+	run[listas] = struct {
+		saida string
+		err   error
+	}{saida: "E: Failed to fetch http://127.0.0.1:18080/ubuntu/dists/resolute-security/InRelease\n", err: errors.New("exit status 100")}
+	if det, err := ubuntu.Install(ctx, 7, pedido); err == nil || errors.Is(err, jobs.ErrNotPending) || !strings.Contains(err.Error(), "atualizar as listas") ||
+		!strings.Contains(det, "Failed to fetch") {
+		t.Errorf("listas: %q %v", det, err)
+	}
+	run[listas] = struct {
+		saida string
+		err   error
+	}{}
+
 	// Falha do apt: erro comum (vira "falhou"), com o fim da saída.
 	run[aptInstalar] = struct {
 		saida string
@@ -60,6 +77,7 @@ func TestInstalarNoUbuntu(t *testing.T) {
 
 func TestInstalarNoFedora(t *testing.T) {
 	run := runnerFalso{
+		"/usr/bin/systemd-run --unit=patchd-job-9-listas --wait --pipe --collect --quiet --setenv=LC_ALL=C -- /usr/bin/dnf makecache --refresh": {},
 		"/usr/bin/dnf advisory list --security --json": {saida: dnfReal},
 		"/usr/bin/systemd-run --unit=patchd-job-9 --wait --pipe --collect --quiet --setenv=LC_ALL=C -- /usr/bin/dnf upgrade -y openssl-libs curl": {saida: "Complete!\n"},
 	}
