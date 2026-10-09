@@ -47,7 +47,8 @@ func ambientePaginas(t *testing.T, opts ...api.Option) (http.Handler, *store.Mem
 				{MachineID: "aaaa0000-0004", State: "em_dia", Reasons: []string{}, LastSeenAt: agora, EvaluatedAt: agora},
 			}},
 		itens: map[string][]protocol.PendingItem{"60ef97e4-0001": {
-			{ID: "curl", Severity: "high", Exploited: true, Installed: "8.18.0-1ubuntu2.7", FixedIn: "8.18.0-1ubuntu2.10", Note: "USN-9002-1"}}},
+			{ID: "curl", Severity: "high", Exploited: true, Installed: "8.18.0-1ubuntu2.7", FixedIn: "8.18.0-1ubuntu2.10", Note: "USN-9002-1",
+				Packages: []string{"curl", "libcurl4t64"}}}},
 	}
 	log := &syncBuffer{}
 	return api.New(st, slog.New(slog.NewTextHandler(log, nil)), append([]api.Option{api.WithCompliance(src)}, opts...)...), st, log

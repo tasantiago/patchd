@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -149,5 +151,75 @@ func TestResultadoGuardadoComServidorFora(t *testing.T) {
 	}
 	if buscas.Load() != 2 {
 		t.Errorf("a busca não se repete: %d", buscas.Load())
+	}
+}
+
+func TestUpdatePorJob(t *testing.T) {
+	srv, id, cred := novoServidor(t)
+	pub, priv, _ := jobs.GenerateKey()
+	var buscas atomic.Int32
+	log := &bytes.Buffer{}
+	a := agenteDeTeste(t, srv, cred, &buscas, log)
+	a.MachineID, a.JobKey = id, pub
+	ctx := context.Background()
+	a.CheckIn(ctx) // a busca diária sai do caminho
+
+	// A busca devolve o que o teste mandar: o efeito da instalação aparece nela.
+	pendentes := []protocol.MissingUpdate{}
+	a.Scan = func(context.Context) protocol.PatchScanReport {
+		buscas.Add(1)
+		return protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, ScannedAt: time.Now().UTC(),
+			Scans: []protocol.ScanResult{{Source: "apt", Missing: pendentes}}}
+	}
+	var pedidos [][]jobs.Package
+	var resposta error
+	a.Install = func(_ context.Context, _ int64, pkgs []jobs.Package) (string, error) {
+		pedidos = append(pedidos, pkgs)
+		return "apt-get: 1 upgraded", resposta
+	}
+	update := func(j *jobs.Job) {
+		j.Type = jobs.TypeUpdate
+		j.Params = []byte(`{"packages":[{"name":"libcares2","min_version":"1.34.6-1ubuntu0.1"}]}`)
+	}
+
+	// 1. Instalou, e a busca seguinte não mostra mais o pacote: concluído.
+	j1 := criaJob(t, srv, priv, id, update)
+	if out := a.CheckIn(ctx); out != outcomeOK || len(pedidos) != 1 || pedidos[0][0].Name != "libcares2" || buscas.Load() != 2 {
+		t.Fatalf("update: %v %v %d\n%s", out, pedidos, buscas.Load(), log.String())
+	}
+	if e := estadoDoJob(srv, id, j1); e.State != jobs.StateDone || !strings.Contains(e.Detail, "1 pacote(s) conferidos") {
+		t.Fatalf("job 1: %+v\n%s", e, log.String())
+	}
+
+	// 2. O agente disse ok, mas a busca ainda mostra a versão velha instalada: falhou.
+	pendentes = []protocol.MissingUpdate{{ID: "libcares2", Package: "libcares2", InstalledVersion: "1.34.6-1", FixedVersion: "1.34.6-1ubuntu0.1", Source: "apt"}}
+	j2 := criaJob(t, srv, priv, id, update)
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j2); e.State != jobs.StateFailed || !strings.Contains(e.Detail, "libcares2 instalada 1.34.6-1") {
+		t.Errorf("job 2: %+v", e)
+	}
+
+	// 3. O instalador recusa (pacote não pendente): rejeitado, com o motivo.
+	resposta = fmt.Errorf("%w: bash não está pendente", jobs.ErrNotPending)
+	j3 := criaJob(t, srv, priv, id, update)
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j3); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "bash não está pendente") {
+		t.Errorf("job 3: %+v", e)
+	}
+
+	// 4. A instalação falha: falhou, com a saída.
+	resposta = errors.New("apt-get: exit status 100")
+	j4 := criaJob(t, srv, priv, id, update)
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j4); e.State != jobs.StateFailed || !strings.Contains(e.Detail, "exit status 100") {
+		t.Errorf("job 4: %+v", e)
+	}
+
+	// 5. Sistema sem instalador (Windows, macOS): rejeitado sem tentar.
+	a.Install = nil
+	j5 := criaJob(t, srv, priv, id, update)
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j5); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "só Linux") || len(pedidos) != 4 {
+		t.Errorf("job 5: %+v (pedidos %d)", e, len(pedidos))
 	}
 }

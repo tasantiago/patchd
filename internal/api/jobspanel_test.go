@@ -166,3 +166,69 @@ func TestAnelEJanelaNoDetalhe(t *testing.T) {
 		}
 	}
 }
+
+func TestAtualizarPeloPainel(t *testing.T) {
+	pub, priv, _ := jobs.GenerateKey()
+	h, st, log := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	maq := "/painel/maquinas/60ef97e4-0001"
+
+	b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/atualizar"`) || !strings.Contains(b, `name="item" value="curl"`) ||
+		!strings.Contains(b, `title="curl, libcurl4t64"`) || strings.Contains(b, `value="janela"`) {
+		t.Errorf("admin, sem janela:\n%s", b)
+	}
+	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, `name="item"`) {
+		t.Error("leitura não marca pendências")
+	}
+	pede := func(form url.Values) string {
+		t.Helper()
+		return local(pagina(h, "POST", maq+"/atualizar", sessaoAdmin, form))
+	}
+	if r := pagina(h, "POST", maq+"/atualizar", sessaoTeste, url.Values{"item": {"curl"}, "quando": {"agora"}}); r.Code != http.StatusForbidden {
+		t.Errorf("leitura: %d", r.Code)
+	}
+	if l := pede(url.Values{"quando": {"agora"}}); l != maq+"?erro=nada-marcado" {
+		t.Errorf("nada marcado: %s", l)
+	}
+	if l := pede(url.Values{"item": {"bash"}, "quando": {"agora"}}); l != maq+"?erro=nada-marcado" {
+		t.Errorf("item que não está pendente: %s", l)
+	}
+	if l := pede(url.Values{"item": {"curl"}, "quando": {"janela"}}); l != maq+"?erro=sem-janela" {
+		t.Errorf("sem janela: %s", l)
+	}
+
+	// Agora: os pacotes e a versão vêm da avaliação do servidor, não do formulário.
+	if l := pede(url.Values{"item": {"curl"}, "quando": {"agora"}, "pacote": {"bash"}}); l != maq+"?criado=1&job=1" {
+		t.Fatalf("atualizar: %s", l)
+	}
+	env, _ := st.DeliverJobs(ctx, "60ef97e4-0001", time.Now().UTC())
+	if len(env) != 1 {
+		t.Fatal("entrega")
+	}
+	j, err := jobs.Verify(pub, env[0], "60ef97e4-0001", time.Now().UTC(), 0)
+	p, _ := jobs.ParseUpdateParams(j.Params)
+	if err != nil || j.Type != jobs.TypeUpdate || len(p.Packages) != 2 || p.Packages[1] != (jobs.Package{Name: "libcurl4t64", MinVersion: "8.18.0-1ubuntu2.10"}) {
+		t.Fatalf("job: %+v %+v %v", j, p, err)
+	}
+	if !strings.Contains(log.String(), "packages=2") {
+		t.Error("log")
+	}
+	if l := pede(url.Values{"item": {"curl"}, "quando": {"agora"}}); l != maq+"?erro=update-aberto&job=1" {
+		t.Errorf("segundo pedido: %s", l)
+	}
+
+	// Na janela do anel: o job leva o início da janela.
+	_, _ = st.FinishJob(ctx, 1, jobs.StateDone, "x", time.Now().UTC())
+	pvh, _ := time.LoadLocation("America/Porto_Velho")
+	_ = st.SetWindow(ctx, 1, window.Window{Days: window.AllDays, Start: 3 * time.Hour, Duration: time.Hour, Location: pvh}, "t")
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="janela"`) {
+		t.Error("com janela, a opção aparece")
+	}
+	if l := pede(url.Values{"item": {"curl"}, "quando": {"janela"}}); l != maq+"?criado=1&job=2" {
+		t.Fatalf("janela: %s", l)
+	}
+	if l, _ := st.Jobs(ctx, "60ef97e4-0001", 1); l[0].NotBefore == nil {
+		t.Error("o job na janela leva o not_before")
+	}
+}

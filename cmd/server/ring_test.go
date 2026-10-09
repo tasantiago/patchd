@@ -103,3 +103,40 @@ func TestAneisJanelasEJobNaJanela(t *testing.T) {
 		t.Errorf("list com janela:\n%s", o)
 	}
 }
+
+func TestJobUpdatePelaLinhaDeComando(t *testing.T) {
+	ctx := context.Background()
+	mem := store.NewMemory()
+	_, _ = mem.SaveInventory(ctx, "60ef97e4-0001", protocol.InventoryReport{SchemaVersion: 1, Hash: "x"})
+	st := memoriaComPrefixo{mem}
+	pub, key, _ := jobs.GenerateKey()
+	agora := time.Now().UTC()
+	job := func(args ...string) (int, string, string) {
+		var o, e bytes.Buffer
+		code := jobCommand(ctx, st, key, args, agora, &o, &e)
+		return code, o.String(), e.String()
+	}
+	code, o, e := job("create", "-machine", "60ef", "-type", "update", "-packages", "curl=8.18.0-1ubuntu2.10, libcurl4t64=8.18.0-1ubuntu2.10")
+	if code != exitOK || strings.TrimSpace(o) != "1" {
+		t.Fatalf("update: %d %q %s", code, o, e)
+	}
+	env, _ := mem.DeliverJobs(ctx, "60ef97e4-0001", agora)
+	j, err := jobs.Verify(pub, env[0], "60ef97e4-0001", agora, 0)
+	p, _ := jobs.ParseUpdateParams(j.Params)
+	if err != nil || len(p.Packages) != 2 || p.Packages[1].Name != "libcurl4t64" {
+		t.Errorf("payload: %+v %v", p, err)
+	}
+	for _, c := range []struct {
+		args []string
+		msg  string
+	}{
+		{[]string{"create", "-machine", "60ef", "-type", "update"}, "-packages"},
+		{[]string{"create", "-machine", "60ef", "-type", "rescan", "-packages", "curl=1"}, "-packages"},
+		{[]string{"create", "-machine", "60ef", "-type", "update", "-packages", "curl"}, "sem a versão"},
+		{[]string{"create", "-machine", "60ef", "-type", "update", "-packages", "-o=1"}, "inválido"},
+	} {
+		if code, _, e := job(c.args...); code != exitConfig || !strings.Contains(e, c.msg) {
+			t.Errorf("%v: %d %s", c.args, code, e)
+		}
+	}
+}

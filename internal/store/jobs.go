@@ -28,6 +28,7 @@ type JobRow struct {
 	DeliveredAt *time.Time
 	FinishedAt  *time.Time
 	Detail      string
+	Payload     string // só no JobForMachine: o servidor lê os parâmetros para conferir o efeito
 }
 
 // NewJob é o que a criação grava: o envelope assinado e as colunas para listar. É o
@@ -109,9 +110,9 @@ func (p *Postgres) DeliverJobs(ctx context.Context, machineID string, now time.T
 func (p *Postgres) JobForMachine(ctx context.Context, machineID string, id int64) (JobRow, bool, error) {
 	var j JobRow
 	err := p.pool.QueryRow(ctx, `
-		SELECT id, machine_id, type, state, created_by, created_at, not_before, not_after, delivered_at, finished_at, detail
+		SELECT id, machine_id, type, state, created_by, created_at, not_before, not_after, delivered_at, finished_at, detail, payload
 		FROM jobs WHERE id = $1 AND machine_id = $2`, id, machineID).
-		Scan(&j.ID, &j.MachineID, &j.Type, &j.State, &j.CreatedBy, &j.CreatedAt, &j.NotBefore, &j.NotAfter, &j.DeliveredAt, &j.FinishedAt, &j.Detail)
+		Scan(&j.ID, &j.MachineID, &j.Type, &j.State, &j.CreatedBy, &j.CreatedAt, &j.NotBefore, &j.NotAfter, &j.DeliveredAt, &j.FinishedAt, &j.Detail, &j.Payload)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return j, false, nil
 	}

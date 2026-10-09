@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -45,8 +46,9 @@ type Request struct {
 	MachineID string
 	Type      string
 	TTL       time.Duration
-	By        string    // usuário do painel, ou "linha de comando"
-	NotBefore time.Time // zero: vale já
+	By        string          // usuário do painel, ou "linha de comando"
+	NotBefore time.Time       // zero: vale já
+	Params    json.RawMessage // update: UpdateParams (Aula 8.4); rescan: nenhum
 }
 
 // Issue cria o job: reserva o ID, assina e grava. A linha de comando e o painel passam
@@ -67,12 +69,15 @@ func Issue(ctx context.Context, q Queue, key ed25519.PrivateKey, req Request, no
 	if req.MachineID == "" || req.By == "" {
 		return Record{}, errors.New("job sem máquina ou sem autor")
 	}
+	if err := checkParams(Job{Type: req.Type, Params: req.Params}); err != nil {
+		return Record{}, err
+	}
 	id, err := q.NextJobID(ctx)
 	if err != nil {
 		return Record{}, err
 	}
 	now = now.UTC()
-	j := Job{ID: id, MachineID: req.MachineID, Type: req.Type, IssuedAt: now, NotAfter: later(now, req.NotBefore).Add(req.TTL)}
+	j := Job{ID: id, MachineID: req.MachineID, Type: req.Type, Params: req.Params, IssuedAt: now, NotAfter: later(now, req.NotBefore).Add(req.TTL)}
 	if !req.NotBefore.IsZero() {
 		j.NotBefore = req.NotBefore.UTC()
 	}

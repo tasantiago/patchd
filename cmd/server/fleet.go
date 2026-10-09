@@ -157,7 +157,7 @@ func pendingItems(ev machineEval) (string, []protocol.PendingItem) {
 				note = strings.Join(ids[:3], ", ") + fmt.Sprintf(" e mais %d", len(ids)-3)
 			}
 			items = append(items, protocol.PendingItem{ID: f.Source, Severity: sev, Exploited: f.Exploited() || f.InferredExploited(),
-				Installed: f.Installed, FixedIn: f.Target, Note: note})
+				Installed: f.Installed, FixedIn: f.Target, Note: note, Packages: f.Binaries})
 		}
 		return "", items
 	case ev.Windows != nil:
