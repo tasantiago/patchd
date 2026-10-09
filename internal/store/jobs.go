@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -28,15 +29,10 @@ type JobRow struct {
 	Detail      string
 }
 
-// NewJob é o que a criação grava: o envelope assinado e as colunas para listar.
-type NewJob struct {
-	ID        int64
-	MachineID string
-	Type      string
-	Signed    protocol.SignedJob
-	CreatedBy string
-	NotAfter  time.Time
-}
+// NewJob é o que a criação grava: o envelope assinado e as colunas para listar. É o
+// mesmo tipo do pacote jobs, onde fica a criação (jobs.Issue) usada pela linha de
+// comando e pelo painel.
+type NewJob = jobs.Record
 
 // NextJobID reserva o ID do próximo job: ele entra no payload assinado antes do INSERT.
 func (p *Postgres) NextJobID(ctx context.Context) (int64, error) {
@@ -45,13 +41,21 @@ func (p *Postgres) NextJobID(ctx context.Context) (int64, error) {
 	return id, err
 }
 
-// CreateJob grava o job pendente.
+// CreateJob grava o job pendente. A máquina é conferida no próprio INSERT: entre a
+// escolha no painel e a gravação, ela pode ter sido aposentada.
 func (p *Postgres) CreateJob(ctx context.Context, j NewJob) error {
-	_, err := p.pool.Exec(ctx, `
+	tag, err := p.pool.Exec(ctx, `
 		INSERT INTO jobs (id, machine_id, type, state, payload, signature, created_by, not_after)
-		VALUES ($1, $2, $3, 'pendente', $4, $5, $6, $7)`,
+		SELECT $1, m.id, $3, 'pendente', $4, $5, $6, $7
+		FROM machines m WHERE m.id = $2 AND m.retired_at IS NULL`,
 		j.ID, j.MachineID, j.Type, j.Signed.Payload, j.Signed.Signature, j.CreatedBy, j.NotAfter)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return jobs.ErrMachineUnavailable
+	}
+	return nil
 }
 
 // ExpireJobs marca como expirados os jobs em aberto que passaram do prazo.

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/repocache"
@@ -142,6 +144,20 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		logger.Info("login pelo AD desligado (sem PATCHD_LDAP_HOST): o painel aceita só usuários locais")
 	}
 	checkPanelUsers(ctx, logger, st, adOn)
+	// Jobs pelo painel (Aula 8.2): com a chave de jobs, o servidor assina os jobs que o
+	// admin pede. Chave configurada e ilegível: o servidor não sobe (erro de configuração).
+	jobKey, err := jobSigningKey(look)
+	if err != nil {
+		logger.Error("chave de jobs", "error", err)
+		return exitConfig
+	}
+	if jobKey != nil {
+		apiOpts = append(apiOpts, api.WithJobKey(jobKey))
+		logger.Info("jobs pelo painel ligados: o servidor assina os jobs pedidos pelo admin",
+			"key_id", jobs.KeyID(jobKey.Public().(ed25519.PublicKey)))
+	} else {
+		logger.Info("jobs pelo painel desligados (sem PATCHD_JOB_SIGNING_KEY_FILE): crie jobs com patchd-server job create")
+	}
 	if p, ok := st.(scanPruner); ok {
 		go pruneScansLoop(ctx, logger, p)
 	}

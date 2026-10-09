@@ -11,6 +11,7 @@ package api
 
 import (
 	"context"
+	"crypto/ed25519"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -70,10 +71,11 @@ type api struct {
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 
-	directory  Directory        // nil: só usuários locais
-	compliance ComplianceSource // nil: sem estado de compliance (armazenamento em memória)
-	limiter    loginLimiter     // falhas de login por usuário+IP e por IP
-	hashSlots  chan struct{}    // conferências de senha simultâneas
+	directory  Directory          // nil: só usuários locais
+	compliance ComplianceSource   // nil: sem estado de compliance (armazenamento em memória)
+	jobKey     ed25519.PrivateKey // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
+	limiter    loginLimiter       // falhas de login por usuário+IP e por IP
+	hashSlots  chan struct{}      // conferências de senha simultâneas
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -104,6 +106,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
+	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
+	mux.Handle("POST /painel/maquinas/{id}/buscar", a.sameOrigin(a.adminAction(a.rescanAction)))
+	mux.Handle("POST /painel/jobs/{id}/cancelar", a.sameOrigin(a.adminAction(a.cancelJobAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))

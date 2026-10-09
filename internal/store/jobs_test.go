@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -20,6 +22,7 @@ type contratoJobs interface {
 	ScanReceivedAt(ctx context.Context, machineID string) (*time.Time, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]JobRow, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
+	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
 }
 
 func testarJobs(t *testing.T, st contratoJobs) {
@@ -45,6 +48,22 @@ func testarJobs(t *testing.T, st contratoJobs) {
 		}
 		return id
 	}
+	// Máquina inexistente ou aposentada: o job não é criado (Aula 8.2).
+	if _, err := st.SaveInventory(ctx, "maq-velha", protocol.InventoryReport{SchemaVersion: 1, Hash: "maq-velha"}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.RetireMachine(ctx, "maq-velha", "teste", "thyago"); !ok || err != nil {
+		t.Fatalf("aposentar: %t %v", ok, err)
+	}
+	for _, maq := range []string{"maq-velha", "maq-nenhuma"} {
+		id, _ := st.NextJobID(ctx)
+		err := st.CreateJob(ctx, NewJob{ID: id, MachineID: maq, Type: "rescan", Signed: protocol.SignedJob{Payload: "{}", Signature: "sig"},
+			CreatedBy: "thyago", NotAfter: agora.Add(time.Hour)})
+		if !errors.Is(err, jobs.ErrMachineUnavailable) {
+			t.Errorf("job para %s: %v", maq, err)
+		}
+	}
+
 	j1, j2, jOutra, jVencido, jCancelar := cria("maq-a", time.Hour), cria("maq-a", time.Hour), cria("maq-b", time.Hour), cria("maq-a", time.Minute), cria("maq-a", time.Hour)
 	if !(j1 < j2 && j2 < jOutra) {
 		t.Fatalf("IDs crescentes: %d %d %d", j1, j2, jOutra)

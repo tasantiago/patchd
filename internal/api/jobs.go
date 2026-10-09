@@ -12,12 +12,17 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 )
 
-// JobStore é o que a API usa da fila de jobs (Aula 8.1).
+// JobStore é o que a API usa da fila de jobs: entrega e resultado (Aula 8.1), criação,
+// lista e cancelamento pelo painel (Aula 8.2).
 type JobStore interface {
 	DeliverJobs(ctx context.Context, machineID string, now time.Time) ([]protocol.SignedJob, error)
 	JobForMachine(ctx context.Context, machineID string, id int64) (store.JobRow, bool, error)
 	FinishJob(ctx context.Context, id int64, state, detail string, at time.Time) (bool, error)
 	ScanReceivedAt(ctx context.Context, machineID string) (*time.Time, error)
+	jobs.Queue // NextJobID e CreateJob
+	ExpireJobs(ctx context.Context, now time.Time) (int64, error)
+	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
+	CancelJob(ctx context.Context, id int64, by string) (bool, error)
 }
 
 // jobResult recebe o resultado de um job da máquina autenticada. O que o agente diz não

@@ -19,5 +19,8 @@ func jobKey(logger *slog.Logger) ed25519.PublicKey {
 		logger.Error("jobs desligados", "error", err)
 		return nil
 	}
+	// A impressão curta confere com a do servidor ("jobs pelo painel ligados") e a do
+	// patchd-server job pubkey: chaves diferentes = todo job recusado.
+	logger.Info("jobs ligados", "key_id", jobs.KeyID(pub))
 	return pub
 }
