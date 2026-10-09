@@ -22,7 +22,7 @@ const sessaoAdmin = panel.SessionPrefix + "sessao-admin"
 
 // ambientePaginas: a frota falsa com três máquinas (uma com nome hostil), duas sessões
 // (leitura e admin) e uma máquina real no armazenamento para aposentar.
-func ambientePaginas(t *testing.T) (http.Handler, *store.Memory, *syncBuffer) {
+func ambientePaginas(t *testing.T, opts ...api.Option) (http.Handler, *store.Memory, *syncBuffer) {
 	t.Helper()
 	agora := time.Now().UTC()
 	st := store.NewMemory()
@@ -50,7 +50,7 @@ func ambientePaginas(t *testing.T) (http.Handler, *store.Memory, *syncBuffer) {
 			{ID: "curl", Severity: "high", Exploited: true, Installed: "8.18.0-1ubuntu2.7", FixedIn: "8.18.0-1ubuntu2.10", Note: "USN-9002-1"}}},
 	}
 	log := &syncBuffer{}
-	return api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(src)), st, log
+	return api.New(st, slog.New(slog.NewTextHandler(log, nil)), append([]api.Option{api.WithCompliance(src)}, opts...)...), st, log
 }
 
 func pagina(h http.Handler, method, path, cookie string, form url.Values, cabecalhos ...string) *httptest.ResponseRecorder {

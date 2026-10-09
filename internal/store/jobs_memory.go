@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -27,6 +28,9 @@ func (m *Memory) NextJobID(ctx context.Context) (int64, error) {
 func (m *Memory) CreateJob(ctx context.Context, j NewJob) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if mm := m.machines[j.MachineID]; mm == nil || !mm.retiredAt.IsZero() {
+		return jobs.ErrMachineUnavailable
+	}
 	m.jobs = append(m.jobs, &memJob{JobRow: JobRow{ID: j.ID, MachineID: j.MachineID, Type: j.Type, State: "pendente",
 		CreatedBy: j.CreatedBy, CreatedAt: m.now(), NotAfter: j.NotAfter}, signed: j.Signed})
 	return nil

@@ -31,7 +31,7 @@ type pageBase struct {
 	Title   string
 	Session panel.Session
 	Admin   bool
-	Nav     string // frota ou aposentadas
+	Nav     string // frota, jobs ou aposentadas
 	Flash   string // mensagem de sucesso (de uma lista fixa)
 	Error   string // mensagem de erro (de uma lista fixa)
 }
@@ -159,6 +159,8 @@ type machineView struct {
 	Items                                []protocol.PendingItem
 	More                                 int
 	MinReason, MaxReason                 int
+	Jobs                                 jobTable
+	JobsOn                               bool // o servidor tem a chave: o admin pode pedir a busca
 }
 
 func relationLabel(r string) string {
@@ -218,6 +220,14 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		v.Flash = "Máquina devolvida à frota; a credencial dela voltou a valer."
 	case q.Get("erro") == "motivo":
 		v.Error = fmt.Sprintf("Informe o motivo da aposentadoria (de %d a %d caracteres).", minReasonLength, maxReasonLength)
+	default:
+		jobFlash(q, &v.pageBase)
+	}
+	v.JobsOn = a.jobKey != nil
+	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
+	if v.Jobs.Rows, err = a.machineJobs(r, id, v.Admin); err != nil {
+		a.internalError(w, r, "listar jobs da máquina", err)
+		return
 	}
 
 	links, err := a.store.IdentityLinks(r.Context())
@@ -386,9 +396,13 @@ dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1.2rem;ma
 .expl{color:#8a1c12;font-weight:600}.muted{color:var(--muted)}section{margin-top:1.75rem}h2{font-size:1.05rem;margin:0 0 .6rem}
 form.acao{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form.acao input{flex:1 1 20rem;padding:.4rem}
 button{padding:.35rem .9rem;cursor:pointer}
+.job{display:inline-block;padding:.05rem .45rem;border-radius:.3rem;font-size:.8rem;font-weight:600;border:1px solid var(--line);white-space:nowrap}
+.job.concluido{color:#165c2b;background:#e8f5ec}.job.falhou,.job.rejeitado{color:#8a1c12;background:#fdecea}
+.job.pendente,.job.entregue{color:#3d4a66;background:#eef2fb}.job.cancelado,.job.expirado{color:#4a4f57;background:#eef0f3}
+td form{margin:0}
 </style></head><body>
 <header><strong>patchd</strong>
-<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
+<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
 <span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}
 <form method="post" action="/painel/sair"><button type="submit">Sair</button></form></span>
 </header><main>
@@ -445,11 +459,33 @@ button{padding:.35rem .9rem;cursor:pointer}
 {{if .Links}}<section><h2>Alertas de identidade</h2><ul>
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
 </ul></section>{{end}}
+<section><h2>Jobs</h2>
+{{if .Admin}}{{if .JobsOn}}<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/buscar">
+<button type="submit">Buscar atualizações agora</button>
+<span class="muted">Cria um job assinado; o agente busca no próximo check-in e o resultado aparece aqui.</span></form>
+{{else}}<p class="muted">Pedir a busca pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}{{end}}
+{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job para esta máquina.</p>{{end}}
+</section>
 {{if .Admin}}<section><h2>Aposentar</h2>
 <p class="muted">A máquina sai da frota, do compliance e do painel, e a credencial dela deixa de valer. Nada é apagado; dá para restaurar em Aposentadas.</p>
 <form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/aposentar">
 <input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (ex.: registro antigo da VM reinstalada)">
 <button type="submit">Aposentar</button></form></section>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "jobs-tabela"}}<table>
+<thead><tr><th>Job</th>{{if not .MachineID}}<th>Máquina</th><th>Nome</th>{{end}}<th>Tipo</th><th>Estado</th><th>Criado</th><th>Por</th><th>Entregue</th><th>Encerrado</th><th>Detalhe</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td>
+{{if not $.MachineID}}<td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{end}}
+<td>{{.Type}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Created}}</td><td>{{.By}}</td>
+<td>{{.Delivered}}</td><td>{{.Finished}}</td><td>{{.Detail}}</td>
+{{if $.Admin}}<td>{{if .CanCancel}}<form method="post" action="/painel/jobs/{{.ID}}/cancelar">{{if $.MachineID}}<input type="hidden" name="maquina" value="{{$.MachineID}}">{{end}}<button type="submit">Cancelar</button></form>{{end}}</td>{{end}}
+</tr>{{end}}</tbody></table>{{end}}
+
+{{define "jobs"}}{{template "topo" .}}
+<h1>Jobs</h1>
+<p class="muted">Os {{.N}} mais recentes da frota. Para pedir uma busca, abra a máquina na Frota.</p>
+{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}

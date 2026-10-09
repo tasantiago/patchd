@@ -24,14 +24,17 @@ const jobUsage = `uso: patchd-server job <comando> [opções]
 comandos:
   keygen  cria o par de chaves dos jobs: -out ARQUIVO grava a privada (0600) e a pública
           sai na tela, para o build dos agentes (PATCHD_JOB_PUBKEY)
+  pubkey  mostra a chave pública da chave privada configurada (para conferir ou refazer
+          o PATCHD_JOB_PUBKEY) e a impressão curta que aparece nos logs
   create  cria um job: -machine ID -type rescan [-ttl 24h]. O agente o recebe no próximo
           check-in, confere a assinatura e executa
   list    lista os jobs, do mais novo para o mais antigo: [-machine ID] [-n 20]
   cancel  cancela um job ainda não entregue: -id N
 
 Tipos: rescan (coleta o inventário e faz a busca de atualizações agora).
-A chave privada vem de PATCHD_JOB_SIGNING_KEY_FILE (ou PATCHD_JOB_SIGNING_KEY); só o
-create precisa dela. A URL do banco vem da configuração do servidor.
+A chave privada vem de PATCHD_JOB_SIGNING_KEY_FILE (ou PATCHD_JOB_SIGNING_KEY); o create
+e o pubkey precisam dela. Com ela, o servidor também cria jobs pelo painel (Aula 8.2).
+A URL do banco vem da configuração do servidor.
 `
 
 // jobStore é o que os comandos de job usam do banco.
@@ -50,8 +53,11 @@ func runJob(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, jobUsage)
 		return exitConfig
 	}
-	if args[0] == "keygen" {
+	switch args[0] {
+	case "keygen":
 		return jobKeygen(args[1:], stdout, stderr)
+	case "pubkey":
+		return jobPubkey(look, stdout, stderr)
 	}
 	cfg, err := loadServerConfig(nil, look, stderr)
 	if err != nil {
@@ -64,7 +70,10 @@ func runJob(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	var key ed25519.PrivateKey
 	if args[0] == "create" {
-		if key, err = jobSigningKey(look); err != nil {
+		if key, err = jobSigningKey(look); err == nil && key == nil {
+			err = errNoJobKey
+		}
+		if err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitConfig
 		}
@@ -85,16 +94,36 @@ func runJob(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	return jobCommand(ctx, store.NewPostgres(pool), key, args, time.Now().UTC(), stdout, stderr)
 }
 
-// jobSigningKey lê a chave privada dos jobs.
+var errNoJobKey = errors.New("criar jobs exige a chave privada: defina PATCHD_JOB_SIGNING_KEY_FILE (crie com patchd-server job keygen)")
+
+// jobSigningKey lê a chave privada dos jobs. Sem a variável: nil, sem erro (o servidor
+// sobe com os jobs do painel desligados). Variável definida e chave ilegível: erro.
 func jobSigningKey(look config.Lookup) (ed25519.PrivateKey, error) {
 	s, err := config.Secret(look, "PATCHD_JOB_SIGNING_KEY")
-	if err != nil {
+	if err != nil || s == "" {
 		return nil, err
 	}
-	if s == "" {
-		return nil, errors.New("criar jobs exige a chave privada: defina PATCHD_JOB_SIGNING_KEY_FILE (crie com patchd-server job keygen)")
+	key, err := jobs.ParsePrivateKey(s)
+	if err != nil {
+		return nil, fmt.Errorf("PATCHD_JOB_SIGNING_KEY: %w", err)
 	}
-	return jobs.ParsePrivateKey(s)
+	return key, nil
+}
+
+// jobPubkey mostra a chave pública que corresponde à chave privada configurada.
+func jobPubkey(look config.Lookup, stdout, stderr io.Writer) int {
+	key, err := jobSigningKey(look)
+	if err == nil && key == nil {
+		err = errNoJobKey
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		return exitConfig
+	}
+	pub := key.Public().(ed25519.PublicKey)
+	fmt.Fprintf(stderr, "impressão da chave (key_id nos logs): %s\n", jobs.KeyID(pub))
+	fmt.Fprintln(stdout, jobs.EncodePublicKey(pub))
+	return exitOK
 }
 
 func jobKeygen(args []string, stdout, stderr io.Writer) int {
@@ -127,6 +156,7 @@ func jobKeygen(args []string, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	fmt.Fprintf(stderr, "chave privada dos jobs gravada em %s (0600). Ela fica com o servidor, fora do git e da imagem.\n", *out)
+	fmt.Fprintf(stderr, "impressão da chave (key_id nos logs): %s\n", jobs.KeyID(pub))
 	fmt.Fprintln(stderr, "chave pública (PATCHD_JOB_PUBKEY do build dos agentes):")
 	fmt.Fprintln(stdout, jobs.EncodePublicKey(pub))
 	return exitOK
@@ -147,7 +177,7 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan")
 			return exitConfig
 		}
-		if *ttl < 10*time.Minute || *ttl > jobs.MaxTTL {
+		if *ttl < jobs.MinTTL || *ttl > jobs.MaxTTL {
 			fmt.Fprintln(stderr, "patchd-server: -ttl deve ficar entre 10m e 168h")
 			return exitConfig
 		}
@@ -155,25 +185,18 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 		if code != exitOK {
 			return code
 		}
-		jobID, err := st.NextJobID(ctx)
-		if err != nil {
-			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		rec, err := jobs.Issue(ctx, st, key, jobs.Request{MachineID: id, Type: *typ, TTL: *ttl, By: "linha de comando"}, now)
+		if errors.Is(err, jobs.ErrMachineUnavailable) {
+			fmt.Fprintf(stderr, "patchd-server: a máquina %s foi aposentada agora há pouco; nada foi criado\n", short(id))
 			return exitRuntime
 		}
-		j := jobs.Job{ID: jobID, MachineID: id, Type: *typ, IssuedAt: now, NotAfter: now.Add(*ttl)}
-		env, err := jobs.Sign(key, j)
 		if err != nil {
-			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-			return exitRuntime
-		}
-		if err := st.CreateJob(ctx, store.NewJob{ID: jobID, MachineID: id, Type: *typ, Signed: env,
-			CreatedBy: "linha de comando", NotAfter: j.NotAfter}); err != nil {
 			fmt.Fprintf(stderr, "patchd-server: criar job: %v\n", err)
 			return exitRuntime
 		}
 		fmt.Fprintf(stderr, "job %d (%s) criado para a máquina %s; vale até %s UTC. O agente o recebe no próximo check-in.\n",
-			jobID, *typ, short(id), j.NotAfter.Format("2006-01-02 15:04"))
-		fmt.Fprintln(stdout, jobID)
+			rec.ID, rec.Type, short(id), rec.NotAfter.Format("2006-01-02 15:04"))
+		fmt.Fprintln(stdout, rec.ID)
 		return exitOK
 	case "list":
 		prefix := fs.String("machine", "", "só os jobs desta máquina")

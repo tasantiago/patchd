@@ -35,8 +35,22 @@ func TestJobKeygenECreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := jobSigningKey(lookMap(nil)); err == nil || !strings.Contains(err.Error(), "job keygen") {
-		t.Errorf("sem chave: %v", err)
+	if k, err := jobSigningKey(lookMap(nil)); k != nil || err != nil {
+		t.Errorf("sem a variável, sem chave e sem erro (painel sem jobs): %v %v", k, err)
+	}
+	ruim := filepath.Join(dir, "ruim.key")
+	_ = os.WriteFile(ruim, []byte("patchd_jobkey_curta"), 0o600)
+	if _, err := jobSigningKey(lookMap(map[string]string{"PATCHD_JOB_SIGNING_KEY_FILE": ruim})); err == nil {
+		t.Error("chave ilegível é erro")
+	}
+	// pubkey devolve a mesma chave pública do keygen, e o create sem chave explica o que fazer.
+	var po, pe bytes.Buffer
+	if code := runJob([]string{"pubkey"}, lookMap(map[string]string{"PATCHD_JOB_SIGNING_KEY_FILE": arq}), &po, &pe); code != exitOK ||
+		strings.TrimSpace(po.String()) != strings.TrimSpace(out.String()) || !strings.Contains(pe.String(), jobs.KeyID(pub)) {
+		t.Errorf("pubkey: %d %q %s", code, po.String(), pe.String())
+	}
+	if code := runJob([]string{"pubkey"}, lookMap(nil), &bytes.Buffer{}, &pe); code != exitConfig || !strings.Contains(pe.String(), "job keygen") {
+		t.Errorf("pubkey sem chave: %d %s", code, pe.String())
 	}
 
 	ctx := context.Background()
