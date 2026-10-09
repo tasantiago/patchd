@@ -140,6 +140,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}
 	ag.MachineID = cred.MachineID
 	ag.JobKey = jobKey(logger)
+	// Job update (Aula 8.4): só no Linux. 30 min por comando: uma atualização grande, com
+	// download, passa fácil dos 30 s padrão.
+	if inst := patch.NewInstaller(platform.ExecRunner{Timeout: installTimeout}); inst != nil {
+		ag.Install = inst.Install
+	}
 
 	logger.Info("agente iniciado",
 		"commit", info.Commit,

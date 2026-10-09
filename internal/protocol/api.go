@@ -125,6 +125,9 @@ type PendingItem struct {
 	Installed string `json:"installed,omitempty"`
 	FixedIn   string `json:"fixed_in,omitempty"` // versão, build ou KB que corrige
 	Note      string `json:"note,omitempty"`     // avisos (USN, FEDORA-...) ou título da CVE
+	// Packages: os pacotes binários instalados dessa fonte (Linux), que o job update
+	// atualiza (Aula 8.4). Vazio no Windows e no macOS.
+	Packages []string `json:"packages,omitempty"`
 }
 
 // ComplianceDetail é o estado de uma máquina com as pendências (Aula 7.6).

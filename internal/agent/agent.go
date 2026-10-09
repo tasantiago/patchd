@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -37,6 +38,9 @@ type Agent struct {
 	// assinado pela chave de jobs embutida no build. JobKey nil: todo job é recusado.
 	MachineID string
 	JobKey    ed25519.PublicKey
+	// Install aplica os pacotes de um job update (Aula 8.4). nil: o agente recusa esses
+	// jobs (Windows e macOS, por enquanto). Erro com jobs.ErrNotPending vira "rejeitado".
+	Install func(ctx context.Context, jobID int64, pkgs []jobs.Package) (string, error)
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -176,15 +180,23 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 
 	// Jobs (Aula 8.1): conferidos e aceitos antes da busca, que um rescan antecipa. O
 	// estado é gravado já aqui: um job aceito não roda de novo nem se o agente cair agora.
-	rescans := a.acceptJobs(resp.Jobs, &state)
+	accepted := a.acceptJobs(resp.Jobs, &state)
 	if len(resp.Jobs) > 0 {
 		a.saveStateOrLog(state)
+	}
+	// Instalações (Aula 8.4) antes da busca: a busca seguinte mostra o efeito. O job já foi
+	// gravado como visto: se o agente cair no meio, ele não roda de novo (no máximo uma vez).
+	updateResults := a.runUpdates(ctx, accepted.updates)
+	if ctx.Err() != nil {
+		state.PendingJobResults = append(state.PendingJobResults, updateResults...)
+		a.saveStateOrLog(state)
+		return outcomeTransient
 	}
 
 	// 4. Busca de atualizações, quando devida ou pedida por um job.
 	scanSent := false
-	if !a.now().Before(state.NextScanAt) || len(rescans) > 0 {
-		a.Logger.Info("busca de atualizações iniciada", "por_job", len(rescans) > 0)
+	if !a.now().Before(state.NextScanAt) || accepted.forceScan() {
+		a.Logger.Info("busca de atualizações iniciada", "por_job", accepted.forceScan())
 		rep := a.Scan(ctx)
 		if ctx.Err() != nil {
 			return outcomeTransient
@@ -202,9 +214,10 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 		// O resultado do rescan fica guardado junto com a busca: se o envio falhar agora,
 		// os dois vão no próximo ciclo, a busca primeiro.
-		for _, id := range rescans {
+		for _, id := range accepted.rescans {
 			a.queueJobResult(&state, id, protocol.JobResultOK, "inventário e busca de atualizações enviados")
 		}
+		state.PendingJobResults = append(state.PendingJobResults, updateResults...)
 		a.saveStateOrLog(state)
 		a.Logger.Info("busca de atualizações concluída", "sources", len(rep.Scans),
 			"duration", a.now().Sub(start).Round(time.Second).String(), "next_scan_at", state.NextScanAt)

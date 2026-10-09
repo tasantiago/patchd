@@ -31,6 +31,8 @@ const (
 const (
 	// scanCommandTimeout é o prazo de cada comando de busca (o dnf pode baixar metadados).
 	scanCommandTimeout = 15 * time.Minute
+	// installTimeout: prazo de cada comando do job update (Aula 8.4), download incluído.
+	installTimeout = 30 * time.Minute
 	// scanEvery é o período da busca de atualizações (RNF-03: uma vez por dia).
 	scanEvery = 24 * time.Hour
 )

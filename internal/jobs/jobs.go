@@ -35,7 +35,7 @@ const (
 )
 
 // KnownType diz se o tipo existe.
-func KnownType(t string) bool { return t == TypeRescan }
+func KnownType(t string) bool { return t == TypeRescan || t == TypeUpdate }
 
 // Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado;
 // pendente ou entregue → cancelado (pelo operador) | expirado (passou de NotAfter).
@@ -84,7 +84,7 @@ type Job struct {
 // Sign serializa e assina o job, e devolve o envelope que vai para o banco e para o agente.
 func Sign(priv ed25519.PrivateKey, j Job) (protocol.SignedJob, error) {
 	if j.ID <= 0 || j.MachineID == "" || !KnownType(j.Type) || !j.NotAfter.After(j.IssuedAt) || !j.NotAfter.After(j.NotBefore) ||
-		j.NotAfter.Sub(later(j.IssuedAt, j.NotBefore)) > MaxTTL || j.NotBefore.Sub(j.IssuedAt) > MaxTTL {
+		j.NotAfter.Sub(later(j.IssuedAt, j.NotBefore)) > MaxTTL || j.NotBefore.Sub(j.IssuedAt) > MaxTTL || checkParams(j) != nil {
 		return protocol.SignedJob{}, fmt.Errorf("job inválido: %+v", j)
 	}
 	payload, err := json.Marshal(j)
@@ -126,6 +126,8 @@ func Verify(pub ed25519.PublicKey, env protocol.SignedJob, machineID string, now
 		return j, fmt.Errorf("job %d é de outra máquina", j.ID)
 	case !KnownType(j.Type):
 		return j, fmt.Errorf("job %d de tipo desconhecido %q (agente antigo?)", j.ID, j.Type)
+	case checkParams(j) != nil:
+		return j, fmt.Errorf("job %d: %w", j.ID, checkParams(j))
 	case now.After(j.NotAfter.Add(ClockSkew)):
 		return j, fmt.Errorf("job %d vencido em %s", j.ID, j.NotAfter.UTC().Format(time.RFC3339))
 	case now.Before(j.IssuedAt.Add(-ClockSkew)):
@@ -136,6 +138,21 @@ func Verify(pub ed25519.PublicKey, env protocol.SignedJob, machineID string, now
 		return j, fmt.Errorf("job %d já visto (o último aceito foi %d)", j.ID, lastID)
 	}
 	return j, nil
+}
+
+// checkParams confere os parâmetros conforme o tipo: rescan não leva nenhum; update leva
+// a lista de pacotes (Aula 8.4).
+func checkParams(j Job) error {
+	switch j.Type {
+	case TypeUpdate:
+		_, err := ParseUpdateParams(j.Params)
+		return err
+	default:
+		if len(j.Params) > 0 && string(j.Params) != "null" {
+			return fmt.Errorf("o tipo %s não leva parâmetros", j.Type)
+		}
+	}
+	return nil
 }
 
 func later(a, b time.Time) time.Time {

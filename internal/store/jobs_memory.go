@@ -78,7 +78,9 @@ func (m *Memory) JobForMachine(ctx context.Context, machineID string, id int64) 
 	defer m.mu.RUnlock()
 	for _, j := range m.jobs {
 		if j.ID == id && j.MachineID == machineID {
-			return j.JobRow, true, nil
+			r := j.JobRow
+			r.Payload = j.signed.Payload
+			return r, true, nil
 		}
 	}
 	return JobRow{}, false, nil

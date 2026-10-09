@@ -47,8 +47,11 @@ func stateLabel(s string) string {
 }
 
 func typeLabel(t string) string {
-	if t == jobs.TypeRescan {
+	switch t {
+	case jobs.TypeRescan:
 		return "buscar atualizações"
+	case jobs.TypeUpdate:
+		return "atualizar pacotes"
 	}
 	return t
 }
@@ -141,6 +144,16 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = fmt.Sprintf("Já existe uma busca pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
 	case get("erro") == "sem-chave":
 		b.Error = "O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE); nada foi criado."
+	case get("erro") == "update-aberto" && n > 0:
+		b.Error = fmt.Sprintf("Já existe uma atualização pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
+	case get("erro") == "nada-marcado":
+		b.Error = "Marque ao menos uma pendência do Linux que ainda esteja pendente."
+	case get("erro") == "quando":
+		b.Error = "Escolha quando: agora ou na próxima janela do anel."
+	case get("erro") == "sem-janela":
+		b.Error = "O anel desta máquina não tem janela de manutenção (patchd-server ring window); escolha \"agora\"."
+	case get("erro") == "pacotes":
+		b.Error = "Os pacotes das pendências marcadas não formam um pedido válido (veja o log do servidor)."
 	case get("erro") == "cancelar" && n > 0:
 		b.Error = fmt.Sprintf("O job %d não está mais pendente; nada mudou. Um job entregue não se cancela: o agente pode estar executando.", n)
 	case get("criado") != "" && n > 0:

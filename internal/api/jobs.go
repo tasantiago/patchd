@@ -2,14 +2,17 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/version"
 )
 
 // JobStore é o que a API usa da fila de jobs: entrega e resultado (Aula 8.1), criação,
@@ -88,17 +91,85 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	case protocol.JobResultFailed:
 		return jobs.StateFailed, "o agente informou falha: " + res.Detail
 	}
+	// Os dois tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
+	at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)
+	if err != nil {
+		a.logger.Error("conferir busca do job", "job_id", job.ID, "error", err)
+		return jobs.StateFailed, "o servidor não conseguiu conferir a busca"
+	}
+	if at == nil || job.DeliveredAt == nil || at.Before(*job.DeliveredAt) {
+		return jobs.StateFailed, "o agente informou sucesso, mas nenhuma busca nova chegou depois da entrega"
+	}
+	when := at.UTC().Format("2006-01-02 15:04:05")
 	switch job.Type {
 	case jobs.TypeRescan:
-		at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)
-		if err != nil {
-			a.logger.Error("conferir busca do job", "job_id", job.ID, "error", err)
-			return jobs.StateFailed, "o servidor não conseguiu conferir a busca"
-		}
-		if at == nil || job.DeliveredAt == nil || at.Before(*job.DeliveredAt) {
-			return jobs.StateFailed, "o agente informou sucesso, mas nenhuma busca nova chegou depois da entrega"
-		}
-		return jobs.StateDone, fmt.Sprintf("busca nova recebida em %s UTC", at.UTC().Format("2006-01-02 15:04:05"))
+		return jobs.StateDone, fmt.Sprintf("busca nova recebida em %s UTC", when)
+	case jobs.TypeUpdate:
+		return a.judgeUpdate(r, job, when)
 	}
 	return jobs.StateFailed, "tipo de job sem conferência no servidor: " + job.Type
+}
+
+// judgeUpdate confere, na busca nova, que nenhum pacote pedido continua abaixo da versão
+// pedida (Aula 8.4). No apt, o item pendente traz a versão instalada; no dnf, um advisory
+// pendente com correção até a versão pedida mostra que ela não foi instalada.
+func (a *api) judgeUpdate(r *http.Request, job store.JobRow, when string) (string, string) {
+	var payload jobs.Job
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+		return jobs.StateFailed, "o servidor não conseguiu ler os pacotes do job"
+	}
+	params, err := jobs.ParseUpdateParams(payload.Params)
+	if err != nil {
+		return jobs.StateFailed, "pacotes do job ilegíveis: " + err.Error()
+	}
+	rep, found, err := a.store.LatestScan(r.Context(), job.MachineID)
+	if err != nil || !found {
+		return jobs.StateFailed, "o servidor não conseguiu ler a busca nova"
+	}
+	still := stillPending(params.Packages, rep)
+	if len(still) > 0 {
+		return jobs.StateFailed, fmt.Sprintf("a busca de %s UTC ainda mostra pendente: %s", when, strings.Join(still, "; "))
+	}
+	return jobs.StateDone, fmt.Sprintf("%d pacote(s) conferidos na busca de %s UTC: %s", len(params.Packages), when, strings.Join(params.Names(), ", "))
+}
+
+// stillPending lista os pacotes pedidos que a busca ainda mostra abaixo da versão pedida.
+// Uma fonte que falhou na busca não prova nada: o pacote conta como pendente.
+func stillPending(pkgs []jobs.Package, rep protocol.PatchScanReport) []string {
+	var out []string
+	for _, p := range pkgs {
+		problem := ""
+		for _, s := range rep.Scans {
+			if s.Source != "apt" && s.Source != "dnf" {
+				continue
+			}
+			if s.Missing == nil {
+				problem = "a busca do " + s.Source + " falhou (" + s.Error + ")"
+				break
+			}
+			for _, u := range s.Missing {
+				if u.Package != p.Name {
+					continue
+				}
+				if s.Source == "apt" {
+					if c, err := version.CompareDpkg(u.InstalledVersion, p.MinVersion); u.InstalledVersion == "" || err != nil || c < 0 {
+						problem = fmt.Sprintf("%s instalada %s, pedida ≥ %s", p.Name, dashIfEmpty(u.InstalledVersion), p.MinVersion)
+					}
+				} else if c, err := version.CompareRPM(u.FixedVersion, p.MinVersion); err != nil || c <= 0 {
+					problem = fmt.Sprintf("%s com %s pendente (correção %s, pedida ≥ %s)", p.Name, u.ID, u.FixedVersion, p.MinVersion)
+				}
+			}
+		}
+		if problem != "" {
+			out = append(out, problem)
+		}
+	}
+	return out
+}
+
+func dashIfEmpty(s string) string {
+	if s == "" {
+		return "?"
+	}
+	return s
 }

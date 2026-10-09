@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -162,6 +163,7 @@ type machineView struct {
 	Jobs                                 jobTable
 	JobsOn                               bool   // o servidor tem a chave: o admin pode pedir a busca
 	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
+	CanUpdate                            bool   // admin, chave de jobs e pendências do Linux (Aula 8.4)
 	Window, NextWindow                   string
 }
 
@@ -229,6 +231,9 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	if err := a.ringView(r, id, &v); err != nil {
 		a.internalError(w, r, "ler anel e janela", err)
 		return
+	}
+	if v.Admin && v.JobsOn {
+		v.CanUpdate = slices.ContainsFunc(v.Items, func(it protocol.PendingItem) bool { return len(it.Packages) > 0 })
 	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
 	if v.Jobs.Rows, err = a.machineJobs(r, id, v.Admin); err != nil {
@@ -405,7 +410,7 @@ button{padding:.35rem .9rem;cursor:pointer}
 .job{display:inline-block;padding:.05rem .45rem;border-radius:.3rem;font-size:.8rem;font-weight:600;border:1px solid var(--line);white-space:nowrap}
 .job.concluido{color:#165c2b;background:#e8f5ec}.job.falhou,.job.rejeitado{color:#8a1c12;background:#fdecea}
 .job.pendente,.job.entregue{color:#3d4a66;background:#eef2fb}.job.cancelado,.job.expirado{color:#4a4f57;background:#eef0f3}
-td form{margin:0}
+td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}
 </style></head><body>
 <header><strong>patchd</strong>
 <nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
@@ -457,10 +462,18 @@ td form{margin:0}
 {{if .D.Target}}<dt>Resolve tudo</dt><dd>{{.D.Target}}</dd>{{end}}
 {{range .D.CatalogWarnings}}<dt>Atenção</dt><dd>{{.}}</dd>{{end}}
 </dl>
-{{if .Items}}<section><h2>Pendências</h2><table>
-<thead><tr><th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>
-<tbody>{{range .Items}}<tr><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td><code>{{.ID}}</code></td>
+{{if .Items}}<section><h2>Pendências</h2>
+{{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<table>
+<thead><tr>{{if .CanUpdate}}<th></th>{{end}}<th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>
+<tbody>{{range .Items}}<tr>{{if $.CanUpdate}}<td>{{if .Packages}}<input type="checkbox" name="item" value="{{.ID}}" aria-label="atualizar {{.ID}}" title="{{range $i, $p := .Packages}}{{if $i}}, {{end}}{{$p}}{{end}}">{{end}}</td>{{end}}
+<td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td><code>{{.ID}}</code></td>
 <td>{{.Severity}}</td><td>{{.Installed}}</td><td>{{.FixedIn}}</td><td>{{.Note}}</td></tr>{{end}}</tbody></table>
+{{if .CanUpdate}}<div class="lote">
+<label><input type="radio" name="quando" value="agora" checked> agora</label>
+{{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
+<button type="submit">Atualizar marcados</button>
+<span class="muted">Instala os pacotes binários das fontes marcadas pelo apt ou pelo dnf; o agente confere na busca dele antes, e o resultado vem da busca seguinte. Não reinicia a máquina.</span>
+</div></form>{{end}}
 {{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
 <p class="muted"><a href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">Exportar pendências (CSV)</a> · <a href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></p>
 </section>{{end}}
