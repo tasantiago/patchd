@@ -23,6 +23,17 @@ const (
 type State struct {
 	LastScanAt time.Time `json:"last_scan_at"`
 	NextScanAt time.Time `json:"next_scan_at"`
+	// LastJobID é o maior job aceito (Aula 8.1): um job com ID menor ou igual é recusado,
+	// e uma resposta antiga copiada não faz o mesmo job rodar duas vezes.
+	LastJobID int64 `json:"last_job_id,omitempty"`
+	// PendingJobResults são resultados ainda não aceitos pelo servidor (ele estava fora).
+	PendingJobResults []PendingJobResult `json:"pending_job_results,omitempty"`
+}
+
+// PendingJobResult é o resultado de um job à espera de envio.
+type PendingJobResult struct {
+	ID     int64              `json:"id"`
+	Result protocol.JobResult `json:"result"`
 }
 
 func loadState(dir string) (State, error) {

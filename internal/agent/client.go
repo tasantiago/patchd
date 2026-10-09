@@ -61,6 +61,9 @@ type Client struct {
 	Credential   string
 	AgentVersion string
 	HTTP         *http.Client
+	// Capabilities vão em cada check-in (Aula 8.1): o servidor só entrega jobs a quem
+	// anuncia que sabe recebê-los.
+	Capabilities []string
 }
 
 // NewClient monta o cliente com o prazo padrão.
@@ -70,6 +73,7 @@ func NewClient(baseURL, credential, agentVersion string) *Client {
 		Credential:   credential,
 		AgentVersion: agentVersion,
 		HTTP:         &http.Client{Timeout: httpTimeout},
+		Capabilities: []string{protocol.CapabilityJobs},
 	}
 }
 
@@ -132,8 +136,15 @@ func (c *Client) post(ctx context.Context, path string, v, out any) (string, err
 func (c *Client) CheckIn(ctx context.Context, inventoryHash string) (protocol.CheckinResponse, error) {
 	var out protocol.CheckinResponse
 	_, err := c.post(ctx, "/api/v1/agent/checkin", protocol.CheckinRequest{
-		AgentVersion: c.AgentVersion, InventoryHash: inventoryHash, SentAt: time.Now().UTC(),
+		AgentVersion: c.AgentVersion, InventoryHash: inventoryHash, SentAt: time.Now().UTC(), Capabilities: c.Capabilities,
 	}, &out)
+	return out, err
+}
+
+// SendJobResult envia o resultado (ou a recusa) de um job.
+func (c *Client) SendJobResult(ctx context.Context, id int64, res protocol.JobResult) (protocol.SubmitResponse, error) {
+	var out protocol.SubmitResponse
+	_, err := c.post(ctx, fmt.Sprintf("%s%d/result", protocol.JobResultPath, id), res, &out)
 	return out, err
 }
 

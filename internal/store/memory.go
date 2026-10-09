@@ -24,6 +24,9 @@ type Memory struct {
 	links       []protocol.IdentityLink
 	now         func() time.Time
 
+	jobs   []*memJob // fila de jobs (Aula 8.1)
+	jobSeq int64
+
 	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
 	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
 }

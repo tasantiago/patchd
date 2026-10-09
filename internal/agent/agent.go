@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"log/slog"
 	"math/rand/v2"
@@ -32,6 +33,10 @@ type Agent struct {
 	// RepoCache recebe, a cada check-in, o cache de repositórios anunciado (nil: o servidor
 	// não anuncia, e a configuração gravada antes deve sair). nil: o agente não mexe nisso.
 	RepoCache func(ctx context.Context, adv *protocol.RepoCache)
+	// MachineID e JobKey conferem os jobs (Aula 8.1): o job tem de ser desta máquina e
+	// assinado pela chave de jobs embutida no build. JobKey nil: todo job é recusado.
+	MachineID string
+	JobKey    ed25519.PublicKey
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -116,6 +121,20 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 	}
 
+	// Resultados de jobs que ficaram para trás, depois da busca pendente: o servidor confere
+	// o rescan pela busca recebida, então ela tem de chegar antes do resultado.
+	state, err := loadState(a.DataDir)
+	if err != nil {
+		a.Logger.Warn("estado do agente ilegível; recomeçando a agenda", "error", err)
+	}
+	if len(state.PendingJobResults) > 0 {
+		out := a.flushJobResults(ctx, &state)
+		a.saveStateOrLog(state)
+		if out != outcomeOK {
+			return out
+		}
+	}
+
 	// 2. Check-in com o hash do inventário; o inventário só vai se o servidor não o tiver.
 	inv, err := a.Inventory(ctx)
 	if err != nil {
@@ -155,14 +174,17 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 	}
 
-	// 4. Busca de atualizações, quando devida.
-	state, err := loadState(a.DataDir)
-	if err != nil {
-		a.Logger.Warn("estado do agente ilegível; recomeçando a agenda", "error", err)
+	// Jobs (Aula 8.1): conferidos e aceitos antes da busca, que um rescan antecipa. O
+	// estado é gravado já aqui: um job aceito não roda de novo nem se o agente cair agora.
+	rescans := a.acceptJobs(resp.Jobs, &state)
+	if len(resp.Jobs) > 0 {
+		a.saveStateOrLog(state)
 	}
+
+	// 4. Busca de atualizações, quando devida ou pedida por um job.
 	scanSent := false
-	if !a.now().Before(state.NextScanAt) {
-		a.Logger.Info("busca de atualizações iniciada")
+	if !a.now().Before(state.NextScanAt) || len(rescans) > 0 {
+		a.Logger.Info("busca de atualizações iniciada", "por_job", len(rescans) > 0)
 		rep := a.Scan(ctx)
 		if ctx.Err() != nil {
 			return outcomeTransient
@@ -178,12 +200,27 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		if err := savePendingScan(a.DataDir, rep); err != nil {
 			a.Logger.Error("não foi possível guardar a busca no disco", "error", err)
 		}
+		// O resultado do rescan fica guardado junto com a busca: se o envio falhar agora,
+		// os dois vão no próximo ciclo, a busca primeiro.
+		for _, id := range rescans {
+			a.queueJobResult(&state, id, protocol.JobResultOK, "inventário e busca de atualizações enviados")
+		}
+		a.saveStateOrLog(state)
 		a.Logger.Info("busca de atualizações concluída", "sources", len(rep.Scans),
 			"duration", a.now().Sub(start).Round(time.Second).String(), "next_scan_at", state.NextScanAt)
 		if out := a.sendScan(ctx, rep, "busca"); out != outcomeOK {
 			return out
 		}
 		scanSent = true
+	}
+
+	// Resultados dos jobs deste ciclo (e as recusas), depois da busca.
+	if len(state.PendingJobResults) > 0 {
+		out := a.flushJobResults(ctx, &state)
+		a.saveStateOrLog(state)
+		if out != outcomeOK {
+			return out
+		}
 	}
 
 	a.Logger.Info("check-in concluído", "inventory_sent", inventorySent, "scan_sent", scanSent,
@@ -194,6 +231,12 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		a.Update(ctx, resp.AgentUpdate.Version)
 	}
 	return outcomeOK
+}
+
+func (a *Agent) saveStateOrLog(s State) {
+	if err := saveState(a.DataDir, s); err != nil {
+		a.Logger.Error("não foi possível gravar o estado do agente", "error", err)
+	}
 }
 
 // sendScan envia uma busca e remove a pendência quando o servidor a aceita ou recusa

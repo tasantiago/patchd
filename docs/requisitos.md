@@ -26,7 +26,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-05** Detectar reboot pendente com pelo menos duas fontes por SO, quando existirem.
 - **RF-06** Coletar o estado do atualizador nativo (política de Windows Update/WSUS, `apt-config`, dnf automatic, preferências do `softwareupdate`).
 - **RF-07** Informar o frescor: data dos metadados de pacotes e do último scan bem-sucedido.
-- **RF-08** Executar apenas jobs tipados (instalar atualização, instalar pacote, agendar reboot, re-scan) e verificar o resultado por novo scan, nunca pelo código de saída. **decidido (padrão)**
+- **RF-08** Executar apenas jobs tipados (instalar atualização, instalar pacote, agendar reboot, re-scan) e verificar o resultado por novo scan, nunca pelo código de saída. **decidido (padrão)** Primeiro tipo (Aula 8.1): `rescan`. O tipo é uma lista fechada no agente; parâmetro, campo ou tipo desconhecido = job recusado. O servidor julga pelo efeito: o `rescan` só fica concluído quando chega uma busca recebida depois da entrega.
 - **RF-09** Autodiagnóstico: desvio de relógio, conectividade, permissões, fonte indisponível.
 - **RF-10** Autoatualização do agente, apenas com binário assinado.
 - **RF-11** Registrar o antivírus ativo como fato, sem avaliar assinaturas. **padrão**
@@ -38,7 +38,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-22** Nível alvo por SO: UBR mínimo; versão de pacote corrigida segundo o advisory da distro (nunca a versão do upstream); versão mínima do macOS por major.
 - **RF-23** Estados de compliance: em dia, faltando, reboot pendente, sem dado recente, desconhecido. Regra (Aula 7.4), em ordem: sem contato há mais de 7 dias (RNF-12) = sem dado recente; sem inventário ou sem catálogo para o SO = desconhecido; correção pendente (ou major do macOS sem suporte) = faltando; reinício pendente (pela busca ou por kernel mais novo instalado) = reboot pendente; senão, em dia. Os programas de terceiros ficam fora do estado por enquanto.
 - **RF-24** Identidade sem duplicatas: casamento por evidências, alerta em colisão (nunca fusão silenciosa), formatação = nova instalação ligada ao mesmo ativo. A decisão do administrador diante do alerta é aposentar o registro antigo (`patchd-server machine retire`, Aula 7.5): ele sai da frota e a credencial dele deixa de valer, sem apagar o histórico; `restore` desfaz.
-- **RF-25** Fila de jobs com máquina de estados, anéis (piloto primeiro), janelas e aviso de reboot.
+- **RF-25** Fila de jobs com máquina de estados, anéis (piloto primeiro), janelas e aviso de reboot. Fila e estados (Aula 8.1): pendente → entregue → concluído, falhou ou rejeitado; pendente → cancelado ou expirado (prazo de 10 min a 7 dias, 24 h por padrão). Entrega no check-in, no máximo uma vez, só a agentes que anunciam a capacidade `jobs-v1`; o resultado volta por `POST /api/v1/agent/jobs/{id}/result` e fica guardado no agente enquanto o servidor estiver fora. Anéis, janelas e aviso de reboot: **pendente** (8.2).
 - **RF-26** Painel web e exportações CSV e Google Sheets. Telas (Aula 7.6): a frota com o estado de cada máquina e o filtro por estado, o detalhe (pendências, alertas de identidade) e as aposentadas; aposentar e restaurar são ações do perfil admin, com o usuário registrado. Exportação (Aula 7.8): CSV da frota (com o filtro da tela) e das pendências de cada máquina, no painel e em `compliance -all -csv`; separador ";" e UTF-8 com BOM (Excel em português), campos que começam com = + - @ neutralizados (injeção de CSV). O Google Sheets importa o mesmo arquivo; gravar direto numa planilha pela API do Google fica **pendente**.
 - **RF-27** Distinguir "faltando" de "publicado pela Microsoft, mas não aprovado no WSUS".
 - **RF-28** Ponto de distribuição: o servidor guarda e serve `wsusscn2.cab`, pacotes de terceiros e binários do agente, com manifesto assinado (ed25519 + SHA-256). O agente baixa apenas do servidor.
@@ -60,7 +60,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RNF-02** Binário único por SO e arquitetura, Go 1.27, `CGO_ENABLED=0`.
 - **RNF-03** Pegada leve: check-in a cada 1 hora com jitter; scan completo 1 vez ao dia. **padrão**
 - **RNF-04** Funciona offline: fila local de resultados; scan offline no Windows.
-- **RNF-05** Segurança: TLS; jobs e binários assinados com ed25519; servidor em container não-root; segredos fora da imagem e do repositório.
+- **RNF-05** Segurança: TLS; jobs e binários assinados com ed25519; servidor em container não-root; segredos fora da imagem e do repositório. Jobs (Aula 8.1): assinados na criação pela chave de jobs do servidor (ed25519, separada da chave de release, que nunca vai ao servidor) e guardados assinados, de modo que uma alteração direta no banco é recusada pelo agente; a chave pública vai embutida no agente no build (`PATCHD_JOB_PUBKEY`). O agente confere assinatura, máquina de destino, validade (com 5 min de tolerância de relógio) e número sempre crescente (não aceita repetição).
 - **RNF-06** Independente de idioma (ver P-04).
 - **RNF-07** Escala dimensionada pelo tamanho da frota. **pendente**
 - **RNF-08** Logs em JSON com `slog`, métricas e backup do PostgreSQL.
