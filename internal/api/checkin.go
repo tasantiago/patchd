@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+	"slices"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -32,5 +34,16 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	resp.OfflineCatalog = a.offlineCatalog(r)
 	resp.RepoCache = a.repoCache
+	if slices.Contains(req.Capabilities, protocol.CapabilityJobs) {
+		// Uma falha aqui não derruba o check-in: os jobs ficam pendentes para o próximo.
+		delivered, err := a.store.DeliverJobs(r.Context(), id, a.now())
+		if err != nil {
+			a.logger.Error("entrega de jobs", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
+		}
+		for _, j := range delivered {
+			a.logger.Info("job entregue", "machine_id", id, "job_id", jobs.ID(j), "request_id", RequestID(r.Context()))
+		}
+		resp.Jobs = delivered
+	}
 	writeJSON(w, http.StatusOK, resp)
 }

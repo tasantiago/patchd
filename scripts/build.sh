@@ -44,6 +44,27 @@ else
   echo "aviso: sem PATCHD_UPDATE_PUBKEY; os agentes deste build não se atualizam sozinhos" >&2
 fi
 
+# Chave pública dos jobs (Aula 8.1): o agente só executa jobs assinados pela chave
+# privada correspondente, que fica no servidor (patchd-server job keygen). Sem ela, os
+# agentes deste build recusam todo job; um build de release exige a chave.
+if [ -n "${PATCHD_JOB_PUBKEY:-}" ]; then
+  if ! [[ "$PATCHD_JOB_PUBKEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    echo "ERRO: PATCHD_JOB_PUBKEY não parece uma chave do patchd-server job keygen (base64 de 32 bytes)." >&2
+    exit 1
+  fi
+  if [ "${PATCHD_JOB_PUBKEY}" = "${PATCHD_UPDATE_PUBKEY:-}" ]; then
+    echo "ERRO: PATCHD_JOB_PUBKEY igual à PATCHD_UPDATE_PUBKEY: as duas chaves têm de ser diferentes." >&2
+    exit 1
+  fi
+  LDFLAGS="${LDFLAGS} -X ${MODULO}/internal/jobs.PublicKey=${PATCHD_JOB_PUBKEY}"
+  echo "chave de jobs embutida nos agentes"
+elif [[ "$VERSAO" != *-dev ]]; then
+  echo "ERRO: build de release ($VERSAO) sem PATCHD_JOB_PUBKEY: os agentes recusariam todos os jobs." >&2
+  exit 1
+else
+  echo "aviso: sem PATCHD_JOB_PUBKEY; os agentes deste build recusam todos os jobs" >&2
+fi
+
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 
 rm -rf dist

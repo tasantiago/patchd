@@ -138,6 +138,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	if opts.AutoUpdate {
 		ag.Update = newUpdater(logger, client, opts, info.Version)
 	}
+	ag.MachineID = cred.MachineID
+	ag.JobKey = jobKey(logger)
 
 	logger.Info("agente iniciado",
 		"commit", info.Commit,

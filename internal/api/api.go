@@ -43,6 +43,8 @@ type Store interface {
 	RetiredMachines(ctx context.Context) ([]protocol.RetiredMachine, error)
 	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
 	RestoreMachine(ctx context.Context, id string) (bool, error)
+	// Fila de jobs (Aula 8.1).
+	JobStore
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -90,6 +92,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
 	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
 	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
+	mux.Handle("POST "+protocol.JobResultPath+"{id}/result", a.machineAuth(a.jobResult))
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/entrar", a.loginForm)
 	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))

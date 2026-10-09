@@ -40,7 +40,13 @@ type CheckinRequest struct {
 	AgentVersion  string    `json:"agent_version"`
 	InventoryHash string    `json:"inventory_hash"` // hash do inventário que o agente acabou de coletar
 	SentAt        time.Time `json:"sent_at"`        // relógio do agente, para o desvio
+	// Capabilities: o que este agente sabe fazer além do básico (Aula 8.1). O servidor só
+	// entrega jobs a quem anuncia CapabilityJobs: um agente antigo os ignoraria em silêncio.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
+
+// CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
+const CapabilityJobs = "jobs-v1"
 
 // CheckinResponse diz ao agente se ele precisa enviar o inventário e, quando há uma
 // versão do agente publicada diferente da dele, qual é (Aula 5.4). Quando o servidor
@@ -53,6 +59,8 @@ type CheckinResponse struct {
 	// RepoCache: o cache de repositórios que o agente Linux deve configurar (Aula 6.6);
 	// ausente, o agente remove a configuração que tiver gravado.
 	RepoCache *RepoCache `json:"repo_cache,omitempty"`
+	// Jobs: os jobs pendentes desta máquina, assinados (Aula 8.1). Agentes antigos ignoram.
+	Jobs []SignedJob `json:"jobs,omitempty"`
 }
 
 // RepoCache diz onde as máquinas Linux alcançam o cache de repositórios do servidor.
@@ -133,3 +141,27 @@ type RetiredMachine struct {
 	Reason    string    `json:"reason"`
 	RetiredBy string    `json:"retired_by,omitempty"` // usuário do painel ou "linha de comando"
 }
+
+// SignedJob é um job assinado pelo servidor (Aula 8.1). Payload é o JSON do job, como
+// texto: os bytes exatos que foram assinados.
+type SignedJob struct {
+	Payload   string `json:"payload"`
+	Signature string `json:"signature"` // Ed25519, base64
+}
+
+// Resultados que o agente informa para um job.
+const (
+	JobResultOK       = "ok"        // executou; o servidor ainda confere pelo efeito (RF-08)
+	JobResultFailed   = "falhou"    // tentou e não conseguiu
+	JobResultRejected = "rejeitado" // não executou: assinatura, máquina, prazo, tipo
+)
+
+// JobResult é o que o agente envia ao terminar (ou recusar) um job.
+type JobResult struct {
+	Status     string    `json:"status"`
+	Detail     string    `json:"detail,omitempty"`
+	FinishedAt time.Time `json:"finished_at"`
+}
+
+// JobResultPath é o caminho do resultado: JobResultPath + ID do job + "/result".
+const JobResultPath = "/api/v1/agent/jobs/"
