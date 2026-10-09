@@ -46,6 +46,10 @@ type jobStore interface {
 	ExpireJobs(ctx context.Context, now time.Time) (int64, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
+	// Anéis e janelas (Aula 8.3).
+	MachineRing(ctx context.Context, id string) (int, bool, error)
+	RingMachines(ctx context.Context, ring int) ([]string, error)
+	Windows(ctx context.Context) ([]store.RingWindow, error)
 }
 
 func runJob(args []string, look config.Lookup, stdout, stderr io.Writer) int {
@@ -168,35 +172,98 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 	switch args[0] {
 	case "create":
 		prefix := fs.String("machine", "", "ID (ou começo do ID) da máquina")
+		ringFlag := fs.Int("ring", -1, "em vez de -machine: um job para cada máquina do anel")
 		typ := fs.String("type", "", "tipo do job: rescan")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo para o agente receber e executar (máximo 168h)")
+		inWindow := fs.Bool("window", false, "só na próxima janela do anel da máquina (o prazo é o fim da janela)")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
-		if !jobs.KnownType(*typ) {
+		ttlSet := false
+		fs.Visit(func(f *flag.Flag) { ttlSet = ttlSet || f.Name == "ttl" })
+		switch {
+		case !jobs.KnownType(*typ):
 			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan")
 			return exitConfig
-		}
-		if *ttl < jobs.MinTTL || *ttl > jobs.MaxTTL {
+		case *ttl < jobs.MinTTL || *ttl > jobs.MaxTTL:
 			fmt.Fprintln(stderr, "patchd-server: -ttl deve ficar entre 10m e 168h")
 			return exitConfig
+		case *inWindow && ttlSet:
+			fmt.Fprintln(stderr, "patchd-server: -ttl e -window não combinam: na janela, o prazo é o fim dela")
+			return exitConfig
+		case (*prefix == "") == (*ringFlag < 0):
+			fmt.Fprintln(stderr, "patchd-server: informe -machine ou -ring (um dos dois)")
+			return exitConfig
+		case *ringFlag > store.MaxRing:
+			fmt.Fprintf(stderr, "patchd-server: -ring vai de 0 a %d\n", store.MaxRing)
+			return exitConfig
 		}
-		id, code := resolveActive(ctx, st, *prefix, stderr)
-		if code != exitOK {
-			return code
+		var targets []string
+		if *prefix != "" {
+			id, code := resolveActive(ctx, st, *prefix, stderr)
+			if code != exitOK {
+				return code
+			}
+			targets = []string{id}
+		} else {
+			ids, err := st.RingMachines(ctx, *ringFlag)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				return exitRuntime
+			}
+			if len(ids) == 0 {
+				fmt.Fprintf(stderr, "patchd-server: o anel %d não tem máquinas (ring set)\n", *ringFlag)
+				return exitRuntime
+			}
+			targets = ids
 		}
-		rec, err := jobs.Issue(ctx, st, key, jobs.Request{MachineID: id, Type: *typ, TTL: *ttl, By: "linha de comando"}, now)
-		if errors.Is(err, jobs.ErrMachineUnavailable) {
-			fmt.Fprintf(stderr, "patchd-server: a máquina %s foi aposentada agora há pouco; nada foi criado\n", short(id))
-			return exitRuntime
+		var windows []store.RingWindow
+		if *inWindow {
+			var err error
+			if windows, err = st.Windows(ctx); err != nil {
+				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+				return exitRuntime
+			}
 		}
-		if err != nil {
-			fmt.Fprintf(stderr, "patchd-server: criar job: %v\n", err)
-			return exitRuntime
+		for _, id := range targets {
+			req := jobs.Request{MachineID: id, Type: *typ, TTL: *ttl, By: "linha de comando"}
+			where := ""
+			if *inWindow {
+				ring, ok, err := st.MachineRing(ctx, id)
+				if err != nil || !ok {
+					fmt.Fprintf(stderr, "patchd-server: anel da máquina %s: %v\n", short(id), err)
+					return exitRuntime
+				}
+				rw, ok := store.WindowFor(windows, ring)
+				if !ok {
+					fmt.Fprintf(stderr, "patchd-server: o anel %d (máquina %s) não tem janela; defina com ring window ou crie sem -window\n", ring, short(id))
+					return exitRuntime
+				}
+				start, end := rw.Window.Next(now, jobs.MinTTL)
+				req.NotBefore, req.TTL = start, end.Sub(later(now, start))
+				loc := rw.Window.Location
+				where = fmt.Sprintf(" na janela do anel %d, de %s a %s (%s)", ring, start.In(loc).Format("02/01 15:04"), end.In(loc).Format("02/01 15:04"), loc)
+			}
+			rec, err := jobs.Issue(ctx, st, key, req, now)
+			if errors.Is(err, jobs.ErrMachineUnavailable) {
+				fmt.Fprintf(stderr, "patchd-server: a máquina %s foi aposentada agora há pouco; nada foi criado para ela\n", short(id))
+				return exitRuntime
+			}
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: criar job: %v\n", err)
+				return exitRuntime
+			}
+			if where == "" {
+				where = fmt.Sprintf("; vale até %s UTC", rec.NotAfter.Format("2006-01-02 15:04"))
+			}
+			fmt.Fprintf(stderr, "job %d (%s) criado para a máquina %s%s\n", rec.ID, rec.Type, short(id), where)
+			fmt.Fprintln(stdout, rec.ID)
 		}
-		fmt.Fprintf(stderr, "job %d (%s) criado para a máquina %s; vale até %s UTC. O agente o recebe no próximo check-in.\n",
-			rec.ID, rec.Type, short(id), rec.NotAfter.Format("2006-01-02 15:04"))
-		fmt.Fprintln(stdout, rec.ID)
+		if *inWindow {
+			fmt.Fprintln(stderr, "O servidor só entrega a partir do início da janela; o agente confere de novo pelo payload assinado.")
+		} else {
+			fmt.Fprintln(stderr, "O agente recebe no próximo check-in.")
+		}
 		return exitOK
 	case "list":
 		prefix := fs.String("machine", "", "só os jobs desta máquina")
@@ -245,8 +312,21 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 	}
 }
 
+func later(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+// machineResolver acha máquinas pelo começo do ID.
+type machineResolver interface {
+	ResolveMachine(ctx context.Context, prefix string) (string, bool, error)
+	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
+}
+
 // resolveAny acha a máquina pelo prefixo, aposentada ou não.
-func resolveAny(ctx context.Context, st jobStore, prefix string, stderr io.Writer) (string, int) {
+func resolveAny(ctx context.Context, st machineResolver, prefix string, stderr io.Writer) (string, int) {
 	if prefix == "" {
 		fmt.Fprintln(stderr, "patchd-server: informe -machine")
 		return "", exitConfig
@@ -267,7 +347,7 @@ func resolveAny(ctx context.Context, st jobStore, prefix string, stderr io.Write
 }
 
 // resolveActive exige uma máquina da frota: job para uma aposentada nunca seria entregue.
-func resolveActive(ctx context.Context, st jobStore, prefix string, stderr io.Writer) (string, int) {
+func resolveActive(ctx context.Context, st machineResolver, prefix string, stderr io.Writer) (string, int) {
 	id, code := resolveAny(ctx, st, prefix, stderr)
 	if code != exitOK {
 		return "", code
@@ -286,9 +366,31 @@ func resolveActive(ctx context.Context, st jobStore, prefix string, stderr io.Wr
 	return "", exitRuntime
 }
 
+// untilText escreve quanto falta: "40 min", "2 h 59 min", "3 dias".
+func untilText(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h %02d min", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%d dias", int(d.Hours()/24))
+}
+
+// windowStart diz quando a janela do job abre (ou abriu): "em 40 min", "há 5 min", "-".
+func windowStart(t *time.Time, now time.Time) string {
+	switch {
+	case t == nil:
+		return "-"
+	case t.After(now):
+		return "abre em " + untilText(t.Sub(now))
+	}
+	return "abriu " + since(now.Sub(*t))
+}
+
 func printJobs(list []store.JobRow, now time.Time, out io.Writer) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tMÁQUINA\tTIPO\tESTADO\tCRIADO\tPOR\tENTREGUE\tENCERRADO\tDETALHE")
+	fmt.Fprintln(tw, "ID\tMÁQUINA\tTIPO\tESTADO\tJANELA\tCRIADO\tPOR\tENTREGUE\tENCERRADO\tDETALHE")
 	at := func(t *time.Time) string {
 		if t == nil {
 			return "-"
@@ -297,7 +399,7 @@ func printJobs(list []store.JobRow, now time.Time, out io.Writer) {
 	}
 	for _, j := range list {
 		created := j.CreatedAt
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", j.ID, short(j.MachineID), j.Type, j.State, at(&created),
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", j.ID, short(j.MachineID), j.Type, j.State, windowStart(j.NotBefore, now), at(&created),
 			j.CreatedBy, at(j.DeliveredAt), at(j.FinishedAt), orDash(strings.TrimSpace(j.Detail)))
 	}
 	_ = tw.Flush()

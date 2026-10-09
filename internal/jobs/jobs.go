@@ -74,12 +74,17 @@ type Job struct {
 	Type      string          `json:"type"`
 	Params    json.RawMessage `json:"params,omitempty"`
 	IssuedAt  time.Time       `json:"issued_at"`
-	NotAfter  time.Time       `json:"not_after"`
+	// NotBefore (Aula 8.3): o início da janela de manutenção. Zero = já pode rodar, e o
+	// campo nem vai ao payload (omitzero): agentes da 8.1 e da 8.2 continuam aceitando os
+	// jobs sem janela, e recusam os com janela (campo desconhecido), que é o seguro.
+	NotBefore time.Time `json:"not_before,omitzero"`
+	NotAfter  time.Time `json:"not_after"`
 }
 
 // Sign serializa e assina o job, e devolve o envelope que vai para o banco e para o agente.
 func Sign(priv ed25519.PrivateKey, j Job) (protocol.SignedJob, error) {
-	if j.ID <= 0 || j.MachineID == "" || !KnownType(j.Type) || !j.NotAfter.After(j.IssuedAt) || j.NotAfter.Sub(j.IssuedAt) > MaxTTL {
+	if j.ID <= 0 || j.MachineID == "" || !KnownType(j.Type) || !j.NotAfter.After(j.IssuedAt) || !j.NotAfter.After(j.NotBefore) ||
+		j.NotAfter.Sub(later(j.IssuedAt, j.NotBefore)) > MaxTTL || j.NotBefore.Sub(j.IssuedAt) > MaxTTL {
 		return protocol.SignedJob{}, fmt.Errorf("job inválido: %+v", j)
 	}
 	payload, err := json.Marshal(j)
@@ -125,10 +130,19 @@ func Verify(pub ed25519.PublicKey, env protocol.SignedJob, machineID string, now
 		return j, fmt.Errorf("job %d vencido em %s", j.ID, j.NotAfter.UTC().Format(time.RFC3339))
 	case now.Before(j.IssuedAt.Add(-ClockSkew)):
 		return j, fmt.Errorf("job %d emitido no futuro (relógio desta máquina atrasado?)", j.ID)
+	case !j.NotBefore.IsZero() && now.Before(j.NotBefore.Add(-ClockSkew)):
+		return j, fmt.Errorf("job %d fora da janela: só vale a partir de %s", j.ID, j.NotBefore.UTC().Format(time.RFC3339))
 	case j.ID <= lastID:
 		return j, fmt.Errorf("job %d já visto (o último aceito foi %d)", j.ID, lastID)
 	}
 	return j, nil
+}
+
+func later(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // ID lê só o ID do envelope, sem conferir nada: serve para o agente dizer ao servidor qual

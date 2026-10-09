@@ -210,7 +210,7 @@ func (p *Postgres) machines(ctx context.Context, retired bool) ([]RetiredMachine
 	rows, err := p.pool.Query(ctx, `
 		SELECT m.id, m.last_seen_at, m.agent_version,
 		       i.hostname, i.os_name, i.os_version, i.hash, i.received_at,
-		       s.received_at, s.reboot_pending, m.retired_at, coalesce(m.retired_reason, ''), coalesce(m.retired_by, '')
+		       s.received_at, s.reboot_pending, m.retired_at, coalesce(m.retired_reason, ''), coalesce(m.retired_by, ''), m.ring
 		FROM machines m
 		LEFT JOIN inventory_reports i ON i.id = m.current_inventory_id
 		LEFT JOIN scan_reports s      ON s.id = m.current_scan_id
@@ -228,7 +228,7 @@ func (p *Postgres) machines(ctx context.Context, retired bool) ([]RetiredMachine
 		var hostname, osName, osVersion, hash *string
 		var invAt, scanAt, retiredAt *time.Time
 		if err := rows.Scan(&s.ID, &s.LastSeenAt, &s.AgentVersion, &hostname, &osName, &osVersion, &hash, &invAt, &scanAt,
-			&s.RebootPending, &retiredAt, &r.Reason, &r.RetiredBy); err != nil {
+			&s.RebootPending, &retiredAt, &r.Reason, &r.RetiredBy, &s.Ring); err != nil {
 			return nil, err
 		}
 		s.LastSeenAt = s.LastSeenAt.UTC()

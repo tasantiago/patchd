@@ -26,6 +26,7 @@ type Record struct {
 	Type      string
 	Signed    protocol.SignedJob
 	CreatedBy string
+	NotBefore time.Time // zero: sem janela (Aula 8.3)
 	NotAfter  time.Time
 }
 
@@ -39,11 +40,13 @@ type Queue interface {
 }
 
 // Request é o pedido de um job: quem pediu, para qual máquina, o quê e por quanto tempo.
+// Com NotBefore (a janela de manutenção, Aula 8.3), o prazo conta a partir dele.
 type Request struct {
 	MachineID string
 	Type      string
 	TTL       time.Duration
-	By        string // usuário do painel, ou "linha de comando"
+	By        string    // usuário do painel, ou "linha de comando"
+	NotBefore time.Time // zero: vale já
 }
 
 // Issue cria o job: reserva o ID, assina e grava. A linha de comando e o painel passam
@@ -58,6 +61,9 @@ func Issue(ctx context.Context, q Queue, key ed25519.PrivateKey, req Request, no
 	if req.TTL < MinTTL || req.TTL > MaxTTL {
 		return Record{}, fmt.Errorf("prazo do job fora de %v a %v", MinTTL, MaxTTL)
 	}
+	if req.NotBefore.Sub(now) > MaxTTL {
+		return Record{}, fmt.Errorf("início do job a mais de %v daqui", MaxTTL)
+	}
 	if req.MachineID == "" || req.By == "" {
 		return Record{}, errors.New("job sem máquina ou sem autor")
 	}
@@ -66,12 +72,15 @@ func Issue(ctx context.Context, q Queue, key ed25519.PrivateKey, req Request, no
 		return Record{}, err
 	}
 	now = now.UTC()
-	j := Job{ID: id, MachineID: req.MachineID, Type: req.Type, IssuedAt: now, NotAfter: now.Add(req.TTL)}
+	j := Job{ID: id, MachineID: req.MachineID, Type: req.Type, IssuedAt: now, NotAfter: later(now, req.NotBefore).Add(req.TTL)}
+	if !req.NotBefore.IsZero() {
+		j.NotBefore = req.NotBefore.UTC()
+	}
 	env, err := Sign(key, j)
 	if err != nil {
 		return Record{}, err
 	}
-	rec := Record{ID: id, MachineID: req.MachineID, Type: req.Type, Signed: env, CreatedBy: req.By, NotAfter: j.NotAfter}
+	rec := Record{ID: id, MachineID: req.MachineID, Type: req.Type, Signed: env, CreatedBy: req.By, NotBefore: j.NotBefore, NotAfter: j.NotAfter}
 	if err := q.CreateJob(ctx, rec); err != nil {
 		return Record{}, err
 	}

@@ -73,6 +73,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "job" {
 		return runJob(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "ring" {
+		return runRing(args[1:], look, stdout, stderr)
+	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {

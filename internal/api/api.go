@@ -20,6 +20,7 @@ import (
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
@@ -46,6 +47,9 @@ type Store interface {
 	RestoreMachine(ctx context.Context, id string) (bool, error)
 	// Fila de jobs (Aula 8.1).
 	JobStore
+	// Anel e janela da máquina, para o detalhe (Aula 8.3).
+	MachineRing(ctx context.Context, id string) (int, bool, error)
+	Windows(ctx context.Context) ([]store.RingWindow, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.

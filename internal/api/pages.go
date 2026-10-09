@@ -160,7 +160,9 @@ type machineView struct {
 	More                                 int
 	MinReason, MaxReason                 int
 	Jobs                                 jobTable
-	JobsOn                               bool // o servidor tem a chave: o admin pode pedir a busca
+	JobsOn                               bool   // o servidor tem a chave: o admin pode pedir a busca
+	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
+	Window, NextWindow                   string
 }
 
 func relationLabel(r string) string {
@@ -224,6 +226,10 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		jobFlash(q, &v.pageBase)
 	}
 	v.JobsOn = a.jobKey != nil
+	if err := a.ringView(r, id, &v); err != nil {
+		a.internalError(w, r, "ler anel e janela", err)
+		return
+	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
 	if v.Jobs.Rows, err = a.machineJobs(r, id, v.Admin); err != nil {
 		a.internalError(w, r, "listar jobs da máquina", err)
@@ -445,6 +451,8 @@ td form{margin:0}
 <dt>Último contato</dt><dd>{{.Seen}}</dd>
 <dt>Inventário coletado</dt><dd>{{.Collected}}</dd>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
+{{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}</dd>
+<dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}
 {{if .Pending}}<dt>Pendentes</dt><dd>{{.Pending}}</dd>{{end}}
 {{if .D.Target}}<dt>Resolve tudo</dt><dd>{{.D.Target}}</dd>{{end}}
 {{range .D.CatalogWarnings}}<dt>Atenção</dt><dd>{{.}}</dd>{{end}}
@@ -474,10 +482,10 @@ td form{margin:0}
 {{template "fim"}}{{end}}
 
 {{define "jobs-tabela"}}<table>
-<thead><tr><th>Job</th>{{if not .MachineID}}<th>Máquina</th><th>Nome</th>{{end}}<th>Tipo</th><th>Estado</th><th>Criado</th><th>Por</th><th>Entregue</th><th>Encerrado</th><th>Detalhe</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<thead><tr><th>Job</th>{{if not .MachineID}}<th>Máquina</th><th>Nome</th>{{end}}<th>Tipo</th><th>Estado</th><th>Janela</th><th>Criado</th><th>Por</th><th>Entregue</th><th>Encerrado</th><th>Detalhe</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td>
 {{if not $.MachineID}}<td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{end}}
-<td>{{.Type}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Created}}</td><td>{{.By}}</td>
+<td>{{.Type}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Window}}</td><td>{{.Created}}</td><td>{{.By}}</td>
 <td>{{.Delivered}}</td><td>{{.Finished}}</td><td>{{.Detail}}</td>
 {{if $.Admin}}<td>{{if .CanCancel}}<form method="post" action="/painel/jobs/{{.ID}}/cancelar">{{if $.MachineID}}<input type="hidden" name="maquina" value="{{$.MachineID}}">{{end}}<button type="submit">Cancelar</button></form>{{end}}</td>{{end}}
 </tr>{{end}}</tbody></table>{{end}}

@@ -32,6 +32,7 @@ type MachineSummary struct {
 	InventoryChangedAt *time.Time `json:"inventory_changed_at,omitempty"` // quando o inventário mudou pela última vez
 	ScanReceivedAt     *time.Time `json:"scan_received_at,omitempty"`     // última busca de atualizações recebida
 	RebootPending      *bool      `json:"reboot_pending,omitempty"`       // da última busca; null = não sabe
+	Ring               int        `json:"ring"`                           // anel (Aula 8.3): 0 = piloto, 1 = padrão
 }
 
 // CheckinRequest é o contato periódico do agente: barato, sem o inventário. O servidor

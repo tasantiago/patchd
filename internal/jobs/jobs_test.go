@@ -121,3 +121,35 @@ func TestChaves(t *testing.T) {
 		t.Error("estados")
 	}
 }
+
+func TestJanelaNoJob(t *testing.T) {
+	pub, priv, _ := GenerateKey()
+	agora := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
+	// Sem janela, o campo nem aparece: os agentes da 8.1 e da 8.2 seguem aceitando.
+	sem, _ := Sign(priv, Job{ID: 1, MachineID: "m", Type: TypeRescan, IssuedAt: agora, NotAfter: agora.Add(time.Hour)})
+	if strings.Contains(sem.Payload, "not_before") {
+		t.Errorf("payload sem janela: %s", sem.Payload)
+	}
+	inicio := agora.Add(2 * time.Hour)
+	com, err := Sign(priv, Job{ID: 2, MachineID: "m", Type: TypeRescan, IssuedAt: agora, NotBefore: inicio, NotAfter: inicio.Add(2 * time.Hour)})
+	if err != nil || !strings.Contains(com.Payload, `"not_before":"2026-10-09T16:00:00Z"`) {
+		t.Fatalf("payload com janela: %s %v", com.Payload, err)
+	}
+	if _, err := Verify(pub, com, "m", agora.Add(time.Hour), 0); err == nil || !strings.Contains(err.Error(), "fora da janela") {
+		t.Errorf("antes da janela: %v", err)
+	}
+	if _, err := Verify(pub, com, "m", inicio.Add(-4*time.Minute), 0); err != nil {
+		t.Errorf("dentro da tolerância de relógio: %v", err)
+	}
+	if _, err := Verify(pub, com, "m", inicio.Add(3*time.Hour), 0); err == nil || !strings.Contains(err.Error(), "vencido") {
+		t.Errorf("depois da janela: %v", err)
+	}
+	// Uma janela de 2 h que começa daqui a 6 dias e 23 h é válida (o prazo conta do início).
+	longe := agora.Add(6*24*time.Hour + 23*time.Hour)
+	if _, err := Sign(priv, Job{ID: 3, MachineID: "m", Type: TypeRescan, IssuedAt: agora, NotBefore: longe, NotAfter: longe.Add(2 * time.Hour)}); err != nil {
+		t.Errorf("janela distante: %v", err)
+	}
+	if _, err := Sign(priv, Job{ID: 4, MachineID: "m", Type: TypeRescan, IssuedAt: agora, NotBefore: inicio, NotAfter: inicio}); err == nil {
+		t.Error("janela vazia")
+	}
+}

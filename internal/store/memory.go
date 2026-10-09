@@ -27,6 +27,8 @@ type Memory struct {
 	jobs   []*memJob // fila de jobs (Aula 8.1)
 	jobSeq int64
 
+	windows map[int]RingWindow // janelas de manutenção por anel (Aula 8.3)
+
 	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
 	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
 }
@@ -41,6 +43,7 @@ type memMachine struct {
 	retiredAt          time.Time // zero: na frota
 	retiredReason      string
 	retiredBy          string
+	ring               int // Aula 8.3; 1 na criação, como o DEFAULT da coluna
 }
 
 type memKeys struct {
@@ -66,7 +69,7 @@ func NewMemory() *Memory {
 func (m *Memory) machine(id string) *memMachine {
 	mm := m.machines[id]
 	if mm == nil {
-		mm = &memMachine{}
+		mm = &memMachine{ring: 1}
 		m.machines[id] = mm
 	}
 	return mm
@@ -143,7 +146,7 @@ func (m *Memory) summaries(retired bool) []RetiredMachine {
 		if mm.retiredAt.IsZero() == retired {
 			continue
 		}
-		s := protocol.MachineSummary{ID: id, LastSeenAt: mm.lastSeenAt, AgentVersion: mm.agentVersion}
+		s := protocol.MachineSummary{ID: id, LastSeenAt: mm.lastSeenAt, AgentVersion: mm.agentVersion, Ring: mm.ring}
 		if mm.inventory != nil {
 			s.Hostname = mm.inventory.OS.Hostname
 			s.OSName = mm.inventory.OS.Name
