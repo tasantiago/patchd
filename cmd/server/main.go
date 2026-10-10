@@ -186,7 +186,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	case jobKey == nil:
 		logger.Info("campanhas paradas (sem PATCHD_JOB_SIGNING_KEY_FILE): nenhum anel é liberado")
 	default:
-		go campaignLoop(ctx, logger, newCampaignEngine(pg, jobKey, logger))
+		go campaignLoop(ctx, logger, pg, newCampaignEngine(pg, jobKey, logger))
 		logger.Info("campanhas ligadas: o servidor libera os anéis a cada minuto")
 	}
 
@@ -235,6 +235,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	handler := newHandler(api.New(st, logger, apiOpts...), repo)
 	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {
+		// Para os laços (catálogo, campanhas) antes de o banco fechar: sem isso, um laço
+		// no meio do passo registra "closed pool" (Aula 8.5b, porta já ocupada).
+		stop()
 		logger.Error("servidor parou com erro", "error", err)
 		return exitRuntime
 	}
