@@ -76,14 +76,29 @@ func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, logger *slog.
 // campaignEvery: de quanto em quanto tempo o servidor avança as campanhas.
 const campaignEvery = time.Minute
 
+// campaignLocker roda o passo das campanhas sob a trava do banco (Aula 8.5b): dois
+// servidores no mesmo banco (um esquecido no outro terminal, ou as duas instâncias da
+// RF-37) não liberam o mesmo anel duas vezes.
+type campaignLocker interface {
+	WithAdvisoryLock(ctx context.Context, key int64, fn func(context.Context) error) (bool, error)
+}
+
 // campaignLoop avança as campanhas em andamento a cada minuto, até o encerramento.
-func campaignLoop(ctx context.Context, logger *slog.Logger, e *campaign.Engine) {
+func campaignLoop(ctx context.Context, logger *slog.Logger, lock campaignLocker, e *campaign.Engine) {
 	t := time.NewTicker(campaignEvery)
 	defer t.Stop()
+	busy := false // avisa uma vez por troca, não a cada minuto
 	for {
-		if err := e.Step(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
+		ok, err := lock.WithAdvisoryLock(ctx, store.LockCampaigns, func(ctx context.Context) error {
+			return e.Step(ctx, time.Now().UTC())
+		})
+		switch {
+		case err != nil && ctx.Err() == nil:
 			logger.Error("campanhas", "error", err)
+		case !ok && err == nil && !busy:
+			logger.Warn("campanhas: outro servidor no mesmo banco está com a trava; este não libera anéis enquanto isso")
 		}
+		busy = !ok && err == nil
 		select {
 		case <-ctx.Done():
 			return
