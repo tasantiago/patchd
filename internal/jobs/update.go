@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
+
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // TypeUpdate (Aula 8.4) atualiza pacotes escolhidos no painel, no Linux. Os parâmetros são
@@ -79,4 +82,25 @@ func (p UpdateParams) Names() []string {
 		out[i] = pk.Name
 	}
 	return out
+}
+
+// ParamsFromPending monta o update a partir das pendências avaliadas pelo servidor: para
+// cada fonte escolhida que ainda está pendente, os binários instalados dela, com a versão
+// que corrige a fonte como mínima. Fontes que não estão pendentes não entram (lista vazia
+// = nada a fazer nesta máquina). Usado pelo painel (Aula 8.4) e pelas campanhas (8.5).
+func ParamsFromPending(items []protocol.PendingItem, sources []string) UpdateParams {
+	var p UpdateParams
+	seen := map[string]bool{}
+	for _, it := range items {
+		if !slices.Contains(sources, it.ID) || it.FixedIn == "" {
+			continue
+		}
+		for _, bin := range it.Packages {
+			if !seen[bin] {
+				seen[bin] = true
+				p.Packages = append(p.Packages, Package{Name: bin, MinVersion: it.FixedIn})
+			}
+		}
+	}
+	return p
 }

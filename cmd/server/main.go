@@ -76,6 +76,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "ring" {
 		return runRing(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "campaign" {
+		return runCampaign(args[1:], look, stdout, stderr)
+	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
@@ -175,6 +178,16 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			logger.Error("o wsusscn2.cab fica fora do agendamento", "error", srcs.ContentDirErr)
 		}
 		go catalogLoop(ctx, logger, pg, srcs, cfg.CatalogInterval, firstCatalogRun())
+	}
+
+	// Campanhas (Aula 8.5): o servidor libera os anéis sozinho; precisa da chave de jobs.
+	switch pg, ok := st.(*store.Postgres); {
+	case !ok:
+	case jobKey == nil:
+		logger.Info("campanhas paradas (sem PATCHD_JOB_SIGNING_KEY_FILE): nenhum anel é liberado")
+	default:
+		go campaignLoop(ctx, logger, newCampaignEngine(pg, jobKey, logger))
+		logger.Info("campanhas ligadas: o servidor libera os anéis a cada minuto")
 	}
 
 	// Estado de compliance (RF-23, Aula 7.4): avaliado contra o catálogo do mesmo banco.

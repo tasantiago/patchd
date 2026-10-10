@@ -409,11 +409,11 @@ form.acao{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:cen
 button{padding:.35rem .9rem;cursor:pointer}
 .job{display:inline-block;padding:.05rem .45rem;border-radius:.3rem;font-size:.8rem;font-weight:600;border:1px solid var(--line);white-space:nowrap}
 .job.concluido{color:#165c2b;background:#e8f5ec}.job.falhou,.job.rejeitado{color:#8a1c12;background:#fdecea}
-.job.pendente,.job.entregue{color:#3d4a66;background:#eef2fb}.job.cancelado,.job.expirado{color:#4a4f57;background:#eef0f3}
+.job.pendente,.job.entregue,.job.em_andamento{color:#3d4a66;background:#eef2fb}.job.pausada{color:#7a4a00;background:#fff4e0}.job.concluida{color:#165c2b;background:#e8f5ec}.job.cancelada{color:#4a4f57;background:#eef0f3}.job.cancelado,.job.expirado{color:#4a4f57;background:#eef0f3}
 td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}
 </style></head><body>
 <header><strong>patchd</strong>
-<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
+<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo"{{end}}>Campanhas</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
 <span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}
 <form method="post" action="/painel/sair"><button type="submit">Sair</button></form></span>
 </header><main>
@@ -507,6 +507,16 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 <h1>Jobs</h1>
 <p class="muted">Os {{.N}} mais recentes da frota. Para pedir uma busca, abra a máquina na Frota.</p>
 {{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "campanhas"}}{{template "topo" .}}
+<h1>Campanhas</h1>
+<p class="muted">O mesmo pedido passando pelos anéis em ordem: o anel seguinte é liberado pelo servidor quando o atual termina sem falha e o tempo de observação passa. Criar, pausar, retomar e cancelar: <code>patchd-server campaign</code>.</p>
+{{if .Rows}}<table>
+<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Fontes</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
+<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table>
+{{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}

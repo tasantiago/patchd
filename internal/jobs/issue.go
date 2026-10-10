@@ -29,6 +29,9 @@ type Record struct {
 	CreatedBy string
 	NotBefore time.Time // zero: sem janela (Aula 8.3)
 	NotAfter  time.Time
+	// Campanha (Aula 8.5): CampaignID 0 = job avulso; CampaignIdx = posição do anel nela.
+	CampaignID  int64
+	CampaignIdx int
 }
 
 // Queue é onde o job assinado é gravado (o PostgreSQL, ou a memória nos testes).
@@ -49,6 +52,9 @@ type Request struct {
 	By        string          // usuário do painel, ou "linha de comando"
 	NotBefore time.Time       // zero: vale já
 	Params    json.RawMessage // update: UpdateParams (Aula 8.4); rescan: nenhum
+	// CampaignID e CampaignIdx ligam o job à campanha (Aula 8.5); fora do payload assinado.
+	CampaignID  int64
+	CampaignIdx int
 }
 
 // Issue cria o job: reserva o ID, assina e grava. A linha de comando e o painel passam
@@ -85,7 +91,8 @@ func Issue(ctx context.Context, q Queue, key ed25519.PrivateKey, req Request, no
 	if err != nil {
 		return Record{}, err
 	}
-	rec := Record{ID: id, MachineID: req.MachineID, Type: req.Type, Signed: env, CreatedBy: req.By, NotBefore: j.NotBefore, NotAfter: j.NotAfter}
+	rec := Record{ID: id, MachineID: req.MachineID, Type: req.Type, Signed: env, CreatedBy: req.By, NotBefore: j.NotBefore, NotAfter: j.NotAfter,
+		CampaignID: req.CampaignID, CampaignIdx: req.CampaignIdx}
 	if err := q.CreateJob(ctx, rec); err != nil {
 		return Record{}, err
 	}

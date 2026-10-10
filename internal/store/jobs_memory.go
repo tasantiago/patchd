@@ -13,7 +13,9 @@ import (
 
 type memJob struct {
 	JobRow
-	signed protocol.SignedJob
+	signed      protocol.SignedJob
+	campaignID  int64
+	campaignIdx int
 }
 
 // NextJobID reserva o próximo ID.
@@ -32,7 +34,8 @@ func (m *Memory) CreateJob(ctx context.Context, j NewJob) error {
 		return jobs.ErrMachineUnavailable
 	}
 	m.jobs = append(m.jobs, &memJob{JobRow: JobRow{ID: j.ID, MachineID: j.MachineID, Type: j.Type, State: "pendente",
-		CreatedBy: j.CreatedBy, CreatedAt: m.now(), NotBefore: nullTime(j.NotBefore), NotAfter: j.NotAfter}, signed: j.Signed})
+		CreatedBy: j.CreatedBy, CreatedAt: m.now(), NotBefore: nullTime(j.NotBefore), NotAfter: j.NotAfter}, signed: j.Signed,
+		campaignID: j.CampaignID, campaignIdx: j.CampaignIdx})
 	return nil
 }
 

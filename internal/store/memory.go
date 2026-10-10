@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
@@ -28,6 +29,9 @@ type Memory struct {
 	jobSeq int64
 
 	windows map[int]RingWindow // janelas de manutenção por anel (Aula 8.3)
+
+	campaigns   []campaign.Campaign // campanhas (Aula 8.5)
+	campaignSeq int64
 
 	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
 	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
