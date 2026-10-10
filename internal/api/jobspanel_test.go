@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/window"
 )
@@ -230,5 +231,21 @@ func TestAtualizarPeloPainel(t *testing.T) {
 	}
 	if l, _ := st.Jobs(ctx, "60ef97e4-0001", 1); l[0].NotBefore == nil {
 		t.Error("o job na janela leva o not_before")
+	}
+}
+
+func TestPaginaDeCampanhas(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	ctx := context.Background()
+	if b := pagina(h, "GET", "/painel/campanhas", sessaoTeste, nil).Body.String(); !strings.Contains(b, "Nenhuma campanha") {
+		t.Errorf("vazia:\n%s", b)
+	}
+	_, _ = st.CreateCampaign(ctx, campaign.Campaign{Name: `<b>bluez</b>`, Type: jobs.TypeUpdate, Sources: []string{"bluez"}, Rings: []int{0, 1},
+		UseWindow: true, CreatedBy: "thyago"})
+	b := pagina(h, "GET", "/painel/campanhas", sessaoTeste, nil).Body.String()
+	for _, tr := range []string{"&lt;b&gt;bluez&lt;/b&gt;", "atualizar pacotes, na janela", "<code>[0] → 1</code>", `<span class="job em_andamento">em andamento</span>`, "thyago"} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("faltou %q", tr)
+		}
 	}
 }

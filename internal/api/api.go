@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
@@ -50,6 +51,8 @@ type Store interface {
 	// Anel e janela da máquina, para o detalhe (Aula 8.3).
 	MachineRing(ctx context.Context, id string) (int, bool, error)
 	Windows(ctx context.Context) ([]store.RingWindow, error)
+	// Campanhas, para a tela (Aula 8.5).
+	Campaigns(ctx context.Context, limit int) ([]campaign.Campaign, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -111,6 +114,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
+	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
 	mux.Handle("POST /painel/maquinas/{id}/buscar", a.sameOrigin(a.adminAction(a.rescanAction)))
 	mux.Handle("POST /painel/jobs/{id}/cancelar", a.sameOrigin(a.adminAction(a.cancelJobAction)))
 	mux.Handle("POST /painel/maquinas/{id}/atualizar", a.sameOrigin(a.adminAction(a.updateAction)))

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -70,19 +69,7 @@ func (a *api) updateAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
-	var params jobs.UpdateParams
-	seen := map[string]bool{}
-	for _, it := range d.Items {
-		if !slices.Contains(chosen, it.ID) || it.FixedIn == "" {
-			continue
-		}
-		for _, bin := range it.Packages {
-			if !seen[bin] {
-				seen[bin] = true
-				params.Packages = append(params.Packages, jobs.Package{Name: bin, MinVersion: it.FixedIn})
-			}
-		}
-	}
+	params := jobs.ParamsFromPending(d.Items, chosen)
 	if len(params.Packages) == 0 {
 		// As marcadas já não estão pendentes (a avaliação mudou) ou não são do Linux.
 		http.Redirect(w, r, back+"?erro=nada-marcado", http.StatusSeeOther)

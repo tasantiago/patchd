@@ -47,10 +47,10 @@ func (p *Postgres) NextJobID(ctx context.Context) (int64, error) {
 // escolha no painel e a gravação, ela pode ter sido aposentada.
 func (p *Postgres) CreateJob(ctx context.Context, j NewJob) error {
 	tag, err := p.pool.Exec(ctx, `
-		INSERT INTO jobs (id, machine_id, type, state, payload, signature, created_by, not_after, not_before)
-		SELECT $1, m.id, $3, 'pendente', $4, $5, $6, $7, $8
+		INSERT INTO jobs (id, machine_id, type, state, payload, signature, created_by, not_after, not_before, campaign_id, campaign_idx)
+		SELECT $1, m.id, $3, 'pendente', $4, $5, $6, $7, $8, NULLIF($9::bigint, 0), CASE WHEN $9::bigint = 0 THEN NULL ELSE $10::smallint END
 		FROM machines m WHERE m.id = $2 AND m.retired_at IS NULL`,
-		j.ID, j.MachineID, j.Type, j.Signed.Payload, j.Signed.Signature, j.CreatedBy, j.NotAfter, nullTime(j.NotBefore))
+		j.ID, j.MachineID, j.Type, j.Signed.Payload, j.Signed.Signature, j.CreatedBy, j.NotAfter, nullTime(j.NotBefore), j.CampaignID, j.CampaignIdx)
 	if err != nil {
 		return err
 	}
