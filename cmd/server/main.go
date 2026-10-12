@@ -139,7 +139,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		if time.Until(exp) < certWarnBefore {
 			logger.Warn("o certificado TLS vence em menos de 30 dias; peça a renovação à CA interna", "expira_em_dias", days)
 		}
-		if cfg.HTTPListenAddr != "" {
+		switch {
+		case cfg.HTTPListenAddr != "" && cfg.HTTPCacheOnly:
+			logger.Info("porta HTTP só para o cache de repositórios: registro, agentes e painel só por HTTPS",
+				"http_listen", cfg.HTTPListenAddr)
+		case cfg.HTTPListenAddr != "":
 			logger.Warn("porta HTTP de transição aberta: só agentes, registro e cache de repositórios; o painel responde 403 nela",
 				"http_listen", cfg.HTTPListenAddr)
 		}
@@ -265,7 +269,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if certs != nil {
 		ls[0].handler, ls[0].tls = withHSTS(handler), tlsConfig(certs)
 		if cfg.HTTPListenAddr != "" {
-			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler, logger)})
+			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler, logger, cfg.HTTPCacheOnly)})
 		}
 	}
 	if err := serve(ctx, logger, ls); err != nil {

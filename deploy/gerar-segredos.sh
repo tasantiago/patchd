@@ -1,28 +1,72 @@
 #!/usr/bin/env bash
-# Gera os segredos do compose de produção em deploy/secrets (fora do git e do contexto do build).
-# Não sobrescreve segredos existentes: o Postgres só lê a senha na primeira inicialização do volume;
-# trocar a senha de um banco já criado exige ALTER ROLE.
+# Prepara os segredos do compose de produção em deploy/secrets (fora do git e do contexto
+# do build) e confere o resto do que o compose monta (Aula 9.3).
+# Não sobrescreve nada: o Postgres só lê a senha na primeira inicialização do volume
+# (trocar a senha de um banco já criado exige ALTER ROLE), e a chave de jobs tem de ser a
+# mesma cuja pública está embutida nos agentes.
 set -euo pipefail
 
-DIR="$(cd "$(dirname "$0")" && pwd)/secrets"
+DEPLOY="$(cd "$(dirname "$0")" && pwd)"
+DIR="$DEPLOY/secrets"
 mkdir -p "$DIR"
 # Só o dono entra na pasta: protege os arquivos no host.
 chmod 700 "$DIR"
 
+# 1. Senha e URL do banco.
 if [ -e "$DIR/db_password" ] || [ -e "$DIR/database_url" ]; then
-  echo "Segredos já existem em $DIR; nada foi alterado."
-  exit 0
+  echo "banco: segredos já existem; nada foi alterado."
+else
+  # 24 bytes aleatórios em hexadecimal: 48 caracteres, sem símbolos que exijam escape na URL.
+  SENHA="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  printf '%s' "$SENHA" > "$DIR/db_password"
+  # sslmode=disable: a conexão não sai da rede interna do compose (TLS no banco: pendência).
+  printf 'postgres://patchd:%s@postgres:5432/patchd?sslmode=disable\n' "$SENHA" > "$DIR/database_url"
+  # 644: os segredos do compose chegam ao container com o dono e a permissão do host, e
+  # o Postgres e o servidor rodam com UIDs diferentes. A pasta 700 protege no host.
+  chmod 644 "$DIR/db_password" "$DIR/database_url"
+  echo "banco: segredos gerados."
 fi
 
-# 24 bytes aleatórios em hexadecimal: 48 caracteres, sem símbolos que exijam escape na URL.
-SENHA="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+falta=0
+# 2. Chave de jobs: não é gerada aqui. Uma chave nova não vale para os agentes já
+# instalados (eles conferem com a pública embutida no build).
+if [ -s "$DIR/job_signing_key" ]; then
+  echo "chave de jobs: presente."
+else
+  falta=1
+  cat <<MSG
+chave de jobs: FALTA $DIR/job_signing_key
+  - frota existente: copie a chave privada que o servidor já usa (a do PATCHD_JOB_SIGNING_KEY_FILE);
+  - frota nova: go run ./cmd/server job keygen -out deploy/secrets/job_signing_key
+    e compile os agentes com a pública que ele imprime (PATCHD_JOB_PUBKEY).
+  Depois, para o servidor (UID 65532) ler só ela:
+    sudo chown 65532:65532 deploy/secrets/job_signing_key && sudo chmod 400 deploy/secrets/job_signing_key
+MSG
+fi
 
-printf '%s' "$SENHA" > "$DIR/db_password"
-# sslmode=disable: a conexão fica dentro da rede interna do compose; TLS no banco entra na Aula 9.1.
-printf 'postgres://patchd:%s@postgres:5432/patchd?sslmode=disable\n' "$SENHA" > "$DIR/database_url"
+# 3. TLS: certificado da CA interna, em deploy/tls (fora do git).
+TLS="$DEPLOY/tls"
+if [ -s "$TLS/server.crt" ] && [ -s "$TLS/server.key" ]; then
+  echo "TLS: server.crt e server.key presentes."
+else
+  falta=1
+  cat <<MSG
+TLS: FALTA $TLS/server.crt e/ou server.key (o certificado, com as intermediárias, e a chave).
+  Depois de copiar:
+    sudo chown 65532:65532 deploy/tls/server.key && sudo chmod 400 deploy/tls/server.key
+MSG
+fi
 
-# 644: os segredos do compose chegam ao container com o dono e a permissão do host,
-# e os processos dos containers não rodam com o seu UID. A pasta 700 protege no host.
-chmod 644 "$DIR/db_password" "$DIR/database_url"
+# 4. Configuração: deploy/.env (fora do git).
+if [ -s "$DEPLOY/.env" ]; then
+  echo "configuração: deploy/.env presente."
+else
+  falta=1
+  echo "configuração: FALTA deploy/.env (cp deploy/.env.exemplo deploy/.env e preencha)"
+fi
 
-echo "Segredos gerados em $DIR."
+if [ "$falta" -ne 0 ]; then
+  echo "Complete o que falta antes do docker compose up."
+  exit 1
+fi
+echo "Pronto para: docker compose -f deploy/compose.yaml up -d --build"

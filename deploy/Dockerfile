@@ -27,19 +27,27 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
         -X github.com/tasantiago/patchd/internal/buildinfo.Commit=${COMMIT}" \
       -o /out/patchd-server ./cmd/server
 
+# Pastas de dados (Aula 9.3), já com o dono do processo: um volume nomeado novo copia o
+# conteúdo e o dono da pasta da imagem na primeira montagem. Sem isso, o volume nasceria
+# do root, e o servidor (65532, raiz somente leitura) não conseguiria gravar o catálogo
+# nem o cache de repositórios.
+RUN mkdir -p /out/var/lib/patchd/conteudo /out/var/lib/patchd/repocache /out/var/lib/patchd/releases
+
 # ---------- Estágio 2: imagem final ----------
 # scratch: imagem vazia. Sem shell, sem gerenciador de pacotes, só o binário e as CAs.
 FROM scratch
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/patchd-server /patchd-server
+COPY --from=build --chown=65532:65532 /out/var/lib/patchd /var/lib/patchd
 
 # Usuário sem privilégios (não existe em /etc/passwd; o número basta).
 USER 65532:65532
 
-EXPOSE 8080
+# 8443: HTTPS (painel, API, agentes). 8080: porta HTTP de transição e cache de repositórios.
+EXPOSE 8443 8080
 
-# Sem curl na imagem: o próprio binário verifica o /healthz.
+# Sem curl na imagem: o próprio binário verifica o /healthz (por HTTPS quando há TLS).
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/patchd-server", "-healthcheck"]
 

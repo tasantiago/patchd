@@ -197,7 +197,7 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 	}
 
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	header := []string{"MÁQUINA", "ANEL", "NOME", "SO", "ÚLTIMO CONTATO", "INVENTÁRIO"}
+	header := []string{"MÁQUINA", "ANEL", "NOME", "SO", "ÚLTIMO CONTATO", "CANAL", "INVENTÁRIO"}
 	if noName {
 		header = append(header[:2], header[3:]...)
 	}
@@ -211,7 +211,7 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 		if m.InventoryHash != "" {
 			inv = "sim"
 		}
-		cols := []string{short(m.ID), strconv.Itoa(m.Ring), orDash(m.Hostname), orDash(strings.TrimSpace(m.OSName + " " + m.OSVersion)), since(now.Sub(m.LastSeenAt)), inv}
+		cols := []string{short(m.ID), strconv.Itoa(m.Ring), orDash(m.Hostname), orDash(strings.TrimSpace(m.OSName + " " + m.OSVersion)), since(now.Sub(m.LastSeenAt)), channel(m.CheckinTLS), inv}
 		if noName {
 			cols = append(cols[:2], cols[3:]...)
 		}
@@ -234,9 +234,32 @@ func machineList(ctx context.Context, st machineStore, retired, noName bool, now
 		n = len(old)
 	}
 	fmt.Fprintf(out, "%d máquina(s)", n)
+	if !retired {
+		// Antes de fechar a porta de transição para os agentes (Aula 9.3): quem ainda usa HTTP.
+		onHTTP := 0
+		for _, m := range active {
+			if m.CheckinTLS != nil && !*m.CheckinTLS {
+				onHTTP++
+			}
+		}
+		if onHTTP > 0 {
+			fmt.Fprintf(out, "; %d ainda por HTTP (job create -type server_url)", onHTTP)
+		}
+	}
 	if !retired && len(old) > 0 {
 		fmt.Fprintf(out, "; %d aposentada(s) (machine list -retired)", len(old))
 	}
 	fmt.Fprintln(out)
 	return nil
+}
+
+// channel escreve o canal do último check-in (Aula 9.2): https, http ou — (nenhum ainda).
+func channel(tls *bool) string {
+	switch {
+	case tls == nil:
+		return "—"
+	case *tls:
+		return "https"
+	}
+	return "http"
 }

@@ -88,6 +88,13 @@ func TestComandosDeMaquina(t *testing.T) {
 	if _, out, _ := roda("list", "-sem-nome"); strings.Contains(out, "vm-lab") || strings.Contains(out, "NOME") {
 		t.Errorf("-sem-nome:\n%s", out)
 	}
+	// Canal do último check-in (Aulas 9.2 e 9.3): quem ainda usa HTTP entra na contagem.
+	_, _ = mem.CheckIn(ctx, "7aa604f7-0001", "v", "", false)
+	_, _ = mem.CheckIn(ctx, "60ef97e4-0002", "v", "", true)
+	if _, out, _ := roda("list"); !strings.Contains(out, "CANAL") || !strings.Contains(out, " https ") || !strings.Contains(out, " http ") ||
+		!strings.Contains(out, "3 máquina(s); 1 ainda por HTTP") {
+		t.Errorf("canal:\n%s", out)
+	}
 
 	for _, c := range []struct {
 		args []string
