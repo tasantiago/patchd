@@ -61,6 +61,7 @@ type metricsStore interface {
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	JobStateCounts(ctx context.Context) (map[string]int, error)
 	CatalogStatus(ctx context.Context, sources []string) ([]store.CatalogSourceStatus, error)
+	LastBackup(ctx context.Context) (store.BackupRun, bool, error)
 }
 
 // fleetCounter conta as máquinas por estado de compliance (o complianceService).
@@ -76,6 +77,7 @@ type snapshot struct {
 	compliance map[string]int
 	jobs       map[string]int
 	catalog    []store.CatalogSourceStatus
+	backup     *store.BackupRun // nil: nenhuma cópia registrada (Aula 10.3)
 }
 
 type snapshotter struct {
@@ -139,6 +141,13 @@ func (s *snapshotter) read(ctx context.Context) (snapshot, error) {
 	}
 	if snap.catalog, err = s.st.CatalogStatus(ctx, catalogSourceNames); err != nil {
 		return snapshot{}, fmt.Errorf("catálogo: %w", err)
+	}
+	b, found, err := s.st.LastBackup(ctx)
+	if err != nil {
+		return snapshot{}, fmt.Errorf("cópias: %w", err)
+	}
+	if found {
+		snap.backup = &b
 	}
 	if s.fleet != nil {
 		f, err := s.fleet.Fleet(ctx)
@@ -223,6 +232,31 @@ func registerGauges(reg *metrics.Registry, snap *snapshotter, certs certExpiry, 
 			}
 			return out
 		})
+	registerBackupGauges(reg, snap)
+}
+
+// Cópias do banco (Aula 10.3): sem nenhuma registrada, as três séries não existem, e o
+// alerta PatchdNenhumaCopia usa absent().
+func registerBackupGauges(reg *metrics.Registry, snap *snapshotter) {
+	last := func(v func(store.BackupRun) float64) func() []metrics.Sample {
+		return func() []metrics.Sample {
+			if b := snap.get().backup; b != nil {
+				return []metrics.Sample{{Value: v(*b)}}
+			}
+			return nil
+		}
+	}
+	reg.NewGaugeFunc("patchd_backup_last_success_timestamp_seconds", "Fim da cópia do banco mais recente registrada pelo backup.sh (Unix).", nil,
+		last(func(b store.BackupRun) float64 { return float64(b.FinishedAt.Unix()) }))
+	reg.NewGaugeFunc("patchd_backup_last_size_bytes", "Tamanho da cópia do banco mais recente.", nil,
+		last(func(b store.BackupRun) float64 { return float64(b.Bytes) }))
+	reg.NewGaugeFunc("patchd_backup_last_encrypted", "1 se a cópia do banco mais recente foi cifrada (age), 0 se não.", nil,
+		last(func(b store.BackupRun) float64 {
+			if b.Encrypted {
+				return 1
+			}
+			return 0
+		}))
 }
 
 func samples(m map[string]int) []metrics.Sample {

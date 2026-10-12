@@ -97,3 +97,31 @@ groups:
           severidade: aviso
         annotations:
           summary: "O patchd responde 5xx com frequência há 10 minutos"
+
+      # Cópias do banco (Aula 10.3): o backup.sh registra cada cópia na tabela backup_runs.
+      - alert: PatchdSemCopiaRecente
+        expr: time() - patchd_backup_last_success_timestamp_seconds > 36 * 3600
+        for: 10m
+        labels:
+          severidade: critica
+        annotations:
+          summary: "A última cópia do banco do patchd tem mais de 36 horas"
+          description: "O timer diário parou ou o backup.sh está falhando: systemctl status patchd-backup.timer e journalctl -u patchd-backup."
+
+      - alert: PatchdNenhumaCopia
+        expr: absent(patchd_backup_last_success_timestamp_seconds) and on() (patchd_coleta_banco_ok == 1)
+        for: 2d
+        labels:
+          severidade: critica
+        annotations:
+          summary: "Nenhuma cópia do banco do patchd foi registrada"
+          description: "Instale o timer (deploy/systemd) e rode ./deploy/backup.sh uma vez."
+
+      - alert: PatchdCopiaSemCifra
+        expr: patchd_backup_last_encrypted == 0
+        for: 1h
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "A última cópia do banco do patchd saiu sem cifra"
+          description: "Falta deploy/secrets/backup_recipients (docs/operacao.md, Cópias cifradas)."
