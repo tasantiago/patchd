@@ -21,6 +21,7 @@ import (
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/metrics"
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/repocache"
@@ -161,6 +162,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	defer closeStore()
 
 	var apiOpts []api.Option
+	// Métricas (Aula 10.2): registradas só com a porta configurada.
+	var reg *metrics.Registry
+	if cfg.MetricsListenAddr != "" {
+		reg = metrics.NewRegistry()
+		apiOpts = append(apiOpts, api.WithMetrics(api.NewMetrics(reg)))
+	}
 	// Login pelo AD (Aula 7.3): a configuração já foi validada em loadServerConfig.
 	adCfg, adOn, _ := adConfig(look)
 	if adOn {
@@ -290,6 +297,27 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		if cfg.HTTPListenAddr != "" {
 			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler, logger, cfg.HTTPCacheOnly)})
 		}
+	}
+	if reg != nil {
+		var snap *snapshotter
+		if pg, ok := st.(*store.Postgres); ok {
+			snap = newSnapshotter(pg, newComplianceService(pg, logger), logger)
+		}
+		var exp certExpiry
+		if certs != nil {
+			exp = certs
+		}
+		registerGauges(reg, snap, exp, info, time.Now())
+		m := listener{name: "Métricas", addr: cfg.MetricsListenAddr, handler: reg.Handler(cfg.MetricsToken)}
+		if certs != nil {
+			// Com TLS, o token também não trafega em claro.
+			m.tls = tlsConfig(certs)
+		}
+		ls = append(ls, m)
+		logger.Info("métricas ligadas: GET /metrics com o token (Bearer), na porta só delas",
+			"metrics_listen", cfg.MetricsListenAddr, "tls", certs != nil)
+	} else {
+		logger.Info("métricas desligadas (sem PATCHD_METRICS_LISTEN_ADDR)")
 	}
 	if err := serve(ctx, logger, ls); err != nil {
 		// Para os laços (catálogo, campanhas) antes de o banco fechar: sem isso, um laço

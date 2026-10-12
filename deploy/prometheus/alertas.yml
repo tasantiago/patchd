@@ -1,0 +1,99 @@
+# Regras de alerta do patchd (Aula 10.2). Conferir: promtool check rules alertas.yml
+# Os limites são pontos de partida: ajuste ao tamanho e ao ritmo da frota.
+groups:
+  - name: patchd
+    rules:
+      - alert: PatchdForaDoAr
+        expr: up{job="patchd"} == 0
+        for: 5m
+        labels:
+          severidade: critica
+        annotations:
+          summary: "O Prometheus não coleta as métricas do patchd há 5 minutos"
+          description: "Servidor parado, porta fechada, certificado não confiável ou token trocado só de um lado."
+
+      - alert: PatchdBancoInacessivel
+        expr: patchd_coleta_banco_ok == 0
+        for: 10m
+        labels:
+          severidade: critica
+        annotations:
+          summary: "O patchd não consegue ler o banco há 10 minutos"
+          description: "Veja o log do servidor (métricas: leitura do banco falhou) e o container do Postgres."
+
+      - alert: PatchdCertificadoVencendo
+        expr: patchd_tls_cert_not_after_timestamp_seconds - time() < 30 * 86400
+        for: 1h
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "O certificado TLS do patchd vence em {{ $value | humanizeDuration }}"
+          description: "Peça a renovação à CA interna e troque os arquivos em deploy/tls (o servidor relê sozinho)."
+
+      - alert: PatchdCertificadoVencendoJa
+        expr: patchd_tls_cert_not_after_timestamp_seconds - time() < 7 * 86400
+        labels:
+          severidade: critica
+        annotations:
+          summary: "O certificado TLS do patchd vence em menos de 7 dias"
+          description: "Vencido, os agentes param de fazer check-in até a troca."
+
+      - alert: PatchdCatalogoDesatualizado
+        expr: time() - patchd_catalog_last_success_timestamp_seconds > 3 * 86400
+        for: 1h
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "A fonte {{ $labels.fonte }} do catálogo não sincroniza com sucesso há mais de 3 dias"
+          description: "O estado de compliance fica velho. Veja patchd-server catalog status e o log da sincronização."
+
+      - alert: PatchdCatalogoFalhando
+        expr: patchd_catalog_last_run_ok == 0
+        for: 12h
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "A última sincronização da fonte {{ $labels.fonte }} falhou, e continua assim há 12 horas"
+
+      - alert: PatchdMaquinasAindaEmHTTP
+        expr: patchd_machines{canal="http"} > 0
+        for: 7d
+        labels:
+          severidade: info
+        annotations:
+          summary: "{{ $value }} máquina(s) ainda fazem check-in por HTTP há uma semana"
+          description: "Passe para HTTPS pelo painel (Aula 9.2) antes de ligar PATCHD_HTTP_CACHE_ONLY."
+
+      - alert: PatchdFaltandoAlto
+        expr: |
+          patchd_compliance_machines{estado="faltando"}
+            / ignoring(estado) sum without(estado) (patchd_compliance_machines) > 0.2
+        for: 1d
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "Mais de 20% da frota com correção pendente há um dia"
+
+      - alert: PatchdJobsFalhando
+        expr: sum by (tipo) (increase(patchd_jobs_encerrados_total{estado=~"falhou|rejeitado"}[1h])) > 3
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "{{ $value }} jobs {{ $labels.tipo }} falharam ou foram rejeitados na última hora"
+          description: "Rejeitado em série costuma ser chave de jobs diferente da embutida nos agentes."
+
+      - alert: PatchdLoginsRecusados
+        expr: sum(increase(patchd_logins_total{resultado=~"recusado|bloqueado"}[15m])) > 20
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "Mais de 20 logins recusados no painel em 15 minutos"
+          description: "Tentativa de senha em série? Veja o log de acesso do painel."
+
+      - alert: PatchdErros5xx
+        expr: sum(rate(patchd_http_requests_total{codigo=~"5.."}[5m])) > 0.1
+        for: 10m
+        labels:
+          severidade: aviso
+        annotations:
+          summary: "O patchd responde 5xx com frequência há 10 minutos"

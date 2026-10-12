@@ -70,6 +70,9 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 		a.internalError(w, r, "gravar resultado do job", err)
 		return
 	}
+	if changed {
+		a.count(jobsOf, job.Type, state)
+	}
 	level := a.logger.Info
 	if state != jobs.StateDone {
 		level = a.logger.Warn

@@ -36,6 +36,25 @@ type JobRow struct {
 // comando e pelo painel.
 type NewJob = jobs.Record
 
+// JobStateCounts conta os jobs por estado, de todas as máquinas (métricas, Aula 10.2).
+func (p *Postgres) JobStateCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := p.pool.Query(ctx, `SELECT state, count(*) FROM jobs GROUP BY state`)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]int{}
+	for rows.Next() {
+		var state string
+		var n int
+		if err := rows.Scan(&state, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out[state] = n
+	}
+	return out, rows.Err()
+}
+
 // NextJobID reserva o ID do próximo job: ele entra no payload assinado antes do INSERT.
 func (p *Postgres) NextJobID(ctx context.Context) (int64, error) {
 	var id int64

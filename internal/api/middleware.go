@@ -70,13 +70,18 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // withAccessLog registra cada requisição: método, caminho, status, tamanho, duração e ID.
-func withAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
+// observe (pode ser nil) recebe a requisição já atendida: as métricas (Aula 10.2) leem a
+// rota que o ServeMux casou (r.Pattern).
+func withAccessLog(logger *slog.Logger, observe func(*http.Request, int, time.Duration), next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(rec, r)
 		if rec.status == 0 {
 			rec.status = http.StatusOK
+		}
+		if observe != nil {
+			observe(r, rec.status, time.Since(start))
 		}
 		logger.Info("requisição",
 			"method", r.Method,

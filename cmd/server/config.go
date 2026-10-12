@@ -47,6 +47,10 @@ type serverConfig struct {
 	// PublicURL (Aula 9.2): a URL HTTPS pela qual os agentes alcançam este servidor, levada
 	// no job server_url. Normalizada na leitura.
 	PublicURL string
+	// Métricas (Aula 10.2): porta só do Prometheus; vazia desliga. O token é segredo: só
+	// por PATCHD_METRICS_TOKEN ou PATCHD_METRICS_TOKEN_FILE.
+	MetricsListenAddr string
+	MetricsToken      string
 }
 
 // TLS diz se o servidor atende HTTPS.
@@ -187,6 +191,12 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	}
 	if _, _, err := oidcConfig(look, cfg.PublicURL, false); err != nil {
 		problems = append(problems, err)
+	}
+
+	if addr, token, err := metricsConfig(look, cfg.ListenAddr, cfg.HTTPListenAddr); err != nil {
+		problems = append(problems, err)
+	} else {
+		cfg.MetricsListenAddr, cfg.MetricsToken = addr, token
 	}
 
 	if err := logging.Check(cfg.LogLevel, cfg.LogFormat); err != nil {

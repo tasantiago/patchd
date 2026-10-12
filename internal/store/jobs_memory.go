@@ -116,6 +116,17 @@ func (m *Memory) ScanReceivedAt(ctx context.Context, machineID string) (*time.Ti
 	return &t, nil
 }
 
+// JobStateCounts conta os jobs por estado.
+func (m *Memory) JobStateCounts(ctx context.Context) (map[string]int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := map[string]int{}
+	for _, j := range m.jobs {
+		out[j.State]++
+	}
+	return out, nil
+}
+
 // Jobs lista os jobs, do mais novo para o mais antigo.
 func (m *Memory) Jobs(ctx context.Context, machineID string, limit int) ([]JobRow, error) {
 	m.mu.RLock()
