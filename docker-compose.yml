@@ -28,8 +28,10 @@ services:
       SSH_AUTH_SOCK: /ssh-agent
     # Só na interface local do host: o servidor de desenvolvimento não fica exposto na rede.
     # Porta do host ajustável pelo .env (PATCHD_DEV_PORT), padrão 18080, para não disputar a 8080.
+    # 8443: HTTPS do servidor de desenvolvimento (Aula 9.1), também só local.
     ports:
       - "127.0.0.1:${PATCHD_DEV_PORT:-18080}:8080"
+      - "127.0.0.1:${PATCHD_DEV_TLS_PORT:-18443}:8443"
     restart: unless-stopped
 
 volumes:

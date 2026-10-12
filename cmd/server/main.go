@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/ad"
 	"github.com/tasantiago/patchd/internal/api"
@@ -98,7 +99,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	if cfg.HealthCheck {
-		if err := healthcheck(cfg.ListenAddr); err != nil {
+		if err := healthcheck(cfg.ListenAddr, cfg.TLS()); err != nil {
 			fmt.Fprintf(stderr, "patchd-server: healthcheck falhou: %v\n", err)
 			return exitRuntime
 		}
@@ -123,7 +124,28 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		"listen", cfg.ListenAddr,
 		"database", redactDatabaseURL(cfg.DatabaseURL),
 	)
-	logger.Warn("sem TLS: a senha e o cookie do painel trafegam em texto claro; mantenha a porta restrita a 127.0.0.1 (TLS na 9.1)")
+	// TLS (Aula 9.1): o par é lido já; certificado ilegível não deixa o servidor subir.
+	var certs *certReloader
+	if cfg.TLS() {
+		certs, err = newCertReloader(cfg.TLSCertFile, cfg.TLSKeyFile, logger)
+		if err != nil {
+			logger.Error("TLS", "error", err)
+			return exitConfig
+		}
+		exp, names, chain := certs.Info()
+		days := int(time.Until(exp).Hours() / 24)
+		logger.Info("TLS ligado (TLS 1.2 ou mais novo; o certificado é relido quando muda no disco)",
+			"expira_em_dias", days, "nomes", names, "cadeia", chain)
+		if time.Until(exp) < certWarnBefore {
+			logger.Warn("o certificado TLS vence em menos de 30 dias; peça a renovação à CA interna", "expira_em_dias", days)
+		}
+		if cfg.HTTPListenAddr != "" {
+			logger.Warn("porta HTTP de transição aberta: só agentes, registro e cache de repositórios; o painel responde 403 nela",
+				"http_listen", cfg.HTTPListenAddr)
+		}
+	} else {
+		logger.Warn("sem TLS: a senha e o cookie do painel trafegam em texto claro; mantenha a porta restrita a 127.0.0.1 ou ligue o TLS (PATCHD_TLS_CERT_FILE)")
+	}
 
 	// Banco primeiro: conecta, aplica as migrations e só então a porta é aberta.
 	st, closeStore, err := openStore(ctx, logger, cfg.DatabaseURL)
@@ -234,7 +256,14 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			"dir", cfg.RepoCacheDir, "hosts", cfg.RepoCacheHosts)
 	}
 	handler := newHandler(api.New(st, logger, apiOpts...), repo)
-	if err := serve(ctx, logger, cfg.ListenAddr, handler); err != nil {
+	ls := []listener{{name: "API", addr: cfg.ListenAddr, handler: handler}}
+	if certs != nil {
+		ls[0].handler, ls[0].tls = withHSTS(handler), tlsConfig(certs)
+		if cfg.HTTPListenAddr != "" {
+			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler)})
+		}
+	}
+	if err := serve(ctx, logger, ls); err != nil {
 		// Para os laços (catálogo, campanhas) antes de o banco fechar: sem isso, um laço
 		// no meio do passo registra "closed pool" (Aula 8.5b, porta já ocupada).
 		stop()
