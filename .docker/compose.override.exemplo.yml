@@ -1,0 +1,17 @@
+# Modelo do docker-compose.override.yml (Aula 9.1b): copie para a raiz do repositório com
+# esse nome. O compose junta os dois arquivos sozinho, e o git ignora a cópia.
+#
+# Liga o container de desenvolvimento à rede de um PostgreSQL que roda fora deste compose
+# (o banco de teste do laboratório). Sem isso, recriar o patchd-dev o tira dessa rede e o
+# servidor não acha o banco pelo nome. A rede precisa existir antes do "up"; o nome vem do
+# .env (PATCHD_DEV_DB_NETWORK).
+services:
+  dev:
+    networks:
+      - default
+      - banco
+
+networks:
+  banco:
+    external: true
+    name: ${PATCHD_DEV_DB_NETWORK:-patchd-teste}

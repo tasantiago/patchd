@@ -10,6 +10,8 @@
 /.docker/certs/*.crt
 # known_hosts do container de desenvolvimento
 /.docker/ssh/
+# Ajustes do compose só desta máquina (Aula 9.1b; modelo em .docker/compose.override.exemplo.yml)
+/docker-compose.override.yml
 
 # Segredos do compose de produção
 /deploy/secrets/

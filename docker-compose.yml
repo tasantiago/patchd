@@ -2,6 +2,9 @@
 # Subir:  docker compose up -d --build
 # Entrar: docker compose exec dev zsh
 # O compose de produção (servidor + Postgres) fica em deploy/ e usa o projeto "patchd".
+# Ajustes só desta máquina (Aula 9.1b), como a rede de um PostgreSQL de teste que roda fora
+# deste compose, vão no docker-compose.override.yml, que o compose lê sozinho e o git ignora.
+# Modelo: .docker/compose.override.exemplo.yml. Recriar o container (up) mantém essa rede.
 # Nome próprio: evita que um compose trate os containers do outro como órfãos.
 name: patchd-dev
 

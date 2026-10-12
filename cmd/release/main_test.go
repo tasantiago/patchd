@@ -62,3 +62,34 @@ func TestKeygenEAssinatura(t *testing.T) {
 		t.Errorf("chave aberta: %d %s", code, errs.String())
 	}
 }
+
+// TestPubkeyDaPrivada: o pubkey refaz a mesma pública do keygen, a partir da privada, e
+// recusa uma chave legível por outros (Aula 9.1b).
+func TestPubkeyDaPrivada(t *testing.T) {
+	key := filepath.Join(t.TempDir(), "release.key")
+	var gerada, errs bytes.Buffer
+	if code := run([]string{"keygen", "-key", key}, &gerada, &errs); code != exitOK {
+		t.Fatalf("keygen: %d %s", code, errs.String())
+	}
+	var refeita bytes.Buffer
+	if code := run([]string{"pubkey", "-key", key}, &refeita, &errs); code != exitOK {
+		t.Fatalf("pubkey: %d %s", code, errs.String())
+	}
+	if refeita.String() != gerada.String() {
+		t.Errorf("pubkey %q, keygen %q", refeita.String(), gerada.String())
+	}
+	if _, err := release.ParsePublicKey(refeita.String()); err != nil {
+		t.Errorf("a saída é um PATCHD_UPDATE_PUBKEY válido: %v", err)
+	}
+	priv, _ := os.ReadFile(key)
+	if strings.Contains(refeita.String()+errs.String(), strings.TrimSpace(string(priv))) {
+		t.Error("a chave privada apareceu na saída")
+	}
+	_ = os.Chmod(key, 0o644)
+	if code := run([]string{"pubkey", "-key", key}, &refeita, &errs); code == exitOK {
+		t.Error("chave legível por outros deveria ser recusada")
+	}
+	if code := run([]string{"pubkey"}, &refeita, &errs); code == exitOK {
+		t.Error("pubkey sem -key deveria ser recusado")
+	}
+}

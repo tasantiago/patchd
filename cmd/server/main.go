@@ -260,7 +260,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if certs != nil {
 		ls[0].handler, ls[0].tls = withHSTS(handler), tlsConfig(certs)
 		if cfg.HTTPListenAddr != "" {
-			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler)})
+			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler, logger)})
 		}
 	}
 	if err := serve(ctx, logger, ls); err != nil {
