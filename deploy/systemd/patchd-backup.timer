@@ -1,0 +1,13 @@
+# Dispara o patchd-backup.service todo dia de madrugada (Aula 10.1).
+#   sudo systemctl enable --now patchd-backup.timer
+#   systemctl list-timers patchd-backup.timer
+[Unit]
+Description=patchd: cópia diária do banco
+
+[Timer]
+OnCalendar=*-*-* 02:30
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
