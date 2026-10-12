@@ -15,7 +15,7 @@ import (
 func TestRecuperaPanicoComoErro500(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	quebra := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { panic("defeito de teste") })
-	h := withRequestID(withAccessLog(logger, withRecover(logger, quebra)))
+	h := withRequestID(withAccessLog(logger, nil, withRecover(logger, quebra)))
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
@@ -61,7 +61,7 @@ func TestPrazoDeEscritaAtravessaOLogDeAcesso(t *testing.T) {
 			time.Sleep(80 * time.Millisecond)
 		}
 	})
-	srv := httptest.NewUnstartedServer(withRequestID(withAccessLog(logger, lenta)))
+	srv := httptest.NewUnstartedServer(withRequestID(withAccessLog(logger, nil, lenta)))
 	srv.Config.WriteTimeout = 200 * time.Millisecond
 	srv.Start()
 	defer srv.Close()

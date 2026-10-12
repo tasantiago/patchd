@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepara os segredos do compose de produção em deploy/secrets (fora do git e do contexto
-# do build) e confere o resto do que o compose monta (Aulas 9.3 e 9.4).
+# do build) e confere o resto do que o compose monta (Aulas 9.3, 9.4 e 10.2).
 # Não sobrescreve nada: o Postgres só lê a senha na primeira inicialização do volume
 # (trocar a senha de um banco já criado exige ALTER ROLE), e a chave de jobs tem de ser a
 # mesma cuja pública está embutida nos agentes.
@@ -11,6 +11,15 @@ DIR="$DEPLOY/secrets"
 mkdir -p "$DIR"
 # Só o dono entra na pasta: protege os arquivos no host.
 chmod 700 "$DIR"
+
+# 0. Variáveis PATCHD_* exportadas no shell valem mais que o deploy/.env no compose (Aula
+# 10.1: o servidor subiu com o RHBK do ambiente de desenvolvimento). Só os nomes, nunca os valores.
+exportadas="$(env | grep -oE '^PATCHD_[A-Z0-9_]+' | sort | tr '\n' ' ' | sed 's/ $//' || true)"
+if [ -n "$exportadas" ]; then
+  echo "AVISO: PATCHD_* exportadas neste shell passam por cima do deploy/.env no compose:"
+  echo "    $exportadas"
+  echo "  Rode o compose num shell limpo (ou: unset $exportadas)"
+fi
 
 # 1. Senha e URL do banco.
 if [ -e "$DIR/db_password" ] || [ -e "$DIR/database_url" ]; then
@@ -37,6 +46,22 @@ acl() { echo "    sudo setfacl -m u:65532:r $1"; }
 if [ ! -e "$DIR/oidc_client_secret" ]; then
   ( umask 077; : > "$DIR/oidc_client_secret" )
   echo "RHBK: $DIR/oidc_client_secret criado vazio (preencha se for ligar o RHBK)."
+fi
+
+# 2b. Token das métricas (Aula 10.2): gerado aqui, nunca escolhido. O mesmo valor vai
+# para o Prometheus (credentials_file); trocar = gerar outro e atualizar os dois lados.
+if [ -s "$DIR/metrics_token" ]; then
+  echo "métricas: token presente."
+else
+  ( umask 077; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$DIR/metrics_token"; echo >> "$DIR/metrics_token" )
+  echo "métricas: token gerado em $DIR/metrics_token ($(wc -c < "$DIR/metrics_token" | tr -d ' ') bytes)."
+  # O dono do arquivo pode dar a ACL sem sudo.
+  if command -v setfacl >/dev/null 2>&1 && setfacl -m u:65532:r "$DIR/metrics_token" 2>/dev/null; then
+    echo "métricas: leitura liberada para o servidor (UID 65532) por ACL."
+  else
+    echo "métricas: libere a leitura para o servidor (UID 65532):"
+    acl deploy/secrets/metrics_token
+  fi
 fi
 
 falta=0

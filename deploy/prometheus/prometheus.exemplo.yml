@@ -1,0 +1,27 @@
+# Exemplo de coleta do patchd pelo Prometheus (Aula 10.2). Copie para a configuração do
+# seu Prometheus e troque os marcadores <...>. Nada do ambiente real fica no git.
+#
+# No host do Prometheus (fora do git):
+#   /etc/prometheus/patchd/ca.crt         a CA que assina o certificado do patchd (só a pública)
+#   /etc/prometheus/patchd/metrics_token  cópia de deploy/secrets/metrics_token, 0400, dono prometheus
+global:
+  scrape_interval: 60s   # os medidores do banco mudam no máximo uma vez por minuto
+  evaluation_interval: 60s
+
+rule_files:
+  - alertas.yml
+
+scrape_configs:
+  - job_name: patchd
+    scheme: https
+    metrics_path: /metrics
+    scrape_timeout: 10s
+    tls_config:
+      ca_file: /etc/prometheus/patchd/ca.crt
+      # Se o alvo for um IP que não está no certificado, diga o nome que está nele:
+      # server_name: <nome-do-certificado>
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/patchd/metrics_token
+    static_configs:
+      - targets: ["<servidor-patchd>:9090"]

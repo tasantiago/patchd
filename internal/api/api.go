@@ -88,6 +88,7 @@ type api struct {
 	publicURL  string             // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
 	oidc       *oidc.Provider     // login pelo RHBK (Aula 9.4); nil: desligado
 	oidcLogins oidcPending        // logins pelo RHBK em andamento (state → nonce e PKCE)
+	metrics    *Metrics           // contadores da Aula 10.2; nil: desligados
 	limiter    loginLimiter       // falhas de login por usuário+IP e por IP
 	hashSlots  chan struct{}      // conferências de senha simultâneas
 }
@@ -138,7 +139,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /api/v1/compliance", a.sessionAuth(a.fleetCompliance))
 
 	// Ordem: o ID existe antes do log; o log enxerga o 500 produzido pela recuperação.
-	return withRequestID(withAccessLog(logger, withRecover(logger, mux)))
+	return withRequestID(withAccessLog(logger, a.observe, withRecover(logger, mux)))
 }
 
 // machineID lê e valida o {id} da URL nas rotas de leitura. Em caso de erro, já respondeu.

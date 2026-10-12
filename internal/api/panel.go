@@ -239,6 +239,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.limiter.blocked(user, ip, now) {
+		a.count(loginsOf, "senha", "bloqueado")
 		a.logger.Warn("login bloqueado: tentativas demais", "username", logUser, "remote", ip, "request_id", RequestID(r.Context()))
 		a.renderLogin(w, http.StatusTooManyRequests, loginData{Username: user, Error: "Tentativas demais. Aguarde 15 minutos.", AD: a.directory != nil})
 		return
@@ -250,6 +251,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !res.ok {
+		a.count(loginsOf, "senha", "recusado")
 		a.limiter.fail(user, ip, now)
 		a.logger.Warn("login recusado", "username", logUser, "reason", res.reason, "remote", ip, "request_id", RequestID(r.Context()))
 		a.renderLogin(w, http.StatusUnauthorized, loginData{Username: user, Error: "Usuário ou senha inválidos.", AD: a.directory != nil})
@@ -259,6 +261,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	if !a.openSession(w, r, user, res.role, res.source) {
 		return
 	}
+	a.count(loginsOf, "senha", "ok")
 	http.Redirect(w, r, "/painel/", http.StatusSeeOther)
 }
 

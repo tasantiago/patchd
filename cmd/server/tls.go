@@ -79,6 +79,13 @@ func (c *certReloader) Info() (expires time.Time, names int, chain int) {
 	return leaf.NotAfter, len(leaf.DNSNames) + len(leaf.IPAddresses), len(c.cert.Certificate)
 }
 
+// NotAfter é o fim da validade do certificado em uso, para a métrica (Aula 10.2). Confere
+// o disco como um handshake faria: o certificado renovado aparece sem esperar um cliente.
+func (c *certReloader) NotAfter() time.Time {
+	cert, _ := c.GetCertificate(nil)
+	return cert.Leaf.NotAfter
+}
+
 // GetCertificate é o gancho do crypto/tls. Confere o disco no máximo a cada 30 s; um par
 // novo ilegível (arquivo pela metade durante a cópia) é ignorado e o anterior continua.
 func (c *certReloader) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {

@@ -21,6 +21,7 @@ type contratoJobs interface {
 	FinishJob(ctx context.Context, id int64, state, detail string, at time.Time) (bool, error)
 	ScanReceivedAt(ctx context.Context, machineID string) (*time.Time, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]JobRow, error)
+	JobStateCounts(ctx context.Context) (map[string]int, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
 	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
 }
@@ -136,6 +137,12 @@ func testarJobs(t *testing.T, st contratoJobs) {
 	st.ExpireJobs(ctx, agora.Add(time.Hour+jobs.ResultGrace+time.Minute))
 	if j, _, _ := st.JobForMachine(ctx, "maq-a", j2); j.State != "expirado" {
 		t.Errorf("entregue depois da tolerância: %s", j.State)
+	}
+
+	// Contagem por estado (métricas, Aula 10.2): o pendente da maq-b também venceu.
+	n, err := st.JobStateCounts(ctx)
+	if err != nil || len(n) != 3 || n["concluido"] != 1 || n["expirado"] != 3 || n["cancelado"] != 1 {
+		t.Errorf("contagem por estado: %v %v", n, err)
 	}
 }
 

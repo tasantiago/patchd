@@ -111,6 +111,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			args = append(args, "error", err.Error())
 		}
+		a.count(loginsOf, "rhbk", "recusado")
 		a.logger.Warn("login pelo RHBK recusado", args...)
 		a.renderLogin(w, status, loginData{Error: msg, AD: a.directory != nil})
 	}
@@ -139,6 +140,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 	id, err := a.oidc.Exchange(ctx, q.Get("code"), l)
 	switch {
 	case errors.Is(err, panel.ErrNoRole):
+		a.count(loginsOf, "rhbk", "sem_grupo")
 		a.logger.Warn("login pelo RHBK recusado", "reason", "sem grupo do painel", "username", id.Username,
 			"grupos", id.Roles, "remote", remoteIP(r), "request_id", RequestID(r.Context()))
 		a.renderLogin(w, http.StatusForbidden, loginData{Error: "Seu usuário não está em nenhum grupo do painel.", AD: a.directory != nil})
@@ -150,6 +152,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 	if !a.openSession(w, r, id.Username, id.Role, panel.SourceOIDC) {
 		return
 	}
+	a.count(loginsOf, "rhbk", "ok")
 	// Uma página, e não um redirecionamento: o cookie da sessão é SameSite=Strict, e uma
 	// cadeia de redirecionamentos que começou no provedor (outro site) não o levaria ao
 	// /painel/. A navegação que esta página faz já parte do próprio painel.
