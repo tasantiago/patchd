@@ -488,7 +488,7 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
 </ul></section>{{end}}
 {{if .CanReboot}}<section><h2>Reiniciar</h2>
-<p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Quem estiver na máquina pode cancelar com <code>shutdown -c</code>.</p>
+<p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (Windows: aviso na tela com o prazo; Linux: mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Um administrador na máquina pode cancelar (<code>shutdown /a</code> no Windows, <code>shutdown -c</code> no Linux).</p>
 <form class="lote" method="post" action="/painel/maquinas/{{.D.MachineID}}/reiniciar">
 <label>Aviso <select name="aviso">{{range .Delays}}<option value="{{.}}" {{if eq . 15}}selected{{end}}>{{.}} min</option>{{end}}</select></label>
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
