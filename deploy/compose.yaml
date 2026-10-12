@@ -5,6 +5,7 @@
 #   export PATCHD_VERSION=v0.9.3 PATCHD_COMMIT="$(git rev-parse HEAD)"
 #   docker compose -f deploy/compose.yaml up -d --build
 # Toda a configuração vem de deploy/.env e de arquivos; nada sensível fica dentro da imagem.
+# Cópia e restauração do banco: deploy/backup.sh e deploy/restaurar.sh (docs/operacao.md).
 name: patchd
 
 services:

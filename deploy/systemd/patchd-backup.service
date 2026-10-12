@@ -1,0 +1,12 @@
+# Cópia diária do banco do patchd (Aula 10.1). Ajuste WorkingDirectory para a pasta do
+# repositório no servidor e copie para /etc/systemd/system/ junto com o .timer.
+[Unit]
+Description=patchd: cópia do banco (pg_dump)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/patchd
+Environment=PATCHD_BACKUP_KEEP_DAYS=14
+ExecStart=/opt/patchd/deploy/backup.sh

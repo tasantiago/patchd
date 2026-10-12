@@ -16,6 +16,8 @@
 # Segredos, TLS e configuração do compose de produção (Aula 9.3: o .env.exemplo entra)
 /deploy/secrets/
 /deploy/tls/
+# Cópias do banco (Aula 10.1): têm tudo o que está no banco
+/deploy/backups/
 
 # Atualização do agente (Aula 5.4): a chave privada e a pasta de versões nunca entram no git
 *.key
