@@ -36,7 +36,15 @@ type serverConfig struct {
 	RepoCacheURL string
 	ShowVersion  bool
 	HealthCheck  bool // modo usado pelo HEALTHCHECK do Docker
+	// TLS (Aula 9.1): com os dois arquivos, ListenAddr atende HTTPS. HTTPListenAddr, só com
+	// TLS, abre a porta HTTP de transição (agentes antigos e cache de repositórios).
+	TLSCertFile    string
+	TLSKeyFile     string
+	HTTPListenAddr string
 }
+
+// TLS diz se o servidor atende HTTPS.
+func (c serverConfig) TLS() bool { return c.TLSCertFile != "" }
 
 // loadServerConfig monta a configuração com a precedência flag > variável de ambiente > padrão
 // e valida o resultado. A ajuda (-h) e os erros de flag são escritos em usage.
@@ -62,6 +70,12 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"origens aceitas pelo cache, separadas por vírgula (env PATCHD_REPO_CACHE_HOSTS)")
 	fs.StringVar(&cfg.RepoCacheURL, "repo-cache-url", config.String(look, "PATCHD_REPO_CACHE_URL", ""),
 		"URL pela qual as máquinas alcançam o cache, anunciada no check-in, ex.: http://patchd.exemplo:8080 (env PATCHD_REPO_CACHE_URL)")
+	fs.StringVar(&cfg.TLSCertFile, "tls-cert", config.String(look, "PATCHD_TLS_CERT_FILE", ""),
+		"certificado TLS em PEM (o do servidor primeiro, depois as intermediárias); com ele, -listen atende HTTPS (env PATCHD_TLS_CERT_FILE)")
+	fs.StringVar(&cfg.TLSKeyFile, "tls-key", config.String(look, "PATCHD_TLS_KEY_FILE", ""),
+		"chave privada do certificado TLS, em PEM (env PATCHD_TLS_KEY_FILE)")
+	fs.StringVar(&cfg.HTTPListenAddr, "http-listen", config.String(look, "PATCHD_HTTP_LISTEN_ADDR", ""),
+		"com TLS: porta HTTP de transição, só para agentes e o cache de repositórios, ex.: :8080 (env PATCHD_HTTP_LISTEN_ADDR)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
 		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
@@ -80,6 +94,24 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 	}
 	if err := validateListenAddr(cfg.ListenAddr); err != nil {
 		problems = append(problems, err)
+	}
+	switch {
+	case (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == ""):
+		problems = append(problems, errTLSPair)
+	case cfg.TLS() && (!filepath.IsAbs(cfg.TLSCertFile) || !filepath.IsAbs(cfg.TLSKeyFile)):
+		problems = append(problems, errors.New("-tls-cert e -tls-key: os caminhos precisam ser absolutos"))
+	}
+	if cfg.HTTPListenAddr != "" {
+		switch {
+		case !cfg.TLS():
+			problems = append(problems, errors.New("-http-listen/PATCHD_HTTP_LISTEN_ADDR só vale com TLS (sem TLS, -listen já é HTTP)"))
+		case cfg.HTTPListenAddr == cfg.ListenAddr:
+			problems = append(problems, errors.New("-http-listen e -listen precisam ser portas diferentes"))
+		default:
+			if err := validateListenAddr(cfg.HTTPListenAddr); err != nil {
+				problems = append(problems, fmt.Errorf("-http-listen: %w", err))
+			}
+		}
 	}
 	if d, err := parseCatalogInterval(*catalogInterval); err != nil {
 		problems = append(problems, err)

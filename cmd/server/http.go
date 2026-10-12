@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
@@ -63,51 +63,77 @@ func newHandler(apiHandler, repoCache http.Handler) http.Handler {
 
 // serve atende HTTP em addr até ctx ser cancelado (SIGTERM ou SIGINT) e então encerra
 // de forma limpa, esperando as requisições em andamento por até shutdownTimeout.
-func serve(ctx context.Context, logger *slog.Logger, addr string, handler http.Handler) error {
-	// Abre a porta antes de servir: porta ocupada vira erro imediato, e o log
-	// "API escutando" só sai quando a porta está aberta de verdade.
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("não foi possível escutar em %s: %w", addr, err)
+// listener é uma porta do servidor: o endereço, o handler e, para HTTPS, o TLS.
+type listener struct {
+	name    string // "API" (a principal) ou "HTTP de transição"
+	addr    string
+	handler http.Handler
+	tls     *tls.Config // nil: HTTP
+}
+
+// serve abre todas as portas antes de servir (porta ocupada vira erro imediato, e o log
+// "escutando" só sai quando ela está aberta de verdade) e encerra todas juntas.
+func serve(ctx context.Context, logger *slog.Logger, ls []listener) error {
+	type running struct {
+		srv *http.Server
+		ln  net.Listener
+	}
+	var all []running
+	for _, l := range ls {
+		ln, err := net.Listen("tcp", l.addr)
+		if err != nil {
+			for _, r := range all {
+				r.ln.Close()
+			}
+			return fmt.Errorf("não foi possível escutar em %s: %w", l.addr, err)
+		}
+		if l.tls != nil {
+			ln = tls.NewListener(ln, l.tls)
+		}
+		all = append(all, running{ln: ln, srv: &http.Server{
+			Handler:           l.handler,
+			TLSConfig:         l.tls,
+			ReadHeaderTimeout: readHeaderTimeout,
+			ReadTimeout:       readTimeout,
+			WriteTimeout:      writeTimeout,
+			IdleTimeout:       idleTimeout,
+			// Erros internos do net/http também saem pelo slog (inclusive os de handshake TLS).
+			ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		}})
 	}
 
-	srv := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: readHeaderTimeout,
-		ReadTimeout:       readTimeout,
-		WriteTimeout:      writeTimeout,
-		IdleTimeout:       idleTimeout,
-		// Erros internos do net/http também saem pelo slog, em JSON.
-		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	errCh := make(chan error, len(all))
+	for i, r := range all {
+		go func() { errCh <- r.srv.Serve(r.ln) }()
+		scheme := "http"
+		if ls[i].tls != nil {
+			scheme = "https"
+		}
+		logger.Info(ls[i].name+" escutando", "listen", r.ln.Addr().String(), "scheme", scheme)
 	}
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- srv.Serve(ln) }()
-	logger.Info("API escutando", "listen", ln.Addr().String())
-
+	var stopErr error
 	select {
 	case err := <-errCh:
-		// O servidor parou sem ter recebido sinal: é erro.
-		return fmt.Errorf("servidor HTTP parou: %w", err)
+		// Uma porta parou sem ter recebido sinal: é erro, e as outras fecham também.
+		stopErr = fmt.Errorf("servidor HTTP parou: %w", err)
 	case <-ctx.Done():
 		logger.Info("sinal de encerramento recebido; finalizando requisições em andamento")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("encerramento do servidor HTTP: %w", err)
+	for _, r := range all {
+		if err := r.srv.Shutdown(shutdownCtx); err != nil && stopErr == nil {
+			stopErr = fmt.Errorf("encerramento do servidor HTTP: %w", err)
+		}
 	}
-	// Depois do Shutdown, Serve devolve ErrServerClosed: é o caminho normal.
-	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("servidor HTTP: %w", err)
-	}
-	return nil
+	return stopErr
 }
 
 // healthcheckURL converte o endereço de escuta na URL local do /healthz.
 // Endereços sem host ou curinga (0.0.0.0, ::) viram 127.0.0.1.
-func healthcheckURL(listen string) (string, error) {
+func healthcheckURL(listen string, useTLS bool) (string, error) {
 	host, port, err := net.SplitHostPort(listen)
 	if err != nil {
 		return "", err
@@ -115,17 +141,26 @@ func healthcheckURL(listen string) (string, error) {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	return "http://" + net.JoinHostPort(host, port) + "/healthz", nil
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+	return scheme + "://" + net.JoinHostPort(host, port) + "/healthz", nil
 }
 
 // healthcheck consulta o /healthz do servidor local. É o que o HEALTHCHECK do Docker
-// executa, já que a imagem final não tem shell nem curl.
-func healthcheck(listen string) error {
-	u, err := healthcheckURL(listen)
+// executa, já que a imagem final não tem shell nem curl. Com TLS, o certificado não é
+// conferido: o pedido vai para 127.0.0.1, que não está no certificado, e a pergunta é só
+// "o processo responde?"; quem confere a identidade do servidor são os agentes e o navegador.
+func healthcheck(listen string, useTLS bool) error {
+	u, err := healthcheckURL(listen, useTLS)
 	if err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: healthcheckTimeout}
+	if useTLS {
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // só liveness em 127.0.0.1
+	}
 	resp, err := client.Get(u)
 	if err != nil {
 		return err
