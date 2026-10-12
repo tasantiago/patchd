@@ -22,13 +22,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-COMPOSE="${PATCHD_COMPOSE_FILE:-deploy/compose.yaml}"
+. deploy/comum.sh   # dc e pg: o compose sem as PATCHD_* do shell (Aula 10.4)
 DEST="${1:-${PATCHD_BACKUP_DIR:-deploy/backups}}"
 RECIPIENTS="${PATCHD_BACKUP_RECIPIENTS_FILE:-deploy/secrets/backup_recipients}"
 KEEP_DAYS="${PATCHD_BACKUP_KEEP_DAYS:-14}"
 case "$KEEP_DAYS" in ''|*[!0-9]*) echo "PATCHD_BACKUP_KEEP_DAYS deve ser um número de dias" >&2; exit 2 ;; esac
 
-pg() { docker compose -f "$COMPOSE" exec -T postgres "$@"; }
 
 # Cifra: decidida e conferida antes do pg_dump (destinatário inválido falha já, sem cópia).
 encrypt=false

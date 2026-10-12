@@ -2,8 +2,9 @@
 # Uso, a partir da raiz do repositório:
 #   ./deploy/gerar-segredos.sh                      # senha do banco e token das métricas; confere chave de jobs, TLS e RHBK
 #   cp deploy/.env.exemplo deploy/.env              # e preencha (o git ignora o .env)
-#   export PATCHD_VERSION=v0.9.3 PATCHD_COMMIT="$(git rev-parse HEAD)"
-#   docker compose -f deploy/compose.yaml up -d --build
+#   ./deploy/atualizar.sh v0.10.4                   # constrói, copia o banco, sobe e confere (Aula 10.4)
+#   ./deploy/compose.sh ps | logs server | ...      # o compose sem as PATCHD_* do shell
+# A versão em uso fica em deploy/.env (PATCHD_VERSION e PATCHD_COMMIT, anotadas pelo atualizar.sh).
 # Toda a configuração vem de deploy/.env e de arquivos; nada sensível fica dentro da imagem.
 # Cópia e restauração do banco: deploy/backup.sh e deploy/restaurar.sh (docs/operacao.md).
 # Métricas e alertas: docs/operacao.md e deploy/prometheus/ (Aula 10.2).

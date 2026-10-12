@@ -4,6 +4,36 @@ Guia de operação do compose de produção (`deploy/compose.yaml`). Nada aqui t
 host, IP ou segredo do ambiente real: esses valores ficam em `deploy/.env` e
 `deploy/secrets`, fora do git.
 
+## Comandos do compose e atualização (Aula 10.4)
+
+Variáveis `PATCHD_*` exportadas no shell valem mais que o `deploy/.env` na interpolação do
+compose: um `docker compose up` digitado num terminal com o `.env` do desenvolvimento
+carregado sobe a produção com a configuração errada. Por isso, em produção:
+
+- `./deploy/compose.sh ARGS` no lugar de `docker compose -f deploy/compose.yaml ARGS`
+  (`ps`, `logs --tail 50 server`, `restart server`…): o mesmo comando, sem nenhuma
+  `PATCHD_*` do shell. Os outros scripts do `deploy/` fazem o mesmo.
+- `./deploy/atualizar.sh vX.Y.Z` para trocar de versão (e na primeira subida):
+  1. confere a árvore limpa e constrói `patchd-server:vX.Y.Z` com o commit atual, com o
+     servidor antigo ainda no ar;
+  2. faz uma cópia do banco (cifrada, se houver `backup_recipients`);
+  3. anota versão e commit em `deploy/.env` e troca o servidor, esperando o healthcheck;
+  4. diz se o banco mudou (migration antes e depois).
+
+  A descrição da troca fica em `deploy/.atualizacao` (fora do git). Se o servidor novo não
+  ficar saudável, o script para, mostra o fim do log e não desfaz nada sozinho.
+- `./deploy/atualizar.sh --voltar`: se o banco não mudou, só troca a imagem de volta. Se
+  mudou (migration nova), o servidor antigo não sobe nele (ele recusa um banco com
+  migration que não conhece), e a volta exige restaurar a cópia de antes:
+  `--voltar --confirmo`, com `PATCHD_BACKUP_IDENTITY_FILE` se a cópia for cifrada. O que
+  aconteceu depois da cópia se perde; os agentes reenviam inventário e busca nos
+  próximos ciclos.
+
+A imagem leva a versão e o commit nos rótulos (`org.opencontainers.image.version` e
+`.revision`). Imagens antigas ficam no host até alguém apagar: sem a imagem anterior, não
+há volta rápida (`docker image ls patchd-server`; apague só as que não serão mais
+voltadas).
+
 ## Cópia do banco (Aula 10.1)
 
 Tudo o que o patchd sabe sobre a frota está no PostgreSQL: máquinas, inventários, buscas,
