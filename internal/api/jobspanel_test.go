@@ -301,3 +301,46 @@ func TestReiniciarPeloPainel(t *testing.T) {
 		t.Errorf("sem pendência: %s", l)
 	}
 }
+
+// TestPassarParaHTTPSPeloPainel (Aula 9.2): o canal do último check-in aparece no detalhe;
+// com a URL pública e a chave, o admin pede a troca da máquina que ainda usa HTTP.
+func TestPassarParaHTTPSPeloPainel(t *testing.T) {
+	pub, priv, _ := jobs.GenerateKey()
+	ctx := context.Background()
+	maq := "/painel/maquinas/60ef97e4-0001"
+
+	// Sem URL pública: o canal aparece, o botão não.
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	_, _ = st.CheckIn(ctx, "60ef97e4-0001", "v", "", false)
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "HTTP (porta de transição)") || strings.Contains(b, "/https\"") {
+		t.Errorf("sem URL pública:\n%s", b)
+	}
+	if l := local(pagina(h, "POST", maq+"/https", sessaoAdmin, url.Values{})); l != maq+"?erro=sem-url" {
+		t.Errorf("sem URL pública, nada é criado: %s", l)
+	}
+
+	h, st, _ = ambientePaginas(t, api.WithJobKey(priv), api.WithPublicURL("https://patchd.exemplo:8443"))
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "nenhum check-in desde a Aula 9.2") || !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/https"`) {
+		t.Errorf("sem check-in ainda, o botão aparece:\n%s", b)
+	}
+	_, _ = st.CheckIn(ctx, "60ef97e4-0001", "v", "", false)
+	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, "/https\"") {
+		t.Error("leitura não pede a troca")
+	}
+	if l := local(pagina(h, "POST", maq+"/https", sessaoAdmin, url.Values{})); l != maq+"?criado=1&job=1" {
+		t.Fatalf("troca: %s", l)
+	}
+	if l := local(pagina(h, "POST", maq+"/https", sessaoAdmin, url.Values{})); l != maq+"?erro=https-aberto&job=1" {
+		t.Errorf("segundo clique: %s", l)
+	}
+	env, _ := st.DeliverJobs(ctx, "60ef97e4-0001", time.Now().UTC())
+	j, err := jobs.Verify(pub, env[0], "60ef97e4-0001", time.Now().UTC(), 0)
+	if p, _ := jobs.ParseServerURLParams(j.Params); err != nil || j.Type != jobs.TypeServerURL || p.URL != "https://patchd.exemplo:8443" {
+		t.Fatalf("job: %+v %v", j, err)
+	}
+	// Já por HTTPS: canal HTTPS, sem botão.
+	_, _ = st.CheckIn(ctx, "60ef97e4-0001", "v", "", true)
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "<dd>HTTPS</dd>") || strings.Contains(b, "/https\"") {
+		t.Errorf("já em HTTPS:\n%s", b)
+	}
+}

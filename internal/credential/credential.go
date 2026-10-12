@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,17 @@ type Credential struct {
 	Credential string    `json:"credential"`
 	ServerURL  string    `json:"server_url"` // a credencial só vale no servidor que a emitiu
 	EnrolledAt time.Time `json:"enrolled_at"`
+	// PreviousServerURL (Aula 9.2): o endereço anterior do MESMO servidor, depois de um job
+	// server_url. O install com o endereço antigo (script de boot da GPO, por exemplo)
+	// continua reconhecendo a máquina como registrada aqui.
+	PreviousServerURL string `json:"previous_server_url,omitempty"`
+}
+
+// Matches diz se url é o endereço atual ou o anterior do servidor da credencial.
+func (c Credential) Matches(url string) bool {
+	norm := func(u string) string { return strings.ToLower(strings.TrimRight(strings.TrimSpace(u), "/")) }
+	u := norm(url)
+	return u != "" && (u == norm(c.ServerURL) || (c.PreviousServerURL != "" && u == norm(c.PreviousServerURL)))
 }
 
 // ErrNotEnrolled: o arquivo não existe (a máquina ainda não se registrou).

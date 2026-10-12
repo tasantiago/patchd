@@ -260,17 +260,28 @@ func (p *Postgres) machines(ctx context.Context, retired bool) ([]RetiredMachine
 // CheckIn registra o contato periódico da máquina e diz se o inventário atual dela tem o
 // hash informado. Não há corrida que importe: no pior caso, o agente reenvia um
 // inventário que o servidor acabou de receber, e o envio volta "unchanged".
-func (p *Postgres) CheckIn(ctx context.Context, id, agentVersion, inventoryHash string) (bool, error) {
+func (p *Postgres) CheckIn(ctx context.Context, id, agentVersion, inventoryHash string, viaTLS bool) (bool, error) {
 	var current *string
 	err := p.pool.QueryRow(ctx, `
-		UPDATE machines m SET last_seen_at = now(), agent_version = $2
+		UPDATE machines m SET last_seen_at = now(), agent_version = $2, last_checkin_tls = $3
 		WHERE m.id = $1
 		RETURNING (SELECT r.hash FROM inventory_reports r WHERE r.id = m.current_inventory_id)`,
-		id, agentVersion).Scan(&current)
+		id, agentVersion, viaTLS).Scan(&current)
 	if err != nil {
 		return false, err
 	}
 	return current != nil && *current == inventoryHash, nil
+}
+
+// CheckinTLS diz por qual canal chegou o último check-in da máquina (Aula 9.2): nil se
+// nenhum desde a 0021 ou máquina desconhecida.
+func (p *Postgres) CheckinTLS(ctx context.Context, id string) (*bool, error) {
+	var v *bool
+	err := p.pool.QueryRow(ctx, `SELECT last_checkin_tls FROM machines WHERE id = $1`, id).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return v, err
 }
 
 // PruneScans apaga as buscas recebidas antes de before, exceto a atual de cada máquina.

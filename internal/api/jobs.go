@@ -91,7 +91,10 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	case protocol.JobResultFailed:
 		return jobs.StateFailed, "o agente informou falha: " + res.Detail
 	}
-	// Os dois tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
+	if job.Type == jobs.TypeServerURL {
+		return a.judgeServerURL(r, job)
+	}
+	// Os outros tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
 	at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)
 	if err != nil {
 		a.logger.Error("conferir busca do job", "job_id", job.ID, "error", err)
@@ -152,6 +155,28 @@ func (a *api) judgeReboot(r *http.Request, job store.JobRow, when string) (strin
 		return jobs.StateFailed, fmt.Sprintf("reiniciou às %s UTC, mas a busca de %s UTC ainda mostra reinício pendente", rb.LastBoot.UTC().Format("15:04"), when)
 	}
 	return jobs.StateDone, fmt.Sprintf("reiniciou às %s UTC; a busca de %s UTC não mostra reinício pendente", rb.LastBoot.UTC().Format("2006-01-02 15:04"), when)
+}
+
+// judgeServerURL confere a troca de endereço (Aula 9.2). O efeito é o próprio resultado:
+// o agente só o envia pelo endereço novo, então ele tem de chegar por TLS e no host pedido.
+// Um "ok" que chega por HTTP, ou por outro endereço, não prova a troca.
+func (a *api) judgeServerURL(r *http.Request, job store.JobRow) (string, string) {
+	var payload jobs.Job
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+		return jobs.StateFailed, "o servidor não conseguiu ler o endereço do job"
+	}
+	p, err := jobs.ParseServerURLParams(payload.Params)
+	if err != nil {
+		return jobs.StateFailed, "endereço do job ilegível: " + err.Error()
+	}
+	host := strings.TrimPrefix(p.URL, "https://")
+	switch {
+	case r.TLS == nil:
+		return jobs.StateFailed, "o agente informou a troca, mas o resultado chegou sem TLS: a troca não aconteceu"
+	case !strings.EqualFold(r.Host, host):
+		return jobs.StateFailed, fmt.Sprintf("o resultado chegou por TLS em %s, não no endereço pedido (%s)", r.Host, p.URL)
+	}
+	return jobs.StateDone, fmt.Sprintf("resultado recebido por HTTPS em %s: a máquina passou a usar o endereço novo", p.URL)
 }
 
 // stillPending lista os pacotes pedidos que a busca ainda mostra abaixo da versão pedida.

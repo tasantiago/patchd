@@ -128,6 +128,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		DataDir:        cfg.DataDir,
 		ServerURL:      cfg.ServerURL,
 		OfflineCatalog: cfg.OfflineCatalog,
+		CAFile:         cfg.CAFile,
 		Interval:       cfg.CheckinInterval,
 		AllowContainer: allowContainer(look),
 	})

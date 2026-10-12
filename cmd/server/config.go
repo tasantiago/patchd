@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/repocache"
@@ -41,6 +42,9 @@ type serverConfig struct {
 	TLSCertFile    string
 	TLSKeyFile     string
 	HTTPListenAddr string
+	// PublicURL (Aula 9.2): a URL HTTPS pela qual os agentes alcançam este servidor, levada
+	// no job server_url. Normalizada na leitura.
+	PublicURL string
 }
 
 // TLS diz se o servidor atende HTTPS.
@@ -76,6 +80,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"chave privada do certificado TLS, em PEM (env PATCHD_TLS_KEY_FILE)")
 	fs.StringVar(&cfg.HTTPListenAddr, "http-listen", config.String(look, "PATCHD_HTTP_LISTEN_ADDR", ""),
 		"com TLS: porta HTTP de transição, só para agentes e o cache de repositórios, ex.: :8080 (env PATCHD_HTTP_LISTEN_ADDR)")
+	fs.StringVar(&cfg.PublicURL, "public-url", config.String(look, "PATCHD_PUBLIC_URL", ""),
+		"URL HTTPS pela qual os agentes alcançam este servidor, levada no job server_url, ex.: https://patchd.exemplo:8443 (env PATCHD_PUBLIC_URL)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.HealthCheck, "healthcheck", false,
 		"consulta o /healthz do servidor local e sai com 0 (saudável) ou 1 (uso do HEALTHCHECK do Docker)")
@@ -100,6 +106,18 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		problems = append(problems, errTLSPair)
 	case cfg.TLS() && (!filepath.IsAbs(cfg.TLSCertFile) || !filepath.IsAbs(cfg.TLSKeyFile)):
 		problems = append(problems, errors.New("-tls-cert e -tls-key: os caminhos precisam ser absolutos"))
+	}
+	if cfg.PublicURL != "" {
+		// O servidor só dá a troca por concluída quando o resultado chega por TLS a ele
+		// mesmo: sem TLS aqui, o job server_url nunca concluiria.
+		if !cfg.TLS() {
+			problems = append(problems, errors.New("-public-url/PATCHD_PUBLIC_URL exige TLS neste servidor (-tls-cert e -tls-key)"))
+		}
+		if n, err := jobs.NormalizeServerURL(cfg.PublicURL); err != nil {
+			problems = append(problems, fmt.Errorf("-public-url/PATCHD_PUBLIC_URL: %w", err))
+		} else {
+			cfg.PublicURL = n
+		}
 	}
 	if cfg.HTTPListenAddr != "" {
 		switch {

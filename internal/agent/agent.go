@@ -46,6 +46,9 @@ type Agent struct {
 	// usuários. Restart nil: o agente recusa esses jobs.
 	RebootStatus func(ctx context.Context) (protocol.RebootStatus, error)
 	Restart      func(ctx context.Context, jobID int64, delay time.Duration) error
+	// SaveServerURL grava o endereço novo do servidor na credencial (job server_url, Aula
+	// 9.2). nil: o agente recusa esses jobs.
+	SaveServerURL func(url string) error
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -251,6 +254,17 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			return out
 		}
 		scanSent = true
+	}
+
+	// Troca de endereço (Aula 9.2), com o ciclo já entregue pelo endereço atual: o
+	// resultado vai pelo endereço novo e, se chegar, o agente passa a usá-lo. Uma falha
+	// vira resultado "falhou", entregue logo abaixo pelo endereço atual.
+	if state.PendingServerMove != nil {
+		a.moveServer(ctx, &state)
+		a.saveStateOrLog(state)
+		if ctx.Err() != nil {
+			return outcomeTransient
+		}
 	}
 
 	// Resultados dos jobs deste ciclo (e as recusas), depois da busca.

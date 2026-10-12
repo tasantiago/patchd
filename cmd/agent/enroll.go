@@ -83,6 +83,10 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 		return exitRuntime
 	}
 
+	if err := setEnrollCA(cfg.CAFile); err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
+		return exitConfig
+	}
 	c, err := enrollMachine(cfg.ServerURL, cfg.DataDir, token, agentVersion, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
@@ -154,6 +158,20 @@ func enrollToken(file string, look config.Lookup) (string, error) {
 	return value, nil
 }
 
+// enrollTransport é o transporte do registro: nil (as CAs do sistema) ou o do -ca-file
+// (Aula 9.2), definido pelo enroll e pelo install antes de registrar.
+var enrollTransport http.RoundTripper
+
+// setEnrollCA aplica o -ca-file ao registro.
+func setEnrollCA(caFile string) error {
+	rt, _, err := agentTransport(caFile)
+	if err != nil {
+		return err
+	}
+	enrollTransport = rt
+	return nil
+}
+
 // postEnroll envia o pedido de registro e interpreta a resposta pelo código HTTP.
 func postEnroll(ctx context.Context, serverURL, token string, req protocol.EnrollRequest) (protocol.EnrollResponse, error) {
 	var out protocol.EnrollResponse
@@ -172,7 +190,7 @@ func postEnroll(ctx context.Context, serverURL, token string, req protocol.Enrol
 	hr.Header.Set("X-Request-ID", requestID)
 	hr.Header.Set("User-Agent", "patchd-agent/"+req.AgentVersion)
 
-	resp, err := (&http.Client{Timeout: enrollHTTPTimeout}).Do(hr)
+	resp, err := (&http.Client{Timeout: enrollHTTPTimeout, Transport: enrollTransport}).Do(hr)
 	if agent.ClosedWithoutResponse(err) {
 		return out, fmt.Errorf("%w: a conexão abriu, mas foi fechada sem resposta "+
 			"(em geral, nada escutando atrás de uma porta publicada do Docker ou de um proxy)", err)

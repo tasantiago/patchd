@@ -24,6 +24,7 @@ type loopOptions struct {
 	DataDir        string
 	ServerURL      string // vazio: usa o servidor gravado na credencial
 	OfflineCatalog string
+	CAFile         string // Aula 9.2: CA do servidor; vazio = as do sistema
 	Interval       time.Duration
 	AllowContainer bool // PATCHD_ALLOW_CONTAINER=1: só para desenvolvimento
 	// AutoUpdate: só como serviço (Aula 5.4). ServiceArgs são as opções do "service run",
@@ -75,8 +76,9 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		logger.Error("credencial ilegível", "error", err)
 		return exitRuntime
 	}
-	// A credencial só vale no servidor que a emitiu.
-	if opts.ServerURL != "" && strings.TrimRight(opts.ServerURL, "/") != strings.TrimRight(cred.ServerURL, "/") {
+	// A credencial só vale no servidor que a emitiu (no endereço atual ou no anterior a um
+	// job server_url, Aula 9.2).
+	if opts.ServerURL != "" && !cred.Matches(opts.ServerURL) {
 		logger.Error("o servidor configurado não é o que emitiu a credencial",
 			"configured", opts.ServerURL, "credential_server", cred.ServerURL)
 		return exitConfig
@@ -87,6 +89,15 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	scanOpts := patch.Options{OfflineCatalog: opts.OfflineCatalog}
 
 	client := agent.NewClient(cred.ServerURL, cred.Credential, info.Version)
+	rt, certs, err := agentTransport(opts.CAFile)
+	if err != nil {
+		logger.Error("CA do servidor", "error", err)
+		return exitConfig
+	}
+	if rt != nil {
+		client.HTTP.Transport = rt
+		logger.Info("CA do servidor: só a do arquivo", "ca_file", opts.CAFile, "certificados", certs)
+	}
 	cab := newOfflineCab(logger, client, opts)
 	ag := &agent.Agent{
 		Client: client,
@@ -137,6 +148,18 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}
 	if opts.AutoUpdate {
 		ag.Update = newUpdater(logger, client, opts, info.Version)
+	}
+	// Troca de endereço (Aula 9.2): o endereço novo vai para a credencial, e o antigo fica
+	// guardado (o install com o endereço antigo continua reconhecendo a máquina).
+	ag.SaveServerURL = func(u string) error {
+		c, err := credential.Load(opts.DataDir)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(strings.TrimRight(c.ServerURL, "/"), u) {
+			c.PreviousServerURL, c.ServerURL = c.ServerURL, u
+		}
+		return credential.Save(opts.DataDir, c)
 	}
 	ag.MachineID = cred.MachineID
 	ag.JobKey = jobKey(logger)

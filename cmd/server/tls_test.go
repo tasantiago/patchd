@@ -225,6 +225,9 @@ func TestConfiguracaoTLS(t *testing.T) {
 		"caminho relativo":  {com("PATCHD_TLS_CERT_FILE", "x.crt", "PATCHD_TLS_KEY_FILE", "/x.key"), "absolutos"},
 		"transição sem TLS": {com("PATCHD_HTTP_LISTEN_ADDR", ":8081"), "só vale com TLS"},
 		"mesma porta":       {com("PATCHD_TLS_CERT_FILE", "/x.crt", "PATCHD_TLS_KEY_FILE", "/x.key", "PATCHD_HTTP_LISTEN_ADDR", ":8080"), "diferentes"},
+		// Aula 9.2: a URL pública é https e exige TLS neste servidor.
+		"url pública sem TLS": {com("PATCHD_PUBLIC_URL", "https://patchd.exemplo:8443"), "exige TLS"},
+		"url pública em http": {com("PATCHD_TLS_CERT_FILE", "/x.crt", "PATCHD_TLS_KEY_FILE", "/x.key", "PATCHD_LISTEN_ADDR", ":8443", "PATCHD_PUBLIC_URL", "http://patchd.exemplo:8080"), "https"},
 	} {
 		_, err := loadServerConfig(nil, lookMap(c.env), io.Discard)
 		if err == nil || !strings.Contains(err.Error(), c.msg) {
@@ -235,6 +238,11 @@ func TestConfiguracaoTLS(t *testing.T) {
 		"PATCHD_HTTP_LISTEN_ADDR", ":8080")), io.Discard)
 	if err != nil || !cfg.TLS() || cfg.HTTPListenAddr != ":8080" {
 		t.Errorf("válida: %+v %v", cfg, err)
+	}
+	cfg, err = loadServerConfig(nil, lookMap(com("PATCHD_TLS_CERT_FILE", "/x.crt", "PATCHD_TLS_KEY_FILE", "/x.key", "PATCHD_LISTEN_ADDR", ":8443",
+		"PATCHD_PUBLIC_URL", "HTTPS://Patchd.Exemplo:8443/")), io.Discard)
+	if err != nil || cfg.PublicURL != "https://patchd.exemplo:8443" {
+		t.Errorf("url pública normalizada: %q %v", cfg.PublicURL, err)
 	}
 	if u, _ := healthcheckURL(":8443", true); u != "https://127.0.0.1:8443/healthz" {
 		t.Errorf("url: %s", u)

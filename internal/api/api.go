@@ -38,8 +38,11 @@ type Store interface {
 	Enroll(ctx context.Context, tokenHash []byte, m identity.NewMachine) ([]protocol.IdentityLink, error)
 	MachineByCredential(ctx context.Context, credentialHash []byte) (machineID string, found bool, err error)
 	IdentityLinks(ctx context.Context) ([]protocol.IdentityLink, error)
-	// CheckIn registra o contato periódico e diz se o inventário atual tem o hash informado.
-	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string) (inventoryKnown bool, err error)
+	// CheckIn registra o contato periódico (e o canal: TLS ou não, Aula 9.2) e diz se o
+	// inventário atual tem o hash informado.
+	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string, viaTLS bool) (inventoryKnown bool, err error)
+	// CheckinTLS diz por qual canal chegou o último check-in (nil: nenhum desde a Aula 9.2).
+	CheckinTLS(ctx context.Context, machineID string) (*bool, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -81,6 +84,7 @@ type api struct {
 	directory  Directory          // nil: só usuários locais
 	compliance ComplianceSource   // nil: sem estado de compliance (armazenamento em memória)
 	jobKey     ed25519.PrivateKey // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
+	publicURL  string             // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
 	limiter    loginLimiter       // falhas de login por usuário+IP e por IP
 	hashSlots  chan struct{}      // conferências de senha simultâneas
 }
@@ -119,6 +123,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/jobs/{id}/cancelar", a.sameOrigin(a.adminAction(a.cancelJobAction)))
 	mux.Handle("POST /painel/maquinas/{id}/atualizar", a.sameOrigin(a.adminAction(a.updateAction)))
 	mux.Handle("POST /painel/maquinas/{id}/reiniciar", a.sameOrigin(a.adminAction(a.rebootAction)))
+	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))

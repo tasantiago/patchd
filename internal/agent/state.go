@@ -31,6 +31,15 @@ type State struct {
 	// PendingReboot é o reinício agendado por um job (Aula 8.6): depois que a máquina
 	// volta, o agente confere a hora do boot, faz a busca e manda o resultado.
 	PendingReboot *PendingReboot `json:"pending_reboot,omitempty"`
+	// PendingServerMove é a troca de endereço aceita (Aula 9.2), feita no fim de um ciclo
+	// entregue: se o agente cair antes, ela fica para o próximo.
+	PendingServerMove *PendingServerMove `json:"pending_server_move,omitempty"`
+}
+
+// PendingServerMove guarda o job server_url até a troca ser tentada.
+type PendingServerMove struct {
+	JobID int64  `json:"job_id"`
+	URL   string `json:"url"`
 }
 
 // PendingReboot guarda o job de reinício até a máquina voltar.
