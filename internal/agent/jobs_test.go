@@ -303,7 +303,7 @@ func TestReinicioPorJob(t *testing.T) {
 	a.Restart = nil
 	j5 := criaJob(t, srv, priv, id, reboot(5))
 	a.CheckIn(ctx)
-	if e := estadoDoJob(srv, id, j5); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "só Linux") {
+	if e := estadoDoJob(srv, id, j5); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "Linux e Windows") {
 		t.Errorf("sem Restart: %+v", e)
 	}
 }

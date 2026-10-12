@@ -133,7 +133,7 @@ func (a *Agent) scheduleReboots(ctx context.Context, state *State, reboots []acc
 			a.queueJobResult(state, r.id, protocol.JobResultRejected, why)
 		}
 		if a.Restart == nil || a.RebootStatus == nil {
-			reject("este sistema não reinicia pelo patchd (só Linux, por enquanto)")
+			reject("este sistema não reinicia pelo patchd (Linux e Windows, por enquanto)")
 			continue
 		}
 		if state.PendingReboot != nil {

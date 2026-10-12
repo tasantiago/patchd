@@ -289,7 +289,14 @@ func TestReiniciarPeloPainel(t *testing.T) {
 	if l := pede(maq+"/reiniciar", url.Values{"aviso": {"5"}, "quando": {"agora"}}); l != maq+"?erro=reinicio-aberto&job=1" {
 		t.Errorf("segundo: %s", l)
 	}
-	// Máquina sem reinício pendente (e sem família Linux): nada é pedido.
+	// Windows com reinício pendente (o WSUS instalou e deixou o reinício): também (Aula 8.7).
+	win := "92fc3b93-0003"
+	_, _ = st.SaveInventory(ctx, win, protocol.InventoryReport{SchemaVersion: 1, Hash: "w", OS: protocol.OSInfo{Family: "windows"}})
+	_ = st.SaveScan(ctx, win, protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, Reboot: &protocol.RebootStatus{Pending: &sim}})
+	if b := pagina(h, "GET", "/painel/maquinas/"+win, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "/reiniciar") || !strings.Contains(b, "shutdown /a") {
+		t.Errorf("windows:\n%s", b)
+	}
+	// Máquina sem reinício pendente (e sem família conhecida): nada é pedido.
 	if l := pede("/painel/maquinas/7aa604f7-0002/reiniciar", url.Values{"aviso": {"5"}, "quando": {"agora"}}); l != "/painel/maquinas/7aa604f7-0002?erro=sem-reinicio" {
 		t.Errorf("sem pendência: %s", l)
 	}
