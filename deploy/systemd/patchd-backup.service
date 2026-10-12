@@ -1,5 +1,6 @@
-# Cópia diária do banco do patchd (Aula 10.1). Ajuste WorkingDirectory para a pasta do
-# repositório no servidor e copie para /etc/systemd/system/ junto com o .timer.
+# Cópia diária do banco do patchd (Aulas 10.1 e 10.3). Ajuste WorkingDirectory para a pasta
+# do repositório no servidor e copie para /etc/systemd/system/ junto com o .timer.
+# Com deploy/secrets/backup_recipients, a cópia sai cifrada (precisa do pacote age).
 [Unit]
 Description=patchd: cópia do banco (pg_dump)
 Requires=docker.service

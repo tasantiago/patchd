@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Restauração do banco do compose de produção a partir de uma cópia do backup.sh (Aula 10.1).
+# Restauração do banco do compose de produção a partir de uma cópia do backup.sh (Aulas 10.1 e 10.3).
 #
-#   ./deploy/restaurar.sh --testar  ARQUIVO.dump   restaura num banco temporário, compara as
-#                                                  contagens com as da cópia e apaga o banco
-#   ./deploy/restaurar.sh --confirmo ARQUIVO.dump  SUBSTITUI o banco patchd pela cópia
+#   ./deploy/restaurar.sh --testar  ARQUIVO.dump[.age]   restaura num banco temporário, compara
+#                                                        as contagens com as da cópia e apaga o banco
+#   ./deploy/restaurar.sh --confirmo ARQUIVO.dump[.age]  SUBSTITUI o banco patchd pela cópia
+#
+# Cópia cifrada (.age): PATCHD_BACKUP_IDENTITY_FILE=caminho da chave PRIVADA do age (a que
+# fica fora do servidor; se ela tiver senha, o age pergunta). O texto claro vai do age direto
+# para dentro do container do Postgres, sem passar pelo disco deste host.
 #
 # O teste não toca no banco em uso: é o ensaio que deve rodar todo mês (uma cópia que nunca
 # foi restaurada não é uma cópia). A substituição para o servidor, apaga o banco patchd,
@@ -14,11 +18,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COMPOSE="${PATCHD_COMPOSE_FILE:-deploy/compose.yaml}"
-uso() { sed -n '4,6p' "$0" | sed 's/^# //' >&2; exit 2; }
+uso() { sed -n '4,7p' "$0" | sed 's/^# //' >&2; exit 2; }
 [ $# -eq 2 ] || uso
 mode="$1"; dump="$2"
 case "$mode" in --testar|--confirmo) ;; *) uso ;; esac
 [ -s "$dump" ] || { echo "cópia não encontrada ou vazia: $dump" >&2; exit 1; }
+cifrada=false
+case "$dump" in
+  *.age)
+    cifrada=true
+    id="${PATCHD_BACKUP_IDENTITY_FILE:-}"
+    [ -n "$id" ] && [ -r "$id" ] || { echo "cópia cifrada: defina PATCHD_BACKUP_IDENTITY_FILE com a chave privada do age (fora do servidor)" >&2; exit 1; }
+    command -v age >/dev/null || { echo "o age não está instalado (Ubuntu/Debian: sudo apt install age)" >&2; exit 1; }
+    ;;
+esac
 
 dc() { docker compose -f "$COMPOSE" "$@"; }
 pg() { dc exec -T postgres "$@"; }
@@ -35,8 +48,18 @@ fi
 
 dc up -d --wait postgres >/dev/null
 # A cópia vai para dentro do container (arquivo, não pipe: o pg_restore pode pular no índice).
-pg sh -c 'cat > /tmp/patchd-restaurar.dump' < "$dump"
 limpa() { pg rm -f /tmp/patchd-restaurar.dump; }
+trap limpa EXIT
+if $cifrada; then
+  # Chave errada ou arquivo adulterado: o age para com erro (cada bloco é autenticado).
+  age -d -i "$id" "$dump" | pg sh -c 'cat > /tmp/patchd-restaurar.dump' ||
+    { echo "não consegui decifrar $dump (chave privada de outro par, ou arquivo adulterado)" >&2; exit 1; }
+  echo "decifrada"
+else
+  pg sh -c 'cat > /tmp/patchd-restaurar.dump' < "$dump"
+fi
+# Legível antes de qualquer DROP: com --confirmo, uma cópia ruim não apaga o banco em uso.
+pg pg_restore --list /tmp/patchd-restaurar.dump > /dev/null || { echo "a cópia não é um pg_dump legível" >&2; exit 1; }
 
 if [ "$mode" = "--testar" ]; then
   db=patchd_teste_restauracao
@@ -67,7 +90,6 @@ echo "== apagando e recriando o banco patchd"
 psqlc postgres "DROP DATABASE IF EXISTS patchd WITH (FORCE)" >/dev/null
 psqlc postgres "CREATE DATABASE patchd OWNER patchd" >/dev/null
 echo "== restaurando $(basename "$dump")"
-trap limpa EXIT
 pg pg_restore -U patchd -d patchd --no-owner --exit-on-error --single-transaction /tmp/patchd-restaurar.dump
 pg psql -U patchd -d patchd -AtX -f - < deploy/contagens.sql | tabela
 echo "== subindo o servidor (ele aplica as migrations mais novas que a cópia, se houver)"

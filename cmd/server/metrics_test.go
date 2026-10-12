@@ -67,6 +67,7 @@ func TestConfiguracaoDasMetricas(t *testing.T) {
 type bancoDasMetricas struct {
 	leituras int
 	falha    error
+	semCopia bool
 }
 
 func (b *bancoDasMetricas) Machines(ctx context.Context) ([]protocol.MachineSummary, error) {
@@ -90,6 +91,13 @@ func (b *bancoDasMetricas) CatalogStatus(ctx context.Context, sources []string) 
 		{Source: "ubuntu", LastOK: ok, Latest: false, Runs: 4},
 		{Source: "apple"}, // nunca rodou: fora das duas séries
 	}, nil
+}
+
+func (b *bancoDasMetricas) LastBackup(ctx context.Context) (store.BackupRun, bool, error) {
+	if b.semCopia {
+		return store.BackupRun{}, false, nil
+	}
+	return store.BackupRun{FinishedAt: time.Unix(1_790_090_000, 0), File: "patchd-20260912T023000Z.dump.age", Bytes: 4_500_000, Encrypted: true}, true, nil
 }
 
 type frotaDasMetricas struct{}
@@ -129,6 +137,7 @@ func TestMedidores(t *testing.T) {
 		`patchd_catalog_last_success_timestamp_seconds{fonte="msrc"} 1790000000`,
 		`patchd_catalog_last_run_ok{fonte="msrc"} 1`, `patchd_catalog_last_run_ok{fonte="ubuntu"} 0`,
 		"# TYPE patchd_machines gauge",
+		`patchd_backup_last_success_timestamp_seconds 1790090000`, `patchd_backup_last_size_bytes 4500000`, `patchd_backup_last_encrypted 1`,
 	} {
 		if !strings.Contains(texto, linha+"\n") {
 			t.Errorf("falta %q", linha)
@@ -157,6 +166,14 @@ func TestMedidores(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "conexão recusada") {
 		t.Errorf("log: %s", log.String())
+	}
+	// Nenhuma cópia registrada: as séries das cópias não existem (o alerta usa absent()).
+	banco.falha, banco.semCopia = nil, true
+	agora = agora.Add(time.Minute)
+	texto = coleta()
+	if !strings.Contains(texto, "patchd_coleta_banco_ok 1\n") || strings.Contains(texto, "\npatchd_backup_last_success_timestamp_seconds ") ||
+		!strings.Contains(texto, "# TYPE patchd_backup_last_success_timestamp_seconds gauge") {
+		t.Errorf("sem cópia:\n%s", texto)
 	}
 }
 

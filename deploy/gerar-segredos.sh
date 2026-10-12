@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepara os segredos do compose de produção em deploy/secrets (fora do git e do contexto
-# do build) e confere o resto do que o compose monta (Aulas 9.3, 9.4 e 10.2).
+# do build) e confere o resto do que o compose monta (Aulas 9.3, 9.4, 10.2 e 10.3).
 # Não sobrescreve nada: o Postgres só lê a senha na primeira inicialização do volume
 # (trocar a senha de um banco já criado exige ALTER ROLE), e a chave de jobs tem de ser a
 # mesma cuja pública está embutida nos agentes.
@@ -14,7 +14,8 @@ chmod 700 "$DIR"
 
 # 0. Variáveis PATCHD_* exportadas no shell valem mais que o deploy/.env no compose (Aula
 # 10.1: o servidor subiu com o RHBK do ambiente de desenvolvimento). Só os nomes, nunca os valores.
-exportadas="$(env | grep -oE '^PATCHD_[A-Z0-9_]+' | sort | tr '\n' ' ' | sed 's/ $//' || true)"
+# PATCHD_VERSION e PATCHD_COMMIT ficam de fora: são os argumentos do build, de propósito.
+exportadas="$(env | grep -oE '^PATCHD_[A-Z0-9_]+' | grep -vxE 'PATCHD_(VERSION|COMMIT)' | sort | tr '\n' ' ' | sed 's/ $//' || true)"
 if [ -n "$exportadas" ]; then
   echo "AVISO: PATCHD_* exportadas neste shell passam por cima do deploy/.env no compose:"
   echo "    $exportadas"
@@ -65,6 +66,22 @@ else
 fi
 
 falta=0
+# 2c. Cópias cifradas (Aula 10.3): aqui fica só a chave PÚBLICA do age; a privada, fora.
+REC="$DIR/backup_recipients"
+if [ -s "$REC" ]; then
+  if grep -q 'AGE-SECRET-KEY-' "$REC"; then
+    falta=1
+    echo "cópias: $REC tem uma chave PRIVADA do age. Deixe só a linha age1… e guarde a privada fora do servidor."
+  elif ! command -v age >/dev/null 2>&1; then
+    falta=1
+    echo "cópias: cifradas no deploy/secrets, mas FALTA o age neste host (Ubuntu/Debian: sudo apt install age)."
+  else
+    echo "cópias: cifradas com age para $(grep -cvE '^[[:space:]]*(#|$)' "$REC") destinatário(s)."
+  fi
+else
+  echo "cópias: SEM cifra. Para cifrar: age-keygen fora do servidor e a linha age1… em deploy/secrets/backup_recipients (docs/operacao.md)."
+fi
+
 # 3. Chave de jobs: não é gerada aqui. Uma chave nova não vale para os agentes já
 # instalados (eles conferem com a pública embutida no build).
 if [ -s "$DIR/job_signing_key" ]; then

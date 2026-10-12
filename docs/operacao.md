@@ -15,12 +15,56 @@ sincronização.
   `pg_dump` roda dentro do container do Postgres, com o servidor no ar, e grava no formato
   custom. A cópia é conferida (`pg_restore --list`) antes de ganhar o nome final e recebe um
   `.sha256` e as contagens do momento ao lado. Cópias com mais de
-  `PATCHD_BACKUP_KEEP_DAYS` dias (padrão 14) são apagadas.
+  `PATCHD_BACKUP_KEEP_DAYS` dias (padrão 14) são apagadas. Cada cópia é registrada no banco
+  (tabela `backup_runs`) e aparece nas métricas (`patchd_backup_last_*`).
 - **Agenda:** `deploy/systemd/patchd-backup.{service,timer}` (todo dia às 02:30, com até
   15 minutos de sorteio; ajuste `WorkingDirectory`).
 - **Fora do host:** uma cópia que só existe no mesmo disco do banco não protege contra a
   perda do host. Leve as cópias para outro lugar. A cópia tem hashes de senhas e de
-  credenciais: pasta 700, arquivos 600 (cifrar as cópias: pendência).
+  credenciais: pasta 700, arquivos 600, e cifrada (próxima seção) antes de sair do host.
+
+## Cópias cifradas (Aula 10.3)
+
+Com `deploy/secrets/backup_recipients`, o `backup.sh` cifra a cópia com o
+[age](https://age-encryption.org) para as chaves **públicas** listadas ali e grava
+`patchd-AAAAMMDDTHHMMSSZ.dump.age`. O servidor só cifra; decifrar exige a chave
+**privada**, que nunca fica no servidor. Quem rouba o disco, a pasta de cópias ou o
+destino fora do host leva arquivos que não abre.
+
+1. Numa máquina de administração, fora do servidor, gere dois pares (dois, porque perder
+   a única chave privada torna todas as cópias inúteis):
+   ```bash
+   age-keygen -o patchd-copias-A.txt      # imprime "Public key: age1…"
+   age-keygen -o patchd-copias-B.txt
+   ```
+   Guarde as privadas em lugares diferentes: por exemplo, uma no cofre de senhas da equipe
+   e outra em mídia offline. Para guardar a privada com senha (age 1.1 ou mais novo):
+   `age -p -o patchd-copias-A.age patchd-copias-A.txt` e apague o `.txt`; o
+   `age -d -i patchd-copias-A.age` pede a senha.
+2. No servidor, só as públicas, uma por linha (`#` comenta):
+   ```bash
+   sudo apt install age
+   printf '# operador\nage1…\n# cofre\nage1…\n' > deploy/secrets/backup_recipients
+   ./deploy/gerar-segredos.sh            # "cópias: cifradas com age para 2 destinatário(s)."
+   ```
+   O `backup.sh` e o `gerar-segredos.sh` recusam o arquivo se ele tiver uma chave privada
+   (`AGE-SECRET-KEY-…`).
+3. Ensaio e restauração de uma cópia cifrada: a chave privada entra só durante o ensaio.
+   ```bash
+   PATCHD_BACKUP_IDENTITY_FILE=/media/chave/patchd-copias-A.txt \
+     ./deploy/restaurar.sh --testar deploy/backups/patchd-AAAAMMDDTHHMMSSZ.dump.age
+   ```
+   O texto claro vai do `age` direto para dentro do container do Postgres, sem passar
+   pelo disco do host. Chave de outro par ou arquivo adulterado: o `age` para com erro e
+   nada é restaurado. Com `--confirmo`, a cópia é decifrada e lida (`pg_restore --list`)
+   antes de o banco em uso ser apagado.
+
+Trocar as chaves: gere o par novo, ponha a pública em `backup_recipients` (pode ficar ao
+lado da antiga por um tempo) e guarde a privada antiga enquanto houver cópias feitas
+com ela.
+
+Depois de uma restauração, a tabela `backup_runs` volta ao estado da cópia: a métrica
+mostra a cópia anterior até a próxima execução do `backup.sh`.
 
 ## Ensaio de restauração (todo mês)
 
@@ -52,6 +96,7 @@ Guarde à parte, com o mesmo cuidado:
 | Senha e URL do banco | `deploy/secrets/db_password`, `database_url` | gerar outra e trocar com `ALTER ROLE` |
 | Chave de jobs | `deploy/secrets/job_signing_key` | os agentes recusam todo job até serem recompilados com a chave nova |
 | Segredo do cliente do RHBK | `deploy/secrets/oidc_client_secret` | gerar outro no RHBK (aba Credentials) |
+| Chaves privadas das cópias (age) | fora do servidor (cofre e mídia offline) | sem nenhuma das duas, as cópias cifradas não abrem: gere um par novo e faça uma cópia já |
 | Token das métricas | `deploy/secrets/metrics_token` | gerar outro (apague o arquivo e rode `gerar-segredos.sh`) e trocar no Prometheus |
 | Certificado TLS | `deploy/tls` | pedir outro à CA interna |
 | Configuração | `deploy/.env` | refazer a partir de `deploy/.env.exemplo` |
@@ -98,6 +143,11 @@ reinicia; `rate()` e `increase()` do Prometheus tratam isso.
 
 Nenhuma métrica tem nome de máquina, ID, usuário ou IP como rótulo: o número de séries
 fica fixo, e a saída pode ir para um chamado sem limpeza.
+
+Cópias do banco (Aula 10.3): `patchd_backup_last_success_timestamp_seconds`,
+`patchd_backup_last_size_bytes` e `patchd_backup_last_encrypted`, da última linha de
+`backup_runs`. Sem nenhuma cópia registrada, as três não existem (alerta
+`PatchdNenhumaCopia`).
 
 Prometheus: `deploy/prometheus/prometheus.exemplo.yml` (coleta com o token por arquivo) e
 `deploy/prometheus/alertas.yml` (regras). Confira com
