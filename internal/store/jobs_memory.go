@@ -45,7 +45,7 @@ func (m *Memory) ExpireJobs(ctx context.Context, now time.Time) (int64, error) {
 	defer m.mu.Unlock()
 	var n int64
 	for _, j := range m.jobs {
-		if (j.State == "pendente" || j.State == "entregue") && !j.NotAfter.After(now) {
+		if (j.State == "pendente" && !j.NotAfter.After(now)) || (j.State == "entregue" && !j.NotAfter.After(now.Add(-jobs.ResultGrace))) {
 			j.State, j.Detail = "expirado", "prazo vencido sem resultado do agente"
 			t := now
 			j.FinishedAt = &t

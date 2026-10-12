@@ -52,6 +52,8 @@ func typeLabel(t string) string {
 		return "buscar atualizações"
 	case jobs.TypeUpdate:
 		return "atualizar pacotes"
+	case jobs.TypeReboot:
+		return "reiniciar"
 	}
 	return t
 }
@@ -154,6 +156,12 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = "O anel desta máquina não tem janela de manutenção (patchd-server ring window); escolha \"agora\"."
 	case get("erro") == "pacotes":
 		b.Error = "Os pacotes das pendências marcadas não formam um pedido válido (veja o log do servidor)."
+	case get("erro") == "reinicio-aberto" && n > 0:
+		b.Error = fmt.Sprintf("Já existe um reinício pedido e ainda em aberto para esta máquina (job %d).", n)
+	case get("erro") == "sem-reinicio":
+		b.Error = "A última busca desta máquina não mostra reinício pendente (ou ela não é Linux); nada foi pedido."
+	case get("erro") == "reinicio-form":
+		b.Error = "Escolha o aviso (5, 15, 30 ou 60 minutos) e quando."
 	case get("erro") == "cancelar" && n > 0:
 		b.Error = fmt.Sprintf("O job %d não está mais pendente; nada mudou. Um job entregue não se cancela: o agente pode estar executando.", n)
 	case get("criado") != "" && n > 0:

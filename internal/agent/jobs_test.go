@@ -223,3 +223,87 @@ func TestUpdatePorJob(t *testing.T) {
 		t.Errorf("job 5: %+v (pedidos %d)", e, len(pedidos))
 	}
 }
+
+func TestReinicioPorJob(t *testing.T) {
+	srv, id, cred := novoServidor(t)
+	pub, priv, _ := jobs.GenerateKey()
+	var buscas atomic.Int32
+	log := &bytes.Buffer{}
+	a := agenteDeTeste(t, srv, cred, &buscas, log)
+	a.MachineID, a.JobKey = id, pub
+	ctx := context.Background()
+	a.CheckIn(ctx) // a busca diária sai do caminho
+
+	// A máquina: reinício pendente e o boot de ontem. A busca devolve o mesmo estado.
+	boot := time.Now().UTC().Add(-24 * time.Hour)
+	pendente := true
+	estado := func() protocol.RebootStatus {
+		b, p := boot, pendente
+		return protocol.RebootStatus{Pending: &p, LastBoot: &b}
+	}
+	a.RebootStatus = func(context.Context) (protocol.RebootStatus, error) { return estado(), nil }
+	a.Scan = func(context.Context) protocol.PatchScanReport {
+		buscas.Add(1)
+		st := estado()
+		return protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, ScannedAt: time.Now().UTC(), Reboot: &st,
+			Scans: []protocol.ScanResult{{Source: "apt", Missing: []protocol.MissingUpdate{}}}}
+	}
+	var agendados []time.Duration
+	a.Restart = func(_ context.Context, _ int64, d time.Duration) error { agendados = append(agendados, d); return nil }
+	reboot := func(min int) func(*jobs.Job) {
+		return func(j *jobs.Job) {
+			j.Type = jobs.TypeReboot
+			j.Params = []byte(fmt.Sprintf(`{"delay_minutes":%d}`, min))
+		}
+	}
+
+	// 1. Agenda com o aviso pedido; o resultado espera a máquina voltar.
+	j1 := criaJob(t, srv, priv, id, reboot(5))
+	a.CheckIn(ctx)
+	if len(agendados) != 1 || agendados[0] != 5*time.Minute || estadoDoJob(srv, id, j1).State != jobs.StateDelivered {
+		t.Fatalf("agendar: %v %+v\n%s", agendados, estadoDoJob(srv, id, j1), log.String())
+	}
+	if st, _ := loadState(a.DataDir); st.PendingReboot == nil || st.PendingReboot.JobID != j1 {
+		t.Fatalf("estado: %+v", st)
+	}
+	// Um segundo pedido com o primeiro agendado: recusado.
+	j2 := criaJob(t, srv, priv, id, reboot(5))
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j2); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "já há um reinício agendado") {
+		t.Errorf("segundo: %+v", e)
+	}
+
+	// 2. A máquina reinicia: boot novo, sem pendência. O agente faz a busca e responde.
+	boot, pendente = time.Now().UTC(), false
+	antes := buscas.Load()
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j1); e.State != jobs.StateDone || !strings.Contains(e.Detail, "não mostra reinício pendente") || buscas.Load() != antes+1 {
+		t.Fatalf("depois do boot: %+v\n%s", e, log.String())
+	}
+
+	// 3. Sem reinício pendente: nada a fazer, recusado sem tocar na máquina.
+	j3 := criaJob(t, srv, priv, id, reboot(5))
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j3); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "nenhum reinício pendente") || len(agendados) != 1 {
+		t.Errorf("sem pendência: %+v", e)
+	}
+
+	// 4. Agendado e cancelado na máquina (shutdown -c): depois da folga, "falhou".
+	pendente = true
+	j4 := criaJob(t, srv, priv, id, reboot(2))
+	a.CheckIn(ctx)
+	a.now = func() time.Time { return time.Now().Add(rebootLate + 3*time.Minute) }
+	a.CheckIn(ctx)
+	a.now = time.Now
+	if e := estadoDoJob(srv, id, j4); e.State != jobs.StateFailed || !strings.Contains(e.Detail, "não aconteceu") {
+		t.Errorf("cancelado na máquina: %+v", e)
+	}
+
+	// 5. Sistema sem reinício pelo patchd.
+	a.Restart = nil
+	j5 := criaJob(t, srv, priv, id, reboot(5))
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j5); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "só Linux") {
+		t.Errorf("sem Restart: %+v", e)
+	}
+}

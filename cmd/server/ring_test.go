@@ -140,3 +140,33 @@ func TestJobUpdatePelaLinhaDeComando(t *testing.T) {
 		}
 	}
 }
+
+func TestJobRebootPelaLinhaDeComando(t *testing.T) {
+	ctx := context.Background()
+	mem := store.NewMemory()
+	_, _ = mem.SaveInventory(ctx, "60ef97e4-0001", protocol.InventoryReport{SchemaVersion: 1, Hash: "x"})
+	st := memoriaComPrefixo{mem}
+	pub, key, _ := jobs.GenerateKey()
+	agora := time.Now().UTC()
+	job := func(args ...string) (int, string) {
+		var o, e bytes.Buffer
+		code := jobCommand(ctx, st, key, args, agora, &o, &e)
+		return code, e.String()
+	}
+	if code, e := job("create", "-machine", "60ef", "-type", "reboot", "-delay", "30m"); code != exitOK {
+		t.Fatalf("reboot: %d %s", code, e)
+	}
+	env, _ := mem.DeliverJobs(ctx, "60ef97e4-0001", agora)
+	j, err := jobs.Verify(pub, env[0], "60ef97e4-0001", agora, 0)
+	if p, _ := jobs.ParseRebootParams(j.Params); err != nil || p.Delay() != 30*time.Minute {
+		t.Errorf("payload: %+v %v", j, err)
+	}
+	for _, c := range [][]string{
+		{"create", "-machine", "60ef", "-type", "reboot", "-delay", "1m"},
+		{"create", "-machine", "60ef", "-type", "rescan", "-delay", "10m"},
+	} {
+		if code, _ := job(c...); code != exitConfig {
+			t.Errorf("%v: %d", c, code)
+		}
+	}
+}

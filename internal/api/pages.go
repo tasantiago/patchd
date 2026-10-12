@@ -164,6 +164,8 @@ type machineView struct {
 	JobsOn                               bool   // o servidor tem a chave: o admin pode pedir a busca
 	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
 	CanUpdate                            bool   // admin, chave de jobs e pendências do Linux (Aula 8.4)
+	CanReboot                            bool   // admin, chave, Linux com reinício pendente (Aula 8.6)
+	Delays                               []int
 	Window, NextWindow                   string
 }
 
@@ -234,6 +236,11 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if v.Admin && v.JobsOn {
 		v.CanUpdate = slices.ContainsFunc(v.Items, func(it protocol.PendingItem) bool { return len(it.Packages) > 0 })
+		if v.CanReboot, err = a.canReboot(r, id); err != nil {
+			a.internalError(w, r, "conferir reinício pendente", err)
+			return
+		}
+		v.Delays = rebootDelays
 	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
 	if v.Jobs.Rows, err = a.machineJobs(r, id, v.Admin); err != nil {
@@ -480,6 +487,13 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 {{if .Links}}<section><h2>Alertas de identidade</h2><ul>
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
 </ul></section>{{end}}
+{{if .CanReboot}}<section><h2>Reiniciar</h2>
+<p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Quem estiver na máquina pode cancelar com <code>shutdown -c</code>.</p>
+<form class="lote" method="post" action="/painel/maquinas/{{.D.MachineID}}/reiniciar">
+<label>Aviso <select name="aviso">{{range .Delays}}<option value="{{.}}" {{if eq . 15}}selected{{end}}>{{.}} min</option>{{end}}</select></label>
+<label><input type="radio" name="quando" value="agora" checked> agora</label>
+{{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
+<button type="submit">Reiniciar com aviso</button></form></section>{{end}}
 <section><h2>Jobs</h2>
 {{if .Admin}}{{if .JobsOn}}<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/buscar">
 <button type="submit">Buscar atualizações agora</button>

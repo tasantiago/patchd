@@ -145,6 +145,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	if inst := patch.NewInstaller(platform.ExecRunner{Timeout: installTimeout}); inst != nil {
 		ag.Install = inst.Install
 	}
+	// Job reboot (Aula 8.6): o estado de reinício vem do mesmo scanner da busca.
+	if restart := newRestart(platform.ExecRunner{}); restart != nil {
+		ag.Restart = restart
+		ag.RebootStatus = scanner.Reboot
+	}
 
 	logger.Info("agente iniciado",
 		"commit", info.Commit,

@@ -106,6 +106,8 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 		return jobs.StateDone, fmt.Sprintf("busca nova recebida em %s UTC", when)
 	case jobs.TypeUpdate:
 		return a.judgeUpdate(r, job, when)
+	case jobs.TypeReboot:
+		return a.judgeReboot(r, job, when)
 	}
 	return jobs.StateFailed, "tipo de job sem conferência no servidor: " + job.Type
 }
@@ -131,6 +133,25 @@ func (a *api) judgeUpdate(r *http.Request, job store.JobRow, when string) (strin
 		return jobs.StateFailed, fmt.Sprintf("a busca de %s UTC ainda mostra pendente: %s", when, strings.Join(still, "; "))
 	}
 	return jobs.StateDone, fmt.Sprintf("%d pacote(s) conferidos na busca de %s UTC: %s", len(params.Packages), when, strings.Join(params.Names(), ", "))
+}
+
+// judgeReboot confere o reinício na busca nova (Aula 8.6): o último boot é posterior à
+// entrega do job, e a busca não mostra mais reinício pendente.
+func (a *api) judgeReboot(r *http.Request, job store.JobRow, when string) (string, string) {
+	rep, found, err := a.store.LatestScan(r.Context(), job.MachineID)
+	if err != nil || !found {
+		return jobs.StateFailed, "o servidor não conseguiu ler a busca nova"
+	}
+	rb := rep.Reboot
+	switch {
+	case rb == nil || rb.LastBoot == nil:
+		return jobs.StateFailed, fmt.Sprintf("a busca de %s UTC não informa a hora do boot", when)
+	case !rb.LastBoot.After(*job.DeliveredAt):
+		return jobs.StateFailed, fmt.Sprintf("o último boot (%s UTC) é anterior à entrega do job: a máquina não reiniciou", rb.LastBoot.UTC().Format("2006-01-02 15:04"))
+	case rb.Pending != nil && *rb.Pending:
+		return jobs.StateFailed, fmt.Sprintf("reiniciou às %s UTC, mas a busca de %s UTC ainda mostra reinício pendente", rb.LastBoot.UTC().Format("15:04"), when)
+	}
+	return jobs.StateDone, fmt.Sprintf("reiniciou às %s UTC; a busca de %s UTC não mostra reinício pendente", rb.LastBoot.UTC().Format("2006-01-02 15:04"), when)
 }
 
 // stillPending lista os pacotes pedidos que a busca ainda mostra abaixo da versão pedida.
