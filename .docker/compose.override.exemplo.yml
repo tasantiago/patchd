@@ -10,6 +10,10 @@ services:
     networks:
       - default
       - banco
+    # Laboratório do RHBK (Aula 9.4): o Keycloak roda na rede do patchd-dev e responde na
+    # 18180, o mesmo endereço para o navegador (pelo host) e para o servidor (por dentro).
+    ports:
+      - "127.0.0.1:18180:18180"
 
 networks:
   banco:

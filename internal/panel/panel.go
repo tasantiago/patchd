@@ -23,6 +23,7 @@ const (
 const (
 	SourceLocal = "local"
 	SourceAD    = "ad"
+	SourceOIDC  = "oidc" // RHBK (Aula 9.4)
 )
 
 // SessionPrefix identifica o segredo da sessão, como os prefixos de identity.

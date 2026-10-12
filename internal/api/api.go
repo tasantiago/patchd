@@ -19,6 +19,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/store"
@@ -85,6 +86,8 @@ type api struct {
 	compliance ComplianceSource   // nil: sem estado de compliance (armazenamento em memória)
 	jobKey     ed25519.PrivateKey // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
 	publicURL  string             // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
+	oidc       *oidc.Provider     // login pelo RHBK (Aula 9.4); nil: desligado
+	oidcLogins oidcPending        // logins pelo RHBK em andamento (state → nonce e PKCE)
 	limiter    loginLimiter       // falhas de login por usuário+IP e por IP
 	hashSlots  chan struct{}      // conferências de senha simultâneas
 }
@@ -110,6 +113,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /painel/entrar", a.loginForm)
 	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))
 	mux.Handle("POST /painel/sair", a.sameOrigin(a.logout))
+	mux.HandleFunc("GET /painel/oidc/entrar", a.oidcStart)
+	mux.HandleFunc("GET /painel/oidc/retorno", a.oidcReturn)
 	mux.Handle("GET /painel/{$}", a.panelPage(a.fleetPage))
 	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
 	mux.Handle("GET /painel/aposentadas", a.panelPage(a.retiredPage))
