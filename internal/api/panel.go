@@ -203,9 +203,11 @@ type loginData struct {
 	Username string
 	Error    string
 	AD       bool // o login é pelo AD: a dica diz para usar o usuário da rede
+	OIDC     bool // botão "Entrar com o RHBK" (Aula 9.4)
 }
 
 func (a *api) renderLogin(w http.ResponseWriter, status int, d loginData) {
+	d.OIDC = a.oidc != nil
 	pageHeaders(w)
 	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, d)
@@ -254,7 +256,16 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.limiter.succeed(user, ip)
+	if !a.openSession(w, r, user, res.role, res.source) {
+		return
+	}
+	http.Redirect(w, r, "/painel/", http.StatusSeeOther)
+}
 
+// openSession abre a sessão e põe o cookie (login por senha e pelo RHBK). Em erro, já
+// respondeu e devolve false.
+func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, role, source string) bool {
+	now := a.now()
 	if n, err := a.store.DeleteExpiredPanelSessions(r.Context(), now); err != nil {
 		a.logger.Warn("limpeza das sessões vencidas", "error", err)
 	} else if n > 0 {
@@ -262,19 +273,19 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	// Segredo novo a cada login: um cookie antigo plantado no navegador nunca vira sessão.
 	plain, hash := identity.NewSecret(panel.SessionPrefix)
-	s := panel.Session{Username: user, Role: res.role, Source: res.source,
+	s := panel.Session{Username: user, Role: role, Source: source,
 		CreatedAt: now, ExpiresAt: now.Add(panel.SessionMaxAge), LastSeenAt: now}
 	if err := a.store.CreatePanelSession(r.Context(), hash, s); err != nil {
 		a.internalError(w, r, "abrir sessão do painel", err)
-		return
+		return false
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: plain, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
 	})
 	a.logger.Info("login no painel", "username", s.Username, "role", s.Role, "source", s.Source,
-		"remote", ip, "request_id", RequestID(r.Context()))
-	http.Redirect(w, r, "/painel/", http.StatusSeeOther)
+		"remote", remoteIP(r), "request_id", RequestID(r.Context()))
+	return true
 }
 
 // Directory confere a senha num diretório externo (o AD, Aula 7.3) e devolve o perfil.
@@ -367,6 +378,7 @@ const pageStyle = `<style>
 body{font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#1b1b1b}
 label{display:block;margin-top:1rem}input{width:100%;padding:.4rem;box-sizing:border-box}
 button{margin-top:1.2rem;padding:.4rem 1rem}.erro{color:#a40000}dt{font-weight:600;margin-top:.6rem}
+.muted{color:#555}.sso{display:inline-block;margin-top:1rem;padding:.5rem 1rem;border:1px solid #1b1b1b;text-decoration:none;color:#1b1b1b}
 </style>`
 
 var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
@@ -374,6 +386,8 @@ var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
 <title>patchd · entrar</title>` + pageStyle + `</head><body>
 <h1>patchd</h1>
 {{if .Error}}<p class="erro" role="alert">{{.Error}}</p>{{end}}
+{{if .OIDC}}<p><a class="sso" href="/painel/oidc/entrar">Entrar com o RHBK (login único)</a></p>
+<p class="muted">Ou com usuário e senha:</p>{{end}}
 <form method="post" action="/painel/entrar">
 <label>Usuário <input name="usuario" value="{{.Username}}" autocomplete="username" required autofocus></label>
 {{if .AD}}<small>O usuário da rede, sem o domínio.</small>{{end}}

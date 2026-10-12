@@ -1,6 +1,6 @@
 # patchd em produção: patchd-server + PostgreSQL (Aula 9.3).
 # Uso, a partir da raiz do repositório:
-#   ./deploy/gerar-segredos.sh                      # senha do banco; confere a chave de jobs e o TLS
+#   ./deploy/gerar-segredos.sh                      # senha do banco; confere chave de jobs, TLS e RHBK
 #   cp deploy/.env.exemplo deploy/.env              # e preencha (o git ignora o .env)
 #   export PATCHD_VERSION=v0.9.3 PATCHD_COMMIT="$(git rev-parse HEAD)"
 #   docker compose -f deploy/compose.yaml up -d --build
@@ -69,9 +69,17 @@ services:
       PATCHD_LDAP_BASE_DN: ${PATCHD_LDAP_BASE_DN:-}
       PATCHD_LDAP_ADMIN_GROUP: ${PATCHD_LDAP_ADMIN_GROUP:-}
       PATCHD_LDAP_READ_GROUP: ${PATCHD_LDAP_READ_GROUP:-}
+      # Login pelo RHBK (Aula 9.4); vazio = desligado. O segredo do cliente vem por arquivo.
+      PATCHD_OIDC_ISSUER: ${PATCHD_OIDC_ISSUER:-}
+      PATCHD_OIDC_CLIENT_ID: ${PATCHD_OIDC_CLIENT_ID:-patchd-painel}
+      PATCHD_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      PATCHD_OIDC_ROLES_CLAIM: ${PATCHD_OIDC_ROLES_CLAIM:-groups}
+      PATCHD_OIDC_ADMIN_ROLE: ${PATCHD_OIDC_ADMIN_ROLE:-patchd-admin}
+      PATCHD_OIDC_READ_ROLE: ${PATCHD_OIDC_READ_ROLE:-patchd-leitura}
     secrets:
       - database_url
       - job_signing_key
+      - oidc_client_secret
     volumes:
       - ${PATCHD_TLS_DIR:-./tls}:/run/patchd/tls:ro
       - ${PATCHD_RELEASES_HOST_DIR:-../releases}:/var/lib/patchd/releases:ro
@@ -102,6 +110,8 @@ secrets:
     file: ./secrets/database_url
   job_signing_key:
     file: ./secrets/job_signing_key
+  oidc_client_secret:
+    file: ./secrets/oidc_client_secret
 
 volumes:
   pgdata:

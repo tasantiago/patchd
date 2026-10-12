@@ -21,6 +21,7 @@ import (
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/store"
@@ -174,6 +175,24 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			"grupo_admin", adCfg.AdminGroup != "", "grupo_leitura", adCfg.ReadGroup != "", "base_explicita", adCfg.BaseDN != "")
 	} else {
 		logger.Info("login pelo AD desligado (sem PATCHD_LDAP_HOST): o painel aceita só usuários locais")
+	}
+	// Login pelo RHBK (Aula 9.4), ao lado do AD e dos usuários locais.
+	oidcCfg, oidcOn, err := oidcConfig(look, cfg.PublicURL, true)
+	if err != nil {
+		logger.Error("login pelo RHBK", "error", err)
+		return exitConfig
+	}
+	if oidcOn {
+		prov, err := oidc.New(oidcCfg, nil)
+		if err != nil {
+			logger.Error("login pelo RHBK", "error", err)
+			return exitConfig
+		}
+		apiOpts = append(apiOpts, api.WithOIDC(prov))
+		logger.Info("login pelo RHBK ligado (código de autorização com PKCE; perfil pelo claim de grupos)",
+			"issuer", oidcCfg.Issuer, "client_id", oidcCfg.ClientID, "claim", oidcCfg.RolesClaim,
+			"grupo_leitura", oidcCfg.ReadRole != "", "retorno", oidcCfg.RedirectURL)
+		go checkOIDC(ctx, logger, prov)
 	}
 	checkPanelUsers(ctx, logger, st, adOn)
 	// Jobs pelo painel (Aula 8.2): com a chave de jobs, o servidor assina os jobs que o

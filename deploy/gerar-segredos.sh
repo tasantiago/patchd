@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepara os segredos do compose de produção em deploy/secrets (fora do git e do contexto
-# do build) e confere o resto do que o compose monta (Aula 9.3).
+# do build) e confere o resto do que o compose monta (Aulas 9.3 e 9.4).
 # Não sobrescreve nada: o Postgres só lê a senha na primeira inicialização do volume
 # (trocar a senha de um banco já criado exige ALTER ROLE), e a chave de jobs tem de ser a
 # mesma cuja pública está embutida nos agentes.
@@ -27,8 +27,20 @@ else
   echo "banco: segredos gerados."
 fi
 
+# Arquivos que o servidor (UID 65532) lê. A ACL dá leitura só a ele e mantém o arquivo
+# seu: o servidor de desenvolvimento, que roda com o seu usuário, continua lendo o mesmo
+# arquivo (Aula 9.3). Sem o pacote acl: sudo chown 65532:65532 ARQUIVO && sudo chmod 400 ARQUIVO.
+acl() { echo "    sudo setfacl -m u:65532:r $1"; }
+
+# 2. Segredo do cliente do RHBK (Aula 9.4): o compose monta o arquivo mesmo com o RHBK
+# desligado, então ele existe, vazio, até ser preenchido.
+if [ ! -e "$DIR/oidc_client_secret" ]; then
+  ( umask 077; : > "$DIR/oidc_client_secret" )
+  echo "RHBK: $DIR/oidc_client_secret criado vazio (preencha se for ligar o RHBK)."
+fi
+
 falta=0
-# 2. Chave de jobs: não é gerada aqui. Uma chave nova não vale para os agentes já
+# 3. Chave de jobs: não é gerada aqui. Uma chave nova não vale para os agentes já
 # instalados (eles conferem com a pública embutida no build).
 if [ -s "$DIR/job_signing_key" ]; then
   echo "chave de jobs: presente."
@@ -39,12 +51,12 @@ chave de jobs: FALTA $DIR/job_signing_key
   - frota existente: copie a chave privada que o servidor já usa (a do PATCHD_JOB_SIGNING_KEY_FILE);
   - frota nova: go run ./cmd/server job keygen -out deploy/secrets/job_signing_key
     e compile os agentes com a pública que ele imprime (PATCHD_JOB_PUBKEY).
-  Depois, para o servidor (UID 65532) ler só ela:
-    sudo chown 65532:65532 deploy/secrets/job_signing_key && sudo chmod 400 deploy/secrets/job_signing_key
+  Depois, para o servidor (UID 65532) ler:
+$(acl deploy/secrets/job_signing_key)
 MSG
 fi
 
-# 3. TLS: certificado da CA interna, em deploy/tls (fora do git).
+# 4. TLS: certificado da CA interna, em deploy/tls (fora do git).
 TLS="$DEPLOY/tls"
 if [ -s "$TLS/server.crt" ] && [ -s "$TLS/server.key" ]; then
   echo "TLS: server.crt e server.key presentes."
@@ -53,13 +65,23 @@ else
   cat <<MSG
 TLS: FALTA $TLS/server.crt e/ou server.key (o certificado, com as intermediárias, e a chave).
   Depois de copiar:
-    sudo chown 65532:65532 deploy/tls/server.key && sudo chmod 400 deploy/tls/server.key
+$(acl deploy/tls/server.key)
 MSG
 fi
 
-# 4. Configuração: deploy/.env (fora do git).
+# 5. Configuração: deploy/.env (fora do git).
 if [ -s "$DEPLOY/.env" ]; then
   echo "configuração: deploy/.env presente."
+  # RHBK ligado no .env pede o segredo do cliente preenchido.
+  if grep -qE '^PATCHD_OIDC_ISSUER=.+' "$DEPLOY/.env"; then
+    if [ -s "$DIR/oidc_client_secret" ]; then
+      echo "RHBK: ligado no .env; segredo do cliente presente."
+    else
+      falta=1
+      echo "RHBK: ligado no .env, mas $DIR/oidc_client_secret está vazio (o segredo do cliente no RHBK, aba Credentials)."
+      acl deploy/secrets/oidc_client_secret
+    fi
+  fi
 else
   falta=1
   echo "configuração: FALTA deploy/.env (cp deploy/.env.exemplo deploy/.env e preencha)"

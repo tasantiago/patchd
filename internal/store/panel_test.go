@@ -138,4 +138,9 @@ func TestPainelPostgres(t *testing.T) {
 	if err := st.CreatePanelSession(context.Background(), []byte("h"), s); err == nil {
 		t.Error("origem fora da lista")
 	}
+	// Aula 9.4: a origem "oidc" (RHBK) entra na lista.
+	s.Source = panel.SourceOIDC
+	if err := st.CreatePanelSession(context.Background(), []byte("h-oidc"), s); err != nil {
+		t.Errorf("sessão do RHBK: %v", err)
+	}
 }
