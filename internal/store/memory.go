@@ -47,7 +47,8 @@ type memMachine struct {
 	retiredAt          time.Time // zero: na frota
 	retiredReason      string
 	retiredBy          string
-	ring               int // Aula 8.3; 1 na criação, como o DEFAULT da coluna
+	ring               int   // Aula 8.3; 1 na criação, como o DEFAULT da coluna
+	checkinTLS         *bool // Aula 9.2; nil até o primeiro check-in
 }
 
 type memKeys struct {
@@ -173,7 +174,7 @@ func (m *Memory) summaries(retired bool) []RetiredMachine {
 }
 
 // CheckIn registra o contato periódico e diz se o inventário atual tem o hash informado.
-func (m *Memory) CheckIn(ctx context.Context, id, agentVersion, inventoryHash string) (bool, error) {
+func (m *Memory) CheckIn(ctx context.Context, id, agentVersion, inventoryHash string, viaTLS bool) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	mm := m.machines[id]
@@ -182,7 +183,19 @@ func (m *Memory) CheckIn(ctx context.Context, id, agentVersion, inventoryHash st
 	}
 	mm.lastSeenAt = m.now()
 	mm.agentVersion = agentVersion
+	mm.checkinTLS = &viaTLS
 	return mm.inventory != nil && mm.inventory.Hash == inventoryHash, nil
+}
+
+// CheckinTLS diz por qual canal chegou o último check-in (nil: nenhum ainda).
+func (m *Memory) CheckinTLS(ctx context.Context, id string) (*bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if mm := m.machines[id]; mm != nil && mm.checkinTLS != nil {
+		v := *mm.checkinTLS
+		return &v, nil
+	}
+	return nil, nil
 }
 
 // CreateEnrollmentToken guarda um token novo (só o hash) e devolve o ID dele.

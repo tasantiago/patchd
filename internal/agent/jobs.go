@@ -63,6 +63,25 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			p, _ := jobs.ParseRebootParams(j.Params) // o Verify já conferiu
 			a.Logger.Info("job aceito: reiniciar com aviso", "job_id", j.ID, "delay", p.Delay().String())
 			acc.reboots = append(acc.reboots, acceptedReboot{id: j.ID, delay: p.Delay()})
+		case jobs.TypeServerURL:
+			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
+			reject := func(why string) {
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+			}
+			switch {
+			case a.SaveServerURL == nil:
+				reject("este agente não troca de endereço")
+			case state.PendingServerMove != nil:
+				reject(fmt.Sprintf("já há uma troca de endereço pendente (job %d)", state.PendingServerMove.JobID))
+			case strings.EqualFold(a.Client.BaseURL, p.URL):
+				// Já usa: o resultado vai pelo endereço atual, que é o pedido.
+				a.Logger.Info("job aceito: o agente já usa o endereço pedido", "job_id", j.ID, "url", p.URL)
+				a.queueJobResult(state, j.ID, protocol.JobResultOK, "o agente já usa "+p.URL)
+			default:
+				a.Logger.Info("job aceito: trocar o endereço do servidor", "job_id", j.ID, "from", a.Client.BaseURL, "to", p.URL)
+				state.PendingServerMove = &PendingServerMove{JobID: j.ID, URL: p.URL}
+			}
 		}
 	}
 	return acc
@@ -187,4 +206,37 @@ func (a *Agent) resolveReboot(ctx context.Context, state *State) int64 {
 		state.PendingReboot = nil
 	}
 	return 0
+}
+
+// moveServer tenta a troca de endereço (Aula 9.2). O resultado "ok" vai pelo endereço
+// novo: se ele chega, o TLS foi conferido (CA do sistema ou do -ca-file), o servidor
+// aceitou a credencial lá e conferiu o canal; só então o endereço é gravado. Qualquer
+// falha (certificado, rede, credencial recusada) deixa o agente onde está, e o motivo vai
+// como "falhou" pelo endereço atual. Não há nova tentativa sozinha: quem corrige pede de novo.
+func (a *Agent) moveServer(ctx context.Context, state *State) {
+	m := state.PendingServerMove
+	nc := *a.Client
+	nc.BaseURL = m.URL
+	a.Logger.Info("troca de endereço: entregando o resultado pelo endereço novo", "job_id", m.JobID, "to", m.URL)
+	_, err := nc.SendJobResult(ctx, m.JobID, protocol.JobResult{Status: protocol.JobResultOK,
+		Detail: "resultado entregue pelo endereço novo; o agente passa a usar " + m.URL, FinishedAt: a.now().UTC()})
+	if ctx.Err() != nil {
+		return // encerramento: a troca fica para o próximo ciclo
+	}
+	state.PendingServerMove = nil
+	if err != nil {
+		why := "o endereço novo não aceitou o resultado; o agente continua em " + a.Client.BaseURL + ": " + err.Error()
+		a.Logger.Error("troca de endereço falhou", "job_id", m.JobID, "to", m.URL, "error", err)
+		a.queueJobResult(state, m.JobID, protocol.JobResultFailed, why)
+		return
+	}
+	if err := a.SaveServerURL(m.URL); err != nil {
+		// O servidor já deu a troca por concluída; sem a credencial gravada, o agente segue
+		// no endereço antigo, que ainda funciona, e o painel mostra o canal HTTP.
+		a.Logger.Error("troca de endereço: o servidor confirmou, mas a credencial não foi gravada; o agente continua no endereço atual",
+			"job_id", m.JobID, "error", err)
+		return
+	}
+	a.Logger.Info("endereço do servidor trocado", "job_id", m.JobID, "from", a.Client.BaseURL, "to", m.URL)
+	a.Client.BaseURL = m.URL
 }

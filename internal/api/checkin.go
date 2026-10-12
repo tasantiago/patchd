@@ -20,7 +20,7 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_hash", "inventory_hash fora do formato sha256:<64 hex>")
 		return
 	}
-	known, err := a.store.CheckIn(r.Context(), id, req.AgentVersion, req.InventoryHash)
+	known, err := a.store.CheckIn(r.Context(), id, req.AgentVersion, req.InventoryHash, r.TLS != nil)
 	if err != nil {
 		a.internalError(w, r, "registrar check-in", err)
 		return

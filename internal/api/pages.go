@@ -167,6 +167,9 @@ type machineView struct {
 	CanReboot                            bool   // admin, chave, Linux com reinício pendente (Aula 8.6)
 	Delays                               []int
 	Window, NextWindow                   string
+	Channel                              string // canal do último check-in (Aula 9.2)
+	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
+	PublicURL                            string
 }
 
 func relationLabel(r string) string {
@@ -241,6 +244,10 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		v.Delays = rebootDelays
+	}
+	if err := a.channelView(r, id, &v); err != nil {
+		a.internalError(w, r, "ler canal do check-in", err)
+		return
 	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
 	if v.Jobs.Rows, err = a.machineJobs(r, id, v.Admin); err != nil {
@@ -465,6 +472,7 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
 {{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}
+<dt>Canal</dt><dd>{{.Channel}}</dd>
 {{if .Pending}}<dt>Pendentes</dt><dd>{{.Pending}}</dd>{{end}}
 {{if .D.Target}}<dt>Resolve tudo</dt><dd>{{.D.Target}}</dd>{{end}}
 {{range .D.CatalogWarnings}}<dt>Atenção</dt><dd>{{.}}</dd>{{end}}
@@ -494,6 +502,9 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
 {{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
 <button type="submit">Reiniciar com aviso</button></form></section>{{end}}
+{{if .CanHTTPS}}<section><h2>Passar para HTTPS</h2>
+<p class="muted">O último check-in desta máquina chegou pela porta HTTP de transição. O job leva, assinado, o endereço <code>{{.PublicURL}}</code>; o agente entrega o resultado por ele (certificado conferido e credencial aceita) e só então grava o endereço novo. Se não der, ele continua no endereço atual e o motivo aparece no job.</p>
+<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/https"><button type="submit">Passar para HTTPS</button></form></section>{{end}}
 <section><h2>Jobs</h2>
 {{if .Admin}}{{if .JobsOn}}<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/buscar">
 <button type="submit">Buscar atualizações agora</button>

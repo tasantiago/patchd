@@ -12,7 +12,8 @@ import (
 type contratoCheckin interface {
 	contratoEnrollment
 	SaveInventory(ctx context.Context, id string, rep protocol.InventoryReport) (bool, error)
-	CheckIn(ctx context.Context, id, agentVersion, inventoryHash string) (bool, error)
+	CheckIn(ctx context.Context, id, agentVersion, inventoryHash string, viaTLS bool) (bool, error)
+	CheckinTLS(ctx context.Context, id string) (*bool, error)
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 }
 
@@ -27,8 +28,11 @@ func testarCheckin(t *testing.T, st contratoCheckin) {
 		t.Fatal(err)
 	}
 	inv := inv("aaaa", "1")
+	if v, err := st.CheckinTLS(ctx, m.ID); err != nil || v != nil {
+		t.Fatalf("canal antes do primeiro check-in: %v %v (quer nil)", v, err)
+	}
 
-	if known, err := st.CheckIn(ctx, m.ID, "v0.4.0", inv.Hash); err != nil || known {
+	if known, err := st.CheckIn(ctx, m.ID, "v0.4.0", inv.Hash, false); err != nil || known {
 		t.Fatalf("sem inventário guardado: %t %v", known, err)
 	}
 	if _, err := st.SaveInventory(ctx, m.ID, inv); err != nil {
@@ -36,21 +40,30 @@ func testarCheckin(t *testing.T, st contratoCheckin) {
 	}
 	antes, _ := st.Machines(ctx)
 	time.Sleep(10 * time.Millisecond)
-	if known, err := st.CheckIn(ctx, m.ID, "v0.4.0", inv.Hash); err != nil || !known {
+	if known, err := st.CheckIn(ctx, m.ID, "v0.4.0", inv.Hash, false); err != nil || !known {
 		t.Fatalf("com o mesmo hash: %t %v", known, err)
 	}
 	depois, _ := st.Machines(ctx)
 	if !depois[0].LastSeenAt.After(antes[0].LastSeenAt) {
 		t.Errorf("o check-in atualiza o último contato: %v → %v", antes[0].LastSeenAt, depois[0].LastSeenAt)
 	}
-	if _, err := st.CheckIn(ctx, m.ID, "v0.5.1", inv.Hash); err != nil {
+	if _, err := st.CheckIn(ctx, m.ID, "v0.5.1", inv.Hash, true); err != nil {
 		t.Fatal(err)
 	}
 	if l, _ := st.Machines(ctx); l[0].AgentVersion != "v0.5.1" {
 		t.Errorf("a lista mostra a versão do último check-in: %q", l[0].AgentVersion)
 	}
-	if known, _ := st.CheckIn(ctx, m.ID, "v0.4.0", "sha256:outro"); known {
+	if v, err := st.CheckinTLS(ctx, m.ID); err != nil || v == nil || !*v {
+		t.Errorf("canal depois de um check-in por TLS: %v %v", v, err)
+	}
+	if known, _ := st.CheckIn(ctx, m.ID, "v0.4.0", "sha256:outro", false); known {
 		t.Error("hash diferente não é conhecido")
+	}
+	if v, err := st.CheckinTLS(ctx, m.ID); err != nil || v == nil || *v {
+		t.Errorf("canal depois de um check-in por HTTP: %v %v", v, err)
+	}
+	if v, err := st.CheckinTLS(ctx, "ffffffffffffffffffffffffffffffff"); err != nil || v != nil {
+		t.Errorf("máquina desconhecida: %v %v", v, err)
 	}
 }
 

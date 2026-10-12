@@ -52,6 +52,8 @@ func typeLabel(t string) string {
 		return "buscar atualizações"
 	case jobs.TypeUpdate:
 		return "atualizar pacotes"
+	case jobs.TypeServerURL:
+		return "passar para HTTPS"
 	case jobs.TypeReboot:
 		return "reiniciar"
 	}
@@ -148,6 +150,10 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = "O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE); nada foi criado."
 	case get("erro") == "update-aberto" && n > 0:
 		b.Error = fmt.Sprintf("Já existe uma atualização pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
+	case get("erro") == "https-aberto" && n > 0:
+		b.Error = fmt.Sprintf("Já existe uma troca para HTTPS pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
+	case get("erro") == "sem-url":
+		b.Error = "O servidor está sem a URL pública (PATCHD_PUBLIC_URL); nada foi criado."
 	case get("erro") == "nada-marcado":
 		b.Error = "Marque ao menos uma pendência do Linux que ainda esteja pendente."
 	case get("erro") == "quando":

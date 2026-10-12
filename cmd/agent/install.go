@@ -57,6 +57,12 @@ func runInstall(args []string, look config.Lookup, stdout, stderr io.Writer, age
 	if !requireAdmin(stderr) {
 		return exitRuntime
 	}
+	// O -ca-file vai para a linha de comando do serviço: um arquivo ruim é recusado aqui, e
+	// não depois, quando o serviço não conseguiria subir (Aula 9.2).
+	if _, _, err := agentTransport(cfg.CAFile); err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
+		return exitConfig
+	}
 	if why, refuse := containerCheck(allowContainer(look)); refuse {
 		fmt.Fprintf(stderr, "patchd-agent: não instalo dentro de container (%s)\n", why)
 		return exitConfig
@@ -120,7 +126,7 @@ func ensureEnrolled(cfg agentConfig, look config.Lookup, stdout, stderr io.Write
 	c, err := credential.Load(cfg.DataDir)
 	switch {
 	case err == nil:
-		if cfg.ServerURL != "" && !sameServer(cfg.ServerURL, c.ServerURL) {
+		if cfg.ServerURL != "" && !c.Matches(cfg.ServerURL) {
 			fmt.Fprintf(stderr, "patchd-agent: esta máquina já está registrada em outro servidor (%s); "+
 				"para trocar, remova %s e rode de novo\n", c.ServerURL, credential.Path(cfg.DataDir))
 			return c, exitConfig
@@ -139,6 +145,10 @@ func ensureEnrolled(cfg agentConfig, look config.Lookup, stdout, stderr io.Write
 	token, err := enrollToken(cfg.EnrollTokenFile, look)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: máquina não registrada: %v\n", err)
+		return c, exitConfig
+	}
+	if err := setEnrollCA(cfg.CAFile); err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return c, exitConfig
 	}
 	c, err = enrollMachine(cfg.ServerURL, cfg.DataDir, token, agentVersion, stderr)
@@ -206,11 +216,6 @@ func runningInstalledCopy() bool {
 	}
 	b, err := os.Stat(installedPath())
 	return err == nil && os.SameFile(a, b)
-}
-
-// sameServer compara URLs de servidor ignorando a barra final.
-func sameServer(a, b string) bool {
-	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
 }
 
 // sameExecutable diz se o arquivo em path é idêntico, byte a byte, ao executável que está

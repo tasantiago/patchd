@@ -24,6 +24,7 @@ type agentConfig struct {
 	LogFormat       string
 	OfflineCatalog  string // caminho do wsusscn2.cab (Windows); vazio = sem busca offline
 	EnrollTokenFile string // arquivo com o token de enrollment (enroll e install)
+	CAFile          string // CA do servidor (Aula 9.2); vazio = as CAs do sistema
 	ShowVersion     bool
 	Inventory       bool // coleta o inventário, imprime em JSON e sai
 	Scan            bool // busca atualizações e histórico, imprime em JSON e sai
@@ -54,6 +55,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		"caminho do wsusscn2.cab para a busca offline no Windows (env PATCHD_OFFLINE_CAB)")
 	fs.StringVar(&cfg.EnrollTokenFile, "enroll-token-file", config.String(look, "PATCHD_ENROLL_TOKEN_FILE", ""),
 		"arquivo com o token de enrollment, usado por enroll e install (env PATCHD_ENROLL_TOKEN_FILE)")
+	fs.StringVar(&cfg.CAFile, "ca-file", config.String(look, "PATCHD_CA_FILE", ""),
+		"certificado da CA do servidor, em PEM; com ele, o agente confia só nessa CA (env PATCHD_CA_FILE)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")
@@ -82,6 +85,9 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	}
 	if cfg.OfflineCatalog != "" && !filepath.IsAbs(cfg.OfflineCatalog) {
 		problems = append(problems, fmt.Errorf("-offline-cab/PATCHD_OFFLINE_CAB: o caminho precisa ser absoluto (recebido %q)", cfg.OfflineCatalog))
+	}
+	if cfg.CAFile != "" && !filepath.IsAbs(cfg.CAFile) {
+		problems = append(problems, fmt.Errorf("-ca-file/PATCHD_CA_FILE: o caminho precisa ser absoluto (recebido %q)", cfg.CAFile))
 	}
 	if errInterval != nil && !given["checkin-interval"] {
 		problems = append(problems, errInterval)

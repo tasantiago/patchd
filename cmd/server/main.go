@@ -186,6 +186,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	} else {
 		logger.Info("jobs pelo painel desligados (sem PATCHD_JOB_SIGNING_KEY_FILE): crie jobs com patchd-server job create")
 	}
+	// Troca dos agentes para HTTPS (Aula 9.2): a URL vai, assinada, no job server_url.
+	if cfg.PublicURL != "" {
+		apiOpts = append(apiOpts, api.WithPublicURL(cfg.PublicURL))
+		logger.Info("URL pública anunciada nos jobs server_url (botão \"Passar para HTTPS\" no painel)", "public_url", cfg.PublicURL)
+	}
 	if p, ok := st.(scanPruner); ok {
 		go pruneScansLoop(ctx, logger, p)
 	}
