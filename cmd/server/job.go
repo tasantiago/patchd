@@ -27,7 +27,7 @@ comandos:
           sai na tela, para o build dos agentes (PATCHD_JOB_PUBKEY)
   pubkey  mostra a chave pública da chave privada configurada (para conferir ou refazer
           o PATCHD_JOB_PUBKEY) e a impressão curta que aparece nos logs
-  create  cria um job: -machine ID (ou -ring N) -type rescan|update [-packages p=v,...]
+  create  cria um job: -machine ID (ou -ring N) -type rescan|update|reboot [-packages p=v,...] [-delay 15m]
           [-ttl 24h | -window]. O agente o recebe no próximo check-in (ou na janela do
           anel), confere a assinatura e executa
   list    lista os jobs, do mais novo para o mais antigo: [-machine ID] [-n 20]
@@ -35,7 +35,8 @@ comandos:
 
 Tipos: rescan (coleta o inventário e faz a busca de atualizações agora) e update (Linux:
 atualiza os pacotes de -packages pelo apt ou pelo dnf, se a busca da máquina os mostrar
-pendentes com candidata pelo menos na versão pedida; não reinicia).
+pendentes com candidata pelo menos na versão pedida; não reinicia) e reboot (Linux: se
+houver reinício pendente, reinicia depois do aviso de -delay aos usuários).
 A chave privada vem de PATCHD_JOB_SIGNING_KEY_FILE (ou PATCHD_JOB_SIGNING_KEY); o create
 e o pubkey precisam dela. Com ela, o servidor também cria jobs pelo painel (Aula 8.2).
 A URL do banco vem da configuração do servidor.
@@ -179,6 +180,7 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 		ringFlag := fs.Int("ring", -1, "em vez de -machine: um job para cada máquina do anel")
 		typ := fs.String("type", "", "tipo do job: rescan ou update")
 		pkgList := fs.String("packages", "", "update: pacote=versão_mínima, separados por vírgula (ex.: curl=8.18.0-1ubuntu2.10)")
+		delay := fs.Duration("delay", 15*time.Minute, "reboot: aviso aos usuários antes do reinício (2m a 60m)")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo para o agente receber e executar (máximo 168h)")
 		inWindow := fs.Bool("window", false, "só na próxima janela do anel da máquina (o prazo é o fim da janela)")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
@@ -188,7 +190,7 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 		fs.Visit(func(f *flag.Flag) { ttlSet = ttlSet || f.Name == "ttl" })
 		switch {
 		case !jobs.KnownType(*typ):
-			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan ou update")
+			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan, update ou reboot")
 			return exitConfig
 		case (*typ == jobs.TypeUpdate) != (*pkgList != ""):
 			fmt.Fprintln(stderr, "patchd-server: -packages vai com -type update, e só com ele")
@@ -207,6 +209,20 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 			return exitConfig
 		}
 		var params []byte
+		delaySet := false
+		fs.Visit(func(f *flag.Flag) { delaySet = delaySet || f.Name == "delay" })
+		if delaySet && *typ != jobs.TypeReboot {
+			fmt.Fprintln(stderr, "patchd-server: -delay vai só com -type reboot")
+			return exitConfig
+		}
+		if *typ == jobs.TypeReboot {
+			raw, err := jobs.RebootParamsJSON(*delay)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: -delay: %v\n", err)
+				return exitConfig
+			}
+			params = raw
+		}
 		if *pkgList != "" {
 			p, err := parsePackages(*pkgList)
 			if err != nil {

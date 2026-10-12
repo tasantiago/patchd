@@ -66,6 +66,8 @@ func (c Campaign) Validate() error {
 		return errors.New("dê um nome à campanha (até 100 caracteres)")
 	case !jobs.KnownType(c.Type):
 		return fmt.Errorf("tipo de job desconhecido %q", c.Type)
+	case c.Type == jobs.TypeReboot:
+		return errors.New("campanha de reinício ainda não existe: use job create -type reboot ou o painel")
 	case c.Type == jobs.TypeUpdate && (len(c.Sources) == 0 || len(c.Sources) > MaxSources):
 		return fmt.Errorf("a campanha de update leva de 1 a %d fontes", MaxSources)
 	case c.Type != jobs.TypeUpdate && len(c.Sources) > 0:

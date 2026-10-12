@@ -127,6 +127,16 @@ func testarJobs(t *testing.T, st contratoJobs) {
 	if todas, _ := st.Jobs(ctx, "", 2); len(todas) != 2 || todas[0].ID != jCancelar {
 		t.Errorf("limite e ordem: %+v", todas)
 	}
+
+	// Entregue passa do prazo, mas ainda tem a tolerância para o resultado (Aula 8.6).
+	st.ExpireJobs(ctx, agora.Add(time.Hour+time.Minute))
+	if j, _, _ := st.JobForMachine(ctx, "maq-a", j2); j.State != "entregue" {
+		t.Errorf("entregue dentro da tolerância: %s", j.State)
+	}
+	st.ExpireJobs(ctx, agora.Add(time.Hour+jobs.ResultGrace+time.Minute))
+	if j, _, _ := st.JobForMachine(ctx, "maq-a", j2); j.State != "expirado" {
+		t.Errorf("entregue depois da tolerância: %s", j.State)
+	}
 }
 
 func itoa(n int64) string {

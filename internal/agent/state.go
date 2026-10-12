@@ -28,6 +28,16 @@ type State struct {
 	LastJobID int64 `json:"last_job_id,omitempty"`
 	// PendingJobResults são resultados ainda não aceitos pelo servidor (ele estava fora).
 	PendingJobResults []PendingJobResult `json:"pending_job_results,omitempty"`
+	// PendingReboot é o reinício agendado por um job (Aula 8.6): depois que a máquina
+	// volta, o agente confere a hora do boot, faz a busca e manda o resultado.
+	PendingReboot *PendingReboot `json:"pending_reboot,omitempty"`
+}
+
+// PendingReboot guarda o job de reinício até a máquina voltar.
+type PendingReboot struct {
+	JobID      int64     `json:"job_id"`
+	BootBefore time.Time `json:"boot_before"` // último boot antes do agendamento
+	At         time.Time `json:"at"`          // quando o reinício foi marcado
 }
 
 // PendingJobResult é o resultado de um job à espera de envio.

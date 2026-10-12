@@ -55,3 +55,23 @@ func TestParametrosDoUpdate(t *testing.T) {
 		t.Error("rescan com parâmetros")
 	}
 }
+
+func TestParametrosDoReboot(t *testing.T) {
+	raw, err := RebootParamsJSON(15 * time.Minute)
+	if err != nil || string(raw) != `{"delay_minutes":15}` {
+		t.Fatalf("%s %v", raw, err)
+	}
+	for _, ruim := range []string{`{"delay_minutes":1}`, `{"delay_minutes":61}`, `{}`, `{"delay_minutes":5,"message":"oi"}`} {
+		if _, err := ParseRebootParams(json.RawMessage(ruim)); err == nil {
+			t.Errorf("%s aceito", ruim)
+		}
+	}
+	if _, err := RebootParamsJSON(30 * time.Second); err == nil {
+		t.Error("aviso curto")
+	}
+	_, priv, _ := GenerateKey()
+	agora := time.Now().UTC()
+	if _, err := Sign(priv, Job{ID: 1, MachineID: "m", Type: TypeReboot, IssuedAt: agora, NotAfter: agora.Add(time.Hour)}); err == nil {
+		t.Error("reboot sem parâmetros")
+	}
+}

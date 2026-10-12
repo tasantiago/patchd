@@ -41,6 +41,11 @@ type Agent struct {
 	// Install aplica os pacotes de um job update (Aula 8.4). nil: o agente recusa esses
 	// jobs (Windows e macOS, por enquanto). Erro com jobs.ErrNotPending vira "rejeitado".
 	Install func(ctx context.Context, jobID int64, pkgs []jobs.Package) (string, error)
+	// RebootStatus e Restart atendem o job reboot (Aula 8.6): o primeiro diz se há
+	// reinício pendente e a hora do último boot; o segundo agenda o reinício com aviso aos
+	// usuários. Restart nil: o agente recusa esses jobs.
+	RebootStatus func(ctx context.Context) (protocol.RebootStatus, error)
+	Restart      func(ctx context.Context, jobID int64, delay time.Duration) error
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -139,6 +144,13 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 	}
 
+	// Reinício agendado por job (Aula 8.6): se a máquina já voltou, a busca deste ciclo
+	// confirma o efeito e o resultado vai depois dela.
+	rebooted := a.resolveReboot(ctx, &state)
+	if state.PendingReboot == nil && rebooted != 0 {
+		a.saveStateOrLog(state)
+	}
+
 	// 2. Check-in com o hash do inventário; o inventário só vai se o servidor não o tiver.
 	inv, err := a.Inventory(ctx)
 	if err != nil {
@@ -189,14 +201,25 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	updateResults := a.runUpdates(ctx, accepted.updates)
 	if ctx.Err() != nil {
 		state.PendingJobResults = append(state.PendingJobResults, updateResults...)
+		if rebooted != 0 {
+			a.queueJobResult(&state, rebooted, protocol.JobResultOK, "máquina reiniciada; busca feita depois do boot")
+		}
 		a.saveStateOrLog(state)
 		return outcomeTransient
 	}
 
+	// Reinício pedido: agendado depois das instalações (o aviso corre enquanto a busca e
+	// os envios terminam). O estado é gravado já: se o agente cair, ele sabe que esperar.
+	if len(accepted.reboots) > 0 {
+		a.scheduleReboots(ctx, &state, accepted.reboots)
+		a.saveStateOrLog(state)
+	}
+
 	// 4. Busca de atualizações, quando devida ou pedida por um job.
 	scanSent := false
-	if !a.now().Before(state.NextScanAt) || accepted.forceScan() {
-		a.Logger.Info("busca de atualizações iniciada", "por_job", accepted.forceScan())
+	byJob := accepted.forceScan() || rebooted != 0
+	if !a.now().Before(state.NextScanAt) || byJob {
+		a.Logger.Info("busca de atualizações iniciada", "por_job", byJob)
 		rep := a.Scan(ctx)
 		if ctx.Err() != nil {
 			return outcomeTransient
@@ -218,6 +241,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			a.queueJobResult(&state, id, protocol.JobResultOK, "inventário e busca de atualizações enviados")
 		}
 		state.PendingJobResults = append(state.PendingJobResults, updateResults...)
+		if rebooted != 0 {
+			a.queueJobResult(&state, rebooted, protocol.JobResultOK, "máquina reiniciada; busca feita depois do boot")
+		}
 		a.saveStateOrLog(state)
 		a.Logger.Info("busca de atualizações concluída", "sources", len(rep.Scans),
 			"duration", a.now().Sub(start).Round(time.Second).String(), "next_scan_at", state.NextScanAt)

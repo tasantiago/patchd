@@ -35,7 +35,7 @@ const (
 )
 
 // KnownType diz se o tipo existe.
-func KnownType(t string) bool { return t == TypeRescan || t == TypeUpdate }
+func KnownType(t string) bool { return t == TypeRescan || t == TypeUpdate || t == TypeReboot }
 
 // Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado;
 // pendente ou entregue → cancelado (pelo operador) | expirado (passou de NotAfter).
@@ -146,6 +146,9 @@ func checkParams(j Job) error {
 	switch j.Type {
 	case TypeUpdate:
 		_, err := ParseUpdateParams(j.Params)
+		return err
+	case TypeReboot:
+		_, err := ParseRebootParams(j.Params)
 		return err
 	default:
 		if len(j.Params) > 0 && string(j.Params) != "null" {

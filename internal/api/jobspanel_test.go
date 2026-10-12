@@ -11,6 +11,7 @@ import (
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/window"
 )
 
@@ -247,5 +248,49 @@ func TestPaginaDeCampanhas(t *testing.T) {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
 		}
+	}
+}
+
+func TestReiniciarPeloPainel(t *testing.T) {
+	pub, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	maq := "/painel/maquinas/60ef97e4-0001"
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); strings.Contains(b, "Reiniciar com aviso") {
+		t.Error("sem reinício pendente, sem botão")
+	}
+	// A máquina vira Linux com reinício pendente na última busca.
+	sim := true
+	_, _ = st.SaveInventory(ctx, "60ef97e4-0001", protocol.InventoryReport{SchemaVersion: 1, Hash: "h2", OS: protocol.OSInfo{Family: "linux", Hostname: "vm"}})
+	_ = st.SaveScan(ctx, "60ef97e4-0001", protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, Reboot: &protocol.RebootStatus{Pending: &sim}})
+
+	b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/reiniciar"`) || !strings.Contains(b, `<option value="15" selected>15 min</option>`) {
+		t.Errorf("admin:\n%s", b)
+	}
+	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, "/reiniciar") {
+		t.Error("leitura não reinicia")
+	}
+	pede := func(path string, form url.Values) string {
+		t.Helper()
+		return local(pagina(h, "POST", path, sessaoAdmin, form))
+	}
+	if l := pede(maq+"/reiniciar", url.Values{"aviso": {"7"}, "quando": {"agora"}}); l != maq+"?erro=reinicio-form" {
+		t.Errorf("aviso fora da lista: %s", l)
+	}
+	if l := pede(maq+"/reiniciar", url.Values{"aviso": {"15"}, "quando": {"agora"}}); l != maq+"?criado=1&job=1" {
+		t.Fatalf("reiniciar: %s", l)
+	}
+	env, _ := st.DeliverJobs(ctx, "60ef97e4-0001", time.Now().UTC())
+	j, err := jobs.Verify(pub, env[0], "60ef97e4-0001", time.Now().UTC(), 0)
+	if p, _ := jobs.ParseRebootParams(j.Params); err != nil || j.Type != jobs.TypeReboot || p.Delay() != 15*time.Minute {
+		t.Fatalf("job: %+v %v", j, err)
+	}
+	if l := pede(maq+"/reiniciar", url.Values{"aviso": {"5"}, "quando": {"agora"}}); l != maq+"?erro=reinicio-aberto&job=1" {
+		t.Errorf("segundo: %s", l)
+	}
+	// Máquina sem reinício pendente (e sem família Linux): nada é pedido.
+	if l := pede("/painel/maquinas/7aa604f7-0002/reiniciar", url.Values{"aviso": {"5"}, "quando": {"agora"}}); l != "/painel/maquinas/7aa604f7-0002?erro=sem-reinicio" {
+		t.Errorf("sem pendência: %s", l)
 	}
 }

@@ -60,11 +60,14 @@ func (p *Postgres) CreateJob(ctx context.Context, j NewJob) error {
 	return nil
 }
 
-// ExpireJobs marca como expirados os jobs em aberto que passaram do prazo.
+// ExpireJobs marca como expirados os jobs em aberto que passaram do prazo. Um job já
+// entregue ainda tem jobs.ResultGrace para o resultado chegar (Aula 8.6: o do reinício só
+// chega depois que a máquina volta).
 func (p *Postgres) ExpireJobs(ctx context.Context, now time.Time) (int64, error) {
 	tag, err := p.pool.Exec(ctx, `
 		UPDATE jobs SET state = 'expirado', finished_at = $1, detail = 'prazo vencido sem resultado do agente'
-		WHERE state IN ('pendente', 'entregue') AND not_after <= $1`, now)
+		WHERE (state = 'pendente' AND not_after <= $1)
+		   OR (state = 'entregue' AND not_after <= $2)`, now, now.Add(-jobs.ResultGrace))
 	return tag.RowsAffected(), err
 }
 
