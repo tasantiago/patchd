@@ -35,6 +35,7 @@ const usage = `uso: patchd-release <comando> [opções]
 
 comandos:
   keygen -key ARQUIVO                 gera o par de chaves; grava a privada e imprime a pública
+  pubkey -key ARQUIVO                 imprime a pública da chave privada (para refazer o PATCHD_UPDATE_PUBKEY)
   sign -key ARQUIVO -version VERSÃO -dist PASTA -out PASTA
                                       copia os executáveis do dist/ para PASTA/VERSÃO e assina o manifesto
 `
@@ -53,6 +54,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return keygen(args[1:], stdout, stderr)
 	case "sign":
 		return sign(args[1:], stdout, stderr)
+	case "pubkey":
+		return pubkey(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "patchd-release: comando desconhecido %q\n\n%s", args[0], usage)
 		return exitConfig
@@ -175,6 +178,26 @@ func sign(args []string, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	fmt.Fprintf(stdout, "versão %s assinada em %s (%d executáveis)\n", *version, vdir, len(m.Files))
+	return exitOK
+}
+
+// pubkey imprime a chave pública da chave privada (Aula 9.1b): o PATCHD_UPDATE_PUBKEY se
+// refaz a partir da privada, sem gerar outro par (um par novo obrigaria a reinstalar a
+// frota com um executável que confie nele). Só a pública sai; a privada nunca é impressa.
+func pubkey(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pubkey", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	keyPath := fs.String("key", "", "arquivo da chave privada")
+	if err := fs.Parse(args); err != nil || *keyPath == "" || fs.NArg() > 0 {
+		fmt.Fprint(stderr, usage)
+		return exitConfig
+	}
+	priv, err := loadPrivateKey(*keyPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
+		return exitConfig
+	}
+	fmt.Fprintln(stdout, release.EncodePublicKey(priv.Public().(ed25519.PublicKey)))
 	return exitOK
 }
 

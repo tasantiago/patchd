@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -39,6 +41,24 @@ func certDeTeste(t *testing.T, dir string, serial int64) *x509.Certificate {
 	_ = os.WriteFile(filepath.Join(dir, "srv.key"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: kder}), 0o600)
 	c, _ := x509.ParseCertificate(der)
 	return c
+}
+
+// logSeguro: o log é escrito por quem atende e lido pelo teste.
+type logSeguro struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *logSeguro) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logSeguro) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func silencio() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -107,12 +127,13 @@ func TestHTTPSEPortaDeTransicao(t *testing.T) {
 	app := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "app "+r.URL.Path) })
 	full := newHandler(app, nil)
 	tlsAddr, httpAddr := portaLivre(t), portaLivre(t)
+	registro := &logSeguro{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- serve(ctx, silencio(), []listener{
 			{name: "API", addr: tlsAddr, handler: withHSTS(full), tls: tlsConfig(c)},
-			{name: "HTTP de transição", addr: httpAddr, handler: transitionHandler(full)},
+			{name: "HTTP de transição", addr: httpAddr, handler: transitionHandler(full, slog.New(slog.NewTextHandler(registro, nil)))},
 		})
 	}()
 	defer func() {
@@ -159,6 +180,16 @@ func TestHTTPSEPortaDeTransicao(t *testing.T) {
 		if quer == 403 && !strings.Contains(body, "HTTPS") {
 			t.Errorf("http %s: a recusa explica: %q", path, body)
 		}
+		// Recusa vai para o log (Aula 9.1b); o que passa, não (o log de requisições é outro).
+		linha := "path=" + path + " "
+		if got := strings.Contains(registro.String(), linha); got != (quer == 403) {
+			t.Errorf("http %s: no log da transição = %v (quer %v)", path, got, quer == 403)
+		}
+	}
+	// A query fica fora do log: pode carregar dados de formulário.
+	_, _, _ = pede(simples, "http://"+httpAddr+"/painel/entrar?usuario=fulano")
+	if strings.Contains(registro.String(), "fulano") {
+		t.Error("a query apareceu no log da transição")
 	}
 	// TLS 1.1 é recusado no aperto de mão.
 	velho := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MaxVersion: tls.VersionTLS11}}}

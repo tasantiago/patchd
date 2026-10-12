@@ -24,6 +24,13 @@ func NewPostgres(pool *pgxpool.Pool) *Postgres { return &Postgres{pool: pool} }
 // Connect abre o pool e espera o banco responder por até wait (o PostgreSQL pode estar
 // subindo junto com o servidor). Erro de configuração da URL não é repetido.
 func Connect(ctx context.Context, url string, wait time.Duration) (*pgxpool.Pool, error) {
+	return ConnectNotify(ctx, url, wait, nil)
+}
+
+// ConnectNotify é o Connect com aviso (Aula 9.1b): waiting, se não for nil, é chamada uma
+// vez, na primeira falha do ping, com o erro. Sem isso, a partida do servidor ficava muda
+// por até wait com o banco fora (nome que não resolve, container parado).
+func ConnectNotify(ctx context.Context, url string, wait time.Duration, waiting func(error)) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		// A mensagem do pgx pode conter a URL inteira, com a senha: não repassar.
@@ -42,7 +49,15 @@ func Connect(ctx context.Context, url string, wait time.Duration) (*pgxpool.Pool
 		if err == nil {
 			return pool, nil
 		}
-		if time.Now().After(deadline) || ctx.Err() != nil {
+		if waiting != nil {
+			waiting(err)
+			waiting = nil
+		}
+		if ctx.Err() != nil {
+			pool.Close()
+			return nil, fmt.Errorf("espera pelo banco interrompida: %w", err)
+		}
+		if time.Now().After(deadline) {
 			pool.Close()
 			return nil, fmt.Errorf("banco indisponível após %s: %w", wait, err)
 		}

@@ -121,13 +121,17 @@ func withHSTS(next http.Handler) http.Handler {
 // transitionHandler é o que a porta HTTP de transição atende: o /healthz, o registro e as
 // rotas do agente (/api/v1/enroll, /api/v1/agent/...) e o cache de repositórios (proxy do
 // apt e /repo/, conteúdo assinado pelas distribuições). O resto (painel, API de leitura)
-// recebe 403 com o motivo: senha e cookie nunca passam sem TLS.
-func transitionHandler(full http.Handler) http.Handler {
+// recebe 403 com o motivo: senha e cookie nunca passam sem TLS. Cada recusa vai para o log
+// (Aula 9.1b): é assim que se acha quem ainda abre o painel por um favorito em HTTP antes
+// de fechar a porta. Só o caminho, sem a query (que pode carregar dados de formulário).
+func transitionHandler(full http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		allowed := p == "/healthz" || p == "/api/v1/enroll" || strings.HasPrefix(p, "/api/v1/agent/") ||
 			strings.HasPrefix(p, "/repo/") || r.Method == http.MethodConnect || r.URL.IsAbs()
 		if !allowed {
+			logger.Warn("pedido recusado na porta HTTP de transição: o painel e a API abrem só por HTTPS",
+				"method", r.Method, "path", p, "remote", r.RemoteAddr)
 			http.Error(w, "esta porta é só para agentes em transição e para o cache de repositórios; o painel e a API abrem por HTTPS",
 				http.StatusForbidden)
 			return

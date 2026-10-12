@@ -27,9 +27,17 @@ func openStore(ctx context.Context, logger *slog.Logger, databaseURL string) (ap
 		return store.NewMemory(), func() {}, nil
 	}
 
-	pool, err := store.Connect(ctx, databaseURL, dbWait)
+	start := time.Now()
+	waited := false
+	pool, err := store.ConnectNotify(ctx, databaseURL, dbWait, func(err error) {
+		waited = true
+		logger.Warn("aguardando o banco", "espera_max", dbWait.String(), "error", err)
+	})
 	if err != nil {
 		return nil, nil, err
+	}
+	if waited {
+		logger.Info("banco respondeu", "depois_de", time.Since(start).Round(time.Second).String())
 	}
 	if err := store.Migrate(ctx, pool, logger); err != nil {
 		pool.Close()
