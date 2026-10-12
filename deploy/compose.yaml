@@ -1,9 +1,10 @@
-# patchd em produção: patchd-server + PostgreSQL.
+# patchd em produção: patchd-server + PostgreSQL (Aula 9.3).
 # Uso, a partir da raiz do repositório:
-#   ./deploy/gerar-segredos.sh
-#   export PATCHD_VERSION=v0.1.0 PATCHD_COMMIT="$(git rev-parse HEAD)"
+#   ./deploy/gerar-segredos.sh                      # senha do banco; confere a chave de jobs e o TLS
+#   cp deploy/.env.exemplo deploy/.env              # e preencha (o git ignora o .env)
+#   export PATCHD_VERSION=v0.9.3 PATCHD_COMMIT="$(git rev-parse HEAD)"
 #   docker compose -f deploy/compose.yaml up -d --build
-# Toda a configuração vem de variáveis de ambiente e de segredos; nada fica dentro da imagem.
+# Toda a configuração vem de deploy/.env e de arquivos; nada sensível fica dentro da imagem.
 name: patchd
 
 services:
@@ -26,7 +27,8 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
-    # Sem "ports": o banco não é exposto no host, só na rede interna do compose.
+    # Sem "ports": o banco não é exposto no host, só na rede interna do compose. A conexão
+    # servidor → banco não tem TLS: ela não sai dessa rede (pendência: TLS também aqui).
     restart: unless-stopped
 
   server:
@@ -38,18 +40,51 @@ services:
         COMMIT: ${PATCHD_COMMIT:-}
     image: patchd-server:${PATCHD_VERSION:-dev}
     environment:
-      PATCHD_LISTEN_ADDR: ":8080"
       PATCHD_LOG_FORMAT: json
       PATCHD_LOG_LEVEL: ${PATCHD_LOG_LEVEL:-info}
+      PATCHD_TIMEZONE: ${PATCHD_TIMEZONE:-America/Porto_Velho}
       PATCHD_DATABASE_URL_FILE: /run/secrets/database_url
+      # TLS (Aula 9.1): a pasta inteira é montada, não os arquivos. Renovar = trocar os
+      # arquivos na pasta do host; o servidor relê em até 30 s, sem reiniciar.
+      PATCHD_LISTEN_ADDR: ":8443"
+      PATCHD_TLS_CERT_FILE: /run/patchd/tls/server.crt
+      PATCHD_TLS_KEY_FILE: /run/patchd/tls/server.key
+      # Porta HTTP: transição dos agentes e cache de repositórios. Vazia: fechada.
+      # PATCHD_HTTP_CACHE_ONLY=true quando machine list não mostrar ninguém "por HTTP".
+      PATCHD_HTTP_LISTEN_ADDR: ${PATCHD_HTTP_LISTEN_ADDR-:8080}
+      PATCHD_HTTP_CACHE_ONLY: ${PATCHD_HTTP_CACHE_ONLY:-false}
+      # A URL HTTPS como os agentes a veem (Aula 9.2): obrigatória.
+      PATCHD_PUBLIC_URL: ${PATCHD_PUBLIC_URL:?defina PATCHD_PUBLIC_URL em deploy/.env}
+      # Jobs pelo painel e campanhas (Aula 8.2): a MESMA chave cuja pública está nos agentes.
+      PATCHD_JOB_SIGNING_KEY_FILE: /run/secrets/job_signing_key
+      # Atualização dos agentes (Aula 5.4): só leitura. Assinar e publicar é fora daqui.
+      PATCHD_RELEASES_DIR: /var/lib/patchd/releases
+      # Catálogo offline do Windows e cache de repositórios: volumes do compose.
+      PATCHD_CONTENT_DIR: /var/lib/patchd/conteudo
+      PATCHD_REPO_CACHE_DIR: /var/lib/patchd/repocache
+      PATCHD_REPO_CACHE_URL: ${PATCHD_REPO_CACHE_URL:-}
+      # Login pelo AD (Aula 7.3); vazio = só usuários locais. A CA corporativa vem na imagem.
+      PATCHD_LDAP_HOST: ${PATCHD_LDAP_HOST:-}
+      PATCHD_LDAP_DOMAIN: ${PATCHD_LDAP_DOMAIN:-}
+      PATCHD_LDAP_BASE_DN: ${PATCHD_LDAP_BASE_DN:-}
+      PATCHD_LDAP_ADMIN_GROUP: ${PATCHD_LDAP_ADMIN_GROUP:-}
+      PATCHD_LDAP_READ_GROUP: ${PATCHD_LDAP_READ_GROUP:-}
     secrets:
       - database_url
+      - job_signing_key
+    volumes:
+      - ${PATCHD_TLS_DIR:-./tls}:/run/patchd/tls:ro
+      - ${PATCHD_RELEASES_HOST_DIR:-../releases}:/var/lib/patchd/releases:ro
+      - conteudo:/var/lib/patchd/conteudo
+      - repocache:/var/lib/patchd/repocache
+    tmpfs:
+      - /tmp
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      # HTTP sem TLS até a Aula 9.1: por padrão, só na interface local do host.
-      - "${PATCHD_HTTP_BIND:-127.0.0.1}:${PATCHD_HTTP_PORT:-8081}:8080"
+      - "${PATCHD_TLS_BIND:-0.0.0.0}:${PATCHD_TLS_PORT:-8443}:8443"
+      - "${PATCHD_HTTP_BIND:-0.0.0.0}:${PATCHD_HTTP_PORT:-8080}:8080"
     # Endurecimento: raiz somente leitura, nenhuma capability, sem escalada de privilégio.
     read_only: true
     cap_drop:
@@ -65,6 +100,10 @@ secrets:
     file: ./secrets/db_password
   database_url:
     file: ./secrets/database_url
+  job_signing_key:
+    file: ./secrets/job_signing_key
 
 volumes:
   pgdata:
+  conteudo:
+  repocache:

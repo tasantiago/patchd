@@ -124,19 +124,29 @@ func withHSTS(next http.Handler) http.Handler {
 // recebe 403 com o motivo: senha e cookie nunca passam sem TLS. Cada recusa vai para o log
 // (Aula 9.1b): é assim que se acha quem ainda abre o painel por um favorito em HTTP antes
 // de fechar a porta. Só o caminho, sem a query (que pode carregar dados de formulário).
-func transitionHandler(full http.Handler, logger *slog.Logger) http.Handler {
+//
+// cacheOnly (Aula 9.3): depois que a frota passou para HTTPS (machine list sem nenhuma
+// "ainda por HTTP"), a porta fica só para o cache: registro e rotas do agente também
+// recebem 403. A credencial da máquina e o token de registro deixam de poder passar em
+// texto claro, e o proxy do apt continua funcionando.
+func transitionHandler(full http.Handler, logger *slog.Logger, cacheOnly bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		allowed := p == "/healthz" || p == "/api/v1/enroll" || strings.HasPrefix(p, "/api/v1/agent/") ||
-			strings.HasPrefix(p, "/repo/") || r.Method == http.MethodConnect || r.URL.IsAbs()
-		if !allowed {
+		agent := p == "/api/v1/enroll" || strings.HasPrefix(p, "/api/v1/agent/")
+		cache := p == "/healthz" || strings.HasPrefix(p, "/repo/") || r.Method == http.MethodConnect || r.URL.IsAbs()
+		switch {
+		case cache || (agent && !cacheOnly):
+			full.ServeHTTP(w, r)
+		case agent:
+			logger.Warn("agente recusado na porta HTTP, que agora é só do cache: ele precisa do job server_url",
+				"method", r.Method, "path", p, "remote", r.RemoteAddr)
+			http.Error(w, "esta porta é só para o cache de repositórios; o agente e o registro usam HTTPS", http.StatusForbidden)
+		default:
 			logger.Warn("pedido recusado na porta HTTP de transição: o painel e a API abrem só por HTTPS",
 				"method", r.Method, "path", p, "remote", r.RemoteAddr)
 			http.Error(w, "esta porta é só para agentes em transição e para o cache de repositórios; o painel e a API abrem por HTTPS",
 				http.StatusForbidden)
-			return
 		}
-		full.ServeHTTP(w, r)
 	})
 }
 

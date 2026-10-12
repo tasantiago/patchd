@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,7 +134,7 @@ func TestHTTPSEPortaDeTransicao(t *testing.T) {
 	go func() {
 		done <- serve(ctx, silencio(), []listener{
 			{name: "API", addr: tlsAddr, handler: withHSTS(full), tls: tlsConfig(c)},
-			{name: "HTTP de transição", addr: httpAddr, handler: transitionHandler(full, slog.New(slog.NewTextHandler(registro, nil)))},
+			{name: "HTTP de transição", addr: httpAddr, handler: transitionHandler(full, slog.New(slog.NewTextHandler(registro, nil)), false)},
 		})
 	}()
 	defer func() {
@@ -246,5 +247,37 @@ func TestConfiguracaoTLS(t *testing.T) {
 	}
 	if u, _ := healthcheckURL(":8443", true); u != "https://127.0.0.1:8443/healthz" {
 		t.Errorf("url: %s", u)
+	}
+}
+
+// TestPortaSoDoCache (Aula 9.3): com a frota em HTTPS, a porta HTTP fica só para o cache;
+// registro e rotas do agente também recebem 403, e cada recusa de agente vai para o log.
+func TestPortaSoDoCache(t *testing.T) {
+	app := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "app "+r.URL.Path) })
+	registro := &logSeguro{}
+	h := transitionHandler(app, slog.New(slog.NewTextHandler(registro, nil)), true)
+	for path, quer := range map[string]int{
+		"/healthz": 200, "/repo/stats": 200, "/repo/fedora/x": 200,
+		"/api/v1/agent/checkin": 403, "/api/v1/enroll": 403, "/painel/": 403,
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
+		if rec.Code != quer {
+			t.Errorf("%s: %d (quer %d) %q", path, rec.Code, quer, rec.Body.String())
+		}
+	}
+	if !strings.Contains(registro.String(), "agente recusado") || !strings.Contains(registro.String(), "path=/api/v1/enroll") {
+		t.Errorf("log:\n%s", registro.String())
+	}
+	// O proxy do apt (forma absoluta) continua passando.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "http://archive.ubuntu.com/ubuntu/dists/x", nil))
+	if rec.Code != 200 {
+		t.Errorf("proxy do apt: %d", rec.Code)
+	}
+	// Configuração: só com a porta HTTP.
+	if _, err := loadServerConfig(nil, lookMap(map[string]string{"PATCHD_CATALOG_INTERVAL": "0", "PATCHD_HTTP_CACHE_ONLY": "true"}), io.Discard); err == nil ||
+		!strings.Contains(err.Error(), "só com a porta HTTP") {
+		t.Errorf("cache-only sem porta HTTP: %v", err)
 	}
 }

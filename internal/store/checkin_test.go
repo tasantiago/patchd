@@ -56,6 +56,9 @@ func testarCheckin(t *testing.T, st contratoCheckin) {
 	if v, err := st.CheckinTLS(ctx, m.ID); err != nil || v == nil || !*v {
 		t.Errorf("canal depois de um check-in por TLS: %v %v", v, err)
 	}
+	if l, _ := st.Machines(ctx); l[0].CheckinTLS == nil || !*l[0].CheckinTLS {
+		t.Errorf("a lista mostra o canal do último check-in: %v", l[0].CheckinTLS)
+	}
 	if known, _ := st.CheckIn(ctx, m.ID, "v0.4.0", "sha256:outro", false); known {
 		t.Error("hash diferente não é conhecido")
 	}

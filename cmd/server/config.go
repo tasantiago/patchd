@@ -42,6 +42,8 @@ type serverConfig struct {
 	TLSCertFile    string
 	TLSKeyFile     string
 	HTTPListenAddr string
+	// HTTPCacheOnly (Aula 9.3): a porta HTTP fica só para o cache de repositórios.
+	HTTPCacheOnly bool
 	// PublicURL (Aula 9.2): a URL HTTPS pela qual os agentes alcançam este servidor, levada
 	// no job server_url. Normalizada na leitura.
 	PublicURL string
@@ -80,6 +82,9 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"chave privada do certificado TLS, em PEM (env PATCHD_TLS_KEY_FILE)")
 	fs.StringVar(&cfg.HTTPListenAddr, "http-listen", config.String(look, "PATCHD_HTTP_LISTEN_ADDR", ""),
 		"com TLS: porta HTTP de transição, só para agentes e o cache de repositórios, ex.: :8080 (env PATCHD_HTTP_LISTEN_ADDR)")
+	cacheOnly, errCacheOnly := config.Bool(look, "PATCHD_HTTP_CACHE_ONLY", false)
+	fs.BoolVar(&cfg.HTTPCacheOnly, "http-cache-only", cacheOnly,
+		"com -http-listen: a porta HTTP só atende o cache de repositórios; registro e agentes só por HTTPS (env PATCHD_HTTP_CACHE_ONLY)")
 	fs.StringVar(&cfg.PublicURL, "public-url", config.String(look, "PATCHD_PUBLIC_URL", ""),
 		"URL HTTPS pela qual os agentes alcançam este servidor, levada no job server_url, ex.: https://patchd.exemplo:8443 (env PATCHD_PUBLIC_URL)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
@@ -106,6 +111,12 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		problems = append(problems, errTLSPair)
 	case cfg.TLS() && (!filepath.IsAbs(cfg.TLSCertFile) || !filepath.IsAbs(cfg.TLSKeyFile)):
 		problems = append(problems, errors.New("-tls-cert e -tls-key: os caminhos precisam ser absolutos"))
+	}
+	if errCacheOnly != nil {
+		problems = append(problems, errCacheOnly)
+	}
+	if cfg.HTTPCacheOnly && cfg.HTTPListenAddr == "" {
+		problems = append(problems, errors.New("-http-cache-only/PATCHD_HTTP_CACHE_ONLY vale só com a porta HTTP (-http-listen)"))
 	}
 	if cfg.PublicURL != "" {
 		// O servidor só dá a troca por concluída quando o resultado chega por TLS a ele

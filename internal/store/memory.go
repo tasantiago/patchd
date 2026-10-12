@@ -152,6 +152,10 @@ func (m *Memory) summaries(retired bool) []RetiredMachine {
 			continue
 		}
 		s := protocol.MachineSummary{ID: id, LastSeenAt: mm.lastSeenAt, AgentVersion: mm.agentVersion, Ring: mm.ring}
+		if mm.checkinTLS != nil {
+			v := *mm.checkinTLS
+			s.CheckinTLS = &v
+		}
 		if mm.inventory != nil {
 			s.Hostname = mm.inventory.OS.Hostname
 			s.OSName = mm.inventory.OS.Name

@@ -13,8 +13,9 @@
 # Ajustes do compose só desta máquina (Aula 9.1b; modelo em .docker/compose.override.exemplo.yml)
 /docker-compose.override.yml
 
-# Segredos do compose de produção
+# Segredos, TLS e configuração do compose de produção (Aula 9.3: o .env.exemplo entra)
 /deploy/secrets/
+/deploy/tls/
 
 # Atualização do agente (Aula 5.4): a chave privada e a pasta de versões nunca entram no git
 *.key

@@ -33,6 +33,7 @@ type MachineSummary struct {
 	ScanReceivedAt     *time.Time `json:"scan_received_at,omitempty"`     // última busca de atualizações recebida
 	RebootPending      *bool      `json:"reboot_pending,omitempty"`       // da última busca; null = não sabe
 	Ring               int        `json:"ring"`                           // anel (Aula 8.3): 0 = piloto, 1 = padrão
+	CheckinTLS         *bool      `json:"checkin_tls,omitempty"`          // canal do último check-in (Aula 9.2); null = nenhum ainda
 }
 
 // CheckinRequest é o contato periódico do agente: barato, sem o inventário. O servidor

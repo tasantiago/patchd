@@ -34,6 +34,22 @@ func Duration(look Lookup, key string, def time.Duration) (time.Duration, error)
 	return d, nil
 }
 
+// Bool lê um liga/desliga: true, 1, sim ou false, 0, não (sem diferença de maiúsculas). Se a
+// variável não existir ou estiver vazia, devolve def sem erro (Aula 9.3).
+func Bool(look Lookup, key string, def bool) (bool, error) {
+	v, ok := look(key)
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch {
+	case !ok || v == "":
+		return def, nil
+	case v == "true" || v == "1" || v == "sim":
+		return true, nil
+	case v == "false" || v == "0" || v == "não" || v == "nao":
+		return false, nil
+	}
+	return def, fmt.Errorf("%s: valor %q inválido (use true ou false)", key, v)
+}
+
 // Secret lê um segredo da variável key ou do arquivo indicado em key_FILE
 // (padrão dos secrets do Docker). Definir os dois ao mesmo tempo é erro,
 // para não haver dúvida sobre qual valor vale. Não existe versão por flag:
