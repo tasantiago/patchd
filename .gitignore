@@ -18,6 +18,8 @@
 /deploy/tls/
 # Cópias do banco (Aula 10.1): têm tudo o que está no banco
 /deploy/backups/
+# Última atualização do servidor (Aula 10.4): é deste host
+/deploy/.atualizacao
 
 # Atualização do agente (Aula 5.4): a chave privada e a pasta de versões nunca entram no git
 *.key

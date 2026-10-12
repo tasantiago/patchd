@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-COMPOSE="${PATCHD_COMPOSE_FILE:-deploy/compose.yaml}"
+. deploy/comum.sh   # dc e pg: o compose sem as PATCHD_* do shell (Aula 10.4)
 uso() { sed -n '4,7p' "$0" | sed 's/^# //' >&2; exit 2; }
 [ $# -eq 2 ] || uso
 mode="$1"; dump="$2"
@@ -33,8 +33,6 @@ case "$dump" in
     ;;
 esac
 
-dc() { docker compose -f "$COMPOSE" "$@"; }
-pg() { dc exec -T postgres "$@"; }
 psqlc() { pg psql -U patchd -d "$1" -v ON_ERROR_STOP=1 -AtX -c "SET client_min_messages TO warning" -c "$2"; }
 tabela() { if command -v column >/dev/null; then column -t -s '|'; else cat; fi; }
 
@@ -94,4 +92,4 @@ pg pg_restore -U patchd -d patchd --no-owner --exit-on-error --single-transactio
 pg psql -U patchd -d patchd -AtX -f - < deploy/contagens.sql | tabela
 echo "== subindo o servidor (ele aplica as migrations mais novas que a cópia, se houver)"
 dc up -d server >/dev/null
-echo "restauração concluída; confira o log: docker compose -f $COMPOSE logs server | tail"
+echo "restauração concluída; confira o log: ./deploy/compose.sh logs --tail 20 server"

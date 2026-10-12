@@ -14,12 +14,13 @@ chmod 700 "$DIR"
 
 # 0. Variáveis PATCHD_* exportadas no shell valem mais que o deploy/.env no compose (Aula
 # 10.1: o servidor subiu com o RHBK do ambiente de desenvolvimento). Só os nomes, nunca os valores.
-# PATCHD_VERSION e PATCHD_COMMIT ficam de fora: são os argumentos do build, de propósito.
-exportadas="$(env | grep -oE '^PATCHD_[A-Z0-9_]+' | grep -vxE 'PATCHD_(VERSION|COMMIT)' | sort | tr '\n' ' ' | sed 's/ $//' || true)"
+# Desde a Aula 10.4 a versão também mora no deploy/.env (o atualizar.sh anota): nenhuma
+# PATCHD_* exportada é inofensiva para um "docker compose" digitado à mão.
+exportadas="$(env | grep -oE '^PATCHD_[A-Z0-9_]+' | sort | tr '\n' ' ' | sed 's/ $//' || true)"
 if [ -n "$exportadas" ]; then
   echo "AVISO: PATCHD_* exportadas neste shell passam por cima do deploy/.env no compose:"
   echo "    $exportadas"
-  echo "  Rode o compose num shell limpo (ou: unset $exportadas)"
+  echo "  Use ./deploy/compose.sh (roda o docker compose sem elas) e ./deploy/atualizar.sh."
 fi
 
 # 1. Senha e URL do banco.
@@ -133,4 +134,4 @@ if [ "$falta" -ne 0 ]; then
   echo "Complete o que falta antes do docker compose up."
   exit 1
 fi
-echo "Pronto para: docker compose -f deploy/compose.yaml up -d --build"
+echo "Pronto para: ./deploy/atualizar.sh vX.Y.Z (a primeira subida também: constrói, copia o banco e sobe)"

@@ -51,4 +51,12 @@ EXPOSE 8443 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/patchd-server", "-healthcheck"]
 
+# Versão e commit também nos rótulos da imagem (Aula 10.4): o atualizar.sh lê do container
+# qual versão está no ar, sem depender do que alguém anotou.
+ARG VERSION=dev
+ARG COMMIT=
+LABEL org.opencontainers.image.title="patchd-server" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}"
+
 ENTRYPOINT ["/patchd-server"]
