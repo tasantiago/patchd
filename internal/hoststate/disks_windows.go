@@ -71,13 +71,17 @@ const (
 // Um volume que responde às duas é local, e o barramento e o modelo vão para o painel. O
 // drive virtual do Google Drive responde à primeira (repassando o disco onde fica o cache)
 // e falha na segunda. Um volume estendido por vários discos também não responde à segunda,
-// mas tem mais de uma extensão: fica. Acesso negado conta como local: na dúvida, o volume
-// fica (sumir com o C: de uma máquina seria pior que mostrar um drive a mais).
+// mas tem mais de uma extensão: fica.
+//
+// Acesso negado em qualquer pergunta: o volume sai (Aula 12.1f). O serviço roda como SYSTEM,
+// que pergunta a qualquer volume da máquina; no lab, o único que negou foi o G: do Google
+// Drive (que é da sessão do usuário). Um volume BitLocker bloqueado responde às duas
+// perguntas e só falha na leitura do espaço, que vira erro em "errors".
 func probeVolume(letter string) (local bool, bus, model string) {
 	path, _ := windows.UTF16PtrFromString(`\\.\` + letter)
 	h, err := windows.CreateFile(path, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
 	if err != nil {
-		return errors.Is(err, windows.ERROR_ACCESS_DENIED), "", ""
+		return false, "", ""
 	}
 	defer windows.CloseHandle(h)
 
@@ -96,8 +100,6 @@ func probeVolume(letter string) (local bool, bus, model string) {
 		}
 	case errors.Is(err, windows.ERROR_MORE_DATA): // mais de 8 discos
 		spanned = true
-	case errors.Is(err, windows.ERROR_ACCESS_DENIED):
-		return true, "", ""
 	default:
 		return false, "", ""
 	}
@@ -110,7 +112,7 @@ func probeVolume(letter string) (local bool, bus, model string) {
 	err = windows.DeviceIoControl(h, ioctlStorageQuery, (*byte)(unsafe.Pointer(&query[0])), uint32(len(query)*4),
 		(*byte)(unsafe.Pointer(&desc[0])), uint32(len(desc)*8), &n, nil)
 	if err != nil {
-		return spanned || errors.Is(err, windows.ERROR_ACCESS_DENIED), "", ""
+		return spanned, "", ""
 	}
 	b := unsafe.Slice((*byte)(unsafe.Pointer(&desc[0])), len(desc)*8)[:min(int(n), len(desc)*8)]
 	return true, busName(le32(b, 28)), descString(b, int(le32(b, 16)))
