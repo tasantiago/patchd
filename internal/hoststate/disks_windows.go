@@ -9,8 +9,8 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
-// disks percorre as letras de unidade e fica com as fixas (DRIVE_FIXED): sem pendrive, CD
-// e unidade de rede mapeada. Uma unidade de rede lenta travaria a chamada; e a letra
+// disks percorre as letras de unidade e fica com as fixas (DRIVE_FIXED) que são volumes de
+// verdade: sem pendrive, CD, unidade de rede mapeada nem drive virtual. Uma unidade de rede lenta travaria a chamada; e a letra
 // mapeada é da sessão do usuário, não da máquina (o serviço roda como SYSTEM).
 func disks(ctx context.Context) ([]protocol.Disk, []error) {
 	mask, err := windows.GetLogicalDrives()
@@ -29,6 +29,13 @@ func disks(ctx context.Context) ([]protocol.Disk, []error) {
 		letter := string(rune('A'+i)) + ":"
 		root, _ := windows.UTF16PtrFromString(letter + `\`)
 		if windows.GetDriveType(root) != windows.DRIVE_FIXED {
+			continue
+		}
+		// Só volumes do gerenciador de montagem (os mesmos do Get-Volume). Drives virtuais
+		// (o G: do Google Drive, um subst) também dizem DRIVE_FIXED, mas não têm volume:
+		// são pastas ou arquivos na nuvem com cara de disco (Aula 12.1b).
+		var vol [50]uint16 // \\?\Volume{GUID}\ tem 49 caracteres
+		if windows.GetVolumeNameForVolumeMountPoint(root, &vol[0], uint32(len(vol))) != nil {
 			continue
 		}
 		var avail, total, totalFree uint64

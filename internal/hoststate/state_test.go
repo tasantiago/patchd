@@ -29,9 +29,9 @@ func TestSelectInterfaces(t *testing.T) {
 	up := net.FlagUp | net.FlagBroadcast
 	raw := []netIf{
 		{name: "lo", flags: net.FlagUp | net.FlagLoopback, addrs: pfx("127.0.0.1/8", "::1/128")},
-		{name: "wlan0", mac: mac("00:11:22:33:44:66")},               // parada, sem endereço: fica (tem MAC de fabricante)
-		{name: "veth1a2b", mac: mac("6a:1f:00:aa:bb:cc"), flags: up}, // veth de container: sai
-		{name: "tun0", flags: up},                                    // sem MAC e sem endereço: sai
+		{name: "wlan0", mac: mac("00:11:22:33:44:66"), addrs: pfx("169.254.7.7/16")}, // parada: fica (MAC de fabricante), sem o 169.254
+		{name: "veth1a2b", mac: mac("6a:1f:00:aa:bb:cc"), flags: up},                 // veth de container: sai
+		{name: "tun0", flags: up}, // sem MAC e sem endereço: sai
 		{name: "eth0", mac: mac("00:15:5d:01:02:03"), flags: up, addrs: pfx("192.0.2.10/24", "fe80::215:5dff:fe01:203/64", "2001:db8::10/64")},
 		{name: "docker0", mac: mac("02:42:ac:11:00:01"), flags: up, addrs: pfx("172.17.0.1/16")},
 	}
@@ -47,6 +47,13 @@ func TestSelectInterfaces(t *testing.T) {
 	if eth.MAC != "00:15:5d:01:02:03" || eth.LocalMAC || !eth.Up ||
 		len(eth.IPv4) != 1 || eth.IPv4[0] != "192.0.2.10/24" || len(eth.IPv6) != 1 || eth.IPv6[0] != "2001:db8::10/64" {
 		t.Errorf("eth0 (o fe80:: fica de fora): %+v", eth)
+	}
+	if len(got[2].IPv4) != 0 {
+		t.Errorf("o 169.254 de uma placa parada sai: %v", got[2].IPv4)
+	}
+	// Placa ativa sem DHCP: o 169.254 fica (mostra o problema).
+	if l := selectInterfaces([]netIf{{name: "eth9", mac: mac("00:11:22:33:44:77"), flags: up, addrs: pfx("169.254.1.2/16")}}); len(l) != 1 || len(l[0].IPv4) != 1 {
+		t.Errorf("169.254 numa placa ativa: %+v", l)
 	}
 	if !got[0].LocalMAC || got[2].Up {
 		t.Errorf("docker0 com MAC local, wlan0 parada: %+v %+v", got[0], got[2])
