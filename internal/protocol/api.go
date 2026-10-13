@@ -140,6 +140,21 @@ type ComplianceDetail struct {
 	AgentVersion string        `json:"agent_version,omitempty"`
 	Target       string        `json:"target,omitempty"` // a atualização que resolve todas as pendências
 	Items        []PendingItem `json:"items"`
+	// ThirdParty: os programas de terceiros identificados (Windows e macOS, Aula 13.3).
+	ThirdParty []ThirdPartyItem `json:"third_party,omitempty"`
+}
+
+// ThirdPartyItem é um programa de terceiros identificado pelo manifesto (Aula 6.5), com a
+// situação em relação à versão de referência.
+type ThirdPartyItem struct {
+	AppID     string `json:"app_id"`              // regra do manifesto: google-chrome
+	Program   string `json:"program"`             // rótulo da regra: Google Chrome
+	Name      string `json:"name"`                // como está no inventário
+	State     string `json:"state"`               // DESATUALIZADO, FORA DE SUPORTE, em dia...
+	Installed string `json:"installed"`           // versão instalada
+	Reference string `json:"reference,omitempty"` // versão de referência ou mínima
+	Origin    string `json:"origin,omitempty"`    // de onde veio a referência, ou a nota da regra
+	Scope     string `json:"scope,omitempty"`     // machine ou user
 }
 
 // MachineItems são as pendências de uma máquina, para a visão da frota por item (Aula
@@ -151,6 +166,8 @@ type MachineItems struct {
 	Catalog   string        `json:"catalog,omitempty"`
 	Unit      string        `json:"unit,omitempty"` // pacotes (Linux) ou CVEs (Windows, macOS)
 	Items     []PendingItem `json:"items"`
+	// ThirdParty: os programas de terceiros identificados (Aula 13.3).
+	ThirdParty []ThirdPartyItem `json:"third_party,omitempty"`
 }
 
 // RetiredMachine é uma máquina aposentada (Aula 7.5): fora da frota, quando, por quê e por quem.

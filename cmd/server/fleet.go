@@ -13,6 +13,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 // slowEvaluation: acima disso, a avaliação de uma máquina vai para o log como lenta.
@@ -31,6 +32,9 @@ type complianceService struct {
 	st     fleetStore
 	logger *slog.Logger
 	now    func() time.Time
+	// manifest: os programas de terceiros (Aula 13.3); nil: o Detail e o Items não os
+	// avaliam. O Fleet nunca avalia: o estado da máquina não depende deles.
+	manifest *thirdparty.Manifest
 }
 
 func newComplianceService(st fleetStore, logger *slog.Logger) *complianceService {
@@ -84,10 +88,11 @@ func (s *complianceService) Detail(ctx context.Context, id string) (protocol.Com
 			continue
 		}
 		now := s.now()
-		cs, ev := s.evaluate(ctx, m, now)
+		cs, ev := s.evaluate(ctx, m, now, s.manifest)
 		d := protocol.ComplianceDetail{ComplianceStatus: cs, AgentVersion: m.AgentVersion, Items: []protocol.PendingItem{}}
 		if ev != nil {
 			d.Target, d.Items = pendingItems(*ev)
+			d.ThirdParty = thirdPartyItems(*ev, now)
 		}
 		return d, true, nil
 	}
@@ -107,11 +112,12 @@ func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems,
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		cs, ev := s.evaluate(ctx, m, now)
+		cs, ev := s.evaluate(ctx, m, now, s.manifest)
 		mi := protocol.MachineItems{MachineID: m.ID, Hostname: m.Hostname, OS: cs.OS, Catalog: cs.Catalog, Unit: cs.PendingUnit,
 			Items: []protocol.PendingItem{}}
 		if ev != nil {
 			_, mi.Items = pendingItems(*ev)
+			mi.ThirdParty = thirdPartyItems(*ev, now)
 		}
 		out = append(out, mi)
 	}
@@ -121,19 +127,19 @@ func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems,
 // status avalia uma máquina. Um erro na avaliação de uma máquina não derruba a frota:
 // ela fica "desconhecido" e o erro vai para o log.
 func (s *complianceService) status(ctx context.Context, m protocol.MachineSummary, now time.Time) protocol.ComplianceStatus {
-	cs, _ := s.evaluate(ctx, m, now)
+	cs, _ := s.evaluate(ctx, m, now, nil)
 	return cs
 }
 
 // evaluate devolve o estado e a avaliação (nil se a avaliação falhou).
-func (s *complianceService) evaluate(ctx context.Context, m protocol.MachineSummary, now time.Time) (protocol.ComplianceStatus, *machineEval) {
+func (s *complianceService) evaluate(ctx context.Context, m protocol.MachineSummary, now time.Time, manifest *thirdparty.Manifest) (protocol.ComplianceStatus, *machineEval) {
 	cs := protocol.ComplianceStatus{
 		MachineID: m.ID, Hostname: m.Hostname, OS: strings.TrimSpace(m.OSName + " " + m.OSVersion),
 		LastSeenAt: m.LastSeenAt, EvaluatedAt: now,
 	}
 	f := compliance.Facts{LastSeen: m.LastSeenAt, RebootPending: m.RebootPending}
 	start := time.Now()
-	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now})
+	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now, Manifest: manifest})
 	if d := time.Since(start); d > slowEvaluation && err == nil {
 		s.logger.Warn("avaliação de compliance lenta", "machine_id", m.ID, "duration_ms", d.Milliseconds(),
 			"dica", "patchd-server compliance -machine ID -tempos mostra a consulta responsável")
@@ -212,6 +218,35 @@ func pendingItems(ev machineEval) (string, []protocol.PendingItem) {
 		return target, items
 	}
 	return "", items
+}
+
+// thirdPartyItems: os programas de terceiros identificados, com a origem da referência
+// escrita como na linha de comando (fonte e data, mínimo do manifesto, ou a nota da regra).
+func thirdPartyItems(ev machineEval, now time.Time) []protocol.ThirdPartyItem {
+	if ev.Third == nil {
+		return nil
+	}
+	out := make([]protocol.ThirdPartyItem, 0, len(ev.Third.Findings))
+	for _, f := range ev.Third.Findings {
+		it := protocol.ThirdPartyItem{AppID: f.App.ID, Program: f.App.Name, Name: f.Software.Name, State: f.State,
+			Installed: f.Installed, Reference: f.Reference, Scope: f.Software.Scope}
+		if it.Installed == "" {
+			it.Installed = f.Software.Version
+		}
+		switch {
+		case f.Ref != nil:
+			it.Origin = fmt.Sprintf("%s, %s", f.Ref.Source, f.Ref.Fetched.Format("2006-01-02"))
+			if now.Sub(f.Ref.Fetched) > 7*24*time.Hour {
+				it.Origin += " (antiga)"
+			}
+		case f.App.Category == thirdparty.CategoryMinimum:
+			it.Origin = "mínimo do manifesto"
+		case f.App.Note != "":
+			it.Origin = f.App.Note
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // fillFacts extrai da avaliação o que a classificação precisa e o que a resposta mostra.
