@@ -96,6 +96,7 @@ type api struct {
 	jobKey     ed25519.PrivateKey // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
 	publicURL  string             // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
 	timezone   string             // fuso sugerido na janela dos anéis (Aula 11.1)
+	brand      string             // nome no topo do painel (Aula 11.3)
 	oidc       *oidc.Provider     // login pelo RHBK (Aula 9.4); nil: desligado
 	oidcLogins oidcPending        // logins pelo RHBK em andamento (state → nonce e PKCE)
 	metrics    *Metrics           // contadores da Aula 10.2; nil: desligados
@@ -105,7 +106,7 @@ type api struct {
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
 func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
-	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() },
+	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() }, brand: "patchd",
 		hashSlots: make(chan struct{}, loginConcurrent)}
 	for _, o := range opts {
 		o(a)

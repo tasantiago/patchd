@@ -46,6 +46,8 @@ services:
       PATCHD_LOG_FORMAT: json
       PATCHD_LOG_LEVEL: ${PATCHD_LOG_LEVEL:-info}
       PATCHD_TIMEZONE: ${PATCHD_TIMEZONE:-America/Porto_Velho}
+      # Nome no topo do painel e na tela de login (Aula 11.3); até 40 caracteres.
+      PATCHD_PANEL_TITLE: ${PATCHD_PANEL_TITLE:-patchd}
       PATCHD_DATABASE_URL_FILE: /run/secrets/database_url
       # TLS (Aula 9.1): a pasta inteira é montada, não os arquivos. Renovar = trocar os
       # arquivos na pasta do host; o servidor relê em até 30 s, sem reiniciar.

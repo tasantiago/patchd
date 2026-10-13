@@ -31,6 +31,7 @@ const (
 
 // pageBase é o que toda página tem: a sessão e o menu.
 type pageBase struct {
+	Brand   string // nome no topo (Aula 11.3)
 	Title   string
 	Session panel.Session
 	Admin   bool
@@ -41,13 +42,13 @@ type pageBase struct {
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
 	s, _ := SessionFrom(r.Context())
-	return baseFor(s, title, nav)
+	return a.baseFor(s, title, nav)
 }
 
 // baseFor: a base de uma página montada por uma ação de admin (a sessão vem do
 // adminAction, não do contexto).
-func baseFor(s panel.Session, title, nav string) pageBase {
-	return pageBase{Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav}
+func (a *api) baseFor(s panel.Session, title, nav string) pageBase {
+	return pageBase{Brand: a.brand, Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav}
 }
 
 func (a *api) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
@@ -88,9 +89,9 @@ func dash(s string) string {
 // --- Frota -------------------------------------------------------------------------
 
 type countView struct {
-	State, Label string
-	N            int
-	Active       bool
+	State, Label, Color string
+	N                   int
+	Active              bool
 }
 
 type fleetRow struct {
@@ -108,6 +109,22 @@ type fleetView struct {
 	Rows        []fleetRow
 	EvaluatedAt string
 	Rings       []int // anéis oferecidos no lote (admin, Aula 11.1)
+	FilterLabel string
+	Exploited   int // máquinas com alguma pendência explorada (Aula 11.3)
+	HTTP        int // máquinas cujo último check-in veio sem TLS
+}
+
+// stateColor: a cor do número no cartão de cada estado.
+func stateColor(s compliance.State) string {
+	switch s {
+	case compliance.StateMissing:
+		return "v-vermelho"
+	case compliance.StateReboot, compliance.StateStale:
+		return "v-laranja"
+	case compliance.StateOK:
+		return "v-verde"
+	}
+	return ""
 }
 
 // fleetPage lista a frota com o estado de cada máquina; ?estado= filtra.
@@ -145,9 +162,20 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 	ringOf := make(map[string]int, len(summaries))
 	for _, m := range summaries {
 		ringOf[m.ID] = m.Ring
+		if m.CheckinTLS != nil && !*m.CheckinTLS {
+			v.HTTP++
+		}
+	}
+	for _, m := range fleet.Machines {
+		if m.Exploited > 0 {
+			v.Exploited++
+		}
 	}
 	for _, st := range compliance.States {
-		v.Counts = append(v.Counts, countView{State: string(st), Label: st.Label(), N: fleet.Counts[string(st)], Active: v.Filter == string(st)})
+		v.Counts = append(v.Counts, countView{State: string(st), Label: st.Label(), Color: stateColor(st), N: fleet.Counts[string(st)], Active: v.Filter == string(st)})
+		if v.Filter == string(st) {
+			v.FilterLabel = st.Label()
+		}
 	}
 	for _, m := range fleet.Machines {
 		if v.Filter != "" && m.State != v.Filter {
@@ -430,41 +458,18 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 var pages = template.Must(template.New("").Parse(`
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Title}} · patchd</title>
-<style>
-:root{--fg:#1b1b1b;--muted:#5f6368;--line:#e2e4e8;--bg:#fff;--soft:#f6f7f9;--link:#0b57d0}
-*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,sans-serif;color:var(--fg);background:var(--bg)}
-header{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;align-items:center;padding:.7rem 1.25rem;border-bottom:1px solid var(--line);background:var(--soft)}
-header strong{font-size:1.05rem}header nav a{margin-right:1rem;color:var(--fg);text-decoration:none}
-header nav a.ativo{font-weight:600;border-bottom:2px solid var(--fg)}.quem{margin-left:auto;color:var(--muted);font-size:.9rem}
-.quem form{display:inline}.quem button{margin-left:.6rem}
-main{max-width:76rem;margin:0 auto;padding:1.25rem}a{color:var(--link)}h1{font-size:1.35rem;margin:.2rem 0 1rem}
-table{border-collapse:collapse;width:100%;font-size:.92rem}th,td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-weight:600;color:var(--muted);font-size:.82rem;text-transform:uppercase;letter-spacing:.02em}
-td.num{text-align:right;font-variant-numeric:tabular-nums}code{font-size:.88em}
-.estado{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.8rem;font-weight:600;white-space:nowrap;border:1px solid}
-.faltando{color:#8a1c12;background:#fdecea;border-color:#f3b8b1}.reboot_pendente{color:#7a4a00;background:#fff4e0;border-color:#f5d08f}
-.sem_dado_recente{color:#4a4f57;background:#eef0f3;border-color:#cfd4da}.desconhecido{color:#3d4a66;background:#eef2fb;border-color:#c8d3ec}
-.em_dia{color:#165c2b;background:#e8f5ec;border-color:#a9d8b6}
-.contagens{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 1rem;padding:0;list-style:none}
-.contagens a{display:block;padding:.45rem .8rem;border:1px solid var(--line);border-radius:.5rem;text-decoration:none;color:var(--fg)}
-.contagens a.ativo{outline:2px solid var(--fg)}.contagens b{font-size:1.15rem;margin-right:.35rem}
-.motivos{margin:.2rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.85rem}
-.aviso{padding:.6rem .8rem;border-radius:.4rem;margin:0 0 1rem}.ok{background:#e8f5ec}.erro{background:#fdecea;color:#8a1c12}.atencao{background:#fff4e0;color:#7a4a00}
-dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1.2rem;margin:0 0 1.5rem}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0}
-.expl{color:#8a1c12;font-weight:600}.muted{color:var(--muted)}section{margin-top:1.75rem}h2{font-size:1.05rem;margin:0 0 .6rem}
-form.acao{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form.acao input{flex:1 1 20rem;padding:.4rem}
-button{padding:.35rem .9rem;cursor:pointer}
-.job{display:inline-block;padding:.05rem .45rem;border-radius:.3rem;font-size:.8rem;font-weight:600;border:1px solid var(--line);white-space:nowrap}
-.job.concluido{color:#165c2b;background:#e8f5ec}.job.falhou,.job.rejeitado{color:#8a1c12;background:#fdecea}
-.job.pendente,.job.entregue,.job.em_andamento{color:#3d4a66;background:#eef2fb}.job.pausada{color:#7a4a00;background:#fff4e0}.job.concluida{color:#165c2b;background:#e8f5ec}.job.cancelada{color:#4a4f57;background:#eef0f3}.job.cancelado,.job.expirado{color:#4a4f57;background:#eef0f3}
-td form{margin:0}form.inline{display:inline;margin-left:.6rem}.dias label{margin-right:.6rem}
-form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;align-items:center;max-width:44rem}form.grade input[type=text]{padding:.3rem}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}
-</style></head><body>
-<header><strong>patchd</strong>
-<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo"{{end}}>Campanhas</a><a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo"{{end}}>Anéis</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
-<span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}
-<form method="post" action="/painel/sair"><button type="submit">Sair</button></form></span>
+<title>{{.Title}} · {{.Brand}}</title>
+<style>` + themeCSS + `</style></head><body>
+<header class="topo"><a class="marca" href="/painel/">` + shieldSVG + `<span>{{.Brand}}</span></a>
+<nav aria-label="principal">
+<a href="/painel/" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}><span class="ic">🖥️</span>Frota</a>
+<a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Jobs</a>
+<a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}><span class="ic">🎯</span>Campanhas</a>
+<a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}><span class="ic">🔁</span>Anéis</a>
+<a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}><span class="ic">📦</span>Aposentadas</a>
+<form method="post" action="/painel/sair"><button type="submit" title="Sair"><span class="ic">🔓</span>Sair</button></form>
+</nav>
+<span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}</span>
 </header><main>
 {{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
@@ -475,32 +480,35 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 {{define "frota"}}{{template "topo" .}}
 <h1>Frota</h1>
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
-<ul class="contagens">
-<li><a href="/painel/" {{if not .Filter}}class="ativo"{{end}}><b>{{.Total}}</b>todas</a></li>
-{{range .Counts}}<li><a href="/painel/?estado={{.State}}" {{if .Active}}class="ativo"{{end}}><b>{{.N}}</b><span class="estado {{.State}}">{{.Label}}</span></a></li>{{end}}
+<ul class="kpis">
+<li><a class="kpi{{if not .Filter}} ativo{{end}}" href="/painel/"><span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">{{.Total}}</span></a></li>
+{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span></a></li>{{end}}
+<li><div class="kpi"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">{{.Exploited}}</span><span class="kpi-sub">máquinas com CVE explorada pendente</span></div></li>
+<li><div class="kpi"><span class="kpi-rot">Ainda por HTTP</span><span class="kpi-val v-laranja">{{.HTTP}}</span><span class="kpi-sub">último check-in sem TLS</span></div></li>
 </ul>
-{{if .Rows}}{{if .Admin}}<form method="post" action="/painel/aneis/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<table>
+<div class="card"><div class="card-cab"><h2>Máquinas{{if .Filter}} · {{.FilterLabel}}{{end}}</h2>
+<span><span class="muted">Avaliado em {{.EvaluatedAt}}</span> <span class="grupo-btn"><a class="btn" href="/painel/frota.csv{{if .Filter}}?estado={{.Filter}}{{end}}">CSV</a><a class="btn" href="/api/v1/compliance">JSON</a></span></span></div>
+{{if .Rows}}{{if .Admin}}<form method="post" action="/painel/aneis/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<div class="tabela"><table>
 <thead><tr>{{if .Admin}}<th></th>{{end}}<th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Anel</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
 <tbody>{{range .Rows}}<tr>
 {{if $.Admin}}<td><input type="checkbox" name="maquina" value="{{.ID}}" aria-label="marcar {{.Short}}"></td>{{end}}
-<td><span class="estado {{.State}}">{{.Label}}</span></td>
+<td><span class="estado {{.State}}">{{.Label}}</span>{{if .Reasons}}<ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}</td>
 <td><a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a></td>
 <td>{{.Name}}</td><td>{{.OS}}</td><td class="num">{{.Ring}}</td><td>{{.Pending}}</td>
 <td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td>{{.Seen}}</td></tr>
-{{if .Reasons}}<tr>{{if $.Admin}}<td></td>{{end}}<td></td><td colspan="7"><ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul></td></tr>{{end}}
-{{end}}</tbody></table>
+{{end}}</tbody></table></div>
 {{if .Admin}}<div class="lote"><label>Pôr as marcadas no anel <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
-<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas dos anéis ficam em <a href="/painel/aneis">Anéis</a>.</span></div></form>{{end}}
+<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas ficam em <a href="/painel/aneis">Anéis</a>.</span></div></form>{{end}}
 {{else}}<p class="muted">Nenhuma máquina{{if .Filter}} neste estado{{end}}.</p>{{end}}
-<p class="muted">Avaliado em {{.EvaluatedAt}} · <a href="/painel/frota.csv{{if .Filter}}?estado={{.Filter}}{{end}}">Exportar CSV</a> · <a href="/api/v1/compliance">JSON</a></p>
+</div>
 {{end}}
 {{template "fim"}}{{end}}
 
 {{define "maquina"}}{{template "topo" .}}
 <p><a href="/painel/">← Frota</a></p>
 <h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
-{{if .D.Reasons}}<ul>{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
-<dl class="dados">
+{{if .D.Reasons}}<ul class="motivos">{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<div class="card"><div class="card-cab"><h2>Dados da máquina</h2></div><dl class="dados">
 <dt>ID</dt><dd><code>{{.D.MachineID}}</code></dd>
 <dt>Nome</dt><dd>{{.Name}}</dd>
 <dt>Sistema</dt><dd>{{if .D.OS}}{{.D.OS}}{{else}}—{{end}}</dd>
@@ -508,19 +516,19 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 <dt>Último contato</dt><dd>{{.Seen}}</dd>
 <dt>Inventário coletado</dt><dd>{{.Collected}}</dd>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
-{{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="anel novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button type="submit">Mudar de anel</button></form>{{end}}</dd>
+{{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="anel novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de anel</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}
 <dt>Canal</dt><dd>{{.Channel}}</dd>
 {{if .Pending}}<dt>Pendentes</dt><dd>{{.Pending}}</dd>{{end}}
 {{if .D.Target}}<dt>Resolve tudo</dt><dd>{{.D.Target}}</dd>{{end}}
 {{range .D.CatalogWarnings}}<dt>Atenção</dt><dd>{{.}}</dd>{{end}}
-</dl>
-{{if .Items}}<section><h2>Pendências</h2>
-{{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<table>
+</dl></div>
+{{if .Items}}<section><div class="card-cab"><h2>Pendências</h2><span class="grupo-btn"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">CSV</a><a class="btn" href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></span></div>
+{{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<div class="tabela"><table>
 <thead><tr>{{if .CanUpdate}}<th></th>{{end}}<th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>
 <tbody>{{range .Items}}<tr>{{if $.CanUpdate}}<td>{{if .Packages}}<input type="checkbox" name="item" value="{{.ID}}" aria-label="atualizar {{.ID}}" title="{{range $i, $p := .Packages}}{{if $i}}, {{end}}{{$p}}{{end}}">{{end}}</td>{{end}}
 <td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td><code>{{.ID}}</code></td>
-<td>{{.Severity}}</td><td>{{.Installed}}</td><td>{{.FixedIn}}</td><td>{{.Note}}</td></tr>{{end}}</tbody></table>
+<td>{{.Severity}}</td><td>{{.Installed}}</td><td>{{.FixedIn}}</td><td>{{.Note}}</td></tr>{{end}}</tbody></table></div>
 {{if .CanUpdate}}<div class="lote">
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
 {{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
@@ -528,7 +536,6 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 <span class="muted">Instala os pacotes binários das fontes marcadas pelo apt ou pelo dnf; o agente confere na busca dele antes, e o resultado vem da busca seguinte. Não reinicia a máquina.</span>
 </div></form>{{end}}
 {{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
-<p class="muted"><a href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">Exportar pendências (CSV)</a> · <a href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></p>
 </section>{{end}}
 {{if .Links}}<section><h2>Alertas de identidade</h2><ul>
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
@@ -554,32 +561,32 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 <p class="muted">A máquina sai da frota, do compliance e do painel, e a credencial dela deixa de valer. Nada é apagado; dá para restaurar em Aposentadas.</p>
 <form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/aposentar">
 <input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (ex.: registro antigo da VM reinstalada)">
-<button type="submit">Aposentar</button></form></section>{{end}}
+<button class="perigo" type="submit">Aposentar</button></form></section>{{end}}
 {{template "fim"}}{{end}}
 
-{{define "jobs-tabela"}}<table>
+{{define "jobs-tabela"}}<div class="tabela"><table>
 <thead><tr><th>Job</th>{{if not .MachineID}}<th>Máquina</th><th>Nome</th>{{end}}<th>Tipo</th><th>Estado</th><th>Janela</th><th>Criado</th><th>Por</th><th>Entregue</th><th>Encerrado</th><th>Detalhe</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td>
 {{if not $.MachineID}}<td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{end}}
 <td>{{.Type}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Window}}</td><td>{{.Created}}</td><td>{{.By}}</td>
 <td>{{.Delivered}}</td><td>{{.Finished}}</td><td>{{.Detail}}</td>
-{{if $.Admin}}<td>{{if .CanCancel}}<form method="post" action="/painel/jobs/{{.ID}}/cancelar">{{if $.MachineID}}<input type="hidden" name="maquina" value="{{$.MachineID}}">{{end}}<button type="submit">Cancelar</button></form>{{end}}</td>{{end}}
-</tr>{{end}}</tbody></table>{{end}}
+{{if $.Admin}}<td>{{if .CanCancel}}<form method="post" action="/painel/jobs/{{.ID}}/cancelar">{{if $.MachineID}}<input type="hidden" name="maquina" value="{{$.MachineID}}">{{end}}<button class="perigo" type="submit">Cancelar</button></form>{{end}}</td>{{end}}
+</tr>{{end}}</tbody></table></div>{{end}}
 
 {{define "jobs"}}{{template "topo" .}}
 <h1>Jobs</h1>
-<p class="muted">Os {{.N}} mais recentes da frota. Para pedir uma busca, abra a máquina na Frota.</p>
-{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}
+<div class="card"><div class="card-cab"><h2>Mais recentes</h2><span class="muted">Os {{.N}} mais recentes da frota. Para pedir uma busca, abra a máquina na Frota.</span></div>
+{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "campanhas"}}{{template "topo" .}}
 <h1>Campanhas</h1>
 <p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir.</p>
-{{if .Rows}}<table>
+<div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Fontes</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
-<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table>
-{{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}
+<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section><h2>Nova campanha</h2>
 <form class="grade" method="post" action="/painel/campanhas/nova">
@@ -598,14 +605,14 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 
 {{define "campanha-conferir"}}{{template "topo" .}}
 <h1>Conferir a campanha</h1>
-<dl class="dados">
+<div class="card"><dl class="dados">
 <dt>Nome</dt><dd>{{.Form.Name}}</dd>
 <dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · fontes: {{.SourcesList}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada anel concluído</dd>
-</dl>
-<table><thead><tr><th>Ordem</th><th>Anel</th><th>Máquinas agora</th><th>Janela</th><th></th></tr></thead>
-<tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td><td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table>
+</dl></div>
+<div class="card"><div class="card-cab"><h2>Anéis, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Anel</th><th>Máquinas agora</th><th>Janela</th><th></th></tr></thead>
+<tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td><td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table></div></div>
 {{range .Warnings}}<p class="aviso atencao">{{.}}</p>{{end}}
 <p>Ao criar, o servidor libera o primeiro anel no próximo minuto: os jobs vão para máquinas de verdade.</p>
 <form class="lote" method="post" action="/painel/campanhas/nova">
@@ -614,14 +621,14 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
-<button type="submit" name="corrigir" value="1">Corrigir</button>
+<button class="sec" type="submit" name="corrigir" value="1">Corrigir</button>
 </form>
 {{template "fim"}}{{end}}
 
 {{define "campanha"}}{{template "topo" .}}
 <p><a href="/painel/campanhas">← Campanhas</a></p>
 <h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
-<dl class="dados">
+<div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
 <dt>Fontes</dt><dd>{{.Sources}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
@@ -630,15 +637,15 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
 </dl>
 {{if or .CanPause .CanResume .CanCancel}}<div class="lote">
-{{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button type="submit">Pausar</button></form>{{end}}
+{{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button class="sec" type="submit">Pausar</button></form>{{end}}
 {{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do anel atual)</button></form>{{end}}
-{{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button type="submit">Cancelar a campanha</button></form>{{end}}
-<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}
+{{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
+<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
 {{range .Rings}}<section><h2>Anel {{.Ring}}{{if .Current}} (atual){{end}}</h2>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
-{{if .Jobs}}<table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th><th>Estado</th><th>Detalhe</th></tr></thead>
+{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th><th>Estado</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
-<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table>{{end}}</section>{{end}}
+<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>{{end}}</section>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "campanha-nao-encontrada"}}{{template "topo" .}}
@@ -649,12 +656,11 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 {{define "aneis"}}{{template "topo" .}}
 <h1>Anéis e janelas</h1>
 <p class="muted">Anel 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos anéis em ordem. A janela de manutenção de um anel é quando os jobs "na janela" daquele anel podem rodar. Para pôr máquinas num anel, marque-as na <a href="/painel/">Frota</a> ou use o detalhe da máquina.</p>
-{{if .Rows}}<table>
+<div class="card"><div class="card-cab"><h2>Anéis em uso</h2><span class="muted">{{.Total}} máquina(s) na frota</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Anel</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
-{{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/aneis/{{.Ring}}/remover-janela"><button type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table>
-<p class="muted">{{.Total}} máquina(s) na frota.</p>
-{{else}}<p class="muted">Nenhuma máquina e nenhuma janela ainda.</p>{{end}}
+{{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/aneis/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma máquina e nenhuma janela ainda.</p>{{end}}</div>
 {{if .Admin}}<section><h2>Definir a janela de um anel</h2>
 <p class="muted">Grava ou troca a janela. Uma janela que passa da meia-noite pertence ao dia em que começa (sex 22:00 por 6 h termina sábado às 04:00). Os jobs já criados mantêm a janela que levam assinada.</p>
 <form class="grade" method="post" action="/painel/aneis/janela">
@@ -669,21 +675,21 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 
 {{define "aposentadas"}}{{template "topo" .}}
 <h1>Máquinas aposentadas</h1>
-{{if .Rows}}<table>
+<div class="card">{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Máquina</th><th>Nome</th><th>SO</th><th>Aposentada em</th><th>Por</th><th>Motivo</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td><code>{{.Short}}</code></td><td>{{.Name}}</td><td>{{.OS}}</td><td>{{.When}}</td><td>{{.By}}</td><td>{{.Reason}}</td>
-{{if $.Admin}}<td><form method="post" action="/painel/maquinas/{{.ID}}/restaurar"><button type="submit">Restaurar</button></form></td>{{end}}</tr>{{end}}
-</tbody></table>
-{{else}}<p class="muted">Nenhuma máquina aposentada.</p>{{end}}
+{{if $.Admin}}<td><form method="post" action="/painel/maquinas/{{.ID}}/restaurar"><button class="sec" type="submit">Restaurar</button></form></td>{{end}}</tr>{{end}}
+</tbody></table></div>
+{{else}}<p class="muted">Nenhuma máquina aposentada.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "nao-encontrada"}}{{template "topo" .}}
 <h1>Máquina não encontrada</h1>
-<p>Ela não existe, está aposentada, ou o estado de compliance está indisponível. <a href="/painel/">Voltar à frota</a>.</p>
+<p class="card">Ela não existe, está aposentada, ou o estado de compliance está indisponível. <a href="/painel/">Voltar à frota</a>.</p>
 {{template "fim"}}{{end}}
 
 {{define "proibido"}}{{template "topo" .}}
 <h1>Sem permissão</h1>
-<p>Esta ação é do perfil admin. <a href="/painel/">Voltar à frota</a>.</p>
+<p class="card">Esta ação é do perfil admin. <a href="/painel/">Voltar à frota</a>.</p>
 {{template "fim"}}{{end}}
 `))

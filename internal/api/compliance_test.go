@@ -79,8 +79,8 @@ func TestRotasDeCompliance(t *testing.T) {
 	}
 
 	// O painel mostra as contagens.
-	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), `<b>1</b><span class="estado faltando">faltando</span>`) ||
-		!strings.Contains(r.Body.String(), `<b>1</b><span class="estado em_dia">em dia</span>`) {
+	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), `<span class="kpi-rot">faltando</span><span class="kpi-val v-vermelho">1</span>`) ||
+		!strings.Contains(r.Body.String(), `<span class="kpi-rot">em dia</span><span class="kpi-val v-verde">1</span>`) {
 		t.Errorf("painel:\n%s", r.Body)
 	}
 
