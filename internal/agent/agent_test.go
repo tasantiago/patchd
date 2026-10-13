@@ -69,7 +69,7 @@ func inventarioDeTeste() protocol.InventoryReport {
 		SchemaVersion: protocol.InventorySchemaVersion,
 		CollectedAt:   time.Now().UTC(),
 		Hash:          "sha256:" + strings.Repeat("a", 64),
-		OS:            protocol.OSInfo{Family: "windows", Name: "Windows 11 Pro", Hostname: "FJ106260"},
+		OS:            protocol.OSInfo{Family: "windows", Name: "Windows 11 Pro", Hostname: "pc-lab-01"},
 		Software:      []protocol.Software{{Name: "7-Zip", Version: "24.09"}},
 	}
 }

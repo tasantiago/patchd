@@ -59,6 +59,30 @@ const (
 	microsoftRootPrefix   = "Microsoft Root Certificate Authority" // 2010, 2011...
 )
 
+// Verify confere a assinatura e aplica a política CheckMicrosoft (o wsusscn2.cab, Aula 6.6).
+// A Signature volta preenchida sempre que a cadeia foi lida, inclusive quando a política
+// recusa (para o log dizer quem assinou).
+func Verify(path string) (Signature, error) {
+	sig, err := VerifyChain(path)
+	if err != nil {
+		return sig, err
+	}
+	return sig, CheckMicrosoft(sig)
+}
+
+// CheckOrganization é a política dos instaladores de terceiros (Aula 14.4): o certificado
+// que assinou é da organização esperada (O=, como o Windows mostra em "Assinaturas
+// digitais"). A cadeia até uma raiz confiável o WinVerifyTrust já conferiu.
+func CheckOrganization(s Signature, org string) error {
+	if len(s.Chain) == 0 {
+		return errors.New("assinatura sem cadeia de certificados")
+	}
+	if signer := s.Signer(); signer.Organization != org {
+		return fmt.Errorf("assinado por %q (O=%q), não por %q", signer.CommonName, signer.Organization, org)
+	}
+	return nil
+}
+
 // CheckMicrosoft é a política: o certificado que assinou é da Microsoft Corporation, e a
 // cadeia termina numa raiz da Microsoft. O WinVerifyTrust já garantiu que o conteúdo bate
 // com a assinatura, que o certificado serve para assinar código e que a raiz está no

@@ -118,7 +118,10 @@ func TestInstall(t *testing.T) {
 			t.Errorf("%s: %v (queria %q)", entrada, err, trecho)
 		}
 	}
-	if _, err := Parse([]byte(regra(`, "install": {"winget": "Empresa.Sistema", "type": "msi"}`))); err != nil {
+	if _, err := Parse([]byte(regra(`, "install": {"winget": "Empresa.Sistema", "signer": "Empresa\tLtda"}`))); err == nil {
+		t.Error("assinante com tabulação devia ser recusado")
+	}
+	if _, err := Parse([]byte(regra(`, "install": {"winget": "Empresa.Sistema", "type": "msi", "signer": "Empresa Ltda"}`))); err != nil {
 		t.Errorf("regra local com install: %v", err)
 	}
 }

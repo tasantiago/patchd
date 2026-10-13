@@ -191,6 +191,9 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 		ttlSet := false
 		fs.Visit(func(f *flag.Flag) { ttlSet = ttlSet || f.Name == "ttl" })
 		switch {
+		case *typ == jobs.TypeThirdParty:
+			fmt.Fprintln(stderr, "patchd-server: o job thirdparty sai do plano da máquina: use package install -machine ID -app PROGRAMA")
+			return exitConfig
 		case !jobs.KnownType(*typ):
 			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan, update, reboot ou server_url")
 			return exitConfig

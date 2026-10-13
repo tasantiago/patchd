@@ -36,7 +36,7 @@ const (
 
 // KnownType diz se o tipo existe.
 func KnownType(t string) bool {
-	return t == TypeRescan || t == TypeUpdate || t == TypeReboot || t == TypeServerURL
+	return t == TypeRescan || t == TypeUpdate || t == TypeReboot || t == TypeServerURL || t == TypeThirdParty
 }
 
 // Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado;
@@ -154,6 +154,9 @@ func checkParams(j Job) error {
 		return err
 	case TypeServerURL:
 		_, err := ParseServerURLParams(j.Params)
+		return err
+	case TypeThirdParty:
+		_, err := ParseThirdPartyParams(j.Params)
 		return err
 	default:
 		if len(j.Params) > 0 && string(j.Params) != "null" {

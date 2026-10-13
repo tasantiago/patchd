@@ -23,7 +23,7 @@ func inv(hash, versao string) protocol.InventoryReport {
 		AgentVersion:  "v0.4.0-teste",
 		CollectedAt:   time.Date(2026, 10, 4, 1, 25, 17, 0, time.UTC),
 		Hash:          "sha256:" + hash,
-		OS:            protocol.OSInfo{Family: "windows", Name: "Windows 11 Pro", Version: "26H2", Hostname: "FJ106260"},
+		OS:            protocol.OSInfo{Family: "windows", Name: "Windows 11 Pro", Version: "26H2", Hostname: "pc-lab-01"},
 		Software:      []protocol.Software{{Name: "7-Zip", Version: versao, Scope: "machine", Source: "uninstall"}},
 	}
 }
@@ -93,7 +93,7 @@ func testarContrato(t *testing.T, st contrato) {
 	if z.Hostname != "" || z.InventoryChangedAt != nil || z.ScanReceivedAt == nil || z.RebootPending != nil {
 		t.Errorf("máquina só com busca e reinício desconhecido: %+v", z)
 	}
-	if e.Hostname != "FJ106260" || e.OSName != "Windows 11 Pro" || e.InventoryHash != "sha256:bbbb" ||
+	if e.Hostname != "pc-lab-01" || e.OSName != "Windows 11 Pro" || e.InventoryHash != "sha256:bbbb" ||
 		e.RebootPending == nil || !*e.RebootPending || e.LastSeenAt.Location() != time.UTC {
 		t.Errorf("resumo da estação errado: %+v", e)
 	}

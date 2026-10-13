@@ -30,6 +30,7 @@ comandos:
   fetch  baixa o instalador, confere o SHA-256 do manifesto e guarda (Aula 14.2)
   list   lista os instaladores guardados
   plan   o que fazer em cada máquina Windows, pelo inventário e pelos guardados (Aula 14.3)
+  install  cria o job que atualiza um programa numa máquina, se o plano disser ATUALIZAR (Aula 14.4)
 
 show e fetch:
   -app ID        a regra do manifesto de terceiros (ex.: 7zip, google-chrome)
@@ -41,6 +42,10 @@ show:
   -file ARQUIVO  um manifesto de instalador local (.installer.yaml), sem rede
 list:
   -verify        recalcula o SHA-256 de cada arquivo (lê todos do disco)
+install:
+  -machine ID    a máquina (ID ou começo do ID)
+  -app ID        o programa (a regra)
+  -ttl 24h       prazo para o agente receber e executar (10m a 168h)
 plan:
   -machine ID    uma máquina (ID ou começo do ID, como no machine list), com as instalações
   -all           a frota Windows: quantas máquinas em cada situação, por programa
@@ -60,7 +65,7 @@ type packageStore interface {
 func packagesDir(contentDir string) string { return filepath.Join(contentDir, "pacotes") }
 
 func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan", "install"}, args[0]) {
 		fmt.Fprint(stderr, packageUsage)
 		return exitConfig
 	}
@@ -84,7 +89,7 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitConfig
 	}
-	if dir == "" && args[0] != "plan" {
+	if dir == "" && args[0] != "plan" && args[0] != "install" {
 		fmt.Fprintln(stderr, "patchd-server: defina PATCHD_CONTENT_DIR (os instaladores ficam em PATCHD_CONTENT_DIR/pacotes)")
 		return exitConfig
 	}
@@ -116,6 +121,16 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		return packageList(ctx, st, packagesDir(dir), args[1:], time.Now(), stdout, stderr)
 	case "plan":
 		return packagePlan(ctx, st, manifest, args[1:], stdout, stderr)
+	case "install":
+		key, err := jobSigningKey(look)
+		if err == nil && key == nil {
+			err = errNoJobKey
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitConfig
+		}
+		return packageInstall(ctx, st, key, manifest, args[1:], time.Now().UTC(), stdout, stderr)
 	}
 	return packageFetch(ctx, c, pkgcache.NewFetcher(ua), st, manifest, packagesDir(dir), args[1:], stdout, stderr)
 }

@@ -27,7 +27,7 @@ func novaMaquina() (identity.NewMachine, string) {
 		ID:             identity.NewMachineID(),
 		CredentialHash: hash,
 		AgentVersion:   "v0.4.0-teste",
-		Evidence:       protocol.IdentityEvidence{InstallID: "guid-1", Hostname: "FJ106260", OSFamily: "windows"},
+		Evidence:       protocol.IdentityEvidence{InstallID: "guid-1", Hostname: "pc-lab-01", OSFamily: "windows"},
 	}, cred
 }
 

@@ -42,3 +42,16 @@ func TestSignatureString(t *testing.T) {
 		t.Errorf("Signer/Root = %v/%v", s.Signer(), s.Root())
 	}
 }
+
+func TestCheckOrganization(t *testing.T) {
+	s := Signature{Chain: []Cert{{CommonName: "Google LLC", Organization: "Google LLC"}, {CommonName: "DigiCert Trusted Root G4"}}}
+	if err := CheckOrganization(s, "Google LLC"); err != nil {
+		t.Errorf("Google: %v", err)
+	}
+	if err := CheckOrganization(s, "Mozilla Corporation"); err == nil || !strings.Contains(err.Error(), `não por "Mozilla Corporation"`) {
+		t.Errorf("outra organização: %v", err)
+	}
+	if err := CheckOrganization(Signature{}, "x"); err == nil {
+		t.Error("sem cadeia devia ser recusado")
+	}
+}

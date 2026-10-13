@@ -276,6 +276,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		}
 		cs.manifest = &manifest
 		apiOpts = append(apiOpts, api.WithCompliance(cs))
+		// O mesmo manifesto confere, no inventário, o efeito do job thirdparty (Aula 14.4).
+		apiOpts = append(apiOpts, api.WithThirdPartyManifest(&manifest))
 	}
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
 	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).

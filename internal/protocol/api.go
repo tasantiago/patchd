@@ -74,6 +74,10 @@ type RepoCache struct {
 	AptHosts []string `json:"apt_hosts"` // origens do apt que passam pelo cache (proxy por host)
 }
 
+// PackagesPath é o caminho do download dos instaladores de terceiros (Aula 14.4): o nome
+// do arquivo é o SHA-256 com a extensão (.msi ou .exe), como no cache do servidor.
+const PackagesPath = "/api/v1/agent/content/pacotes/"
+
 // OfflineCatalogPath é o caminho do download do catálogo offline; o SHA-256 vem no fim.
 const OfflineCatalogPath = "/api/v1/agent/content/wsusscn2/"
 
