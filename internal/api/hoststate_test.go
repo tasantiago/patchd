@@ -25,6 +25,7 @@ func estadoTeste() *protocol.MachineState {
 		Disks: []protocol.Disk{
 			{Mount: "/", FS: "ext4", Device: "/dev/sda2", TotalBytes: 100 << 30, FreeBytes: 5 << 30},
 			{Mount: "/srv", FS: "xfs", Device: "/dev/sdb1", TotalBytes: 2 << 40, FreeBytes: 1 << 40},
+			{Mount: "D:", FS: "NTFS", Model: "Disco <Teste>", Bus: "SATA", TotalBytes: 1 << 40, FreeBytes: 1 << 39},
 		}}
 }
 
@@ -47,7 +48,7 @@ func TestCheckinGravaEstado(t *testing.T) {
 		t.Fatalf("check-in com estado: %d", code)
 	}
 	hs, _, _ := st.HostState(context.Background(), m.MachineID)
-	if hs.State == nil || len(hs.State.Disks) != 2 || hs.CheckinAddr != "192.0.2.1" {
+	if hs.State == nil || len(hs.State.Disks) != 3 || hs.CheckinAddr != "192.0.2.1" {
 		t.Fatalf("estado gravado: %+v", hs)
 	}
 
@@ -59,7 +60,7 @@ func TestCheckinGravaEstado(t *testing.T) {
 	if code := checkin(ruim); code != http.StatusOK {
 		t.Fatalf("estado inválido não pode derrubar o check-in: %d", code)
 	}
-	if hs, _, _ = st.HostState(context.Background(), m.MachineID); hs.State == nil || len(hs.State.Disks) != 2 {
+	if hs, _, _ = st.HostState(context.Background(), m.MachineID); hs.State == nil || len(hs.State.Disks) != 3 {
 		t.Errorf("estado inválido sobrescreveu o anterior: %+v", hs.State)
 	}
 	if !strings.Contains(log.String(), "estado da máquina descartado") || !strings.Contains(log.String(), "livre") {
@@ -90,6 +91,7 @@ func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 		`<span class="uso cheio" role="img" aria-label="95% ocupado"><span style="width:95%"></span></span> 95%`,
 		`<span class="uso " role="img" aria-label="50% ocupado">`, "2,0 TiB",
 		"<td>eth0</td><td>ativa</td>", "2001:db8::1/64",
+		`<code>D:</code> <span class="muted">Disco &lt;Teste&gt; · SATA</span>`,
 		`<code>02:42:ac:11:00:01</code> <span class="muted" title="MAC administrado localmente`,
 	} {
 		if !strings.Contains(b, tr) {

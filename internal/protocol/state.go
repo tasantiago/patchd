@@ -41,6 +41,8 @@ type Disk struct {
 	Mount      string `json:"mount"`            // "/", "/home", "C:"
 	FS         string `json:"fs,omitempty"`     // ext4, xfs, apfs, NTFS
 	Device     string `json:"device,omitempty"` // /dev/sda2 (Linux e macOS)
+	Model      string `json:"model,omitempty"`  // modelo do disco (Windows, Aula 12.1d)
+	Bus        string `json:"bus,omitempty"`    // barramento: NVMe, SATA, USB... (Windows)
 	TotalBytes uint64 `json:"total_bytes"`
 	FreeBytes  uint64 `json:"free_bytes"` // disponível para um usuário comum
 }
@@ -112,6 +114,12 @@ func (s MachineState) Check() error {
 			return fmt.Errorf("disco %d: %w", i, err)
 		}
 		if err := text("dispositivo", d.Device, true); err != nil {
+			return fmt.Errorf("disco %d: %w", i, err)
+		}
+		if err := text("modelo", d.Model, true); err != nil {
+			return fmt.Errorf("disco %d: %w", i, err)
+		}
+		if err := text("barramento", d.Bus, true); err != nil {
 			return fmt.Errorf("disco %d: %w", i, err)
 		}
 		if d.FreeBytes > d.TotalBytes {
