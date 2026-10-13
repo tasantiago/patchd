@@ -95,6 +95,7 @@ input[type=checkbox],input[type=radio]{padding:0}
 form.acao{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form.acao input{flex:1 1 20rem}
 td form{margin:0}form.inline{display:inline;margin-left:.6rem}.dias label{margin-right:.7rem}
 .lote{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:center}
+th.col-lote,td.col-lote{width:1%;text-align:center}div.acao{display:flex}div.acao input{flex:1 1 20rem}
 form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}
 form.grade input[type=text]{width:100%}
 `

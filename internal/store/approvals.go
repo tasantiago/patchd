@@ -51,6 +51,33 @@ func (p *Postgres) ApprovePatch(ctx context.Context, a PatchApproval) (bool, err
 	return tag.RowsAffected() == 1, err
 }
 
+// ApprovePatches aprova um lote numa transação só (Aula 13.4): ou o lote inteiro fica
+// gravado, ou nada. Devolve as aprovações criadas; as que já existiam (aprovadas por
+// outra pessoa entre a conferência e o clique) ficam como estavam e não voltam.
+func (p *Postgres) ApprovePatches(ctx context.Context, list []PatchApproval) ([]PatchApproval, error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) // sem efeito depois do Commit
+	created := []PatchApproval{}
+	for _, a := range list {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO patch_approvals (item, fixed_in, approved_by, note) VALUES ($1, $2, $3, $4)
+			ON CONFLICT (item, fixed_in) DO NOTHING`, a.Item, a.FixedIn, a.ApprovedBy, a.Note)
+		if err != nil {
+			return nil, err
+		}
+		if tag.RowsAffected() == 1 {
+			created = append(created, a)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
 // RevokePatch apaga a aprovação; false se ela não existia.
 func (p *Postgres) RevokePatch(ctx context.Context, item, fixedIn string) (bool, error) {
 	tag, err := p.pool.Exec(ctx, `DELETE FROM patch_approvals WHERE item = $1 AND fixed_in = $2`, item, fixedIn)
@@ -88,6 +115,21 @@ func (m *Memory) ApprovePatch(ctx context.Context, a PatchApproval) (bool, error
 	a.ApprovedAt = m.now()
 	m.approvals[k] = a
 	return true, nil
+}
+
+// ApprovePatches aprova um lote; devolve as aprovações criadas.
+func (m *Memory) ApprovePatches(ctx context.Context, list []PatchApproval) ([]PatchApproval, error) {
+	created := []PatchApproval{}
+	for _, a := range list {
+		ok, err := m.ApprovePatch(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			created = append(created, a)
+		}
+	}
+	return created, nil
 }
 
 // RevokePatch apaga a aprovação; false se não existia.

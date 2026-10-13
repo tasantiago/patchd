@@ -149,6 +149,7 @@ type patchRow struct {
 	Exploited                                         bool
 	Machines                                          int
 	ApprovedBy, ApprovedAt                            string
+	Sel                                               string // valor do item no lote; vazio se já aprovado (Aula 13.4)
 }
 
 type patchView struct {
@@ -160,6 +161,10 @@ type patchView struct {
 	Rows                                       []patchRow
 	Shown, Prev, Next                          string
 	HasFilter                                  bool
+	// Lote (Aula 13.4): admin marca na lista, ou leva todos os aguardando do filtro.
+	CanBatch       bool
+	FilterWaiting  int
+	Page, MaxBatch int
 }
 
 // patchQuery: o que a URL pede, conferido.
@@ -231,7 +236,9 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := parsePatchQuery(r.URL.Query())
-	v := patchView{pageBase: a.base(r, "Patch", "patch"), Status: q.Status, Q: q.Q, HasFilter: q.Status != "" || q.Q != ""}
+	v := patchView{pageBase: a.base(r, "Patch", "patch"), Status: q.Status, Q: q.Q, HasFilter: q.Status != "" || q.Q != "",
+		MaxBatch: maxApproveBatch}
+	v.Flash, v.Error = batchFlash(r.URL.Query())
 	if a.compliance == nil {
 		v.Unavailable = "Os itens pendentes exigem o PostgreSQL com o catálogo."
 		a.render(w, r, http.StatusOK, "patch", v)
@@ -269,8 +276,15 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 	v.KPIAll, v.KPIExpl, v.KPIWait, v.KPIApproved = kpi(""), kpi("exploradas"), kpi("aguardando"), kpi("aprovados")
 
 	found := filterPatch(items, q)
+	for _, p := range found {
+		if p.Approval == nil {
+			v.FilterWaiting++
+		}
+	}
+	v.CanBatch = v.Admin && v.FilterWaiting > 0
 	pages := max(1, (len(found)+patchPerPage-1)/patchPerPage)
 	q.Page = min(q.Page, pages)
+	v.Page = q.Page
 	from, to := (q.Page-1)*patchPerPage, min(q.Page*patchPerPage, len(found))
 	if len(found) > 0 {
 		v.Shown = fmt.Sprintf("%d–%d de %d", from+1, to, len(found))
@@ -291,6 +305,8 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 			Href: patchItemPath(p.ID, p.FixedIn)}
 		if p.Approval != nil {
 			row.ApprovedBy, row.ApprovedAt = p.Approval.ApprovedBy, a.stamp(p.Approval.ApprovedAt)
+		} else {
+			row.Sel = batchSel(p.ID, p.FixedIn)
 		}
 		v.Rows = append(v.Rows, row)
 	}

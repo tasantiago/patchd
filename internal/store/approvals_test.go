@@ -11,6 +11,7 @@ import (
 type contratoAprovacao interface {
 	PatchApprovals(ctx context.Context) ([]PatchApproval, error)
 	ApprovePatch(ctx context.Context, a PatchApproval) (bool, error)
+	ApprovePatches(ctx context.Context, list []PatchApproval) ([]PatchApproval, error)
 	RevokePatch(ctx context.Context, item, fixedIn string) (bool, error)
 }
 
@@ -45,6 +46,24 @@ func testarAprovacao(t *testing.T, st contratoAprovacao) {
 	if l, _ := st.PatchApprovals(ctx); len(l) != 1 {
 		t.Errorf("depois de revogar: %+v", l)
 	}
+
+	// Lote (Aula 13.4): os novos entram; o que já existia não conta nem muda.
+	novas, err := st.ApprovePatches(ctx, []PatchApproval{
+		{Item: "curl", FixedIn: "8.18.0-1ubuntu2.11", ApprovedBy: "carla"}, // já aprovado por bruno
+		{Item: "bluez", FixedIn: "5.80-1ubuntu0.2", ApprovedBy: "carla", Note: "lote de outubro"},
+		{Item: "CVE-2026-1", FixedIn: "26200.7019 (KB5070773)", ApprovedBy: "carla", Note: "lote de outubro"},
+	})
+	if err != nil || len(novas) != 2 || novas[0].Item != "bluez" || novas[1].Item != "CVE-2026-1" {
+		t.Fatalf("lote: %+v %v", novas, err)
+	}
+	l, _ = st.PatchApprovals(ctx)
+	quem := map[string]string{}
+	for _, a := range l {
+		quem[a.Item] = a.ApprovedBy
+	}
+	if len(l) != 3 || quem["curl"] != "bruno" || quem["bluez"] != "carla" {
+		t.Errorf("depois do lote: %+v", l)
+	}
 }
 
 func TestAprovacaoMemoria(t *testing.T) { testarAprovacao(t, NewMemory()) }
@@ -73,5 +92,25 @@ func TestApenasAprovados(t *testing.T) {
 	}
 	if got := ApprovedOnly(items, nil); len(got) != 0 {
 		t.Errorf("sem aprovação, nada: %+v", got)
+	}
+}
+
+// Um item inválido no meio do lote (o banco recusa: item vazio) desfaz o lote inteiro.
+func TestLoteTudoOuNadaPostgres(t *testing.T) {
+	pool := bancoDeTeste(t)
+	ctx := context.Background()
+	if err := Migrate(ctx, pool, silencioso()); err != nil {
+		t.Fatal(err)
+	}
+	st := NewPostgres(pool)
+	_, err := st.ApprovePatches(ctx, []PatchApproval{
+		{Item: "rsync", FixedIn: "3.4.1+ds1-7ubuntu0.3", ApprovedBy: "ana"},
+		{Item: "", FixedIn: "x", ApprovedBy: "ana"},
+	})
+	if err == nil {
+		t.Fatal("o item vazio devia ser recusado pelo banco")
+	}
+	if l, _ := st.PatchApprovals(ctx); len(l) != 0 {
+		t.Errorf("nada do lote pode ficar: %+v", l)
 	}
 }
