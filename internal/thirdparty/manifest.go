@@ -71,6 +71,9 @@ type Install struct {
 	// exe e MSI; instalar o outro deixa duas entradas no Desinstalar. Vazio: o primeiro que
 	// serve, na ordem do manifesto (como o winget).
 	Type string `json:"type,omitempty"`
+	// Signer exige que o instalador seja assinado por esta organização (O= do certificado,
+	// Aula 14.4). Vazio: o agente confere e informa a assinatura, mas não exige.
+	Signer string `json:"signer,omitempty"`
 }
 
 // Source diz de onde vem a versão de referência.
@@ -166,6 +169,8 @@ func (a *App) compile() error {
 			return fmt.Errorf("install.winget %q fora da forma Fabricante.Programa", a.Install.Winget)
 		case a.Install.Type != "" && !winget.Supported(a.Install.Type):
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
+		case len(a.Install.Signer) > 128 || strings.ContainsAny(a.Install.Signer, "\r\n\t"):
+			return fmt.Errorf("install.signer inválido")
 		}
 	}
 	var err error

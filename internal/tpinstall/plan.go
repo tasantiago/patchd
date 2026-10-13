@@ -96,12 +96,27 @@ type Decision struct {
 // Plan decide cada programa com "install" encontrado no inventário. arch é a da máquina
 // (MachineArch). Programas que a máquina não tem não aparecem.
 func Plan(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdPartyPackage, arch string) []Decision {
+	groups := group(sw, m)
+	out := make([]Decision, 0, len(groups))
+	for _, d := range groups {
+		decide(d, pkgs, arch)
+		out = append(out, *d)
+	}
+	slices.SortStableFunc(out, func(a, b Decision) int {
+		return cmp.Or(cmp.Compare(slices.Index(States, a.State), slices.Index(States, b.State)), strings.Compare(a.App.Name, b.App.Name))
+	})
+	return out
+}
+
+// group reconhece as instalações de cada programa com "install", na ordem do inventário.
+// Entradas SystemComponent (o MSI escondido de um bundle) e atualizações não contam.
+func group(sw []protocol.Software, m thirdparty.Manifest) []*Decision {
 	rules := m.For("windows")
 	byApp := map[string]*Decision{}
-	var order []string
+	var out []*Decision
 	for _, s := range sw {
 		if s.SystemComponent || s.IsUpdate {
-			continue // o MSI escondido de um bundle, atualizações: não são instalações próprias
+			continue
 		}
 		i := slices.IndexFunc(rules, func(a thirdparty.App) bool { return a.Matches(s.Name, s.Publisher) })
 		if i < 0 || rules[i].Install == nil {
@@ -112,7 +127,7 @@ func Plan(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdParty
 		if d == nil {
 			d = &Decision{App: a}
 			byApp[a.ID] = d
-			order = append(order, a.ID)
+			out = append(out, d)
 		}
 		e := Entry{Software: s, Kind: Kind(s)}
 		if v, ok := a.InstalledVersion(s.Name, s.Version); ok {
@@ -124,16 +139,18 @@ func Plan(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdParty
 			d.Entries = append(d.Entries, e)
 		}
 	}
-	out := make([]Decision, 0, len(order))
-	for _, id := range order {
-		d := byApp[id]
-		decide(d, pkgs, arch)
-		out = append(out, *d)
-	}
-	slices.SortStableFunc(out, func(a, b Decision) int {
-		return cmp.Or(cmp.Compare(slices.Index(States, a.State), slices.Index(States, b.State)), strings.Compare(a.App.Name, b.App.Name))
-	})
 	return out
+}
+
+// Entries devolve as instalações de um programa: as de máquina (visíveis) e as de usuário.
+// O servidor confere o job thirdparty por elas (Aula 14.4), com o mesmo reconhecimento do plano.
+func Entries(sw []protocol.Software, m thirdparty.Manifest, app string) (machine, user []Entry) {
+	for _, d := range group(sw, m) {
+		if d.App.ID == app {
+			return d.Entries, d.User
+		}
+	}
+	return nil, nil
 }
 
 func decide(d *Decision, pkgs []store.ThirdPartyPackage, arch string) {

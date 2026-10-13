@@ -97,6 +97,9 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	if job.Type == jobs.TypeServerURL {
 		return a.judgeServerURL(r, job)
 	}
+	if job.Type == jobs.TypeThirdParty {
+		return a.judgeThirdParty(r, job, res)
+	}
 	// Os outros tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
 	at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)
 	if err != nil {

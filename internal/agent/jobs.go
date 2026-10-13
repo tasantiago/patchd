@@ -14,9 +14,15 @@ import (
 // acceptedJobs são os jobs aceitos num check-in: os rescans e os updates. Os dois forçam a
 // busca do ciclo, e os resultados só vão depois que ela for entregue.
 type acceptedJobs struct {
-	rescans []int64
-	updates []acceptedUpdate
-	reboots []acceptedReboot
+	rescans    []int64
+	updates    []acceptedUpdate
+	reboots    []acceptedReboot
+	thirdParty []acceptedThirdParty
+}
+
+type acceptedThirdParty struct {
+	id int64
+	p  jobs.ThirdPartyParams
 }
 
 type acceptedReboot struct {
@@ -63,6 +69,17 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			p, _ := jobs.ParseRebootParams(j.Params) // o Verify já conferiu
 			a.Logger.Info("job aceito: reiniciar com aviso", "job_id", j.ID, "delay", p.Delay().String())
 			acc.reboots = append(acc.reboots, acceptedReboot{id: j.ID, delay: p.Delay()})
+		case jobs.TypeThirdParty:
+			p, _ := jobs.ParseThirdPartyParams(j.Params) // o Verify já conferiu
+			if a.ThirdParty == nil {
+				why := "este sistema não instala programas de terceiros pelo patchd (só Windows)"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: instalar programa de terceiros", "job_id", j.ID, "app", p.App, "version", p.Version,
+				"installer", p.Installer)
+			acc.thirdParty = append(acc.thirdParty, acceptedThirdParty{id: j.ID, p: p})
 		case jobs.TypeServerURL:
 			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
 			reject := func(why string) {
@@ -111,6 +128,58 @@ func (a *Agent) runUpdates(ctx context.Context, updates []acceptedUpdate) []Pend
 		out = append(out, PendingJobResult{ID: u.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}
 	return out
+}
+
+// runThirdParty executa os jobs thirdparty, um por vez (Aula 14.4).
+func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) []PendingJobResult {
+	var out []PendingJobResult
+	for _, j := range list {
+		a.Logger.Info("instalação de terceiros iniciada", "job_id", j.id, "app", j.p.App, "version", j.p.Version)
+		start := a.now()
+		detail, err := a.ThirdParty(ctx, j.id, j.p)
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrRefused):
+			status, detail = protocol.JobResultRejected, joinDetail(err.Error(), detail)
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case err != nil:
+			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
+			a.Logger.Error("instalação de terceiros falhou", "job_id", j.id, "app", j.p.App, "error", detail)
+		default:
+			a.Logger.Info("instalação de terceiros concluída", "job_id", j.id, "app", j.p.App, "detail", detail,
+				"duration", a.now().Sub(start).Round(time.Second).String())
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out
+}
+
+// joinDetail junta o erro e o detalhe (o que o instalador disse antes de falhar).
+func joinDetail(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, "; ")
+}
+
+// resendInventory coleta e envia o inventário de depois da instalação. Se não der, os
+// resultados esperam o próximo ciclo, em que o inventário vai primeiro (InventoryFirst).
+func (a *Agent) resendInventory(ctx context.Context, state *State) {
+	inv, err := a.Inventory(ctx)
+	if err != nil {
+		a.Logger.Warn("inventário de depois da instalação não coletado; os resultados esperam o próximo ciclo", "error", err)
+		state.InventoryFirst = true
+		return
+	}
+	r, err := a.Client.SendInventory(ctx, inv)
+	if out := a.classify(err, "envio do inventário de depois da instalação"); out != outcomeOK {
+		state.InventoryFirst = true
+		return
+	}
+	a.Logger.Info("inventário de depois da instalação enviado", "status", r.Status, "hash", r.Hash)
 }
 
 func (a *Agent) queueJobResult(state *State, id int64, status, detail string) {

@@ -51,6 +51,10 @@ type Agent struct {
 	// SaveServerURL grava o endereço novo do servidor na credencial (job server_url, Aula
 	// 9.2). nil: o agente recusa esses jobs.
 	SaveServerURL func(url string) error
+	// ThirdParty executa o job thirdparty (Aula 14.4): baixa, confere e instala um programa
+	// de terceiros. nil: o agente recusa esses jobs (só o Windows instala). Erro com
+	// jobs.ErrRefused vira "rejeitado" (nada foi executado).
+	ThirdParty func(ctx context.Context, jobID int64, p jobs.ThirdPartyParams) (string, error)
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -141,7 +145,7 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	if err != nil {
 		a.Logger.Warn("estado do agente ilegível; recomeçando a agenda", "error", err)
 	}
-	if len(state.PendingJobResults) > 0 {
+	if len(state.PendingJobResults) > 0 && !state.InventoryFirst {
 		out := a.flushJobResults(ctx, &state)
 		a.saveStateOrLog(state)
 		if out != outcomeOK {
@@ -186,6 +190,10 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		inventorySent = true
 		a.Logger.Info("inventário enviado", "status", r.Status, "hash", r.Hash, "software", len(inv.Software))
 	}
+	if state.InventoryFirst && (inventorySent || resp.InventoryKnown) {
+		state.InventoryFirst = false // o inventário de depois da instalação já está no servidor
+		a.saveStateOrLog(state)
+	}
 
 	// 3. Catálogo offline anunciado pelo servidor (só o agente do Windows o usa). Uma falha
 	// não interrompe o ciclo: a busca segue com o catálogo anterior, e o download continua
@@ -221,6 +229,20 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 		a.saveStateOrLog(state)
 		return outcomeTransient
+	}
+
+	// Programas de terceiros (Aula 14.4): depois das instalações do sistema; o inventário
+	// de depois vai antes dos resultados, que o servidor confere por ele.
+	if len(accepted.thirdParty) > 0 {
+		res := a.runThirdParty(ctx, accepted.thirdParty)
+		state.PendingJobResults = append(state.PendingJobResults, res...)
+		if ctx.Err() != nil {
+			state.InventoryFirst = true
+			a.saveStateOrLog(state)
+			return outcomeTransient
+		}
+		a.resendInventory(ctx, &state)
+		a.saveStateOrLog(state)
 	}
 
 	// Reinício pedido: agendado depois das instalações (o aviso corre enquanto a busca e
@@ -280,7 +302,7 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	}
 
 	// Resultados dos jobs deste ciclo (e as recusas), depois da busca.
-	if len(state.PendingJobResults) > 0 {
+	if len(state.PendingJobResults) > 0 && !state.InventoryFirst {
 		out := a.flushJobResults(ctx, &state)
 		a.saveStateOrLog(state)
 		if out != outcomeOK {

@@ -34,6 +34,10 @@ type State struct {
 	// PendingServerMove é a troca de endereço aceita (Aula 9.2), feita no fim de um ciclo
 	// entregue: se o agente cair antes, ela fica para o próximo.
 	PendingServerMove *PendingServerMove `json:"pending_server_move,omitempty"`
+	// InventoryFirst (Aula 14.4): houve instalação de terceiros e o inventário de depois
+	// ainda não chegou ao servidor. Os resultados esperam: o servidor confere o job pelo
+	// inventário, e um resultado antes dele viraria "falhou".
+	InventoryFirst bool `json:"inventory_first,omitempty"`
 }
 
 // PendingServerMove guarda o job server_url até a troca ser tentada.

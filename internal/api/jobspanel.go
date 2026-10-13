@@ -56,6 +56,8 @@ func typeLabel(t string) string {
 		return "passar para HTTPS"
 	case jobs.TypeReboot:
 		return "reiniciar"
+	case jobs.TypeThirdParty:
+		return "instalar programa de terceiros"
 	}
 	return t
 }

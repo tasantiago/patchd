@@ -23,6 +23,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/window"
 )
 
@@ -101,17 +102,18 @@ type api struct {
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 
-	directory  Directory          // nil: só usuários locais
-	compliance ComplianceSource   // nil: sem estado de compliance (armazenamento em memória)
-	jobKey     ed25519.PrivateKey // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
-	publicURL  string             // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
-	timezone   string             // fuso sugerido na janela dos anéis (Aula 11.1)
-	brand      string             // nome no topo do painel (Aula 11.3)
-	oidc       *oidc.Provider     // login pelo RHBK (Aula 9.4); nil: desligado
-	oidcLogins oidcPending        // logins pelo RHBK em andamento (state → nonce e PKCE)
-	metrics    *Metrics           // contadores da Aula 10.2; nil: desligados
-	limiter    loginLimiter       // falhas de login por usuário+IP e por IP
-	hashSlots  chan struct{}      // conferências de senha simultâneas
+	directory  Directory            // nil: só usuários locais
+	compliance ComplianceSource     // nil: sem estado de compliance (armazenamento em memória)
+	tpManifest *thirdparty.Manifest // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
+	jobKey     ed25519.PrivateKey   // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
+	publicURL  string               // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
+	timezone   string               // fuso sugerido na janela dos anéis (Aula 11.1)
+	brand      string               // nome no topo do painel (Aula 11.3)
+	oidc       *oidc.Provider       // login pelo RHBK (Aula 9.4); nil: desligado
+	oidcLogins oidcPending          // logins pelo RHBK em andamento (state → nonce e PKCE)
+	metrics    *Metrics             // contadores da Aula 10.2; nil: desligados
+	limiter    loginLimiter         // falhas de login por usuário+IP e por IP
+	hashSlots  chan struct{}        // conferências de senha simultâneas
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -130,6 +132,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
 	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
 	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
+	mux.Handle("GET "+protocol.PackagesPath+"{file}", a.machineAuth(a.packageFile))
 	mux.Handle("POST "+protocol.JobResultPath+"{id}/result", a.machineAuth(a.jobResult))
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/favicon.svg", favicon)

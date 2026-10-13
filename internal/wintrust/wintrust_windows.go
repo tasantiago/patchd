@@ -37,12 +37,13 @@ type cryptProviderSgnr struct {
 	pChainContext     *windows.CertChainContext
 }
 
-// Verify confere a assinatura Authenticode de path com o WinVerifyTrust e aplica a
-// política CheckMicrosoft. A revogação não é consultada (WTD_REVOKE_NONE, só o cache): o
+// VerifyChain confere a assinatura Authenticode de path com o WinVerifyTrust e devolve a
+// cadeia, sem política de assinante (Aula 14.4: os instaladores de terceiros são de cada
+// fabricante; Verify, para o wsusscn2, aplica a política da Microsoft). A revogação não é consultada (WTD_REVOKE_NONE, só o cache): o
 // agente pode estar numa rede sem acesso às listas de revogação, e a busca offline existe
 // justamente para esse caso. A Signature volta preenchida sempre que a cadeia foi lida,
 // inclusive quando a política recusa (para o log dizer quem assinou).
-func Verify(path string) (Signature, error) {
+func VerifyChain(path string) (Signature, error) {
 	p16, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return Signature{}, err
@@ -66,11 +67,7 @@ func Verify(path string) (Signature, error) {
 	if verr != nil {
 		return Signature{}, trustError(verr)
 	}
-	sig, err := signerChain(data.StateData)
-	if err != nil {
-		return Signature{}, err
-	}
-	return sig, CheckMicrosoft(sig)
+	return signerChain(data.StateData)
 }
 
 // trustError traduz os códigos mais comuns do WinVerifyTrust.

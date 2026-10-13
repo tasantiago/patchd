@@ -86,6 +86,7 @@ func TestJobKeygenECreate(t *testing.T) {
 		msg  string
 	}{
 		{[]string{"create", "-machine", "60ef", "-type", "shell"}, exitConfig, "-type"},
+		{[]string{"create", "-machine", "60ef", "-type", "thirdparty"}, exitConfig, "use package install"},
 		{[]string{"create", "-machine", "60ef", "-type", "rescan", "-ttl", "500h"}, exitConfig, "-ttl"},
 		{[]string{"create", "-machine", "7aa6", "-type", "rescan"}, exitRuntime, "aposentada"},
 		{[]string{"create", "-machine", "ffff", "-type", "rescan"}, exitRuntime, "nenhuma máquina"},
