@@ -34,6 +34,10 @@ func disks(ctx context.Context) ([]protocol.Disk, []error) {
 		if ctx.Err() != nil {
 			return out, append(errs, ctx.Err())
 		}
+		// Um bind mount de arquivo (o /etc/hosts de todo container) não é raiz de volume.
+		if fi, err := os.Stat(m.Mount); err != nil || !fi.IsDir() {
+			continue
+		}
 		var st unix.Statfs_t
 		if err := unix.Statfs(m.Mount, &st); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", m.Mount, err))

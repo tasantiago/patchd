@@ -97,6 +97,7 @@ func prefixOf(ipn *net.IPNet) (netip.Prefix, bool) {
 // selectInterfaces fica com o que interessa a quem procura a máquina:
 //   - sem a loopback;
 //   - IPv6 só os globais (os fe80:: existem em toda placa e não identificam nada);
+//   - sem o 169.254 das placas paradas (o Windows deixa um em cada placa desconectada);
 //   - sem as interfaces com MAC local e nenhum endereço (os veth de cada container);
 //   - sem as que não têm MAC nem endereço (túneis parados, adaptadores ocultos do Windows).
 //
@@ -115,6 +116,8 @@ func selectInterfaces(raw []netIf) []protocol.NetInterface {
 			ip := p.Addr()
 			switch {
 			case ip.IsLoopback():
+			case ip.Is4() && ip.IsLinkLocalUnicast() && !n.Up:
+				// O Windows deixa um 169.254 nas placas desconectadas: não é endereço em uso.
 			case ip.Is4():
 				n.IPv4 = append(n.IPv4, p.String())
 			case ip.IsGlobalUnicast(): // inclui os ULA (fc00::/7), da rede interna
