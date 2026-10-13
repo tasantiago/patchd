@@ -133,5 +133,11 @@ func writeAtomic(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+	// O CreateTemp cria com 0600. O servidor em produção roda com outro usuário (65532,
+	// Aula 9.3) e só lê a pasta: com 0600, o "current" fica ilegível para ele, e nenhuma
+	// versão é oferecida (Aula 12.1e). O conteúdo é só o número da versão: nada a esconder.
+	if err := os.Chmod(name, 0o644); err != nil {
+		return err
+	}
 	return os.Rename(name, path)
 }

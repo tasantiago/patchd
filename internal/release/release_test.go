@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +96,12 @@ func TestDirPublica(t *testing.T) {
 	}
 	if v, _ := d.Current(); v != "v0.5.1" {
 		t.Errorf("publicada: %q", v)
+	}
+	// Legível por outro usuário: o servidor em produção não é quem publica.
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(filepath.Join(string(d), currentFile)); err != nil || fi.Mode().Perm() != 0o644 {
+			t.Errorf("permissão do current: %v %v (quer 0644)", fi.Mode().Perm(), err)
+		}
 	}
 
 	// Executável trocado depois de assinado: a publicação recusa.
