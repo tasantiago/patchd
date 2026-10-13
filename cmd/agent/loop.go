@@ -13,6 +13,7 @@ import (
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/credential"
+	"github.com/tasantiago/patchd/internal/hoststate"
 	"github.com/tasantiago/patchd/internal/inventory"
 	"github.com/tasantiago/patchd/internal/patch"
 	"github.com/tasantiago/patchd/internal/platform"
@@ -118,6 +119,12 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 				o.OfflineCatalog = cab.Path() // o último baixado e conferido; "" se ainda não há
 			}
 			return collectScan(ctx, scanner, o, info.Version)
+		},
+		// Rede e discos (Aula 12.1): a mesma coleta do "-state".
+		State: func(ctx context.Context) protocol.MachineState {
+			ctx, cancel := context.WithTimeout(ctx, stateTimeout)
+			defer cancel()
+			return hoststate.Collect(ctx)
 		},
 		DataDir:   opts.DataDir,
 		Interval:  opts.Interval,

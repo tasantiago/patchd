@@ -45,6 +45,9 @@ type CheckinRequest struct {
 	// Capabilities: o que este agente sabe fazer além do básico (Aula 8.1). O servidor só
 	// entrega jobs a quem anuncia CapabilityJobs: um agente antigo os ignoraria em silêncio.
 	Capabilities []string `json:"capabilities,omitempty"`
+	// State: rede e discos agora (Aula 12.1). Ausente nos agentes anteriores; o servidor
+	// anterior ignora o campo (o decodificador do check-in aceita campos desconhecidos).
+	State *MachineState `json:"state,omitempty"`
 }
 
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).

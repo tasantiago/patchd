@@ -28,6 +28,7 @@ type agentConfig struct {
 	ShowVersion     bool
 	Inventory       bool // coleta o inventário, imprime em JSON e sai
 	Scan            bool // busca atualizações e histórico, imprime em JSON e sai
+	State           bool // coleta rede e discos (Aula 12.1), imprime em JSON e sai
 }
 
 // loadAgentConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -60,6 +61,7 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")
+	fs.BoolVar(&cfg.State, "state", false, "coleta rede e discos (o que vai em cada check-in), imprime em JSON na saída padrão e sai")
 
 	if err := fs.Parse(args); err != nil {
 		// O pacote flag já escreveu a mensagem e a ajuda em usage.
@@ -80,8 +82,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	if fs.NArg() > 0 {
 		problems = append(problems, fmt.Errorf("argumentos não reconhecidos: %q (flags depois deles são ignoradas)", fs.Args()))
 	}
-	if cfg.Inventory && cfg.Scan {
-		problems = append(problems, errors.New("use -inventory ou -scan, não os dois"))
+	if modes := btoi(cfg.Inventory) + btoi(cfg.Scan) + btoi(cfg.State); modes > 1 {
+		problems = append(problems, errors.New("use só um de -inventory, -scan e -state"))
 	}
 	if cfg.OfflineCatalog != "" && !filepath.IsAbs(cfg.OfflineCatalog) {
 		problems = append(problems, fmt.Errorf("-offline-cab/PATCHD_OFFLINE_CAB: o caminho precisa ser absoluto (recebido %q)", cfg.OfflineCatalog))
@@ -134,4 +136,11 @@ func validateServerURL(raw string) error {
 	default:
 		return fmt.Errorf("-server/PATCHD_SERVER_URL: esquema %q não suportado; use https", u.Scheme)
 	}
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

@@ -67,6 +67,9 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 .ok{background:#e7f6ec;border-color:#b4e1c1;color:#14532d}.erro{background:#fbe9e9;border-color:#f3c4c4;color:#8a1c1c}.atencao{background:#fff4dc;border-color:#f6d68f;color:#7a4a00}
 dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1.4rem;margin:0}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0}
 .expl{color:var(--vermelho);font-weight:600}.muted{color:var(--muted)}
+.uso{display:inline-block;vertical-align:middle;width:8rem;height:.5rem;border-radius:4px;background:var(--borda);overflow:hidden}
+.uso>span{display:block;height:100%;background:var(--verde-ok)}.uso.alto>span{background:var(--laranja)}.uso.cheio>span{background:var(--vermelho)}
+.card h3{font-size:.9rem;margin:1.1rem 0 .5rem;color:var(--muted);font-weight:600}
 button{font:inherit;font-size:.88rem;padding:.4rem .95rem;border-radius:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;cursor:pointer;white-space:nowrap}
 button:hover{background:var(--azul-2);border-color:var(--azul-2)}
 button.sec{background:#fff;color:var(--azul)}button.sec:hover{background:#eef5fd}

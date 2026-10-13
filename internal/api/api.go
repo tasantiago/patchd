@@ -45,6 +45,9 @@ type Store interface {
 	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string, viaTLS bool) (inventoryKnown bool, err error)
 	// CheckinTLS diz por qual canal chegou o último check-in (nil: nenhum desde a Aula 9.2).
 	CheckinTLS(ctx context.Context, machineID string) (*bool, error)
+	// Rede e discos do último check-in, e o endereço de onde ele veio (Aula 12.1).
+	SaveHostState(ctx context.Context, machineID string, state *protocol.MachineState, addr string) error
+	HostState(ctx context.Context, machineID string) (store.HostState, bool, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
