@@ -33,6 +33,8 @@ type Memory struct {
 	campaigns   []campaign.Campaign // campanhas (Aula 8.5)
 	campaignSeq int64
 
+	approvals map[string]PatchApproval // aprovação de patches (Aula 13.1), por ApprovalKey
+
 	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
 	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
 }

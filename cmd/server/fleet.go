@@ -94,6 +94,30 @@ func (s *complianceService) Detail(ctx context.Context, id string) (protocol.Com
 	return protocol.ComplianceDetail{}, false, nil
 }
 
+// Items avalia a frota e devolve as pendências de cada máquina (Aula 13.1: a visão por
+// item, em Patch › Pendentes). É a mesma avaliação do Fleet, sem descartar os itens.
+func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems, error) {
+	list, err := s.st.Machines(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	out := make([]protocol.MachineItems, 0, len(list))
+	for _, m := range list {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		cs, ev := s.evaluate(ctx, m, now)
+		mi := protocol.MachineItems{MachineID: m.ID, Hostname: m.Hostname, OS: cs.OS, Catalog: cs.Catalog, Unit: cs.PendingUnit,
+			Items: []protocol.PendingItem{}}
+		if ev != nil {
+			_, mi.Items = pendingItems(*ev)
+		}
+		out = append(out, mi)
+	}
+	return out, nil
+}
+
 // status avalia uma máquina. Um erro na avaliação de uma máquina não derruba a frota:
 // ela fica "desconhecido" e o erro vai para o log.
 func (s *complianceService) status(ctx context.Context, m protocol.MachineSummary, now time.Time) protocol.ComplianceStatus {

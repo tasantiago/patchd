@@ -142,6 +142,17 @@ type ComplianceDetail struct {
 	Items        []PendingItem `json:"items"`
 }
 
+// MachineItems são as pendências de uma máquina, para a visão da frota por item (Aula
+// 13.1: Patch › Pendentes).
+type MachineItems struct {
+	MachineID string        `json:"machine_id"`
+	Hostname  string        `json:"hostname,omitempty"`
+	OS        string        `json:"os,omitempty"`
+	Catalog   string        `json:"catalog,omitempty"`
+	Unit      string        `json:"unit,omitempty"` // pacotes (Linux) ou CVEs (Windows, macOS)
+	Items     []PendingItem `json:"items"`
+}
+
 // RetiredMachine é uma máquina aposentada (Aula 7.5): fora da frota, quando, por quê e por quem.
 type RetiredMachine struct {
 	MachineSummary

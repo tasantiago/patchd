@@ -36,6 +36,15 @@ func (c *complianceFalso) Detail(_ context.Context, id string) (protocol.Complia
 	return protocol.ComplianceDetail{}, false, c.err
 }
 
+func (c *complianceFalso) Items(context.Context) ([]protocol.MachineItems, error) {
+	out := []protocol.MachineItems{}
+	for _, m := range c.fleet.Machines {
+		out = append(out, protocol.MachineItems{MachineID: m.MachineID, Hostname: m.Hostname, OS: m.OS, Catalog: m.Catalog,
+			Unit: m.PendingUnit, Items: c.itens[m.MachineID]})
+	}
+	return out, c.err
+}
+
 func TestRotasDeCompliance(t *testing.T) {
 	agora := time.Now().UTC()
 	src := &complianceFalso{fleet: protocol.ComplianceFleet{
