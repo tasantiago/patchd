@@ -194,7 +194,7 @@ func pageHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "same-origin")
 }
@@ -389,7 +389,7 @@ a.sso:hover{background:#eef5fd}.ou{text-align:center;color:var(--muted);margin:1
 
 var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Brand}} · entrar</title>` + pageStyle + `</head><body>
+<title>{{.Brand}} · entrar</title>` + faviconLink + pageStyle + `</head><body>
 <header class="topo"><span class="marca">` + shieldSVG + `<span>{{.Brand}}</span></span></header>
 <main class="entrar"><div class="card">
 <h1>Entrar</h1>

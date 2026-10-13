@@ -212,7 +212,7 @@ type machineView struct {
 	Name, Label, Seen, Collected, Reboot string
 	Pending                              string
 	Links                                []linkView
-	Items                                []protocol.PendingItem
+	Items                                []pendingRow // com a aprovação de cada uma (Aula 13.2)
 	More                                 int
 	MinReason, MaxReason                 int
 	Jobs                                 jobTable
@@ -220,7 +220,8 @@ type machineView struct {
 	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
 	RingN                                int    // o anel em número, para o formulário (Aula 11.1)
 	Rings                                []int
-	CanUpdate                            bool // admin, chave de jobs e pendências do Linux (Aula 8.4)
+	CanUpdate                            bool // admin, chave de jobs e pendências do Linux aprovadas (Aulas 8.4 e 13.2)
+	NeedApproval                         bool // há pendências do Linux, mas nenhuma aprovada
 	CanReboot                            bool // admin, chave, Linux com reinício pendente (Aula 8.6)
 	Delays                               []int
 	Window, NextWindow                   string
@@ -290,7 +291,12 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	if d.Pending > 0 {
 		v.Pending = fmt.Sprintf("%d %s (%d com exploração conhecida)", d.Pending, compliance.Unit(d.Pending, d.PendingUnit), d.Exploited)
 	}
-	v.Items = d.Items
+	approvals, err := a.store.PatchApprovals(r.Context())
+	if err != nil {
+		a.internalError(w, r, "listar aprovações", err)
+		return
+	}
+	v.Items = pendingRows(d.Items, approvals)
 	if len(v.Items) > maxItemsShown {
 		v.More = len(v.Items) - maxItemsShown
 		v.Items = v.Items[:maxItemsShown]
@@ -314,7 +320,8 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if v.Admin && v.JobsOn {
-		v.CanUpdate = slices.ContainsFunc(v.Items, func(it protocol.PendingItem) bool { return len(it.Packages) > 0 })
+		v.CanUpdate = slices.ContainsFunc(v.Items, func(it pendingRow) bool { return it.CanPick })
+		v.NeedApproval = !v.CanUpdate && slices.ContainsFunc(v.Items, func(it pendingRow) bool { return len(it.Packages) > 0 })
 		if v.CanReboot, err = a.canReboot(r, id); err != nil {
 			a.internalError(w, r, "conferir reinício pendente", err)
 			return
@@ -482,7 +489,7 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 var pages = template.Must(template.New("").Parse(`
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Title}} · {{.Brand}}</title>
+<title>{{.Title}} · {{.Brand}}</title>` + faviconLink + `
 <style>` + themeCSS + `</style></head><body>
 <header class="topo"><a class="marca" href="/painel/">` + shieldSVG + `<span>{{.Brand}}</span></a>
 <nav aria-label="principal">
@@ -716,15 +723,17 @@ var pages = template.Must(template.New("").Parse(`
 {{if eq .Tab "pendencias"}}
 <div class="card"><div class="card-cab"><h2>Pendências</h2>{{if .Items}}<span class="grupo-btn"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">CSV</a><a class="btn" href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></span>{{end}}</div>
 {{if .Items}}{{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<div class="tabela"><table>
-<thead><tr>{{if .CanUpdate}}<th></th>{{end}}<th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>
-<tbody>{{range .Items}}<tr>{{if $.CanUpdate}}<td>{{if .Packages}}<input type="checkbox" name="item" value="{{.ID}}" aria-label="atualizar {{.ID}}" title="{{range $i, $p := .Packages}}{{if $i}}, {{end}}{{$p}}{{end}}">{{end}}</td>{{end}}
+<thead><tr>{{if .CanUpdate}}<th></th>{{end}}<th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Aprovação</th><th>Observação</th></tr></thead>
+<tbody>{{range .Items}}<tr>{{if $.CanUpdate}}<td>{{if .CanPick}}<input type="checkbox" name="item" value="{{.ID}}" aria-label="atualizar {{.ID}}" title="{{range $i, $p := .Packages}}{{if $i}}, {{end}}{{$p}}{{end}}">{{end}}</td>{{end}}
 <td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td><code>{{.ID}}</code></td>
-<td>{{.Severity}}</td><td>{{.Installed}}</td><td>{{.FixedIn}}</td><td>{{.Note}}</td></tr>{{end}}</tbody></table></div>
+<td>{{.Severity}}</td><td>{{.Installed}}</td><td>{{.FixedIn}}</td>
+<td>{{if .Approved}}<a href="{{.Href}}"><span class="estado em_dia">aprovado</span></a>{{else}}<a href="{{.Href}}">aguardando aprovação</a>{{end}}</td><td>{{.Note}}</td></tr>{{end}}</tbody></table></div>
+{{if .NeedApproval}}<p class="aviso atencao">Nenhuma pendência desta máquina está aprovada. Só item aprovado em <a href="/painel/patch">Patch</a> pode ser atualizado: abra o item, confira os sistemas afetados e aprove.</p>{{end}}
 {{if .CanUpdate}}<div class="lote">
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
 {{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
 <button type="submit">Atualizar marcados</button>
-<span class="muted">Instala os pacotes binários das fontes marcadas pelo apt ou pelo dnf; o agente confere na busca dele antes, e o resultado vem da busca seguinte. Não reinicia a máquina.</span>
+<span class="muted">Só as aprovadas em Patch podem ser marcadas. Instala os pacotes binários das fontes marcadas pelo apt ou pelo dnf; o agente confere na busca dele antes, e o resultado vem da busca seguinte. Não reinicia a máquina.</span>
 </div></form>{{end}}
 {{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
 {{else}}<p class="muted">Nenhuma pendência na última avaliação.</p>{{end}}

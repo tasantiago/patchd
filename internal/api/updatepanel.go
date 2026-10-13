@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 )
 
@@ -69,7 +71,24 @@ func (a *api) updateAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
-	params := jobs.ParamsFromPending(d.Items, chosen)
+	// Só o que está aprovado em Patch (Aula 13.2). Uma marcada sem aprovação recusa o pedido
+	// inteiro: atualizar "só o resto" sem avisar seria pior que não atualizar.
+	approvals, err := a.store.PatchApprovals(ctx)
+	if err != nil {
+		a.internalError(w, r, "listar aprovações", err)
+		return
+	}
+	approved := store.ApprovedOnly(d.Items, approvals)
+	for _, c := range chosen {
+		if !slices.ContainsFunc(approved, func(it protocol.PendingItem) bool { return it.ID == c }) &&
+			slices.ContainsFunc(d.Items, func(it protocol.PendingItem) bool { return it.ID == c }) {
+			a.logger.Warn("update pelo painel recusado: item sem aprovação", "machine_id", id, "item", c,
+				"username", s.Username, "request_id", RequestID(r.Context()))
+			http.Redirect(w, r, back+"?erro=nao-aprovado", http.StatusSeeOther)
+			return
+		}
+	}
+	params := jobs.ParamsFromPending(approved, chosen)
 	if len(params.Packages) == 0 {
 		// As marcadas já não estão pendentes (a avaliação mudou) ou não são do Linux.
 		http.Redirect(w, r, back+"?erro=nada-marcado", http.StatusSeeOther)

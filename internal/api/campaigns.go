@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -325,7 +326,17 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			v.Warnings = append(v.Warnings, "A campanha não começa pelo piloto (anel 0).")
 		}
 		if c.Type == jobs.TypeUpdate {
-			v.Warnings = append(v.Warnings, "No update, só recebe job quem tiver alguma dessas fontes pendente na hora em que o anel for liberado.")
+			v.Warnings = append(v.Warnings, "No update, só recebe job quem tiver alguma dessas fontes pendente, com a correção aprovada em Patch, na hora em que o anel for liberado.")
+			approvals, err := a.store.PatchApprovals(r.Context())
+			if err != nil {
+				a.internalError(w, r, "listar aprovações", err)
+				return
+			}
+			for _, src := range c.Sources {
+				if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return ap.Item == src }) {
+					v.Warnings = append(v.Warnings, fmt.Sprintf("A fonte %s não tem nenhuma correção aprovada em Patch: hoje, nenhuma máquina receberia essa fonte.", src))
+				}
+			}
 		}
 		a.render(w, r, http.StatusOK, "campanha-conferir", v)
 		return

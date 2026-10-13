@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 type contratoAprovacao interface {
@@ -53,4 +55,23 @@ func TestAprovacaoPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testarAprovacao(t, NewPostgres(pool))
+}
+
+func TestApenasAprovados(t *testing.T) {
+	items := []protocol.PendingItem{
+		{ID: "rsync", FixedIn: "3.4.1+ds1-7ubuntu0.3", Packages: []string{"rsync"}},
+		{ID: "curl", FixedIn: "8.18.0-1ubuntu2.11", Packages: []string{"curl"}},
+		{ID: "bzip2", FixedIn: "1.0.8-6ubuntu0.1", Packages: []string{"bzip2"}},
+	}
+	ap := []PatchApproval{
+		{Item: "rsync", FixedIn: "3.4.1+ds1-7ubuntu0.3"},
+		{Item: "curl", FixedIn: "8.18.0-1ubuntu2.10"}, // a correção anterior: não vale para a nova
+	}
+	got := ApprovedOnly(items, ap)
+	if len(got) != 1 || got[0].ID != "rsync" {
+		t.Errorf("só o rsync, com a correção aprovada: %+v", got)
+	}
+	if got := ApprovedOnly(items, nil); len(got) != 0 {
+		t.Errorf("sem aprovação, nada: %+v", got)
+	}
 }

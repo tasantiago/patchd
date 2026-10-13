@@ -154,6 +154,8 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = fmt.Sprintf("Já existe uma troca para HTTPS pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
 	case get("erro") == "sem-url":
 		b.Error = "O servidor está sem a URL pública (PATCHD_PUBLIC_URL); nada foi criado."
+	case get("erro") == "nao-aprovado":
+		b.Error = "Só item aprovado em Patch pode ser atualizado; nada foi pedido. Aprove o item (ou desmarque-o) e tente de novo."
 	case get("erro") == "nada-marcado":
 		b.Error = "Marque ao menos uma pendência do Linux que ainda esteja pendente."
 	case get("erro") == "quando":

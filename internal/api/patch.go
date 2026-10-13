@@ -425,3 +425,27 @@ func (a *api) revokePatchAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	http.Redirect(w, r, patchItemPath(id, fixed)+"&revogado=1", http.StatusSeeOther)
 }
+
+// --- Aprovação nas pendências da máquina (Aula 13.2) --------------------------------
+
+// pendingRow: uma pendência no detalhe da máquina, com a aprovação.
+type pendingRow struct {
+	protocol.PendingItem
+	Approved bool
+	Href     string // o item em Patch, onde se aprova
+	CanPick  bool   // pode ir num job update: Linux (tem pacotes) e aprovado
+}
+
+func pendingRows(items []protocol.PendingItem, approvals []store.PatchApproval) []pendingRow {
+	ok := make(map[string]bool, len(approvals))
+	for _, a := range approvals {
+		ok[store.ApprovalKey(a.Item, a.FixedIn)] = true
+	}
+	out := make([]pendingRow, 0, len(items))
+	for _, it := range items {
+		approved := ok[store.ApprovalKey(it.ID, it.FixedIn)]
+		out = append(out, pendingRow{PendingItem: it, Approved: approved, Href: patchItemPath(it.ID, it.FixedIn),
+			CanPick: approved && len(it.Packages) > 0})
+	}
+	return out
+}

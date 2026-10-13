@@ -52,9 +52,10 @@ type campaignStore interface {
 func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, logger *slog.Logger) *campaign.Engine {
 	cs := newComplianceService(pg, logger)
 	return &campaign.Engine{Store: pg, Key: key, Logger: logger,
+		// Só o que está aprovado em Patch (Aula 13.2), conferido na hora em que cada anel é
+		// liberado: uma aprovação revogada no meio da campanha já não entra no anel seguinte.
 		Pending: func(ctx context.Context, id string) ([]protocol.PendingItem, bool, error) {
-			d, found, err := cs.Detail(ctx, id)
-			return d.Items, found, err
+			return approvedPending(ctx, cs.Detail, pg.PatchApprovals, id)
 		},
 		Window: func(ctx context.Context, id string, now time.Time) (time.Time, time.Time, bool, error) {
 			ring, ok, err := pg.MachineRing(ctx, id)
@@ -298,4 +299,19 @@ func ringsProgress(c campaign.Campaign) string {
 		}
 	}
 	return strings.Join(s, "→")
+}
+
+// approvedPending: as pendências da máquina que têm a correção aprovada.
+func approvedPending(ctx context.Context,
+	detail func(context.Context, string) (protocol.ComplianceDetail, bool, error),
+	approvals func(context.Context) ([]store.PatchApproval, error), id string) ([]protocol.PendingItem, bool, error) {
+	d, found, err := detail(ctx, id)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	ap, err := approvals(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	return store.ApprovedOnly(d.Items, ap), true, nil
 }
