@@ -131,6 +131,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
 	mux.Handle("POST "+protocol.JobResultPath+"{id}/result", a.machineAuth(a.jobResult))
 	// Painel (Aula 7.2).
+	mux.HandleFunc("GET /painel/favicon.svg", favicon)
 	mux.HandleFunc("GET /painel/entrar", a.loginForm)
 	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))
 	mux.Handle("POST /painel/sair", a.sameOrigin(a.logout))

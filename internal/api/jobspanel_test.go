@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/window"
 )
 
@@ -175,7 +176,27 @@ func TestAtualizarPeloPainel(t *testing.T) {
 	ctx := context.Background()
 	maq := "/painel/maquinas/60ef97e4-0001"
 
+	// Sem aprovação (Aula 13.2): nada para marcar, o aviso aponta para Patch, e o pedido
+	// forjado (sem a página) é recusado e fica no log.
 	b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String()
+	if strings.Contains(b, `name="item"`) || !strings.Contains(b, "Nenhuma pendência desta máquina está aprovada") ||
+		!strings.Contains(b, `<a href="/painel/patch/item?fix=8.18.0-1ubuntu2.10&amp;id=curl">aguardando aprovação</a>`) {
+		t.Errorf("sem aprovação:\n%s", b)
+	}
+	if l := local(pagina(h, "POST", maq+"/atualizar", sessaoAdmin, url.Values{"item": {"curl"}, "quando": {"agora"}})); l != maq+"?erro=nao-aprovado" {
+		t.Errorf("forjado sem aprovação: %s", l)
+	}
+	if !strings.Contains(log.String(), "update pelo painel recusado: item sem aprovação") {
+		t.Error("a recusa vai para o log")
+	}
+	// Aprovado em outra correção não vale.
+	_, _ = st.ApprovePatch(ctx, store.PatchApproval{Item: "curl", FixedIn: "8.18.0-1ubuntu2.9", ApprovedBy: "ana"})
+	if l := local(pagina(h, "POST", maq+"/atualizar", sessaoAdmin, url.Values{"item": {"curl"}, "quando": {"agora"}})); l != maq+"?erro=nao-aprovado" {
+		t.Errorf("outra correção aprovada: %s", l)
+	}
+	_, _ = st.ApprovePatch(ctx, store.PatchApproval{Item: "curl", FixedIn: "8.18.0-1ubuntu2.10", ApprovedBy: "ana"})
+
+	b = pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/atualizar"`) || !strings.Contains(b, `name="item" value="curl"`) ||
 		!strings.Contains(b, `title="curl, libcurl4t64"`) || strings.Contains(b, `value="janela"`) {
 		t.Errorf("admin, sem janela:\n%s", b)

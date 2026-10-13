@@ -4,6 +4,8 @@ import (
 	"context"
 	"sort"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // Aprovação de patches (Aula 13.1): quem aprovou cada item pendente, e quando.
@@ -98,4 +100,21 @@ func (m *Memory) RevokePatch(ctx context.Context, item, fixedIn string) (bool, e
 	}
 	delete(m.approvals, k)
 	return true, nil
+}
+
+// ApprovedOnly fica com as pendências cuja correção está aprovada (Aula 13.2): é o filtro
+// que o painel e as campanhas aplicam antes de criar um job update. A correção conta: um
+// item aprovado em outra versão continua de fora.
+func ApprovedOnly(items []protocol.PendingItem, approvals []PatchApproval) []protocol.PendingItem {
+	ok := make(map[string]bool, len(approvals))
+	for _, a := range approvals {
+		ok[ApprovalKey(a.Item, a.FixedIn)] = true
+	}
+	out := []protocol.PendingItem{}
+	for _, it := range items {
+		if ok[ApprovalKey(it.ID, it.FixedIn)] {
+			out = append(out, it)
+		}
+	}
+	return out
 }

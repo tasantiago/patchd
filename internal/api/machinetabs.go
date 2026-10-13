@@ -28,7 +28,7 @@ var machineTabs = []struct{ Key, Label string }{
 // Avisos que voltam de um formulário de outra aba: a página abre nela.
 var (
 	tabOfError = map[string]string{
-		"nada-marcado": "pendencias", "pacotes": "pendencias", "quando": "pendencias", "sem-janela": "pendencias",
+		"nada-marcado": "pendencias", "nao-aprovado": "pendencias", "pacotes": "pendencias", "quando": "pendencias", "sem-janela": "pendencias",
 		"sem-reinicio": "pendencias", "reinicio-form": "pendencias",
 		"job-aberto": "tarefas", "update-aberto": "tarefas", "https-aberto": "tarefas", "reinicio-aberto": "tarefas",
 		"sem-chave": "tarefas", "sem-url": "tarefas", "cancelar": "tarefas",
