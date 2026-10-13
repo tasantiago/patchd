@@ -18,9 +18,10 @@ import (
 )
 
 type complianceFalso struct {
-	fleet protocol.ComplianceFleet
-	itens map[string][]protocol.PendingItem
-	err   error
+	fleet     protocol.ComplianceFleet
+	itens     map[string][]protocol.PendingItem
+	terceiros map[string][]protocol.ThirdPartyItem // Aula 13.3
+	err       error
 }
 
 func (c *complianceFalso) Fleet(context.Context) (protocol.ComplianceFleet, error) {
@@ -30,7 +31,7 @@ func (c *complianceFalso) Fleet(context.Context) (protocol.ComplianceFleet, erro
 func (c *complianceFalso) Detail(_ context.Context, id string) (protocol.ComplianceDetail, bool, error) {
 	for _, m := range c.fleet.Machines {
 		if m.MachineID == id {
-			return protocol.ComplianceDetail{ComplianceStatus: m, Items: c.itens[id]}, true, c.err
+			return protocol.ComplianceDetail{ComplianceStatus: m, Items: c.itens[id], ThirdParty: c.terceiros[id]}, true, c.err
 		}
 	}
 	return protocol.ComplianceDetail{}, false, c.err
@@ -40,7 +41,7 @@ func (c *complianceFalso) Items(context.Context) ([]protocol.MachineItems, error
 	out := []protocol.MachineItems{}
 	for _, m := range c.fleet.Machines {
 		out = append(out, protocol.MachineItems{MachineID: m.MachineID, Hostname: m.Hostname, OS: m.OS, Catalog: m.Catalog,
-			Unit: m.PendingUnit, Items: c.itens[m.MachineID]})
+			Unit: m.PendingUnit, Items: c.itens[m.MachineID], ThirdParty: c.terceiros[m.MachineID]})
 	}
 	return out, c.err
 }

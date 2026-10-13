@@ -26,6 +26,7 @@ import (
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 // Códigos de saída do servidor.
@@ -261,7 +262,16 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 
 	// Estado de compliance (RF-23, Aula 7.4): avaliado contra o catálogo do mesmo banco.
 	if pg, ok := st.(*store.Postgres); ok {
-		apiOpts = append(apiOpts, api.WithCompliance(newComplianceService(pg, logger)))
+		cs := newComplianceService(pg, logger)
+		// Programas de terceiros no painel (Aula 13.3): o mesmo manifesto da linha de comando.
+		path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
+		manifest, err := thirdparty.Load(path)
+		if err != nil {
+			logger.Error("manifesto dos programas de terceiros", "error", err)
+			return exitConfig
+		}
+		cs.manifest = &manifest
+		apiOpts = append(apiOpts, api.WithCompliance(cs))
 	}
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
 	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).

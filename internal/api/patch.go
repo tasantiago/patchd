@@ -226,6 +226,10 @@ func filterPatch(items []patchItem, q patchQuery) []patchItem {
 }
 
 func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("aba") == "terceiros" {
+		a.thirdPartyTab(w, r)
+		return
+	}
 	q := parsePatchQuery(r.URL.Query())
 	v := patchView{pageBase: a.base(r, "Patch", "patch"), Status: q.Status, Q: q.Q, HasFilter: q.Status != "" || q.Q != ""}
 	if a.compliance == nil {

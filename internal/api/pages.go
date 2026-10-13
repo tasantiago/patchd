@@ -220,8 +220,10 @@ type machineView struct {
 	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
 	RingN                                int    // o anel em número, para o formulário (Aula 11.1)
 	Rings                                []int
-	CanUpdate                            bool // admin, chave de jobs e pendências do Linux aprovadas (Aulas 8.4 e 13.2)
-	NeedApproval                         bool // há pendências do Linux, mas nenhuma aprovada
+	CanUpdate                            bool           // admin, chave de jobs e pendências do Linux aprovadas (Aulas 8.4 e 13.2)
+	NeedApproval                         bool           // há pendências do Linux, mas nenhuma aprovada
+	ThirdParty                           []tpMachineRow // programas de terceiros com problema (Aula 13.3)
+	ThirdPartyCurrent                    int
 	CanReboot                            bool // admin, chave, Linux com reinício pendente (Aula 8.6)
 	Delays                               []int
 	Window, NextWindow                   string
@@ -297,6 +299,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.Items = pendingRows(d.Items, approvals)
+	v.ThirdParty, v.ThirdPartyCurrent = thirdPartyRows(d.ThirdParty)
 	if len(v.Items) > maxItemsShown {
 		v.More = len(v.Items) - maxItemsShown
 		v.Items = v.Items[:maxItemsShown]
@@ -373,7 +376,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Links = append(v.Links, linkView{ID: other, Short: short(other), Relation: relationLabel(l.Relation), Retired: isRetired[other]})
 	}
-	v.Tabs = tabsView(id, v.Tab, v.SoftwareCount, d.Pending, len(v.Jobs.Rows))
+	v.Tabs = tabsView(id, v.Tab, v.SoftwareCount, d.Pending+len(v.ThirdParty), len(v.Jobs.Rows))
 	a.render(w, r, http.StatusOK, "maquina", v)
 }
 
@@ -571,8 +574,46 @@ var pages = template.Must(template.New("").Parse(`
 </div>
 {{template "fim"}}{{end}}
 
+{{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
+
+{{define "patch-terceiros"}}{{template "topo" .}}
+<h1>Patch <span class="muted">› Programas de terceiros</span></h1>
+{{template "patch-abas" "terceiros"}}
+{{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
+<ul class="kpis">
+<li><div class="kpi"><span class="kpi-rot">Programas com problema</span><span class="kpi-val">{{.Programs}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></div></li>
+<li><div class="kpi"><span class="kpi-rot">Instalações desatualizadas</span><span class="kpi-val v-laranja">{{.Outdated}}</span><span class="kpi-sub">abaixo da referência ou do mínimo</span></div></li>
+<li><div class="kpi"><span class="kpi-rot">Instalações fora de suporte</span><span class="kpi-val v-vermelho">{{.EOL}}</span><span class="kpi-sub">sem correção do fabricante</span></div></li>
+</ul>
+<div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="/painel/patch?aba=terceiros">só os com problema</a>{{else}}<a href="/painel/patch?aba=terceiros&amp;todos=1">mostrar todos os identificados</a>{{end}}</span></div>
+<p class="muted">O patchd não instala programas de terceiros: a lista diz o que distribuir e onde (a distribuição continua pelo ITOM). A referência vem do catálogo de terceiros (winget e feeds dos fabricantes, Aula 6.5).</p>
+{{if .Rows}}<div class="tabela"><table>
+<thead><tr><th>Programa</th><th>Referência</th><th>Instalações</th><th>Desatualizadas</th><th>Fora de suporte</th><th>Versões instaladas</th><th>Origem</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Reference}}</code></td><td class="num">{{.Installs}}</td>
+<td class="num">{{if .Outdated}}<span class="v-laranja">{{.Outdated}}</span>{{else}}0{{end}}</td><td class="num">{{if .EOL}}<span class="expl">{{.EOL}}</span>{{else}}0{{end}}</td>
+<td><code>{{.Versions}}</code></td><td class="muted">{{.Origin}}</td></tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhum programa de terceiros {{if .All}}identificado{{else}}com problema{{end}} na frota.</p>{{end}}
+</div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "patch-programa"}}{{template "topo" .}}
+<p><a href="/painel/patch?aba=terceiros">← Programas de terceiros</a></p>
+<h1>{{.P.Program}}</h1>
+<div class="card"><dl class="dados">
+<dt>Referência</dt><dd>{{if .P.Reference}}<code>{{.P.Reference}}</code>{{else}}—{{end}}</dd>
+{{if .P.Origin}}<dt>Origem</dt><dd>{{.P.Origin}}</dd>{{end}}
+<dt>Instalações</dt><dd>{{len .P.Installs}} ({{.P.Outdated}} desatualizadas, {{.P.EOL}} fora de suporte)</dd>
+</dl></div>
+<div class="card"><div class="card-cab"><h2>Instalações</h2></div><div class="tabela"><table>
+<thead><tr><th>Máquina</th><th>Como aparece no inventário</th><th>Instalada</th><th>Situação</th><th>Escopo</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=pendencias">{{if .Machine}}{{.Machine}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td>
+<td>{{.Name}}</td><td><code>{{.Installed}}</code></td><td><span class="estado {{.Class}}">{{.Label}}</span></td><td>{{.ScopeLabel}}</td></tr>{{end}}</tbody></table></div></div>
+{{template "fim"}}{{end}}
+
 {{define "patch"}}{{template "topo" .}}
-<h1>Patch <span class="muted">› Pendentes</span></h1>
+<h1>Patch <span class="muted">› Sistema operacional</span></h1>
+{{template "patch-abas" "so"}}
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Itens pendentes</span><span class="kpi-val">{{.Total}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></a></li>
@@ -738,6 +779,13 @@ var pages = template.Must(template.New("").Parse(`
 {{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
 {{else}}<p class="muted">Nenhuma pendência na última avaliação.</p>{{end}}
 </div>
+{{if or .ThirdParty .ThirdPartyCurrent}}<div class="card"><div class="card-cab"><h2>Programas de terceiros</h2><span class="muted">{{.ThirdPartyCurrent}} em dia</span></div>
+{{if .ThirdParty}}<div class="tabela"><table>
+<thead><tr><th>Programa</th><th>Como aparece no inventário</th><th>Instalada</th><th>Referência</th><th>Situação</th><th>Escopo</th></tr></thead>
+<tbody>{{range .ThirdParty}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td>{{.Name}}</td><td><code>{{.Installed}}</code></td><td>{{if .Reference}}<code>{{.Reference}}</code>{{else}}—{{end}}</td>
+<td><span class="estado {{.Class}}">{{.Label}}</span>{{if .Origin}}<div class="muted nota">{{.Origin}}</div>{{end}}</td><td>{{.ScopeLabel}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Todos os programas de terceiros identificados estão em dia.</p>{{end}}
+</div>{{end}}
 {{if .CanReboot}}<section><h2>Reiniciar</h2>
 <p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (Windows: aviso na tela com o prazo; Linux: mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Um administrador na máquina pode cancelar (<code>shutdown /a</code> no Windows, <code>shutdown -c</code> no Linux).</p>
 <form class="lote" method="post" action="/painel/maquinas/{{.D.MachineID}}/reiniciar">
