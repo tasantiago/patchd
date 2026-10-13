@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
 )
@@ -21,6 +23,7 @@ type planStore interface {
 	packageStore
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	LatestInventory(ctx context.Context, id string) (protocol.InventoryReport, bool, error)
+	ResolveMachine(ctx context.Context, prefix string) (string, bool, error)
 }
 
 var stateLabels = map[string]string{
@@ -53,18 +56,32 @@ func packagePlan(ctx context.Context, st planStore, manifest thirdparty.Manifest
 		return exitRuntime
 	}
 	if *machine != "" {
-		inv, found, err := st.LatestInventory(ctx, *machine)
+		// O começo do ID basta, como no machine list (que mostra 8 caracteres).
+		id, ok, err := st.ResolveMachine(ctx, *machine)
+		switch {
+		case errors.Is(err, store.ErrMachineAmbiguous):
+			fmt.Fprintf(stderr, "patchd-server: %q é o começo de mais de uma máquina; use mais caracteres do ID\n", *machine)
+			return exitConfig
+		case err != nil:
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		case !ok:
+			fmt.Fprintf(stderr, "patchd-server: nenhuma máquina com o ID (ou começo de ID) %q\n", *machine)
+			return exitConfig
+		}
+		inv, found, err := st.LatestInventory(ctx, id)
 		switch {
 		case err != nil:
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitRuntime
 		case !found:
-			fmt.Fprintf(stderr, "patchd-server: a máquina %s não existe ou ainda não mandou inventário\n", *machine)
+			fmt.Fprintf(stderr, "patchd-server: a máquina %s ainda não mandou inventário\n", id)
 			return exitConfig
 		case inv.OS.ID != "windows":
-			fmt.Fprintf(stderr, "patchd-server: a máquina %s é %s; a instalação de terceiros é só para Windows\n", *machine, inv.OS.Name)
+			fmt.Fprintf(stderr, "patchd-server: a máquina %s é %s; a instalação de terceiros é só para Windows\n", id, inv.OS.Name)
 			return exitConfig
 		}
+		*machine = id
 		arch, ok := tpinstall.MachineArch(inv.OS.Arch)
 		if !ok {
 			fmt.Fprintf(stderr, "patchd-server: arquitetura do agente %q desconhecida\n", inv.OS.Arch)

@@ -42,10 +42,14 @@ func TestPackagePlan(t *testing.T) {
 	m, _ := thirdparty.Default()
 	plan := func(args ...string) (int, string) {
 		var out, errb bytes.Buffer
-		code := packagePlan(ctx, st, m, args, &out, &errb)
+		code := packagePlan(ctx, memoriaComPrefixo{st}, m, args, &out, &errb)
 		return code, out.String() + errb.String()
 	}
 
+	// O começo do ID, como o machine list mostra (8 caracteres), resolve para o ID inteiro.
+	if code, out := plan("-machine", "bbbb0000"); code != exitConfig || !strings.Contains(out, "a máquina bbbb0000-0004 é Ubuntu") {
+		t.Errorf("prefixo de 8: %d %s", code, out)
+	}
 	code, out := plan("-machine", "aaaa0000-0001")
 	for _, tr := range []string{
 		"máquina aaaa0000-0001 · Windows 11 Pro 25H2 · x64\n",
@@ -87,7 +91,8 @@ func TestPackagePlan(t *testing.T) {
 	}{
 		{nil, "use um (e só um) de -machine e -all"},
 		{[]string{"-machine", "x", "-all"}, "use um (e só um)"},
-		{[]string{"-machine", "nao-existe"}, "não existe ou ainda não mandou inventário"},
+		{[]string{"-machine", "nao-existe"}, `nenhuma máquina com o ID (ou começo de ID) "nao-existe"`},
+		{[]string{"-machine", "aaaa0000"}, `"aaaa0000" é o começo de mais de uma máquina`},
 		{[]string{"-machine", "bbbb0000-0004"}, "é Ubuntu; a instalação de terceiros é só para Windows"},
 	} {
 		if code, out := plan(c.args...); code != exitConfig || !strings.Contains(out, c.msg) {

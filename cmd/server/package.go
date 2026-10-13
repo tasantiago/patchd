@@ -42,7 +42,7 @@ show:
 list:
   -verify        recalcula o SHA-256 de cada arquivo (lê todos do disco)
 plan:
-  -machine ID    uma máquina, com as instalações de cada programa
+  -machine ID    uma máquina (ID ou começo do ID, como no machine list), com as instalações
   -all           a frota Windows: quantas máquinas em cada situação, por programa
 
 O manifesto de terceiros é o embutido, mais PATCHD_THIRDPARTY_MANIFEST se definido. fetch,
