@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -221,55 +222,24 @@ func campaignCommand(ctx context.Context, st campaignStore, args []string, now t
 }
 
 func campaignChange(ctx context.Context, st campaignStore, c campaign.Campaign, op string, stderr io.Writer) int {
-	from := c.State
-	switch op {
-	case "pause":
-		if c.State != campaign.StateRunning {
-			fmt.Fprintf(stderr, "patchd-server: a campanha está %s; só se pausa uma em andamento\n", c.State)
-			return exitRuntime
-		}
-		c.State, c.Detail = campaign.StatePaused, "pausada pela linha de comando"
-	case "resume":
-		if err := campaign.Resume(&c); err != nil {
-			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-			return exitRuntime
-		}
-	case "cancel":
-		if c.State == campaign.StateDone || c.State == campaign.StateCanceled {
-			fmt.Fprintf(stderr, "patchd-server: a campanha já está %s\n", c.State)
-			return exitRuntime
-		}
-		c.State, c.Detail = campaign.StateCanceled, "cancelada pela linha de comando"
-	}
-	ok, err := st.SaveCampaign(ctx, c, from)
-	if err != nil {
+	n, err := campaign.Change(ctx, st, c, op, "linha de comando")
+	switch {
+	case errors.Is(err, campaign.ErrState):
+		fmt.Fprintf(stderr, "patchd-server: %s\n", strings.TrimPrefix(err.Error(), campaign.ErrState.Error()+": "))
+		return exitRuntime
+	case errors.Is(err, campaign.ErrChanged):
+		fmt.Fprintln(stderr, "patchd-server: a campanha mudou de estado agora há pouco; confira com campaign show e tente de novo")
+		return exitRuntime
+	case err != nil:
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
-	if !ok {
-		fmt.Fprintln(stderr, "patchd-server: a campanha mudou de estado agora há pouco; confira com campaign show e tente de novo")
-		return exitRuntime
-	}
-	if op == "cancel" {
-		canceled := 0
-		for idx := range c.Rings {
-			list, err := st.CampaignJobs(ctx, c.ID, idx)
-			if err != nil {
-				fmt.Fprintf(stderr, "patchd-server: %v\n", err)
-				return exitRuntime
-			}
-			for _, j := range list {
-				if j.State == jobs.StatePending {
-					if ok, _ := st.CancelJob(ctx, j.ID, "cancelamento da campanha "+strconv.FormatInt(c.ID, 10)); ok {
-						canceled++
-					}
-				}
-			}
-		}
-		fmt.Fprintf(stderr, "campanha %d cancelada; %d job(s) pendente(s) cancelado(s) (os já entregues seguem)\n", c.ID, canceled)
+	if op == campaign.OpCancel {
+		fmt.Fprintf(stderr, "campanha %d cancelada; %d job(s) pendente(s) cancelado(s) (os já entregues seguem)\n", c.ID, n)
 		return exitOK
 	}
-	fmt.Fprintf(stderr, "campanha %d: %s\n", c.ID, c.State)
+	st2, _, _ := st.Campaign(ctx, c.ID)
+	fmt.Fprintf(stderr, "campanha %d: %s\n", c.ID, st2.State)
 	return exitOK
 }
 

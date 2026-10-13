@@ -60,8 +60,12 @@ type Store interface {
 	SetMachineRing(ctx context.Context, id string, ring int) (bool, error)
 	SetWindow(ctx context.Context, ring int, w window.Window, by string) error
 	DeleteWindow(ctx context.Context, ring int) (bool, error)
-	// Campanhas, para a tela (Aula 8.5).
+	// Campanhas, para a tela (Aula 8.5) e para criar e controlar pelo painel (Aula 11.2).
 	Campaigns(ctx context.Context, limit int) ([]campaign.Campaign, error)
+	CreateCampaign(ctx context.Context, c campaign.Campaign) (int64, error)
+	Campaign(ctx context.Context, id int64) (campaign.Campaign, bool, error)
+	SaveCampaign(ctx context.Context, c campaign.Campaign, from string) (bool, error)
+	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -131,6 +135,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
 	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
+	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
+	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))
+	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.campaignChangeAction)))
 	mux.Handle("GET /painel/aneis", a.panelPage(a.ringsPage))
 	mux.Handle("POST /painel/aneis/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
 	mux.Handle("POST /painel/aneis/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
