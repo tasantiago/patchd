@@ -301,7 +301,7 @@ func (a *api) ringView(r *http.Request, id string, v *machineView) error {
 	if err != nil || !ok {
 		return err
 	}
-	v.Ring = strconv.Itoa(ring)
+	v.Ring, v.RingN, v.Rings = strconv.Itoa(ring), ring, allRings()
 	if ring == store.PilotRing {
 		v.Ring += " (piloto)"
 	}

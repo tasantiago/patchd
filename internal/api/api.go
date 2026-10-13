@@ -23,6 +23,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
@@ -55,6 +56,10 @@ type Store interface {
 	// Anel e janela da máquina, para o detalhe (Aula 8.3).
 	MachineRing(ctx context.Context, id string) (int, bool, error)
 	Windows(ctx context.Context) ([]store.RingWindow, error)
+	// Anéis e janelas pelo painel (Aula 11.1).
+	SetMachineRing(ctx context.Context, id string, ring int) (bool, error)
+	SetWindow(ctx context.Context, ring int, w window.Window, by string) error
+	DeleteWindow(ctx context.Context, ring int) (bool, error)
 	// Campanhas, para a tela (Aula 8.5).
 	Campaigns(ctx context.Context, limit int) ([]campaign.Campaign, error)
 }
@@ -86,6 +91,7 @@ type api struct {
 	compliance ComplianceSource   // nil: sem estado de compliance (armazenamento em memória)
 	jobKey     ed25519.PrivateKey // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
 	publicURL  string             // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
+	timezone   string             // fuso sugerido na janela dos anéis (Aula 11.1)
 	oidc       *oidc.Provider     // login pelo RHBK (Aula 9.4); nil: desligado
 	oidcLogins oidcPending        // logins pelo RHBK em andamento (state → nonce e PKCE)
 	metrics    *Metrics           // contadores da Aula 10.2; nil: desligados
@@ -125,6 +131,11 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
 	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
+	mux.Handle("GET /painel/aneis", a.panelPage(a.ringsPage))
+	mux.Handle("POST /painel/aneis/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
+	mux.Handle("POST /painel/aneis/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
+	mux.Handle("POST /painel/aneis/maquinas", a.sameOrigin(a.adminAction(a.fleetRingAction)))
+	mux.Handle("POST /painel/maquinas/{id}/anel", a.sameOrigin(a.adminAction(a.machineRingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/buscar", a.sameOrigin(a.adminAction(a.rescanAction)))
 	mux.Handle("POST /painel/jobs/{id}/cancelar", a.sameOrigin(a.adminAction(a.cancelJobAction)))
 	mux.Handle("POST /painel/maquinas/{id}/atualizar", a.sameOrigin(a.adminAction(a.updateAction)))

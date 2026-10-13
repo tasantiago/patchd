@@ -165,6 +165,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	defer closeStore()
 
 	var apiOpts []api.Option
+	if tz, _ := look("PATCHD_TIMEZONE"); tz != "" {
+		apiOpts = append(apiOpts, api.WithTimezone(tz)) // sugerido no formulário da janela (Aula 11.1)
+	}
 	// Métricas (Aula 10.2): registradas só com a porta configurada.
 	var reg *metrics.Registry
 	var retDeleted *metrics.CounterVec

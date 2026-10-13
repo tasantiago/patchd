@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // As telas do painel (Aula 7.6): a frota, o detalhe de uma máquina e as aposentadas.
@@ -86,9 +88,9 @@ type countView struct {
 }
 
 type fleetRow struct {
-	ID, Short, Name, OS, State, Label, Pending, Seen string
-	Exploited                                        int
-	Reasons                                          []string
+	ID, Short, Name, OS, State, Label, Pending, Seen, Ring string
+	Exploited                                              int
+	Reasons                                                []string
 }
 
 type fleetView struct {
@@ -99,11 +101,13 @@ type fleetView struct {
 	Total       int
 	Rows        []fleetRow
 	EvaluatedAt string
+	Rings       []int // anéis oferecidos no lote (admin, Aula 11.1)
 }
 
 // fleetPage lista a frota com o estado de cada máquina; ?estado= filtra.
 func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
-	v := fleetView{pageBase: a.base(r, "Frota", "frota")}
+	v := fleetView{pageBase: a.base(r, "Frota", "frota"), Rings: allRings()}
+	fleetRingFlash(r.URL.Query(), &v.pageBase)
 	filter := compliance.State(r.URL.Query().Get("estado"))
 	if filter.Rank() < len(compliance.States) {
 		v.Filter = string(filter)
@@ -126,6 +130,16 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.Total, v.EvaluatedAt = len(fleet.Machines), fleet.EvaluatedAt.Format("02/01/2006 15:04")+" UTC"
+	// O anel de cada máquina (Aula 11.1): a avaliação não traz, a lista de máquinas traz.
+	summaries, err := a.store.Machines(r.Context())
+	if err != nil {
+		a.internalError(w, r, "listar máquinas", err)
+		return
+	}
+	ringOf := make(map[string]int, len(summaries))
+	for _, m := range summaries {
+		ringOf[m.ID] = m.Ring
+	}
 	for _, st := range compliance.States {
 		v.Counts = append(v.Counts, countView{State: string(st), Label: st.Label(), N: fleet.Counts[string(st)], Active: v.Filter == string(st)})
 	}
@@ -139,9 +153,16 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Rows = append(v.Rows, fleetRow{ID: m.MachineID, Short: short(m.MachineID), Name: dash(m.Hostname), OS: dash(m.OS),
 			State: m.State, Label: compliance.State(m.State).Label(), Pending: pend, Exploited: m.Exploited,
-			Seen: ago(fleet.EvaluatedAt.Sub(m.LastSeenAt)), Reasons: m.Reasons})
+			Seen: ago(fleet.EvaluatedAt.Sub(m.LastSeenAt)), Reasons: m.Reasons, Ring: ringText(ringOf, m.MachineID)})
 	}
 	a.render(w, r, http.StatusOK, "frota", v)
+}
+
+func ringText(ringOf map[string]int, id string) string {
+	if r, ok := ringOf[id]; ok {
+		return strconv.Itoa(r)
+	}
+	return "—"
 }
 
 // --- Detalhe da máquina ------------------------------------------------------------
@@ -163,8 +184,10 @@ type machineView struct {
 	Jobs                                 jobTable
 	JobsOn                               bool   // o servidor tem a chave: o admin pode pedir a busca
 	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
-	CanUpdate                            bool   // admin, chave de jobs e pendências do Linux (Aula 8.4)
-	CanReboot                            bool   // admin, chave, Linux com reinício pendente (Aula 8.6)
+	RingN                                int    // o anel em número, para o formulário (Aula 11.1)
+	Rings                                []int
+	CanUpdate                            bool // admin, chave de jobs e pendências do Linux (Aula 8.4)
+	CanReboot                            bool // admin, chave, Linux com reinício pendente (Aula 8.6)
 	Delays                               []int
 	Window, NextWindow                   string
 	Channel                              string // canal do último check-in (Aula 9.2)
@@ -227,6 +250,11 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	switch q := r.URL.Query(); {
 	case q.Has("restaurada"):
 		v.Flash = "Máquina devolvida à frota; a credencial dela voltou a valer."
+	case q.Has("anel-alterado"):
+		n, _ := strconv.Atoi(q.Get("anel"))
+		v.Flash = fmt.Sprintf("Máquina no anel %d. Os jobs já criados não mudam; campanhas em andamento usam o anel novo nos próximos anéis que liberarem.", n)
+	case q.Get("erro") == "anel":
+		v.Error = fmt.Sprintf("Escolha um anel de 0 a %d.", store.MaxRing)
 	case q.Get("erro") == "motivo":
 		v.Error = fmt.Sprintf("Informe o motivo da aposentadoria (de %d a %d caracteres).", minReasonLength, maxReasonLength)
 	default:
@@ -424,10 +452,11 @@ button{padding:.35rem .9rem;cursor:pointer}
 .job{display:inline-block;padding:.05rem .45rem;border-radius:.3rem;font-size:.8rem;font-weight:600;border:1px solid var(--line);white-space:nowrap}
 .job.concluido{color:#165c2b;background:#e8f5ec}.job.falhou,.job.rejeitado{color:#8a1c12;background:#fdecea}
 .job.pendente,.job.entregue,.job.em_andamento{color:#3d4a66;background:#eef2fb}.job.pausada{color:#7a4a00;background:#fff4e0}.job.concluida{color:#165c2b;background:#e8f5ec}.job.cancelada{color:#4a4f57;background:#eef0f3}.job.cancelado,.job.expirado{color:#4a4f57;background:#eef0f3}
-td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}
+td form{margin:0}form.inline{display:inline;margin-left:.6rem}.dias label{margin-right:.6rem}
+form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;align-items:center;max-width:44rem}form.grade input[type=text]{padding:.3rem}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}
 </style></head><body>
 <header><strong>patchd</strong>
-<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo"{{end}}>Campanhas</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
+<nav><a href="/painel/" {{if eq .Nav "frota"}}class="ativo"{{end}}>Frota</a><a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo"{{end}}>Jobs</a><a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo"{{end}}>Campanhas</a><a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo"{{end}}>Anéis</a><a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo"{{end}}>Aposentadas</a></nav>
 <span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}
 <form method="post" action="/painel/sair"><button type="submit">Sair</button></form></span>
 </header><main>
@@ -444,15 +473,18 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 <li><a href="/painel/" {{if not .Filter}}class="ativo"{{end}}><b>{{.Total}}</b>todas</a></li>
 {{range .Counts}}<li><a href="/painel/?estado={{.State}}" {{if .Active}}class="ativo"{{end}}><b>{{.N}}</b><span class="estado {{.State}}">{{.Label}}</span></a></li>{{end}}
 </ul>
-{{if .Rows}}<table>
-<thead><tr><th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
+{{if .Rows}}{{if .Admin}}<form method="post" action="/painel/aneis/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<table>
+<thead><tr>{{if .Admin}}<th></th>{{end}}<th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Anel</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
 <tbody>{{range .Rows}}<tr>
+{{if $.Admin}}<td><input type="checkbox" name="maquina" value="{{.ID}}" aria-label="marcar {{.Short}}"></td>{{end}}
 <td><span class="estado {{.State}}">{{.Label}}</span></td>
 <td><a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a></td>
-<td>{{.Name}}</td><td>{{.OS}}</td><td>{{.Pending}}</td>
+<td>{{.Name}}</td><td>{{.OS}}</td><td class="num">{{.Ring}}</td><td>{{.Pending}}</td>
 <td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td>{{.Seen}}</td></tr>
-{{if .Reasons}}<tr><td></td><td colspan="6"><ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul></td></tr>{{end}}
+{{if .Reasons}}<tr>{{if $.Admin}}<td></td>{{end}}<td></td><td colspan="7"><ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul></td></tr>{{end}}
 {{end}}</tbody></table>
+{{if .Admin}}<div class="lote"><label>Pôr as marcadas no anel <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
+<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas dos anéis ficam em <a href="/painel/aneis">Anéis</a>.</span></div></form>{{end}}
 {{else}}<p class="muted">Nenhuma máquina{{if .Filter}} neste estado{{end}}.</p>{{end}}
 <p class="muted">Avaliado em {{.EvaluatedAt}} · <a href="/painel/frota.csv{{if .Filter}}?estado={{.Filter}}{{end}}">Exportar CSV</a> · <a href="/api/v1/compliance">JSON</a></p>
 {{end}}
@@ -470,7 +502,7 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 <dt>Último contato</dt><dd>{{.Seen}}</dd>
 <dt>Inventário coletado</dt><dd>{{.Collected}}</dd>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
-{{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}</dd>
+{{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="anel novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button type="submit">Mudar de anel</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}
 <dt>Canal</dt><dd>{{.Channel}}</dd>
 {{if .Pending}}<dt>Pendentes</dt><dd>{{.Pending}}</dd>{{end}}
@@ -542,6 +574,27 @@ td form{margin:0}.lote{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;al
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "aneis"}}{{template "topo" .}}
+<h1>Anéis e janelas</h1>
+<p class="muted">Anel 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos anéis em ordem. A janela de manutenção de um anel é quando os jobs "na janela" daquele anel podem rodar. Para pôr máquinas num anel, marque-as na <a href="/painel/">Frota</a> ou use o detalhe da máquina.</p>
+{{if .Rows}}<table>
+<thead><tr><th>Anel</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
+{{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/aneis/{{.Ring}}/remover-janela"><button type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table>
+<p class="muted">{{.Total}} máquina(s) na frota.</p>
+{{else}}<p class="muted">Nenhuma máquina e nenhuma janela ainda.</p>{{end}}
+{{if .Admin}}<section><h2>Definir a janela de um anel</h2>
+<p class="muted">Grava ou troca a janela. Uma janela que passa da meia-noite pertence ao dia em que começa (sex 22:00 por 6 h termina sábado às 04:00). Os jobs já criados mantêm a janela que levam assinada.</p>
+<form class="grade" method="post" action="/painel/aneis/janela">
+<label for="anel">Anel</label><select id="anel" name="anel">{{range .Rings}}<option value="{{.}}" {{if eq . 1}}selected{{end}}>{{.}}</option>{{end}}</select>
+<span>Dias</span><span class="dias">{{range .Days}}<label><input type="checkbox" name="dia" value="{{.Value}}"> {{.Label}}</label>{{end}}</span>
+<label for="inicio">Início</label><input id="inicio" name="inicio" type="time" required value="12:00">
+<label for="duracao">Duração</label><select id="duracao" name="duracao">{{range .Durations}}<option value="{{.Minutes}}" {{if eq .Minutes 120}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label for="fuso">Fuso</label><input id="fuso" name="fuso" type="text" required maxlength="64" value="{{.Timezone}}" placeholder="America/Porto_Velho">
+<span></span><span><button type="submit">Gravar janela</button></span>
+</form></section>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}
