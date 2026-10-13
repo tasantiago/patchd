@@ -488,6 +488,7 @@ var pages = template.Must(template.New("").Parse(`
 <nav aria-label="principal">
 <a href="/painel/" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}><span class="ic">🖥️</span>Frota</a>
 <a href="/painel/inventario" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}><span class="ic">🗂️</span>Inventário</a>
+<a href="/painel/patch" {{if eq .Nav "patch"}}class="ativo" aria-current="page"{{end}}><span class="ic">🩹</span>Patch</a>
 <a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Jobs</a>
 <a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}><span class="ic">🎯</span>Campanhas</a>
 <a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}><span class="ic">🔁</span>Anéis</a>
@@ -561,6 +562,62 @@ var pages = template.Must(template.New("").Parse(`
 {{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhum equipamento{{if .HasFilter}} com esse filtro{{end}}.</p>{{end}}
 </div>
+{{template "fim"}}{{end}}
+
+{{define "patch"}}{{template "topo" .}}
+<h1>Patch <span class="muted">› Pendentes</span></h1>
+{{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
+<ul class="kpis">
+<li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Itens pendentes</span><span class="kpi-val">{{.Total}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></a></li>
+<li><a class="kpi{{if eq .Status "exploradas"}} ativo{{end}}" href="{{.KPIExpl}}"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">{{.Exploited}}</span></a></li>
+<li><a class="kpi{{if eq .Status "aguardando"}} ativo{{end}}" href="{{.KPIWait}}"><span class="kpi-rot">Aguardando aprovação</span><span class="kpi-val v-laranja">{{.Waiting}}</span></a></li>
+<li><a class="kpi{{if eq .Status "aprovados"}} ativo{{end}}" href="{{.KPIApproved}}"><span class="kpi-rot">Aprovados</span><span class="kpi-val v-verde">{{.Approved}}</span></a></li>
+</ul>
+<div class="card"><div class="card-cab"><h2>Itens pendentes</h2><span class="muted">avaliação de agora, contra o catálogo</span></div>
+<form class="busca" method="get" action="/painel/patch">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Item, correção ou aviso (curl, CVE-2026-…, KB…)" aria-label="buscar item">
+<button type="submit">Buscar</button>{{if .HasFilter}} <a href="/painel/patch">Limpar</a>{{end}}</form>
+{{if .Rows}}<div class="tabela"><table>
+<thead><tr><th>Item</th><th>Tipo</th><th>Corrigido em</th><th>Severidade</th><th>Explorada</th><th>Sistemas</th><th>Catálogo</th><th>Aprovação</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}"><code>{{.ID}}</code></a>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td>
+<td>{{.Kind}}</td><td><code>{{.FixedIn}}</code></td><td>{{.Severity}}</td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td>
+<td class="num"><a href="{{.Href}}">{{.Machines}}</a></td><td>{{.Catalogs}}</td>
+<td>{{if .ApprovedBy}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{else}}<span class="estado reboot_pendente">aguardando</span>{{end}}</td></tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente na frota{{end}}.</p>{{end}}
+</div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "patch-item"}}{{template "topo" .}}
+<p><a href="/painel/patch">← Patch</a></p>
+<h1><code>{{.Item.ID}}</code> {{if .Item.Approval}}<span class="estado em_dia">aprovado</span>{{else}}<span class="estado reboot_pendente">aguardando aprovação</span>{{end}}</h1>
+<div class="grade2">
+<div class="card"><div class="card-cab"><h2>Item</h2></div><dl class="dados">
+<dt>Tipo</dt><dd>{{if .Item.Kind}}{{.Item.Kind}}{{else}}—{{end}}</dd>
+<dt>Corrigido em</dt><dd>{{if .Item.FixedIn}}<code>{{.Item.FixedIn}}</code>{{else}}—{{end}}</dd>
+<dt>Severidade</dt><dd>{{if .Item.Severity}}{{.Item.Severity}}{{else}}—{{end}}</dd>
+<dt>Explorada</dt><dd>{{if .Item.Exploited}}<span class="expl">sim</span>{{else}}não conhecida{{end}}</dd>
+{{if .Item.Note}}<dt>Aviso</dt><dd>{{.Item.Note}}</dd>{{end}}
+{{if .Item.Catalogs}}<dt>Catálogo</dt><dd>{{range $i, $c := .Item.Catalogs}}{{if $i}}, {{end}}{{$c}}{{end}}</dd>{{end}}
+<dt>Sistemas afetados</dt><dd>{{len .Item.Machines}}</dd>
+</dl></div>
+<div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
+{{if .Item.Approval}}<dl class="dados"><dt>Aprovado por</dt><dd>{{.Item.Approval.ApprovedBy}}</dd><dt>Em</dt><dd>{{.ApprovedAt}}</dd>{{if .Item.Approval.Note}}<dt>Observação</dt><dd>{{.Item.Approval.Note}}</dd>{{end}}</dl>
+{{if .CanRevoke}}<form class="acao" method="post" action="/painel/patch/revogar"><input type="hidden" name="id" value="{{.Item.ID}}"><input type="hidden" name="fix" value="{{.Item.FixedIn}}"><button class="perigo" type="submit">Revogar aprovação</button></form>{{end}}
+{{else}}<p class="muted">Ainda não aprovado. A partir da Aula 13.2, só item aprovado entra em atualização e em campanha.</p>
+{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/aprovar"><input type="hidden" name="id" value="{{.Item.ID}}"><input type="hidden" name="fix" value="{{.Item.FixedIn}}">
+<input name="nota" maxlength="{{.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>
+{{else if not .Admin}}<p class="muted">Aprovar exige o perfil admin.</p>{{end}}{{end}}
+{{if not .Pending}}<p class="aviso atencao">Este item não está pendente em nenhuma máquina na avaliação de agora.</p>{{end}}
+</div></div>
+{{if .Item.Machines}}<div class="card"><div class="card-cab"><h2>Sistemas afetados</h2></div><div class="tabela"><table>
+<thead><tr><th>Máquina</th><th>Sistema</th><th>Catálogo</th><th>Instalado</th><th>Explorada</th></tr></thead>
+<tbody>{{range .Item.Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=pendencias">{{if .Name}}{{.Name}}{{else}}<code>{{.ID}}</code>{{end}}</a></td><td>{{.OS}}</td><td>{{.Catalog}}</td><td><code>{{.Installed}}</code></td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "patch-nao-encontrado"}}{{template "topo" .}}
+<h1>Item não encontrado</h1>
+<p class="card">O item não está pendente em nenhuma máquina e não tem aprovação registrada. <a href="/painel/patch">Voltar a Patch</a>.</p>
 {{template "fim"}}{{end}}
 
 {{define "maquina"}}{{template "topo" .}}

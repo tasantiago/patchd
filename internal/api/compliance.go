@@ -14,6 +14,8 @@ import (
 type ComplianceSource interface {
 	Fleet(ctx context.Context) (protocol.ComplianceFleet, error)
 	Detail(ctx context.Context, id string) (protocol.ComplianceDetail, bool, error)
+	// Items: as pendências de cada máquina da frota (Aula 13.1).
+	Items(ctx context.Context) ([]protocol.MachineItems, error)
 }
 
 // WithCompliance liga as rotas de compliance e as contagens no painel.

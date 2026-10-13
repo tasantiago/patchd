@@ -67,6 +67,7 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 .ok{background:#e7f6ec;border-color:#b4e1c1;color:#14532d}.erro{background:#fbe9e9;border-color:#f3c4c4;color:#8a1c1c}.atencao{background:#fff4dc;border-color:#f6d68f;color:#7a4a00}
 dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1.4rem;margin:0}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0}
 .expl{color:var(--vermelho);font-weight:600}.muted{color:var(--muted)}
+.nota{font-size:.78rem;max-width:34rem;margin-top:.15rem}
 .abas{display:flex;flex-wrap:wrap;gap:.25rem;border-bottom:1px solid var(--borda);margin:0 0 1.2rem}
 .abas a{padding:.55rem .95rem;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-weight:500}
 .abas a:hover{color:var(--texto)}.abas a.ativa{color:var(--verde);border-bottom-color:var(--verde)}
