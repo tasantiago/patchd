@@ -150,6 +150,11 @@ func TestPackageFetchEList(t *testing.T) {
 	if code, out := list("-verify"); code != exitRuntime || !strings.Contains(out, "DIFERENTE: conteúdo com SHA-256 "+sha(adulterado)[:12]) {
 		t.Errorf("list -verify adulterado: %d\n%s", code, out)
 	}
+	// Um byte a mais: o tamanho arredondado é o mesmo; a diferença aparece em bytes.
+	os.WriteFile(filepath.Join(dir, zipFile), append(zip, 'x'), 0o640)
+	if code, out := list(); code != exitRuntime || !strings.Contains(out, "TAMANHO +1 byte") {
+		t.Errorf("list com 1 byte a mais: %d\n%s", code, out)
+	}
 	os.Remove(filepath.Join(dir, zipFile))
 	if code, out := list(); code != exitRuntime || !strings.Contains(out, "SUMIU") {
 		t.Errorf("list sem o arquivo: %d\n%s", code, out)

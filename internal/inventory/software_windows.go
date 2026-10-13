@@ -128,7 +128,24 @@ func readUninstallEntry(parent registry.Key, name string, access uint32) (uninst
 	e.ReleaseType = stringValue(k, "ReleaseType")
 	e.SystemComponent = intValue(k, "SystemComponent")
 	e.WindowsInstaller = intValue(k, "WindowsInstaller")
+	e.BundleUpgradeCode = firstString(k, "BundleUpgradeCode")
 	return e, nil
+}
+
+// firstString lê um valor de texto simples ou o primeiro de uma lista (REG_MULTI_SZ): o
+// Burn pode gravar mais de um código de atualização no mesmo bundle.
+func firstString(k registry.Key, name string) string {
+	if v, _, err := k.GetStringValue(name); err == nil {
+		return v
+	}
+	if l, _, err := k.GetStringsValue(name); err == nil {
+		for _, v := range l {
+			if v != "" {
+				return v
+			}
+		}
+	}
+	return ""
 }
 
 // stringValue lê um valor de texto; ausente ou de outro tipo vira "".

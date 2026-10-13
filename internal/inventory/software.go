@@ -19,6 +19,10 @@ type uninstallEntry struct {
 	ReleaseType      string
 	SystemComponent  uint64 // 1 = oculto no Adicionar/Remover Programas
 	WindowsInstaller uint64 // 1 = instalado via MSI
+	// BundleUpgradeCode: gravado pelo motor do WiX Burn na entrada do bundle (um .exe que
+	// instala MSIs por dentro e registra a própria entrada). O MSI que o bundle instalou
+	// fica com SystemComponent=1 (Aula 14.3, medido no PowerShell 7).
+	BundleUpgradeCode string
 }
 
 // uninstallLocation descreve a chave Uninstall de onde a entrada veio.
@@ -58,6 +62,9 @@ func softwareFromUninstall(e uninstallEntry, loc uninstallLocation) (Software, b
 	}
 	if e.WindowsInstaller == 1 && isGUID(e.KeyName) {
 		s.ProductCode = strings.ToUpper(e.KeyName)
+	}
+	if c := strings.TrimSpace(e.BundleUpgradeCode); isGUID(c) {
+		s.BundleUpgradeCode = strings.ToUpper(c)
 	}
 	return s, true
 }

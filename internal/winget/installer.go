@@ -235,6 +235,12 @@ var archOrder = map[string][]string{
 	"x86":   {"x86", "neutral"},
 }
 
+// ArchRank diz se um instalador da arquitetura inst roda numa máquina machine: 0 é a
+// preferida, valores maiores são piores, -1 não roda.
+func ArchRank(machine, inst string) int {
+	return slices.Index(archOrder[machine], inst)
+}
+
 // Select escolhe o instalador: a arquitetura mais próxima da máquina, o escopo declarado
 // igual ao pedido antes do não declarado, e, no empate, o primeiro do manifesto (como o
 // winget). Devolve também os outros, com o motivo de cada um.

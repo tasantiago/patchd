@@ -44,6 +44,7 @@ type Software struct {
 	User                 string `json:"user,omitempty"`                   // SID (Windows) ou nome (macOS) do dono, em instalações por usuário
 	Arch                 string `json:"arch,omitempty"`                   // "x64"/"x86" (visão do registro) ou a do pacote/app
 	ProductCode          string `json:"product_code,omitempty"`           // {GUID} de instalações MSI
+	BundleUpgradeCode    string `json:"bundle_upgrade_code,omitempty"`    // {GUID} de bundles do WiX Burn (Aula 14.3)
 	SourcePackage        string `json:"source_package,omitempty"`         // Linux: pacote fonte (unidade dos avisos do Ubuntu)
 	SourcePackageVersion string `json:"source_package_version,omitempty"` // Linux: versão do pacote fonte
 	SystemComponent      bool   `json:"system_component,omitempty"`       // parte do SO, oculto nas listas de programas

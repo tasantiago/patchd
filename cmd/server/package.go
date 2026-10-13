@@ -29,6 +29,7 @@ comandos:
   show   mostra o instalador que o patchd usaria (Aula 14.1); nada é baixado
   fetch  baixa o instalador, confere o SHA-256 do manifesto e guarda (Aula 14.2)
   list   lista os instaladores guardados
+  plan   o que fazer em cada máquina Windows, pelo inventário e pelos guardados (Aula 14.3)
 
 show e fetch:
   -app ID        a regra do manifesto de terceiros (ex.: 7zip, google-chrome)
@@ -40,9 +41,12 @@ show:
   -file ARQUIVO  um manifesto de instalador local (.installer.yaml), sem rede
 list:
   -verify        recalcula o SHA-256 de cada arquivo (lê todos do disco)
+plan:
+  -machine ID    uma máquina, com as instalações de cada programa
+  -all           a frota Windows: quantas máquinas em cada situação, por programa
 
-O manifesto de terceiros é o embutido, mais PATCHD_THIRDPARTY_MANIFEST se definido. fetch e
-list usam o PostgreSQL e guardam em PATCHD_CONTENT_DIR/pacotes.
+O manifesto de terceiros é o embutido, mais PATCHD_THIRDPARTY_MANIFEST se definido. fetch,
+list e plan usam o PostgreSQL; fetch e list, também PATCHD_CONTENT_DIR/pacotes.
 `
 
 // packageStore: o que os comandos usam do armazenamento.
@@ -56,7 +60,7 @@ type packageStore interface {
 func packagesDir(contentDir string) string { return filepath.Join(contentDir, "pacotes") }
 
 func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan"}, args[0]) {
 		fmt.Fprint(stderr, packageUsage)
 		return exitConfig
 	}
@@ -80,7 +84,7 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitConfig
 	}
-	if dir == "" {
+	if dir == "" && args[0] != "plan" {
 		fmt.Fprintln(stderr, "patchd-server: defina PATCHD_CONTENT_DIR (os instaladores ficam em PATCHD_CONTENT_DIR/pacotes)")
 		return exitConfig
 	}
@@ -107,8 +111,11 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		return exitRuntime
 	}
 	st := store.NewPostgres(pool)
-	if args[0] == "list" {
+	switch args[0] {
+	case "list":
 		return packageList(ctx, st, packagesDir(dir), args[1:], time.Now(), stdout, stderr)
+	case "plan":
+		return packagePlan(ctx, st, manifest, args[1:], stdout, stderr)
 	}
 	return packageFetch(ctx, c, pkgcache.NewFetcher(ua), st, manifest, packagesDir(dir), args[1:], stdout, stderr)
 }
@@ -441,9 +448,17 @@ func fileState(dir string, p store.ThirdPartyPackage, verify bool) string {
 	case err != nil:
 		return "ERRO: " + err.Error()
 	case st.Size() != p.Size:
-		return fmt.Sprintf("TAMANHO %s", pkgcache.Bytes(st.Size()))
+		return "TAMANHO " + sizeDelta(st.Size()-p.Size)
 	}
 	return "presente"
+}
+
+// sizeDelta: a diferença em bytes; o tamanho arredondado esconderia 1 byte a mais.
+func sizeDelta(d int64) string {
+	if d == 1 || d == -1 {
+		return fmt.Sprintf("%+d byte", d)
+	}
+	return fmt.Sprintf("%+d bytes", d)
 }
 
 // sinceLabel: há quanto tempo, curto (o ago do catálogo só conta horas e dias).
