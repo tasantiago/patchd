@@ -112,14 +112,21 @@ func (p *Postgres) SaveInventory(ctx context.Context, id string, rep protocol.In
 		return false, tx.Commit(ctx)
 	}
 
+	// Hardware em colunas (Aula 12.2): a lista de Equipamentos não relê o relatório.
+	var hw protocol.Hardware
+	if rep.Hardware != nil {
+		hw = *rep.Hardware
+	}
 	var reportID int64
 	err = tx.QueryRow(ctx, `
 		INSERT INTO inventory_reports
-			(machine_id, hash, schema_version, agent_version, collected_at, hostname, os_family, os_name, os_version, report)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			(machine_id, hash, schema_version, agent_version, collected_at, hostname, os_family, os_name, os_version, report,
+			 hw_manufacturer, hw_model, hw_serial, hw_chassis)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id`,
 		id, rep.Hash, rep.SchemaVersion, rep.AgentVersion, rep.CollectedAt,
 		rep.OS.Hostname, rep.OS.Family, rep.OS.Name, rep.OS.Version, body,
+		hw.Manufacturer, hw.Model, hw.SerialNumber, hw.ChassisType,
 	).Scan(&reportID)
 	if err != nil {
 		return false, fmt.Errorf("inventário: %w", err)

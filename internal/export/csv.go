@@ -104,3 +104,25 @@ func Items(w io.Writer, d protocol.ComplianceDetail) error {
 	cw.Flush()
 	return cw.Error()
 }
+
+// Table escreve uma tabela qualquer: o cabeçalho e as linhas, com o mesmo BOM, separador
+// e proteção contra fórmulas das outras exportações (Aula 12.2: a lista de Equipamentos).
+func Table(w io.Writer, header []string, rows [][]string) error {
+	cw, err := newWriter(w)
+	if err != nil {
+		return err
+	}
+	if err := writeRow(cw, append([]string(nil), header...)...); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if err := writeRow(cw, append([]string(nil), r...)...); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
+// When é a data no formato das exportações (UTC, "2006-01-02 15:04:05"); "" se zero.
+func When(t time.Time) string { return when(t) }
