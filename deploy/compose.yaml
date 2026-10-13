@@ -81,6 +81,9 @@ services:
       PATCHD_OIDC_READ_ROLE: ${PATCHD_OIDC_READ_ROLE:-patchd-leitura}
       # Métricas para o Prometheus (Aula 10.2): porta própria, HTTPS com o mesmo certificado
       # e token (Bearer) por arquivo. PATCHD_METRICS_LISTEN_ADDR= (vazio) desliga.
+      # Retenção do banco (Aula 10.5): dias de histórico e de jobs; patchd-server retention mostra antes.
+      PATCHD_RETENTION_HISTORY_DAYS: ${PATCHD_RETENTION_HISTORY_DAYS:-90}
+      PATCHD_RETENTION_JOBS_DAYS: ${PATCHD_RETENTION_JOBS_DAYS:-400}
       PATCHD_METRICS_LISTEN_ADDR: ${PATCHD_METRICS_LISTEN_ADDR-:9090}
       PATCHD_METRICS_TOKEN_FILE: /run/secrets/metrics_token
     secrets:

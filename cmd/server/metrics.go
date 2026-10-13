@@ -62,6 +62,7 @@ type metricsStore interface {
 	JobStateCounts(ctx context.Context) (map[string]int, error)
 	CatalogStatus(ctx context.Context, sources []string) ([]store.CatalogSourceStatus, error)
 	LastBackup(ctx context.Context) (store.BackupRun, bool, error)
+	TableSizes(ctx context.Context) (map[string]int64, int64, error)
 }
 
 // fleetCounter conta as máquinas por estado de compliance (o complianceService).
@@ -78,6 +79,8 @@ type snapshot struct {
 	jobs       map[string]int
 	catalog    []store.CatalogSourceStatus
 	backup     *store.BackupRun // nil: nenhuma cópia registrada (Aula 10.3)
+	tables     map[string]int64 // bytes por tabela (Aula 10.5)
+	dbBytes    int64
 }
 
 type snapshotter struct {
@@ -141,6 +144,9 @@ func (s *snapshotter) read(ctx context.Context) (snapshot, error) {
 	}
 	if snap.catalog, err = s.st.CatalogStatus(ctx, catalogSourceNames); err != nil {
 		return snapshot{}, fmt.Errorf("catálogo: %w", err)
+	}
+	if snap.tables, snap.dbBytes, err = s.st.TableSizes(ctx); err != nil {
+		return snapshot{}, fmt.Errorf("tamanhos: %w", err)
 	}
 	b, found, err := s.st.LastBackup(ctx)
 	if err != nil {
@@ -233,6 +239,23 @@ func registerGauges(reg *metrics.Registry, snap *snapshotter, certs certExpiry, 
 			return out
 		})
 	registerBackupGauges(reg, snap)
+	reg.NewGaugeFunc("patchd_db_bytes", "Tamanho do banco em disco (Aula 10.5).", nil, func() []metrics.Sample {
+		if s := snap.get(); s.ok {
+			return []metrics.Sample{{Value: float64(s.dbBytes)}}
+		}
+		return nil
+	})
+	reg.NewGaugeFunc("patchd_db_table_bytes", "Tamanho em disco de cada tabela, com índices.", []string{"tabela"}, func() []metrics.Sample {
+		s := snap.get()
+		if !s.ok {
+			return nil
+		}
+		out := make([]metrics.Sample, 0, len(s.tables))
+		for k, v := range s.tables {
+			out = append(out, metrics.Sample{Labels: []string{k}, Value: float64(v)})
+		}
+		return out
+	})
 }
 
 // Cópias do banco (Aula 10.3): sem nenhuma registrada, as três séries não existem, e o

@@ -133,6 +133,34 @@ Guarde à parte, com o mesmo cuidado:
 | Chave privada de release | offline, fora do servidor | reinstalar a frota com agentes que confiem numa chave nova |
 | Versões publicadas do agente | `releases/` | assinar e publicar de novo a partir do build |
 
+## Retenção do banco (Aula 10.5)
+
+O banco guarda um inventário novo a cada mudança de software e uma busca por dia de cada
+máquina; sem limpeza, essas duas tabelas crescem para sempre. O servidor apaga, de hora em
+hora:
+
+| O quê | Depois de | Fica sempre |
+|---|---|---|
+| inventários e buscas | `PATCHD_RETENTION_HISTORY_DAYS` (padrão 90; 30 a 3650) | o atual de cada máquina, por mais velho que seja |
+| jobs encerrados | `PATCHD_RETENTION_JOBS_DAYS` (padrão 400; 0 = sempre) | pendentes, entregues e os de campanha que ainda não acabou |
+| campanhas encerradas | o mesmo prazo dos jobs, e só quando não sobrou job delas | em andamento e pausadas |
+
+Ficam de fora: máquinas (inclusive aposentadas), tokens de registro, usuários e o
+catálogo (este se refaz sozinho). As sessões do painel e as execuções do catálogo já têm a
+limpeza delas.
+
+Antes de mudar os prazos, veja o efeito (nada é apagado sem `-apply`):
+
+```bash
+./deploy/compose.sh exec server /patchd-server retention
+```
+
+Apagar não encolhe os arquivos do PostgreSQL: o espaço das linhas apagadas é reaproveitado
+pelas linhas novas (autovacuum), e o banco **para de crescer**. Para devolver o espaço ao
+disco é preciso `VACUUM FULL`, que trava a tabela enquanto roda: só numa janela, e só se
+o disco precisar. Acompanhe por `patchd_db_bytes` e `patchd_db_table_bytes{tabela}`; uma
+tabela que cresce sem parar depois da retenção é uma tabela sem retenção.
+
 ## Métricas e alertas (Aula 10.2)
 
 O servidor publica `GET /metrics` (formato de texto do Prometheus) numa porta só dele:
@@ -163,6 +191,8 @@ curl -s --cacert CA.crt -H @<(printf 'Authorization: Bearer %s\n' "$(cat deploy/
 | `patchd_catalog_last_success_timestamp_seconds{fonte}` | medidor | última sincronização boa de cada fonte |
 | `patchd_catalog_last_run_ok{fonte}` | medidor | a execução mais recente deu certo (1) ou falhou (0) |
 | `patchd_tls_cert_not_after_timestamp_seconds` | medidor | fim da validade do certificado em uso |
+| `patchd_db_bytes`, `patchd_db_table_bytes{tabela}` | medidor | tamanho do banco e de cada tabela, com índices (Aula 10.5) |
+| `patchd_retencao_apagados_total{tabela}` | contador | linhas apagadas pela retenção (Aula 10.5) |
 | `patchd_coleta_banco_ok`, `patchd_coleta_banco_segundos` | medidor | a leitura do banco para as métricas deu certo, e quanto levou |
 | `patchd_build_info{version,commit}`, `patchd_start_time_seconds`, `go_goroutines` | medidor | versão, início do processo, goroutines |
 
