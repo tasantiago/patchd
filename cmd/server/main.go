@@ -165,6 +165,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	defer closeStore()
 
 	var apiOpts []api.Option
+	if t, _ := look("PATCHD_PANEL_TITLE"); t != "" {
+		apiOpts = append(apiOpts, api.WithBrand(t)) // nome no topo do painel (Aula 11.3)
+	}
 	if tz, _ := look("PATCHD_TIMEZONE"); tz != "" {
 		apiOpts = append(apiOpts, api.WithTimezone(tz)) // sugerido no formulário da janela (Aula 11.1)
 	}

@@ -204,10 +204,11 @@ type loginData struct {
 	Error    string
 	AD       bool // o login é pelo AD: a dica diz para usar o usuário da rede
 	OIDC     bool // botão "Entrar com o RHBK" (Aula 9.4)
+	Brand    string
 }
 
 func (a *api) renderLogin(w http.ResponseWriter, status int, d loginData) {
-	d.OIDC = a.oidc != nil
+	d.OIDC, d.Brand = a.oidc != nil, a.brand
 	pageHeaders(w)
 	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, d)
@@ -377,24 +378,28 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/painel/entrar", http.StatusSeeOther)
 }
 
-const pageStyle = `<style>
-body{font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#1b1b1b}
-label{display:block;margin-top:1rem}input{width:100%;padding:.4rem;box-sizing:border-box}
-button{margin-top:1.2rem;padding:.4rem 1rem}.erro{color:#a40000}dt{font-weight:600;margin-top:.6rem}
-.muted{color:#555}.sso{display:inline-block;margin-top:1rem;padding:.5rem 1rem;border:1px solid #1b1b1b;text-decoration:none;color:#1b1b1b}
+// pageStyle: a tela de login e a de volta do RHBK, no mesmo padrão do painel (Aula 11.3).
+const pageStyle = `<style>` + themeCSS + `
+main.entrar{max-width:26rem;padding-top:3rem}main.entrar h1{margin-top:0}
+main.entrar label{display:block;margin-top:.9rem;font-weight:500}main.entrar input{display:block;width:100%;margin-top:.3rem}
+main.entrar button{margin-top:1.3rem;width:100%;padding:.55rem}main.entrar small{color:var(--muted)}
+a.sso{display:block;text-align:center;padding:.55rem;border:1px solid var(--azul);border-radius:6px;text-decoration:none;color:var(--azul);font-weight:500}
+a.sso:hover{background:#eef5fd}.ou{text-align:center;color:var(--muted);margin:1rem 0 0}
 </style>`
 
 var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>patchd · entrar</title>` + pageStyle + `</head><body>
-<h1>patchd</h1>
-{{if .Error}}<p class="erro" role="alert">{{.Error}}</p>{{end}}
-{{if .OIDC}}<p><a class="sso" href="/painel/oidc/entrar">Entrar com o RHBK (login único)</a></p>
-<p class="muted">Ou com usuário e senha:</p>{{end}}
+<title>{{.Brand}} · entrar</title>` + pageStyle + `</head><body>
+<header class="topo"><span class="marca">` + shieldSVG + `<span>{{.Brand}}</span></span></header>
+<main class="entrar"><div class="card">
+<h1>Entrar</h1>
+{{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
+{{if .OIDC}}<a class="sso" href="/painel/oidc/entrar">Entrar com o RHBK (login único)</a>
+<p class="ou">ou com usuário e senha</p>{{end}}
 <form method="post" action="/painel/entrar">
 <label>Usuário <input name="usuario" value="{{.Username}}" autocomplete="username" required autofocus></label>
 {{if .AD}}<small>O usuário da rede, sem o domínio.</small>{{end}}
 <label>Senha <input name="senha" type="password" autocomplete="current-password" required></label>
 <button type="submit">Entrar</button>
-</form></body></html>
+</form></div></main></body></html>
 `))

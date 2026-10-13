@@ -83,7 +83,8 @@ func TestPaginaDaFrota(t *testing.T) {
 	for _, tr := range []string{
 		`<a href="/painel/maquinas/60ef97e4-0001"><code>60ef97e4</code></a>`,
 		"1 pacote", `<span class="expl">1</span>`, "há 2 h", "há 5 min",
-		"1 pacote com correção pendente", `<b>3</b>todas`,
+		"1 pacote com correção pendente", `<span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">3</span>`,
+		`<span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">1</span>`,
 		"&lt;script&gt;alert(1)&lt;/script&gt;",
 		"consulta (local) · leitura",
 	} {
@@ -101,7 +102,8 @@ func TestPaginaDaFrota(t *testing.T) {
 
 	// Filtro: só as do estado; filtro desconhecido é ignorado.
 	b = pagina(h, "GET", "/painel/?estado=faltando", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "60ef97e4") || strings.Contains(b, "92fc3b93") || !strings.Contains(b, `href="/painel/?estado=faltando" class="ativo"`) {
+	if !strings.Contains(b, "60ef97e4") || strings.Contains(b, "92fc3b93") || !strings.Contains(b, `class="kpi ativo" href="/painel/?estado=faltando"`) ||
+		!strings.Contains(b, "<h2>Máquinas · faltando</h2>") {
 		t.Errorf("filtro:\n%s", b)
 	}
 	if b := pagina(h, "GET", "/painel/?estado=%3Cx%3E", sessaoTeste, nil).Body.String(); !strings.Contains(b, "92fc3b93") || strings.Contains(b, "<x>") {

@@ -286,7 +286,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		}
 	}
 	if problem != "" || r.PostFormValue("corrigir") == "1" {
-		v := campaignsView{pageBase: baseFor(s, "Campanhas", "campanhas"), CanNew: true}
+		v := campaignsView{pageBase: a.baseFor(s, "Campanhas", "campanhas"), CanNew: true}
 		v.Error = problem
 		status := http.StatusUnprocessableEntity
 		if problem == "" {
@@ -299,7 +299,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		return
 	}
 	if r.PostFormValue("confirmar") != "1" {
-		v := campaignConfirmView{pageBase: baseFor(s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
+		v := campaignConfirmView{pageBase: a.baseFor(s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
 			SourcesList: strings.Join(c.Sources, ", "), ObserveL: hoursLabel(f.ObserveH)}
 		v.When = "com prazo de " + hoursLabel(f.TTLH) + " para cada job"
 		if c.UseWindow {
