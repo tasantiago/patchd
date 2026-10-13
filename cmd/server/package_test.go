@@ -107,7 +107,7 @@ func TestPackageShow(t *testing.T) {
 func TestPackageUso(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"package"}, func(string) (string, bool) { return "", false }, &out, &errb); code != exitConfig ||
-		!strings.Contains(errb.String(), "uso: patchd-server package show") {
+		!strings.Contains(errb.String(), "uso: patchd-server package <comando>") {
 		t.Errorf("%d %s", code, errb.String())
 	}
 }
