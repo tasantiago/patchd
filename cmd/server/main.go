@@ -49,7 +49,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"
 	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune",
 	// "patchd-server user create|list|delete|password", "patchd-server ad check" e
-	// "patchd-server machine list|retire|restore" e "patchd-server job keygen|create|list|cancel".
+	// "patchd-server machine list|retire|restore", "patchd-server job keygen|create|list|cancel"
+	// e "patchd-server package show" (Aula 14.1).
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -82,6 +83,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && args[0] == "campaign" {
 		return runCampaign(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "package" {
+		return runPackage(args[1:], look, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "retention" {
 		return runRetention(args[1:], look, stdout, stderr)

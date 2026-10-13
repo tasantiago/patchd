@@ -14,6 +14,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/tasantiago/patchd/internal/winget"
 )
 
 //go:embed manifesto.json
@@ -54,8 +56,21 @@ type App struct {
 	Source      *Source `json:"source,omitempty"`
 	MinVersion  string  `json:"min_version,omitempty"`
 	Note        string  `json:"note,omitempty"`
+	// Install: como o patchd instala a atualização (Aula 14.1). Sem ele, o programa só é
+	// avaliado; a regra é a lista do que o patchd pode instalar.
+	Install *Install `json:"install,omitempty"`
 
 	publisher, match *regexp.Regexp
+}
+
+// Install diz de onde vem o instalador: um pacote do winget-pkgs, que não precisa ser o
+// mesmo da versão de referência (a do Chrome vem da Google; o instalador, do winget).
+type Install struct {
+	Winget string `json:"winget"` // Google.Chrome, Mozilla.Firefox.pt-BR
+	// Type exige um tipo de instalador: o mesmo do que está nas máquinas. O 7-Zip publica
+	// exe e MSI; instalar o outro deixa duas entradas no Desinstalar. Vazio: o primeiro que
+	// serve, na ordem do manifesto (como o winget).
+	Type string `json:"type,omitempty"`
 }
 
 // Source diz de onde vem a versão de referência.
@@ -140,6 +155,18 @@ func (a *App) compile() error {
 	case CategoryOSVendor, CategoryEOL, CategoryIgnore:
 	default:
 		return fmt.Errorf("categoria %q desconhecida", a.Category)
+	}
+	if a.Install != nil {
+		switch {
+		case a.OS != "windows":
+			return fmt.Errorf("install só vale para windows (o macOS fica para o MDM)")
+		case a.Category != CategoryFeed && a.Category != CategoryMinimum:
+			return fmt.Errorf("install exige categoria feed ou minimum (há versão a alcançar)")
+		case !winget.ValidID(a.Install.Winget):
+			return fmt.Errorf("install.winget %q fora da forma Fabricante.Programa", a.Install.Winget)
+		case a.Install.Type != "" && !winget.Supported(a.Install.Type):
+			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
+		}
 	}
 	var err error
 	if a.match, err = regexp.Compile(a.Match); err != nil {

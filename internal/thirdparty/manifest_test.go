@@ -78,3 +78,47 @@ func TestNormalize(t *testing.T) {
 		}
 	}
 }
+
+// install (Aula 14.1): a lista do que o patchd pode instalar.
+func TestInstall(t *testing.T) {
+	m, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	com := map[string]string{}
+	for _, a := range m.For("windows") {
+		if a.Install != nil {
+			com[a.ID] = a.Install.Winget + " " + a.Install.Type
+		}
+	}
+	want := map[string]string{
+		"google-chrome": "Google.Chrome ", "mozilla-firefox": "Mozilla.Firefox.pt-BR ", "mozilla-firefox-esr": "Mozilla.Firefox.ESR.pt-BR ",
+		"7zip": "7zip.7zip exe", "notepad-plus-plus": "Notepad++.Notepad++ nullsoft", "vscode": "Microsoft.VisualStudioCode ",
+		"powershell-7": "Microsoft.PowerShell wix", "libreoffice": "TheDocumentFoundation.LibreOffice ",
+	}
+	if len(com) != len(want) {
+		t.Errorf("regras com install: %v", com)
+	}
+	for id, w := range want {
+		if com[id] != w {
+			t.Errorf("%s: %q; esperava %q", id, com[id], w)
+		}
+	}
+	regra := func(extra string) string {
+		return `{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "minimum", "match": "x", "min_version": "1"` + extra + `}]}`
+	}
+	for entrada, trecho := range map[string]string{
+		regra(`, "install": {"winget": "Chrome"}`):                                                                                                    "fora da forma Fabricante.Programa",
+		regra(`, "install": {"winget": "Google.Chrome", "type": "msix"}`):                                                                             `install.type "msix"`,
+		regra(`, "install": {"winget": "Google.Chrome", "scope": "user"}`):                                                                            "unknown field",
+		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"winget": "a.b"}}]}`: "só vale para windows",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                       "exige categoria feed ou minimum",
+	} {
+		if _, err := Parse([]byte(entrada)); err == nil || !strings.Contains(err.Error(), trecho) {
+			t.Errorf("%s: %v (queria %q)", entrada, err, trecho)
+		}
+	}
+	if _, err := Parse([]byte(regra(`, "install": {"winget": "Empresa.Sistema", "type": "msi"}`))); err != nil {
+		t.Errorf("regra local com install: %v", err)
+	}
+}
