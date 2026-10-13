@@ -145,6 +145,10 @@ var genericSerials = map[string]bool{
 	"123456789": true, "0123456789": true, "1234567890": true,
 }
 
+// NormalizeSerial é o serial como o servidor o compara e mostra (Aula 12.2: a lista de
+// Equipamentos); false para os genéricos, que não identificam nada.
+func NormalizeSerial(s string) (string, bool) { return normalizeSerial(s) }
+
 // normalizeSerial: maiúsculas e espaços simples; descarta a lista genérica, valores com
 // menos de 4 caracteres e valores de um caractere só repetido ("00000000", "XXXX").
 func normalizeSerial(s string) (string, bool) {

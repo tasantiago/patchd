@@ -67,6 +67,10 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 .ok{background:#e7f6ec;border-color:#b4e1c1;color:#14532d}.erro{background:#fbe9e9;border-color:#f3c4c4;color:#8a1c1c}.atencao{background:#fff4dc;border-color:#f6d68f;color:#7a4a00}
 dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1.4rem;margin:0}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0}
 .expl{color:var(--vermelho);font-weight:600}.muted{color:var(--muted)}
+th a{color:inherit;text-decoration:none}th a:hover{color:var(--azul)}h1 .muted{font-weight:400}
+form.busca{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:1rem}form.busca input[type=search]{flex:1 1 16rem}
+.paginas{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:center;margin-top:1rem;font-size:.88rem}.paginas .muted{margin-right:auto}
+.paginas a,.paginas span.atual{padding:.15rem .5rem;border-radius:6px}.paginas span.atual{background:var(--azul);color:#fff}
 .uso{display:inline-block;vertical-align:middle;width:8rem;height:.5rem;border-radius:4px;background:var(--borda);overflow:hidden}
 .uso>span{display:block;height:100%;background:var(--verde-ok)}.uso.alto>span{background:var(--laranja)}.uso.cheio>span{background:var(--vermelho)}
 .card h3{font-size:.9rem;margin:1.1rem 0 .5rem;color:var(--muted);font-weight:600}

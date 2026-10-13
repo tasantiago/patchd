@@ -48,6 +48,8 @@ type Store interface {
 	// Rede e discos do último check-in, e o endereço de onde ele veio (Aula 12.1).
 	SaveHostState(ctx context.Context, machineID string, state *protocol.MachineState, addr string) error
 	HostState(ctx context.Context, machineID string) (store.HostState, bool, error)
+	// Lista de Equipamentos (Aula 12.2).
+	InventoryList(ctx context.Context) ([]store.InventoryRow, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -132,6 +134,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /painel/oidc/retorno", a.oidcReturn)
 	mux.Handle("GET /painel/{$}", a.panelPage(a.fleetPage))
 	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
+	mux.Handle("GET /painel/inventario", a.panelPage(a.equipmentPage))
+	mux.Handle("GET /painel/inventario.csv", a.panelPage(a.equipmentCSV))
 	mux.Handle("GET /painel/aposentadas", a.panelPage(a.retiredPage))
 	mux.Handle("GET /painel/frota.csv", a.panelPage(a.fleetCSV))
 	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))

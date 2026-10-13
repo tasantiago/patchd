@@ -468,6 +468,7 @@ var pages = template.Must(template.New("").Parse(`
 <header class="topo"><a class="marca" href="/painel/">` + shieldSVG + `<span>{{.Brand}}</span></a>
 <nav aria-label="principal">
 <a href="/painel/" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}><span class="ic">🖥️</span>Frota</a>
+<a href="/painel/inventario" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}><span class="ic">🗂️</span>Inventário</a>
 <a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Jobs</a>
 <a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}><span class="ic">🎯</span>Campanhas</a>
 <a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}><span class="ic">🔁</span>Anéis</a>
@@ -507,6 +508,40 @@ var pages = template.Must(template.New("").Parse(`
 {{else}}<p class="muted">Nenhuma máquina{{if .Filter}} neste estado{{end}}.</p>{{end}}
 </div>
 {{end}}
+{{template "fim"}}{{end}}
+
+{{define "inventario"}}{{template "topo" .}}
+<h1>Inventário <span class="muted">› Equipamentos</span></h1>
+<ul class="kpis">
+<li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Equipamentos</span><span class="kpi-val">{{.Total}}</span></a></li>
+<li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val v-verde">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
+<li><a class="kpi{{if eq .Status "offline"}} ativo{{end}}" href="{{.KPIOff}}"><span class="kpi-rot">Offline</span><span class="kpi-val v-laranja">{{.Offline}}</span><span class="kpi-sub">sem check-in há mais de 2 h</span></a></li>
+<li><a class="kpi{{if eq .Status "sem-estado"}} ativo{{end}}" href="{{.KPINo}}"><span class="kpi-rot">Sem rede e discos</span><span class="kpi-val">{{.NoState}}</span><span class="kpi-sub">agente anterior à Aula 12.1</span></a></li>
+</ul>
+<div class="card"><div class="card-cab"><h2>Equipamentos</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
+<form class="busca" method="get" action="/painel/inventario">
+{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}
+{{if ne .Order "nome"}}<input type="hidden" name="ordem" value="{{.Order}}">{{end}}{{if .Dir}}<input type="hidden" name="dir" value="{{.Dir}}">{{end}}
+<select name="campo" aria-label="campo da busca">{{range .Fields}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Buscar" aria-label="texto da busca">
+<label>Por página <select name="por">{{range .Pers}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<button type="submit">Buscar</button>{{if .HasFilter}} <a href="/painel/inventario">Limpar</a>{{end}}
+</form>
+{{if .Rows}}<div class="tabela"><table>
+<thead><tr>{{range .Cols}}<th{{if .Sort}} aria-sort="{{.Sort}}"{{end}}><a href="{{.Href}}">{{.Label}}{{if .Arrow}} {{.Arrow}}{{end}}</a></th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr>
+<td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td>
+<td>{{if .Online}}<span class="estado em_dia">online</span>{{else}}<span class="estado sem_dado_recente">offline</span>{{end}}</td>
+<td>{{.Agent}}</td>
+<td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
+<td>{{.Collected}}</td><td>{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td class="num">{{.Ring}}</td>
+</tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>
+{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}
+{{range .Pages}}{{if .Gap}}<span>…</span>{{else if .Current}}<span class="atual" aria-current="page">{{.N}}</span>{{else}}<a href="{{.Href}}">{{.N}}</a>{{end}}{{end}}
+{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhum equipamento{{if .HasFilter}} com esse filtro{{end}}.</p>{{end}}
+</div>
 {{template "fim"}}{{end}}
 
 {{define "maquina"}}{{template "topo" .}}
