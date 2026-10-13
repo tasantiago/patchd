@@ -47,8 +47,11 @@ type memMachine struct {
 	retiredAt          time.Time // zero: na frota
 	retiredReason      string
 	retiredBy          string
-	ring               int   // Aula 8.3; 1 na criação, como o DEFAULT da coluna
-	checkinTLS         *bool // Aula 9.2; nil até o primeiro check-in
+	ring               int                    // Aula 8.3; 1 na criação, como o DEFAULT da coluna
+	checkinTLS         *bool                  // Aula 9.2; nil até o primeiro check-in
+	state              *protocol.MachineState // Aula 12.1; só o último
+	stateAt            time.Time
+	checkinAddr        string
 }
 
 type memKeys struct {

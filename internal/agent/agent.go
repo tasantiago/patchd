@@ -22,6 +22,8 @@ type Agent struct {
 	Client    *Client
 	Inventory func(context.Context) (protocol.InventoryReport, error)
 	Scan      func(context.Context) protocol.PatchScanReport
+	// State coleta rede e discos para o check-in (Aula 12.1). nil: o check-in vai sem.
+	State     func(context.Context) protocol.MachineState
 	DataDir   string
 	Interval  time.Duration // entre check-ins (RNF-03: 1 h)
 	ScanEvery time.Duration // entre buscas (RNF-03: 24 h)
@@ -160,7 +162,17 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		a.Logger.Error("falha na coleta do inventário; check-in sem inventário", "error", err)
 		inv = protocol.InventoryReport{}
 	}
-	resp, err := a.Client.CheckIn(ctx, inv.Hash)
+	// Rede e discos (Aula 12.1) vão no próprio check-in: são poucos bytes, e o servidor
+	// guarda só o último. nil: o agente não coleta (testes, SO sem coletor).
+	var host *protocol.MachineState
+	if a.State != nil {
+		s := a.State(ctx)
+		host = &s
+		if len(s.Errors) > 0 {
+			a.Logger.Warn("coleta de rede e discos incompleta", "errors", s.Errors)
+		}
+	}
+	resp, err := a.Client.CheckIn(ctx, inv.Hash, host)
 	if out := a.classify(err, "check-in"); out != outcomeOK {
 		return out
 	}

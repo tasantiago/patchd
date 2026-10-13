@@ -227,6 +227,7 @@ type machineView struct {
 	Channel                              string // canal do último check-in (Aula 9.2)
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
 	PublicURL                            string
+	Host                                 hostView // rede e discos (Aula 12.1)
 }
 
 func relationLabel(r string) string {
@@ -309,6 +310,10 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.channelView(r, id, &v); err != nil {
 		a.internalError(w, r, "ler canal do check-in", err)
+		return
+	}
+	if err := a.hostView(r, id, &v); err != nil {
+		a.internalError(w, r, "ler rede e discos", err)
 		return
 	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
@@ -523,6 +528,23 @@ var pages = template.Must(template.New("").Parse(`
 {{if .D.Target}}<dt>Resolve tudo</dt><dd>{{.D.Target}}</dd>{{end}}
 {{range .D.CatalogWarnings}}<dt>Atenção</dt><dd>{{.}}</dd>{{end}}
 </dl></div>
+<div class="card"><div class="card-cab"><h2>Rede e discos</h2>{{if .Host.Has}}<span class="muted">coletado {{.Host.Age}}</span>{{end}}</div>
+{{if .Host.Has}}<dl class="dados">
+<dt>IP principal</dt><dd>{{.Host.Primary}}</dd>
+<dt>Check-in vindo de</dt><dd>{{.Host.Addr}}{{if .Host.AddrNote}} <span class="muted">· {{.Host.AddrNote}}</span>{{end}}</dd>
+</dl>
+{{if .Host.Disks}}<h3>Discos</h3><div class="tabela"><table>
+<thead><tr><th>Volume</th><th>Sistema de arquivos</th><th>Tamanho</th><th>Livre</th><th>Ocupado</th></tr></thead>
+<tbody>{{range .Host.Disks}}<tr><td><code>{{.Mount}}</code>{{if .Device}} <span class="muted">{{.Device}}</span>{{end}}</td><td>{{.FS}}</td><td class="num">{{.Total}}</td><td class="num">{{.Free}}</td>
+<td><span class="uso {{.Level}}" role="img" aria-label="{{.Pct}}% ocupado"><span style="width:{{.Pct}}%"></span></span> {{.Pct}}%</td></tr>{{end}}</tbody></table></div>{{end}}
+{{if .Host.Ifs}}<h3>Interfaces</h3><div class="tabela"><table>
+<thead><tr><th>Interface</th><th>Estado</th><th>MAC</th><th>IPv4</th><th>IPv6</th></tr></thead>
+<tbody>{{range .Host.Ifs}}<tr><td>{{.Name}}</td><td>{{if .Up}}ativa{{else}}<span class="muted">inativa</span>{{end}}</td>
+<td><code>{{.MAC}}</code>{{if .LocalMAC}} <span class="muted" title="MAC administrado localmente: bridge, VPN, container ou Wi-Fi com endereço aleatório">local</span>{{end}}</td><td>{{.IPv4}}</td><td>{{.IPv6}}</td></tr>{{end}}</tbody></table></div>{{end}}
+{{range .Host.Errors}}<p class="aviso atencao">{{.}}</p>{{end}}
+{{else}}<dl class="dados"><dt>Check-in vindo de</dt><dd>{{.Host.Addr}}</dd></dl>
+<p class="muted">O agente desta máquina ainda não manda rede e discos: a coleta chegou na Aula 12.1. Atualize o agente.</p>{{end}}
+</div>
 {{if .Items}}<section><div class="card-cab"><h2>Pendências</h2><span class="grupo-btn"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">CSV</a><a class="btn" href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></span></div>
 {{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<div class="tabela"><table>
 <thead><tr>{{if .CanUpdate}}<th></th>{{end}}<th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>

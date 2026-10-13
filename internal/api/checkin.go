@@ -26,6 +26,7 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	a.checkClock(r, id, req.SentAt)
+	a.saveHostState(r, id, req.State)
 	canal := "http"
 	if r.TLS != nil {
 		canal = "https"
@@ -51,4 +52,20 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		resp.Jobs = delivered
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// saveHostState grava rede e discos (Aula 12.1) e o endereço de onde veio o check-in. É
+// dado de conveniência: um estado fora do formato é descartado com um aviso no log, e uma
+// falha ao gravar também não derruba o check-in, que é o que mantém a máquina viva.
+func (a *api) saveHostState(r *http.Request, id string, st *protocol.MachineState) {
+	if st != nil {
+		if err := st.Check(); err != nil {
+			a.logger.Warn("estado da máquina descartado", "machine_id", id, "reason", err.Error(),
+				"request_id", RequestID(r.Context()))
+			st = nil
+		}
+	}
+	if err := a.store.SaveHostState(r.Context(), id, st, remoteIP(r)); err != nil {
+		a.logger.Error("gravar estado da máquina", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
+	}
 }

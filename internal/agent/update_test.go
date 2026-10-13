@@ -179,7 +179,7 @@ func TestServidorNaoOfereceAgenteMaisNovoQueEle(t *testing.T) {
 	// Servidor v0.5.0 com o agente v0.5.1 publicado: nada é oferecido nem servido.
 	srv, _, cred := novoServidor(t, api.WithReleases(d, "v0.5.0"))
 	c := NewClient(srv.URL, cred, "v0.5.0")
-	resp, err := c.CheckIn(context.Background(), "")
+	resp, err := c.CheckIn(context.Background(), "", nil)
 	if err != nil || resp.AgentUpdate != nil {
 		t.Errorf("servidor mais velho que a versão publicada não oferece: %+v %v", resp, err)
 	}
@@ -190,11 +190,11 @@ func TestServidorNaoOfereceAgenteMaisNovoQueEle(t *testing.T) {
 
 	// Servidor atualizado: oferece a quem está em outra versão, e não a quem já está nela.
 	srv2, _, cred2 := novoServidor(t, api.WithReleases(d, "v0.5.1"))
-	resp, _ = NewClient(srv2.URL, cred2, "v0.5.0").CheckIn(context.Background(), "")
+	resp, _ = NewClient(srv2.URL, cred2, "v0.5.0").CheckIn(context.Background(), "", nil)
 	if resp.AgentUpdate == nil || resp.AgentUpdate.Version != "v0.5.1" {
 		t.Errorf("oferta: %+v", resp.AgentUpdate)
 	}
-	resp, _ = NewClient(srv2.URL, cred2, "v0.5.1").CheckIn(context.Background(), "")
+	resp, _ = NewClient(srv2.URL, cred2, "v0.5.1").CheckIn(context.Background(), "", nil)
 	if resp.AgentUpdate != nil {
 		t.Errorf("quem já está na versão não recebe oferta: %+v", resp.AgentUpdate)
 	}

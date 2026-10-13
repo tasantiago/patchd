@@ -106,6 +106,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		}
 		return exitOK
 	}
+	if cfg.State {
+		return printState(context.Background(), stdout)
+	}
 	if cfg.Scan {
 		scanner := patch.New(platform.ExecRunner{Timeout: scanCommandTimeout})
 		opts := patch.Options{OfflineCatalog: cfg.OfflineCatalog}
@@ -120,7 +123,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 
-	// Sem -inventory nem -scan: o laço de check-in em primeiro plano, até o Ctrl+C.
+	// Sem -inventory, -scan nem -state: o laço de check-in em primeiro plano, até o Ctrl+C.
 	// Como serviço, o mesmo laço roda por "patchd-agent service run".
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
