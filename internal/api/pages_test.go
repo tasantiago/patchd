@@ -116,14 +116,14 @@ func TestPaginaDaFrota(t *testing.T) {
 
 func TestPaginaDaMaquina(t *testing.T) {
 	h, _, _ := ambientePaginas(t)
-	r := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil)
+	r := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001?aba=pendencias", sessaoTeste, nil)
 	b := r.Body.String()
 	for _, tr := range []string{"vm-ubuntu", `estado faltando`, "<code>curl</code>", "8.18.0-1ubuntu2.10", "USN-9002-1", `<span class="expl">sim</span>`} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
 		}
 	}
-	if strings.Contains(b, "Aposentar") {
+	if b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String(); strings.Contains(b, "Aposentar") {
 		t.Error("o perfil leitura não vê o botão de aposentar")
 	}
 	if b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/aposentar"`) {

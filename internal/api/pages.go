@@ -228,6 +228,18 @@ type machineView struct {
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
 	PublicURL                            string
 	Host                                 hostView // rede e discos (Aula 12.1)
+	// Abas (Aula 12.3).
+	Tab           string
+	Tabs          []tabView
+	HasInventory  bool
+	OSParams      []paramRow
+	HWParams      []paramRow
+	HWSources     []string
+	Category      string
+	Model, Serial string
+	SoftwareCount int
+	Software      softwareView
+	Donuts        []donut
 }
 
 func relationLabel(r string) string {
@@ -245,7 +257,8 @@ func relationLabel(r string) string {
 // machinePage mostra o estado de uma máquina, as pendências e os alertas de identidade.
 func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	v := machineView{pageBase: a.base(r, "Máquina", "frota"), MinReason: minReasonLength, MaxReason: maxReasonLength}
+	v := machineView{pageBase: a.base(r, "Máquina", "inventario"), MinReason: minReasonLength, MaxReason: maxReasonLength,
+		Tab: machineTab(r.URL.Query())}
 	if !machineIDPattern.MatchString(id) || a.compliance == nil {
 		a.render(w, r, http.StatusNotFound, "nao-encontrada", v.pageBase)
 		return
@@ -316,6 +329,11 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		a.internalError(w, r, "ler rede e discos", err)
 		return
 	}
+	v.Donuts = donuts(v.Host.Disks)
+	if err := a.inventoryView(r, id, &v); err != nil {
+		a.internalError(w, r, "ler o inventário", err)
+		return
+	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
 	if v.Jobs.Rows, err = a.machineJobs(r, id, v.Admin); err != nil {
 		a.internalError(w, r, "listar jobs da máquina", err)
@@ -348,6 +366,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Links = append(v.Links, linkView{ID: other, Short: short(other), Relation: relationLabel(l.Relation), Retired: isRetired[other]})
 	}
+	v.Tabs = tabsView(id, v.Tab, v.SoftwareCount, d.Pending, len(v.Jobs.Rows))
 	a.render(w, r, http.StatusOK, "maquina", v)
 }
 
@@ -545,24 +564,63 @@ var pages = template.Must(template.New("").Parse(`
 {{template "fim"}}{{end}}
 
 {{define "maquina"}}{{template "topo" .}}
-<p><a href="/painel/">← Frota</a></p>
+<p><a href="/painel/inventario">← Inventário</a> · <a href="/painel/">Frota</a></p>
 <h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
 {{if .D.Reasons}}<ul class="motivos">{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
-<div class="card"><div class="card-cab"><h2>Dados da máquina</h2></div><dl class="dados">
-<dt>ID</dt><dd><code>{{.D.MachineID}}</code></dd>
+<nav class="abas" aria-label="abas do equipamento">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="cont">{{.Count}}</span>{{end}}</a>{{end}}</nav>
+
+{{if eq .Tab "resumo"}}
+<div class="grade2">
+<div class="card"><div class="card-cab"><h2>Equipamento</h2></div><dl class="dados">
 <dt>Nome</dt><dd>{{.Name}}</dd>
-<dt>Sistema</dt><dd>{{if .D.OS}}{{.D.OS}}{{else}}—{{end}}</dd>
-<dt>Catálogo</dt><dd>{{if .D.Catalog}}{{.D.Catalog}}{{else}}—{{end}}</dd>
+<dt>ID</dt><dd><code>{{.D.MachineID}}</code></dd>
+{{if .Category}}<dt>Categoria</dt><dd>{{.Category}}</dd>{{end}}
+{{if .Model}}<dt>Fabricante e modelo</dt><dd>{{.Model}}</dd>{{end}}
+{{if .Serial}}<dt>Número de série</dt><dd><code>{{.Serial}}</code></dd>{{end}}
+{{if .Host.Has}}<dt>IP principal</dt><dd>{{.Host.Primary}}</dd>{{end}}
 <dt>Último contato</dt><dd>{{.Seen}}</dd>
 <dt>Inventário coletado</dt><dd>{{.Collected}}</dd>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
+<dt>Canal</dt><dd>{{.Channel}}</dd>
 {{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="anel novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de anel</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}
-<dt>Canal</dt><dd>{{.Channel}}</dd>
-{{if .Pending}}<dt>Pendentes</dt><dd>{{.Pending}}</dd>{{end}}
+</dl></div>
+<div class="card"><div class="card-cab"><h2>Conformidade</h2></div><dl class="dados">
+<dt>Estado</dt><dd><span class="estado {{.D.State}}">{{.Label}}</span></dd>
+<dt>Pendentes</dt><dd>{{if .Pending}}<a href="/painel/maquinas/{{.D.MachineID}}?aba=pendencias">{{.Pending}}</a>{{else}}nenhuma{{end}}</dd>
 {{if .D.Target}}<dt>Resolve tudo</dt><dd>{{.D.Target}}</dd>{{end}}
+<dt>Catálogo</dt><dd>{{if .D.Catalog}}{{.D.Catalog}}{{else}}—{{end}}</dd>
 {{range .D.CatalogWarnings}}<dt>Atenção</dt><dd>{{.}}</dd>{{end}}
 </dl></div>
+</div>
+{{if .OSParams}}<div class="card"><div class="card-cab"><h2>Sistema operacional</h2></div><dl class="dados">
+{{range .OSParams}}<dt>{{.Label}}</dt><dd>{{if .Mono}}<code>{{.Value}}</code>{{else}}{{.Value}}{{end}}</dd>{{end}}
+</dl></div>{{end}}
+<div class="card"><div class="card-cab"><h2>Discos</h2>{{if .Host.Has}}<span class="muted">coletado {{.Host.Age}}</span>{{end}}</div>
+{{if .Donuts}}<ul class="roscas">{{range .Donuts}}<li><svg class="rosca" viewBox="0 0 100 100" width="104" height="104" role="img" aria-label="{{.Mount}}: {{.Pct}}% ocupado">
+<circle cx="50" cy="50" r="36" fill="none" stroke-width="12" class="fundo"/>
+<circle cx="50" cy="50" r="36" fill="none" stroke-width="12" class="{{.Level}}" stroke-dasharray="{{.Dash}}" transform="rotate(-90 50 50)"/>
+<text x="50" y="56" text-anchor="middle">{{.Pct}}%</text></svg>
+<span><code>{{.Mount}}</code><br><span class="muted">{{.Free}} livres de {{.Total}}</span></span></li>{{end}}</ul>
+{{else if .Host.Has}}<p class="muted">Nenhum volume local informado.</p>
+{{else}}<p class="muted">O agente desta máquina ainda não manda rede e discos: a coleta chegou na Aula 12.1. Atualize o agente.</p>{{end}}
+</div>
+{{if .Links}}<div class="card"><div class="card-cab"><h2>Alertas de identidade</h2></div><ul>
+{{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
+</ul></div>{{end}}
+{{if .Admin}}<section><h2>Aposentar</h2>
+<p class="muted">A máquina sai da frota, do compliance e do painel, e a credencial dela deixa de valer. Nada é apagado; dá para restaurar em Aposentadas.</p>
+<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/aposentar">
+<input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (ex.: registro antigo da VM reinstalada)">
+<button class="perigo" type="submit">Aposentar</button></form></section>{{end}}
+{{end}}
+
+{{if eq .Tab "hardware"}}
+<div class="card"><div class="card-cab"><h2>Hardware</h2>{{if .HasInventory}}<span class="grupo-btn"><a class="btn" href="/api/v1/machines/{{.D.MachineID}}/inventory">JSON</a></span>{{end}}</div>
+{{if .HWParams}}<dl class="dados">{{range .HWParams}}<dt>{{.Label}}</dt><dd>{{if .Mono}}<code>{{.Value}}</code>{{else}}{{.Value}}{{end}}</dd>{{end}}</dl>
+{{if .HWSources}}<p class="muted fontes">Fontes: {{range $i, $s := .HWSources}}{{if $i}}; {{end}}{{$s}}{{end}}</p>{{end}}
+{{else}}<p class="muted">O inventário desta máquina não tem a seção de hardware.</p>{{end}}
+</div>
 <div class="card"><div class="card-cab"><h2>Rede e discos</h2>{{if .Host.Has}}<span class="muted">coletado {{.Host.Age}}</span>{{end}}</div>
 {{if .Host.Has}}<dl class="dados">
 <dt>IP principal</dt><dd>{{.Host.Primary}}</dd>
@@ -580,8 +638,27 @@ var pages = template.Must(template.New("").Parse(`
 {{else}}<dl class="dados"><dt>Check-in vindo de</dt><dd>{{.Host.Addr}}</dd></dl>
 <p class="muted">O agente desta máquina ainda não manda rede e discos: a coleta chegou na Aula 12.1. Atualize o agente.</p>{{end}}
 </div>
-{{if .Items}}<section><div class="card-cab"><h2>Pendências</h2><span class="grupo-btn"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">CSV</a><a class="btn" href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></span></div>
-{{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<div class="tabela"><table>
+{{end}}
+
+{{if eq .Tab "software"}}
+<div class="card"><div class="card-cab"><h2>Software instalado</h2>{{if .Software.Collected}}<span class="muted">inventário coletado em {{.Software.Collected}}</span>{{end}}</div>
+{{if .Software.Total}}<form class="busca" method="get" action="/painel/maquinas/{{.D.MachineID}}">
+<input type="hidden" name="aba" value="software">
+<input type="search" name="q" value="{{.Software.Q}}" maxlength="100" placeholder="Nome, fabricante ou versão" aria-label="buscar software">
+<button type="submit">Buscar</button>{{if .Software.Q}} <a href="/painel/maquinas/{{.D.MachineID}}?aba=software">Limpar</a>{{end}}
+</form>
+{{if .Software.Rows}}<div class="tabela"><table>
+<thead><tr><th>Nome</th><th>Versão</th><th>Fabricante</th><th>Instalado em</th><th>Escopo</th><th>Arquitetura</th></tr></thead>
+<tbody>{{range .Software.Rows}}<tr><td>{{.Name}}{{if .Kind}} <span class="muted">· {{.Kind}}</span>{{end}}</td><td><code>{{.Version}}</code></td><td>{{.Publisher}}</td><td>{{.Installed}}</td><td>{{.Scope}}</td><td>{{.Arch}}</td></tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Software.Shown}}</span>{{if .Software.Prev}}<a href="{{.Software.Prev}}">‹ anterior</a>{{end}}{{if .Software.Next}}<a href="{{.Software.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhum software com esse filtro.</p>{{end}}
+{{else}}<p class="muted">{{if .HasInventory}}O inventário desta máquina não lista software.{{else}}Nenhum inventário recebido desta máquina.{{end}}</p>{{end}}
+</div>
+{{end}}
+
+{{if eq .Tab "pendencias"}}
+<div class="card"><div class="card-cab"><h2>Pendências</h2>{{if .Items}}<span class="grupo-btn"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/pendencias.csv">CSV</a><a class="btn" href="/api/v1/machines/{{.D.MachineID}}/compliance">JSON</a></span>{{end}}</div>
+{{if .Items}}{{if .CanUpdate}}<form method="post" action="/painel/maquinas/{{.D.MachineID}}/atualizar">{{end}}<div class="tabela"><table>
 <thead><tr>{{if .CanUpdate}}<th></th>{{end}}<th>Explorada</th><th>Item</th><th>Severidade</th><th>Instalado</th><th>Corrigido em</th><th>Observação</th></tr></thead>
 <tbody>{{range .Items}}<tr>{{if $.CanUpdate}}<td>{{if .Packages}}<input type="checkbox" name="item" value="{{.ID}}" aria-label="atualizar {{.ID}}" title="{{range $i, $p := .Packages}}{{if $i}}, {{end}}{{$p}}{{end}}">{{end}}</td>{{end}}
 <td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td><code>{{.ID}}</code></td>
@@ -593,10 +670,8 @@ var pages = template.Must(template.New("").Parse(`
 <span class="muted">Instala os pacotes binários das fontes marcadas pelo apt ou pelo dnf; o agente confere na busca dele antes, e o resultado vem da busca seguinte. Não reinicia a máquina.</span>
 </div></form>{{end}}
 {{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
-</section>{{end}}
-{{if .Links}}<section><h2>Alertas de identidade</h2><ul>
-{{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
-</ul></section>{{end}}
+{{else}}<p class="muted">Nenhuma pendência na última avaliação.</p>{{end}}
+</div>
 {{if .CanReboot}}<section><h2>Reiniciar</h2>
 <p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (Windows: aviso na tela com o prazo; Linux: mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Um administrador na máquina pode cancelar (<code>shutdown /a</code> no Windows, <code>shutdown -c</code> no Linux).</p>
 <form class="lote" method="post" action="/painel/maquinas/{{.D.MachineID}}/reiniciar">
@@ -604,21 +679,20 @@ var pages = template.Must(template.New("").Parse(`
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
 {{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
 <button type="submit">Reiniciar com aviso</button></form></section>{{end}}
-{{if .CanHTTPS}}<section><h2>Passar para HTTPS</h2>
-<p class="muted">O último check-in desta máquina chegou pela porta HTTP de transição. O job leva, assinado, o endereço <code>{{.PublicURL}}</code>; o agente entrega o resultado por ele (certificado conferido e credencial aceita) e só então grava o endereço novo. Se não der, ele continua no endereço atual e o motivo aparece no job.</p>
-<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/https"><button type="submit">Passar para HTTPS</button></form></section>{{end}}
-<section><h2>Jobs</h2>
+{{end}}
+
+{{if eq .Tab "tarefas"}}
+<div class="card"><div class="card-cab"><h2>Tarefas</h2></div>
 {{if .Admin}}{{if .JobsOn}}<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/buscar">
 <button type="submit">Buscar atualizações agora</button>
 <span class="muted">Cria um job assinado; o agente busca no próximo check-in e o resultado aparece aqui.</span></form>
 {{else}}<p class="muted">Pedir a busca pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}{{end}}
 {{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job para esta máquina.</p>{{end}}
-</section>
-{{if .Admin}}<section><h2>Aposentar</h2>
-<p class="muted">A máquina sai da frota, do compliance e do painel, e a credencial dela deixa de valer. Nada é apagado; dá para restaurar em Aposentadas.</p>
-<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/aposentar">
-<input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (ex.: registro antigo da VM reinstalada)">
-<button class="perigo" type="submit">Aposentar</button></form></section>{{end}}
+</div>
+{{if .CanHTTPS}}<section><h2>Passar para HTTPS</h2>
+<p class="muted">O último check-in desta máquina chegou pela porta HTTP de transição. O job leva, assinado, o endereço <code>{{.PublicURL}}</code>; o agente entrega o resultado por ele (certificado conferido e credencial aceita) e só então grava o endereço novo. Se não der, ele continua no endereço atual e o motivo aparece no job.</p>
+<form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/https"><button type="submit">Passar para HTTPS</button></form></section>{{end}}
+{{end}}
 {{template "fim"}}{{end}}
 
 {{define "jobs-tabela"}}<div class="tabela"><table>

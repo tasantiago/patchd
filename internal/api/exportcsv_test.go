@@ -53,7 +53,7 @@ func TestExportacaoCSV(t *testing.T) {
 	if b := pagina(h, "GET", "/painel/?estado=faltando", sessaoTeste, nil).Body.String(); !strings.Contains(b, `href="/painel/frota.csv?estado=faltando"`) {
 		t.Error("link do CSV com o filtro")
 	}
-	if b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String(); !strings.Contains(b, `href="/painel/maquinas/60ef97e4-0001/pendencias.csv"`) {
+	if b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001?aba=pendencias", sessaoTeste, nil).Body.String(); !strings.Contains(b, `href="/painel/maquinas/60ef97e4-0001/pendencias.csv"`) {
 		t.Error("link das pendências")
 	}
 }

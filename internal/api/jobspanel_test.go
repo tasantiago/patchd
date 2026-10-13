@@ -24,11 +24,11 @@ func TestBuscarAgoraPeloPainel(t *testing.T) {
 	maq := "/painel/maquinas/60ef97e4-0001"
 
 	// O admin vê o botão; o perfil leitura, não.
-	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/buscar"`) ||
+	if b := pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/buscar"`) ||
 		!strings.Contains(b, "Nenhum job para esta máquina") {
 		t.Errorf("admin:\n%s", b)
 	}
-	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, "/buscar") {
+	if b := pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String(); strings.Contains(b, "/buscar") {
 		t.Error("o perfil leitura não vê o botão")
 	}
 
@@ -129,7 +129,7 @@ func TestBuscarAgoraPeloPainel(t *testing.T) {
 func TestPainelSemChaveDeJobs(t *testing.T) {
 	h, st, _ := ambientePaginas(t)
 	maq := "/painel/maquinas/60ef97e4-0001"
-	b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String()
+	b := pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String()
 	if strings.Contains(b, "/buscar") || !strings.Contains(b, "PATCHD_JOB_SIGNING_KEY_FILE") {
 		t.Errorf("sem chave, sem botão e com a explicação:\n%s", b)
 	}
@@ -161,7 +161,7 @@ func TestAnelEJanelaNoDetalhe(t *testing.T) {
 	if _, err := jobs.Issue(ctx, st, priv, jobs.Request{MachineID: "60ef97e4-0001", Type: jobs.TypeRescan, TTL: time.Hour, By: "t", NotBefore: inicio}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String()
+	b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String()
 	for _, tr := range []string{"<dt>Anel</dt><dd>0 (piloto)</dd>", "todos 03:00-03:10 (America/Porto_Velho)", "<td>abre em 2 h 59 min</td>"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
@@ -175,12 +175,12 @@ func TestAtualizarPeloPainel(t *testing.T) {
 	ctx := context.Background()
 	maq := "/painel/maquinas/60ef97e4-0001"
 
-	b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String()
+	b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/atualizar"`) || !strings.Contains(b, `name="item" value="curl"`) ||
 		!strings.Contains(b, `title="curl, libcurl4t64"`) || strings.Contains(b, `value="janela"`) {
 		t.Errorf("admin, sem janela:\n%s", b)
 	}
-	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, `name="item"`) {
+	if b := pagina(h, "GET", maq+"?aba=pendencias", sessaoTeste, nil).Body.String(); strings.Contains(b, `name="item"`) {
 		t.Error("leitura não marca pendências")
 	}
 	pede := func(form url.Values) string {
@@ -224,7 +224,7 @@ func TestAtualizarPeloPainel(t *testing.T) {
 	_, _ = st.FinishJob(ctx, 1, jobs.StateDone, "x", time.Now().UTC())
 	pvh, _ := time.LoadLocation("America/Porto_Velho")
 	_ = st.SetWindow(ctx, 1, window.Window{Days: window.AllDays, Start: 3 * time.Hour, Duration: time.Hour, Location: pvh}, "t")
-	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="janela"`) {
+	if b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="janela"`) {
 		t.Error("com janela, a opção aparece")
 	}
 	if l := pede(url.Values{"item": {"curl"}, "quando": {"janela"}}); l != maq+"?criado=1&job=2" {
@@ -256,7 +256,7 @@ func TestReiniciarPeloPainel(t *testing.T) {
 	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
 	ctx := context.Background()
 	maq := "/painel/maquinas/60ef97e4-0001"
-	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); strings.Contains(b, "Reiniciar com aviso") {
+	if b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String(); strings.Contains(b, "Reiniciar com aviso") {
 		t.Error("sem reinício pendente, sem botão")
 	}
 	// A máquina vira Linux com reinício pendente na última busca.
@@ -264,11 +264,11 @@ func TestReiniciarPeloPainel(t *testing.T) {
 	_, _ = st.SaveInventory(ctx, "60ef97e4-0001", protocol.InventoryReport{SchemaVersion: 1, Hash: "h2", OS: protocol.OSInfo{Family: "linux", Hostname: "vm"}})
 	_ = st.SaveScan(ctx, "60ef97e4-0001", protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, Reboot: &protocol.RebootStatus{Pending: &sim}})
 
-	b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String()
+	b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/reiniciar"`) || !strings.Contains(b, `<option value="15" selected>15 min</option>`) {
 		t.Errorf("admin:\n%s", b)
 	}
-	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, "/reiniciar") {
+	if b := pagina(h, "GET", maq+"?aba=pendencias", sessaoTeste, nil).Body.String(); strings.Contains(b, "/reiniciar") {
 		t.Error("leitura não reinicia")
 	}
 	pede := func(path string, form url.Values) string {
@@ -293,7 +293,7 @@ func TestReiniciarPeloPainel(t *testing.T) {
 	win := "92fc3b93-0003"
 	_, _ = st.SaveInventory(ctx, win, protocol.InventoryReport{SchemaVersion: 1, Hash: "w", OS: protocol.OSInfo{Family: "windows"}})
 	_ = st.SaveScan(ctx, win, protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, Reboot: &protocol.RebootStatus{Pending: &sim}})
-	if b := pagina(h, "GET", "/painel/maquinas/"+win, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "/reiniciar") || !strings.Contains(b, "shutdown /a") {
+	if b := pagina(h, "GET", "/painel/maquinas/"+win+"?aba=pendencias", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "/reiniciar") || !strings.Contains(b, "shutdown /a") {
 		t.Errorf("windows:\n%s", b)
 	}
 	// Máquina sem reinício pendente (e sem família conhecida): nada é pedido.
@@ -312,7 +312,7 @@ func TestPassarParaHTTPSPeloPainel(t *testing.T) {
 	// Sem URL pública: o canal aparece, o botão não.
 	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
 	_, _ = st.CheckIn(ctx, "60ef97e4-0001", "v", "", false)
-	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "HTTP (porta de transição)") || strings.Contains(b, "/https\"") {
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "HTTP (porta de transição)") || strings.Contains(b, "/https\"") {
 		t.Errorf("sem URL pública:\n%s", b)
 	}
 	if l := local(pagina(h, "POST", maq+"/https", sessaoAdmin, url.Values{})); l != maq+"?erro=sem-url" {
@@ -320,11 +320,11 @@ func TestPassarParaHTTPSPeloPainel(t *testing.T) {
 	}
 
 	h, st, _ = ambientePaginas(t, api.WithJobKey(priv), api.WithPublicURL("https://patchd.exemplo:8443"))
-	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "nenhum check-in desde a Aula 9.2") || !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/https"`) {
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "nenhum check-in desde a Aula 9.2") || !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/https"`) {
 		t.Errorf("sem check-in ainda, o botão aparece:\n%s", b)
 	}
 	_, _ = st.CheckIn(ctx, "60ef97e4-0001", "v", "", false)
-	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); strings.Contains(b, "/https\"") {
+	if b := pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String(); strings.Contains(b, "/https\"") {
 		t.Error("leitura não pede a troca")
 	}
 	if l := local(pagina(h, "POST", maq+"/https", sessaoAdmin, url.Values{})); l != maq+"?criado=1&job=1" {
