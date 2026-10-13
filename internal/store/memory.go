@@ -35,6 +35,8 @@ type Memory struct {
 
 	approvals map[string]PatchApproval // aprovação de patches (Aula 13.1), por ApprovalKey
 
+	packages map[string]ThirdPartyPackage // instaladores de terceiros guardados (Aula 14.2)
+
 	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
 	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
 }
