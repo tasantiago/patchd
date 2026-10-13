@@ -15,9 +15,9 @@ import (
 //   - DRIVE_FIXED: sem pendrive, CD e unidade de rede mapeada (uma unidade de rede lenta
 //     travaria a chamada, e a letra mapeada é da sessão do usuário, não da máquina: o
 //     serviço roda como SYSTEM);
-//   - com partição de disco por baixo (o critério do Get-Volume): o G: do Google Drive
-//     diz DRIVE_FIXED, tem volume no gerenciador de montagem (aparece no mountvol e no
-//     Win32_Volume), mas nenhuma partição. Medido no lab da Aula 12.1c.
+//   - que dizem qual é o dispositivo por baixo (probeVolume). O G: do Google Drive diz
+//     DRIVE_FIXED, tem volume no gerenciador de montagem, responde com uma extensão e uma
+//     partição, mas não sabe dizer o dispositivo. Medido nos labs das Aulas 12.1c e 12.1d.
 func disks(ctx context.Context) ([]protocol.Disk, []error) {
 	mask, err := windows.GetLogicalDrives()
 	if err != nil {
@@ -34,7 +34,11 @@ func disks(ctx context.Context) ([]protocol.Disk, []error) {
 		}
 		letter := string(rune('A'+i)) + ":"
 		root, _ := windows.UTF16PtrFromString(letter + `\`)
-		if windows.GetDriveType(root) != windows.DRIVE_FIXED || !onDisk(letter) {
+		if windows.GetDriveType(root) != windows.DRIVE_FIXED {
+			continue
+		}
+		local, bus, model := probeVolume(letter)
+		if !local {
 			continue
 		}
 		var avail, total, totalFree uint64
@@ -43,7 +47,7 @@ func disks(ctx context.Context) ([]protocol.Disk, []error) {
 			errs = append(errs, fmt.Errorf("%s %w", letter, err))
 			continue
 		}
-		d := protocol.Disk{Mount: letter, TotalBytes: total, FreeBytes: avail}
+		d := protocol.Disk{Mount: letter, TotalBytes: total, FreeBytes: avail, Bus: bus, Model: model}
 		var fsName [windows.MAX_PATH + 1]uint16
 		if err := windows.GetVolumeInformation(root, nil, 0, nil, nil, nil, &fsName[0], uint32(len(fsName))); err == nil {
 			d.FS = windows.UTF16ToString(fsName[:])
@@ -53,33 +57,61 @@ func disks(ctx context.Context) ([]protocol.Disk, []error) {
 	return out, errs
 }
 
-// IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS: CTL_CODE(IOCTL_VOLUME_BASE 0x56, 0, METHOD_BUFFERED,
-// FILE_ANY_ACCESS). Por ser FILE_ANY_ACCESS, vale num handle aberto sem direito nenhum.
-const ioctlVolumeDiskExtents = 0x00560000
+// Códigos de controle (CTL_CODE com FILE_ANY_ACCESS: valem num handle aberto sem direito
+// nenhum, então nem o agente nem o -state precisam de administrador).
+const (
+	ioctlVolumeDiskExtents = 0x00560000 // IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS
+	ioctlStorageQuery      = 0x002D1400 // IOCTL_STORAGE_QUERY_PROPERTY
+)
 
-// onDisk diz se o volume da letra fica em partição de disco: pergunta ao volume em que
-// discos ele está (as "extensões"). Um volume de verdade responde com uma ou mais; um
-// drive virtual não sabe responder. Acesso negado conta como disco: na dúvida, o volume
+// probeVolume faz duas perguntas ao volume da letra:
+//  1. em que discos você está (as extensões): um volume de verdade tem pelo menos uma;
+//  2. qual é o dispositivo (StorageDeviceProperty): barramento e modelo do disco.
+//
+// Um volume que responde às duas é local, e o barramento e o modelo vão para o painel. O
+// drive virtual do Google Drive responde à primeira (repassando o disco onde fica o cache)
+// e falha na segunda. Um volume estendido por vários discos também não responde à segunda,
+// mas tem mais de uma extensão: fica. Acesso negado conta como local: na dúvida, o volume
 // fica (sumir com o C: de uma máquina seria pior que mostrar um drive a mais).
-func onDisk(letter string) bool {
+func probeVolume(letter string) (local bool, bus, model string) {
 	path, _ := windows.UTF16PtrFromString(`\\.\` + letter)
 	h, err := windows.CreateFile(path, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
 	if err != nil {
-		return errors.Is(err, windows.ERROR_ACCESS_DENIED)
+		return errors.Is(err, windows.ERROR_ACCESS_DENIED), "", ""
 	}
 	defer windows.CloseHandle(h)
+
 	// VOLUME_DISK_EXTENTS: o número de extensões (uint32, com alinhamento de 8) e, para
 	// cada uma, DiskNumber, StartingOffset e ExtentLength (24 bytes). Cabem 8 extensões.
-	var buf [1 + 3*8]uint64
+	var ext [1 + 3*8]uint64
 	var n uint32
-	err = windows.DeviceIoControl(h, ioctlVolumeDiskExtents, nil, 0, (*byte)(unsafe.Pointer(&buf[0])), uint32(len(buf)*8), &n, nil)
+	spanned := false
+	err = windows.DeviceIoControl(h, ioctlVolumeDiskExtents, nil, 0, (*byte)(unsafe.Pointer(&ext[0])), uint32(len(ext)*8), &n, nil)
 	switch {
 	case err == nil:
-		return uint32(buf[0]) > 0
-	case errors.Is(err, windows.ERROR_MORE_DATA): // mais de 8 discos (volume estendido)
-		return true
+		if c := uint32(ext[0]); c == 0 {
+			return false, "", ""
+		} else if c > 1 {
+			spanned = true
+		}
+	case errors.Is(err, windows.ERROR_MORE_DATA): // mais de 8 discos
+		spanned = true
 	case errors.Is(err, windows.ERROR_ACCESS_DENIED):
-		return true
+		return true, "", ""
+	default:
+		return false, "", ""
 	}
-	return false
+
+	// STORAGE_PROPERTY_QUERY{PropertyId: StorageDeviceProperty (0), QueryType:
+	// PropertyStandardQuery (0)}: 12 bytes zerados. 1 KiB de resposta, o mesmo tamanho
+	// da sonda do lab (um NVMe e um SATA responderam com ele).
+	var query [3]uint32
+	var desc [128]uint64
+	err = windows.DeviceIoControl(h, ioctlStorageQuery, (*byte)(unsafe.Pointer(&query[0])), uint32(len(query)*4),
+		(*byte)(unsafe.Pointer(&desc[0])), uint32(len(desc)*8), &n, nil)
+	if err != nil {
+		return spanned || errors.Is(err, windows.ERROR_ACCESS_DENIED), "", ""
+	}
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&desc[0])), len(desc)*8)[:min(int(n), len(desc)*8)]
+	return true, busName(le32(b, 28)), descString(b, int(le32(b, 16)))
 }

@@ -27,6 +27,7 @@ type ifRow struct {
 
 type diskRow struct {
 	Mount, FS, Device, Total, Free string
+	Model, Bus                     string
 	Pct                            int    // ocupado, de 0 a 100
 	Level                          string // "", "alto" (≥ 80 %), "cheio" (≥ 90 %)
 }
@@ -64,7 +65,7 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 			IPv6: dash(strings.Join(n.IPv6, ", ")), Up: n.Up, LocalMAC: n.LocalMAC})
 	}
 	for _, d := range s.Disks {
-		row := diskRow{Mount: d.Mount, FS: dash(d.FS), Device: d.Device, Total: bytesLabel(d.TotalBytes), Free: bytesLabel(d.FreeBytes)}
+		row := diskRow{Mount: d.Mount, FS: dash(d.FS), Device: d.Device, Model: d.Model, Bus: d.Bus, Total: bytesLabel(d.TotalBytes), Free: bytesLabel(d.FreeBytes)}
 		if d.TotalBytes > 0 {
 			row.Pct = int((d.TotalBytes - d.FreeBytes) * 100 / d.TotalBytes)
 		}

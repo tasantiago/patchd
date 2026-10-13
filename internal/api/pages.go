@@ -535,7 +535,7 @@ var pages = template.Must(template.New("").Parse(`
 </dl>
 {{if .Host.Disks}}<h3>Discos</h3><div class="tabela"><table>
 <thead><tr><th>Volume</th><th>Sistema de arquivos</th><th>Tamanho</th><th>Livre</th><th>Ocupado</th></tr></thead>
-<tbody>{{range .Host.Disks}}<tr><td><code>{{.Mount}}</code>{{if .Device}} <span class="muted">{{.Device}}</span>{{end}}</td><td>{{.FS}}</td><td class="num">{{.Total}}</td><td class="num">{{.Free}}</td>
+<tbody>{{range .Host.Disks}}<tr><td><code>{{.Mount}}</code>{{if .Device}} <span class="muted">{{.Device}}</span>{{end}}{{if .Model}} <span class="muted">{{.Model}}{{if .Bus}} · {{.Bus}}{{end}}</span>{{end}}</td><td>{{.FS}}</td><td class="num">{{.Total}}</td><td class="num">{{.Free}}</td>
 <td><span class="uso {{.Level}}" role="img" aria-label="{{.Pct}}% ocupado"><span style="width:{{.Pct}}%"></span></span> {{.Pct}}%</td></tr>{{end}}</tbody></table></div>{{end}}
 {{if .Host.Ifs}}<h3>Interfaces</h3><div class="tabela"><table>
 <thead><tr><th>Interface</th><th>Estado</th><th>MAC</th><th>IPv4</th><th>IPv6</th></tr></thead>

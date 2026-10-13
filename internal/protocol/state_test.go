@@ -33,16 +33,17 @@ func TestCheckEstado(t *testing.T) {
 		return l
 	}
 	casos := map[string]func(*MachineState){
-		"sem data":           func(s *MachineState) { s.CollectedAt = time.Time{} },
-		"MAC torto":          func(s *MachineState) { s.Interfaces[0].MAC = "02:42:zz" },
-		"IPv4 sem prefixo":   func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"192.0.2.10"} },
-		"IPv6 na lista v4":   func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"2001:db8::1/64"} },
-		"IPv4 na lista v6":   func(s *MachineState) { s.Interfaces[1].IPv6 = []string{"192.0.2.1/24"} },
-		"interface sem nome": func(s *MachineState) { s.Interfaces[0].Name = "" },
-		"nome com controle":  func(s *MachineState) { s.Interfaces[0].Name = "eth0\x1b[31m" },
-		"montagem enorme":    func(s *MachineState) { s.Disks[0].Mount = "/" + strings.Repeat("a", 300) },
-		"livre > total":      func(s *MachineState) { s.Disks[0].FreeBytes = 101 },
-		"interfaces demais":  func(s *MachineState) { s.Interfaces = muitas(MaxStateInterfaces + 1) },
+		"sem data":            func(s *MachineState) { s.CollectedAt = time.Time{} },
+		"MAC torto":           func(s *MachineState) { s.Interfaces[0].MAC = "02:42:zz" },
+		"IPv4 sem prefixo":    func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"192.0.2.10"} },
+		"IPv6 na lista v4":    func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"2001:db8::1/64"} },
+		"IPv4 na lista v6":    func(s *MachineState) { s.Interfaces[1].IPv6 = []string{"192.0.2.1/24"} },
+		"interface sem nome":  func(s *MachineState) { s.Interfaces[0].Name = "" },
+		"nome com controle":   func(s *MachineState) { s.Interfaces[0].Name = "eth0\x1b[31m" },
+		"montagem enorme":     func(s *MachineState) { s.Disks[0].Mount = "/" + strings.Repeat("a", 300) },
+		"livre > total":       func(s *MachineState) { s.Disks[0].FreeBytes = 101 },
+		"modelo com controle": func(s *MachineState) { s.Disks[0].Model = "WDC\x00" },
+		"interfaces demais":   func(s *MachineState) { s.Interfaces = muitas(MaxStateInterfaces + 1) },
 	}
 	for nome, muda := range casos {
 		s := estadoValido()
