@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/repocache"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // serverConfig é a configuração efetiva do servidor, depois de aplicar padrão, ambiente e flags.
@@ -51,6 +52,8 @@ type serverConfig struct {
 	// por PATCHD_METRICS_TOKEN ou PATCHD_METRICS_TOKEN_FILE.
 	MetricsListenAddr string
 	MetricsToken      string
+	// Retention (Aula 10.5): os cortes da limpeza do banco.
+	Retention store.Retention
 }
 
 // TLS diz se o servidor atende HTTPS.
@@ -193,6 +196,11 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		problems = append(problems, err)
 	}
 
+	if r, err := retentionConfig(look); err != nil {
+		problems = append(problems, err)
+	} else {
+		cfg.Retention = r
+	}
 	if addr, token, err := metricsConfig(look, cfg.ListenAddr, cfg.HTTPListenAddr); err != nil {
 		problems = append(problems, err)
 	} else {

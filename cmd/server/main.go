@@ -82,6 +82,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "campaign" {
 		return runCampaign(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "retention" {
+		return runRetention(args[1:], look, stdout, stderr)
+	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
@@ -164,9 +167,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	var apiOpts []api.Option
 	// Métricas (Aula 10.2): registradas só com a porta configurada.
 	var reg *metrics.Registry
+	var retDeleted *metrics.CounterVec
 	if cfg.MetricsListenAddr != "" {
 		reg = metrics.NewRegistry()
 		apiOpts = append(apiOpts, api.WithMetrics(api.NewMetrics(reg)))
+		retDeleted = reg.NewCounter("patchd_retencao_apagados_total", "Linhas antigas apagadas pela retenção, por tabela (Aula 10.5).", "tabela")
 	}
 	// Login pelo AD (Aula 7.3): a configuração já foi validada em loadServerConfig.
 	adCfg, adOn, _ := adConfig(look)
@@ -221,8 +226,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		apiOpts = append(apiOpts, api.WithPublicURL(cfg.PublicURL))
 		logger.Info("URL pública anunciada nos jobs server_url (botão \"Passar para HTTPS\" no painel)", "public_url", cfg.PublicURL)
 	}
-	if p, ok := st.(scanPruner); ok {
-		go pruneScansLoop(ctx, logger, p)
+	if p, ok := st.(pruner); ok {
+		logger.Info("retenção: " + describeRetention(cfg.Retention) + "; aplicada de hora em hora (patchd-server retention mostra antes)")
+		go retentionLoop(ctx, logger, p, cfg.Retention, retDeleted)
 	}
 	switch pg, ok := st.(*store.Postgres); {
 	case !ok:

@@ -100,6 +100,10 @@ func (b *bancoDasMetricas) LastBackup(ctx context.Context) (store.BackupRun, boo
 	return store.BackupRun{FinishedAt: time.Unix(1_790_090_000, 0), File: "patchd-20260912T023000Z.dump.age", Bytes: 4_500_000, Encrypted: true}, true, nil
 }
 
+func (b *bancoDasMetricas) TableSizes(ctx context.Context) (map[string]int64, int64, error) {
+	return map[string]int64{"inventory_reports": 3 << 20, "jobs": 64 << 10}, 9 << 20, nil
+}
+
 type frotaDasMetricas struct{}
 
 func (frotaDasMetricas) Fleet(ctx context.Context) (protocol.ComplianceFleet, error) {
@@ -137,6 +141,7 @@ func TestMedidores(t *testing.T) {
 		`patchd_catalog_last_success_timestamp_seconds{fonte="msrc"} 1790000000`,
 		`patchd_catalog_last_run_ok{fonte="msrc"} 1`, `patchd_catalog_last_run_ok{fonte="ubuntu"} 0`,
 		"# TYPE patchd_machines gauge",
+		`patchd_db_bytes 9437184`, `patchd_db_table_bytes{tabela="inventory_reports"} 3145728`, `patchd_db_table_bytes{tabela="jobs"} 65536`,
 		`patchd_backup_last_success_timestamp_seconds 1790090000`, `patchd_backup_last_size_bytes 4500000`, `patchd_backup_last_encrypted 1`,
 	} {
 		if !strings.Contains(texto, linha+"\n") {
