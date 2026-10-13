@@ -41,6 +41,12 @@ type pageBase struct {
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
 	s, _ := SessionFrom(r.Context())
+	return baseFor(s, title, nav)
+}
+
+// baseFor: a base de uma página montada por uma ação de admin (a sessão vem do
+// adminAction, não do contexto).
+func baseFor(s panel.Session, title, nav string) pageBase {
 	return pageBase{Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav}
 }
 
@@ -444,7 +450,7 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}code{font-size:.88em}
 .contagens a{display:block;padding:.45rem .8rem;border:1px solid var(--line);border-radius:.5rem;text-decoration:none;color:var(--fg)}
 .contagens a.ativo{outline:2px solid var(--fg)}.contagens b{font-size:1.15rem;margin-right:.35rem}
 .motivos{margin:.2rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.85rem}
-.aviso{padding:.6rem .8rem;border-radius:.4rem;margin:0 0 1rem}.ok{background:#e8f5ec}.erro{background:#fdecea;color:#8a1c12}
+.aviso{padding:.6rem .8rem;border-radius:.4rem;margin:0 0 1rem}.ok{background:#e8f5ec}.erro{background:#fdecea;color:#8a1c12}.atencao{background:#fff4e0;color:#7a4a00}
 dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1.2rem;margin:0 0 1.5rem}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0}
 .expl{color:#8a1c12;font-weight:600}.muted{color:var(--muted)}section{margin-top:1.75rem}h2{font-size:1.05rem;margin:0 0 .6rem}
 form.acao{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form.acao input{flex:1 1 20rem;padding:.4rem}
@@ -568,12 +574,76 @@ form.grade{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem;ali
 
 {{define "campanhas"}}{{template "topo" .}}
 <h1>Campanhas</h1>
-<p class="muted">O mesmo pedido passando pelos anéis em ordem: o anel seguinte é liberado pelo servidor quando o atual termina sem falha e o tempo de observação passa. Criar, pausar, retomar e cancelar: <code>patchd-server campaign</code>.</p>
+<p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir.</p>
 {{if .Rows}}<table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Fontes</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
+<tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}
+{{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
+{{if .CanNew}}<section><h2>Nova campanha</h2>
+<form class="grade" method="post" action="/painel/campanhas/nova">
+<label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro">
+<span>Tipo</span><span><label><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}> buscar atualizações</label>
+<label><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}> atualizar pacotes (Linux)</label></span>
+<label for="fontes">Fontes</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="só no update: pacotes fonte das pendências, ex.: curl, bluez">
+<span>Anéis</span><span>{{range .Form.Rings}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label><br>{{end}}</span>
+<label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<span>Quando</span><span><label><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}> com prazo de</label>
+<select name="prazo" aria-label="prazo">{{range .Form.TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}> na janela de cada anel</label></span>
+<span></span><span><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></span>
+</form></section>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "campanha-conferir"}}{{template "topo" .}}
+<h1>Conferir a campanha</h1>
+<dl class="dados">
+<dt>Nome</dt><dd>{{.Form.Name}}</dd>
+<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · fontes: {{.SourcesList}}{{end}}</dd>
+<dt>Quando</dt><dd>{{.When}}</dd>
+<dt>Observação</dt><dd>{{.ObserveL}} depois de cada anel concluído</dd>
+</dl>
+<table><thead><tr><th>Ordem</th><th>Anel</th><th>Máquinas agora</th><th>Janela</th><th></th></tr></thead>
+<tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td><td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table>
+{{range .Warnings}}<p class="aviso atencao">{{.}}</p>{{end}}
+<p>Ao criar, o servidor libera o primeiro anel no próximo minuto: os jobs vão para máquinas de verdade.</p>
+<form class="lote" method="post" action="/painel/campanhas/nova">
+<input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
+<input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}">
+<input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
+{{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
+<button type="submit" name="confirmar" value="1">Criar campanha</button>
+<button type="submit" name="corrigir" value="1">Corrigir</button>
+</form>
+{{template "fim"}}{{end}}
+
+{{define "campanha"}}{{template "topo" .}}
+<p><a href="/painel/campanhas">← Campanhas</a></p>
+<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
+<dl class="dados">
+<dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
+<dt>Fontes</dt><dd>{{.Sources}}</dd>
+<dt>Quando</dt><dd>{{.When}}</dd>
+<dt>Observação</dt><dd>{{.Observe}}</dd>
+<dt>Detalhe</dt><dd>{{if .C.Detail}}{{.C.Detail}}{{else}}—{{end}}</dd>
+<dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
+</dl>
+{{if or .CanPause .CanResume .CanCancel}}<div class="lote">
+{{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button type="submit">Pausar</button></form>{{end}}
+{{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do anel atual)</button></form>{{end}}
+{{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button type="submit">Cancelar a campanha</button></form>{{end}}
+<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}
+{{range .Rings}}<section><h2>Anel {{.Ring}}{{if .Current}} (atual){{end}}</h2>
+{{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
+{{if .Jobs}}<table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th><th>Estado</th><th>Detalhe</th></tr></thead>
+<tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
+<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table>{{end}}</section>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "campanha-nao-encontrada"}}{{template "topo" .}}
+<h1>Campanha não encontrada</h1>
+<p><a href="/painel/campanhas">Voltar às campanhas</a>.</p>
 {{template "fim"}}{{end}}
 
 {{define "aneis"}}{{template "topo" .}}
