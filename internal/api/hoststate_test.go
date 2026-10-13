@@ -74,7 +74,7 @@ func TestCheckinGravaEstado(t *testing.T) {
 
 func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 	h, st, _ := ambientePaginas(t)
-	b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String()
+	b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001?aba=hardware", sessaoTeste, nil).Body.String()
 	if !strings.Contains(b, "<h2>Rede e discos</h2>") || !strings.Contains(b, "ainda não manda rede e discos") {
 		t.Errorf("sem estado: a página diz que falta atualizar o agente")
 	}
@@ -83,7 +83,7 @@ func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 	if err := st.SaveHostState(context.Background(), "60ef97e4-0001", estadoTeste(), "203.0.113.9"); err != nil {
 		t.Fatal(err)
 	}
-	b = pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String()
+	b = pagina(h, "GET", "/painel/maquinas/60ef97e4-0001?aba=hardware", sessaoTeste, nil).Body.String()
 	for _, tr := range []string{
 		"<dt>IP principal</dt><dd>192.0.2.1</dd>",
 		"203.0.113.9 <span class=\"muted\">· não é de nenhuma interface da máquina",
@@ -101,7 +101,7 @@ func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 
 	// Visto do próprio endereço da máquina.
 	_ = st.SaveHostState(context.Background(), "60ef97e4-0001", nil, "192.0.2.1")
-	if b = pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String(); !strings.Contains(b, "endereço de uma interface da máquina") {
+	if b = pagina(h, "GET", "/painel/maquinas/60ef97e4-0001?aba=hardware", sessaoTeste, nil).Body.String(); !strings.Contains(b, "endereço de uma interface da máquina") {
 		t.Error("check-in vindo de uma interface da máquina")
 	}
 }
