@@ -134,3 +134,22 @@ func TestSortSoftwareEstavel(t *testing.T) {
 		t.Errorf("ordem inesperada: %+v", lista)
 	}
 }
+
+// O bundle do Burn e o MSI que ele instalou, como medidos no PowerShell 7 (Aula 14.3).
+func TestSoftwareFromUninstallBundle(t *testing.T) {
+	maquina32 := uninstallLocation{Path: `HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall`, Scope: "machine", Arch: "x86"}
+	b, _ := softwareFromUninstall(uninstallEntry{KeyName: "{0cd7cb36-56f0-49ff-8be2-1250c8660c0d}", DisplayName: "PowerShell 7.6.6.0-x64",
+		DisplayVersion: "7.6.6.0", BundleUpgradeCode: " {aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb} "}, maquina32)
+	if b.BundleUpgradeCode != "{AAAAAAAA-1111-2222-3333-BBBBBBBBBBBB}" || b.ProductCode != "" || b.SystemComponent {
+		t.Errorf("bundle: %+v", b)
+	}
+	m, _ := softwareFromUninstall(uninstallEntry{KeyName: "{11111111-2222-3333-4444-555555555555}", DisplayName: "PowerShell 7-x64",
+		DisplayVersion: "7.6.6.0", WindowsInstaller: 1, SystemComponent: 1}, maquina64)
+	if m.ProductCode == "" || !m.SystemComponent || m.BundleUpgradeCode != "" {
+		t.Errorf("MSI do bundle: %+v", m)
+	}
+	// Valor fora do formato não marca bundle.
+	if x, _ := softwareFromUninstall(uninstallEntry{KeyName: "X", DisplayName: "X", BundleUpgradeCode: "lixo"}, maquina64); x.BundleUpgradeCode != "" {
+		t.Errorf("código inválido: %+v", x)
+	}
+}
