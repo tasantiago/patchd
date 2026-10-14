@@ -112,10 +112,24 @@ func TestCodigosDeSaida(t *testing.T) {
 		{"chrome: 3010 do Windows Installer, sem declarar", chrome, 3010, OutcomeReboot},
 		{"chrome 1603", chrome, 1603, OutcomeFailed},
 		{"firefox: 3010 não é do NSIS", firefox, 3010, OutcomeFailed},
+		{"firefox: 1 do NSIS (Cancel)", firefox, 1, OutcomeFailed},
+		{"inno sem códigos: 5 é arquivo em uso (job 33)", Installer{Type: "inno"}, 5, OutcomeRetry},
+		{"inno 8: reiniciar antes de instalar", Installer{Type: "inno"}, 8, OutcomeRetry},
+		{"inno 4: erro fatal", Installer{Type: "inno"}, 4, OutcomeFailed},
+		{"inno: o manifesto manda", Installer{Type: "inno", ReturnCodes: map[int]string{5: "contactSupport"}}, 5, OutcomeFailed},
+		{"exe: sem padrão", Installer{Type: "exe"}, 5, OutcomeFailed},
 	} {
 		if got, _ := c.in.Outcome(c.code); got != c.result {
 			t.Errorf("%s: %s; esperava %s", c.nome, got, c.result)
 		}
+	}
+	for code, want := range map[int]string{5: "fileInUse", 3: "installError", 9: "código 9 sem significado no manifesto"} {
+		if _, resp := (Installer{Type: "inno"}).Outcome(code); resp != want {
+			t.Errorf("inno %d: %q", code, resp)
+		}
+	}
+	if _, resp := firefox.Outcome(2); resp != "abortedByScript" {
+		t.Errorf("nsis 2: %q", resp)
 	}
 }
 

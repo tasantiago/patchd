@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -119,8 +120,12 @@ func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey
 	if p.Signer != "" {
 		signer = "exigida: " + p.Signer
 	}
-	fmt.Fprintf(stdout, "job %d criado para a máquina %s: %s %s → %s · %s · %s\n  arquivo     %s (%s bytes)\n  argumentos  %v\n  assinatura  %s\n  prazo       %s\n",
+	fmt.Fprintf(stdout, "job %d criado para a máquina %s: %s %s → %s · %s · %s\n  arquivo     %s (%s bytes)\n  argumentos  %v\n  assinatura  %s\n",
 		rec.ID, short(id), d.App.Name, d.Installed, p.Version, p.Installer, d.Package.Architecture, d.Package.SHA256[:12]+"…",
-		strconv.FormatInt(p.Size, 10), p.Args, signer, rec.NotAfter.Local().Format("02/01/2006 15:04"))
+		strconv.FormatInt(p.Size, 10), p.Args, signer)
+	if len(p.Processes) > 0 {
+		fmt.Fprintf(stdout, "  em uso      não instala com %s aberto (agente v0.14.2 ou mais novo)\n", strings.Join(p.Processes, ", "))
+	}
+	fmt.Fprintf(stdout, "  prazo       %s\n", rec.NotAfter.Local().Format("02/01/2006 15:04"))
 	return exitOK
 }

@@ -40,12 +40,19 @@ type ThirdPartyParams struct {
 	// Signer: a organização (O=) do certificado que tem de assinar o instalador. Vazio: o
 	// agente confere e informa a assinatura, mas não exige (o SHA-256 é a garantia).
 	Signer string `json:"signer,omitempty"`
+	// Processes (Aula 14.6b): executáveis do programa (Code.exe). Com algum deles rodando,
+	// em qualquer sessão, o agente não executa o instalador: substituir arquivo em uso
+	// termina em Abort (o código 5 do Inno no job 33), e fechar o programa do usuário
+	// perderia o trabalho dele. Vazio: não confere (agentes até a v0.14.1 recusam o campo).
+	Processes []string `json:"processes,omitempty"`
 }
 
 const (
 	maxArgs          = 32
 	maxInstallerSize = 2 << 30
 	maxReturnCodes   = 64
+	// MaxProcesses: quantos executáveis uma regra pode listar.
+	MaxProcesses = 8
 )
 
 var (
@@ -55,7 +62,11 @@ var (
 	argToken     = regexp.MustCompile(`^[A-Za-z0-9/_.=!+-]{1,128}$`)
 	msiProperty  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_.]{0,63})=([A-Za-z0-9_.!+-]{0,64})$`)
 	responseName = regexp.MustCompile(`^[A-Za-z]{1,40}$`)
+	processName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,59}\.[Ee][Xx][Ee]$`)
 )
+
+// ValidProcess: o nome de um executável, sem pasta (Code.exe, soffice.bin não serve).
+func ValidProcess(name string) bool { return processName.MatchString(name) }
 
 // msiSwitches: as únicas opções do msiexec que o job pode pedir. O /i, o arquivo e o log
 // são do agente; /x, /a, /f, /p, /j, /y fariam outra coisa que não instalar este arquivo.
@@ -97,6 +108,13 @@ func (p ThirdPartyParams) Validate() error {
 		return fmt.Errorf("mais de %d códigos de saída", maxReturnCodes)
 	case len(p.Signer) > 128 || strings.IndexFunc(p.Signer, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0:
 		return errors.New("assinante inválido")
+	case len(p.Processes) > MaxProcesses:
+		return fmt.Errorf("mais de %d processos", MaxProcesses)
+	}
+	for _, n := range p.Processes {
+		if !ValidProcess(n) {
+			return fmt.Errorf("processo %q inválido (o nome do executável, sem pasta: Code.exe)", n)
+		}
 	}
 	for _, a := range p.Args {
 		if err := checkArg(p.Installer, a); err != nil {

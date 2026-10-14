@@ -376,22 +376,59 @@ var msiCodes = map[int]string{
 	1638: "alreadyInstalled",
 }
 
+// Códigos padrão do Inno Setup (Aula 14.6b; ajuda do Inno, "Setup Exit Codes"), para
+// quando o manifesto não declara o código: o do VS Code não declara nenhum. O 5 é "Cancel
+// durante a instalação, ou Abort numa caixa Abort-Retry-Ignore"; em /VERYSILENT ninguém
+// clica em Cancel, e com /SUPPRESSMSGBOXES o Abort é a resposta padrão quando um arquivo
+// não pode ser substituído. Medido no job 33: 16 Code.exe abertos na sessão do usuário, o
+// Restart Manager não os fechou (Application SID does not match Conductor SID) e o
+// instalador saiu com 5, sem mudar a versão. O 8 é "não pode prosseguir sem reiniciar":
+// nada foi instalado.
+var innoCodes = map[int]string{
+	1: "setupInitFailed",
+	2: "cancelledByUser",
+	3: "installError",
+	4: "installError",
+	5: "fileInUse",
+	7: "setupCannotProceed",
+	8: "rebootRequiredForInstall",
+}
+
+// Códigos padrão do NSIS (manual do NSIS, apêndice D): 1, Cancel; 2, abortado pelo script.
+var nsisCodes = map[int]string{1: "cancelledByUser", 2: "abortedByScript"}
+
+// defaultCodes: os códigos que valem para o tipo quando o manifesto não declara.
+func (in Installer) defaultCodes() map[int]string {
+	switch {
+	case in.UsesMsiexec() || in.Type == "burn":
+		return msiCodes
+	case in.Type == "inno":
+		return innoCodes
+	case in.Type == "nullsoft":
+		return nsisCodes
+	}
+	return nil
+}
+
 // Outcome classifica o código de saída: 0 é sucesso; os demais, pela resposta que o
-// manifesto (ou o Windows Installer) dá a eles.
+// manifesto dá a eles, ou pelo padrão do tipo (Windows Installer, Inno, NSIS).
+//
+// rebootRequiredForInstall (Aula 14.6b) deixou de ser "reiniciar": é reiniciar ANTES de
+// instalar, e nada foi instalado. Vai para tentar depois, com o motivo.
 func (in Installer) Outcome(code int) (string, string) {
 	if code == 0 {
 		return OutcomeOK, ""
 	}
 	resp, ok := in.ReturnCodes[code]
-	if !ok && (in.UsesMsiexec() || in.Type == "burn") {
-		resp = msiCodes[code]
+	if !ok {
+		resp = in.defaultCodes()[code]
 	}
 	switch resp {
 	case "success":
 		return OutcomeOK, resp
-	case "rebootRequiredToFinish", "rebootRequiredForInstall", "rebootInitiated":
+	case "rebootRequiredToFinish", "rebootInitiated":
 		return OutcomeReboot, resp
-	case "installInProgress", "packageInUse", "packageInUseByApplication":
+	case "installInProgress", "packageInUse", "packageInUseByApplication", "fileInUse", "rebootRequiredForInstall":
 		return OutcomeRetry, resp
 	case "":
 		return OutcomeFailed, "código " + strconv.Itoa(code) + " sem significado no manifesto"
