@@ -508,6 +508,7 @@ var pages = template.Must(template.New("").Parse(`
 <a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}><span class="ic">🎯</span>Campanhas</a>
 <a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}><span class="ic">🔁</span>Anéis</a>
 <a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}><span class="ic">📦</span>Aposentadas</a>
+{{if .Admin}}<a href="/painel/configuracao" {{if eq .Nav "configuracao"}}class="ativo" aria-current="page"{{end}}><span class="ic">⚙️</span>Configuração</a>{{end}}
 <form method="post" action="/painel/sair"><button type="submit" title="Sair"><span class="ic">🔓</span>Sair</button></form>
 </nav>
 <span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}</span>
@@ -580,6 +581,41 @@ var pages = template.Must(template.New("").Parse(`
 {{template "fim"}}{{end}}
 
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
+
+{{define "configuracao"}}{{template "topo" .}}
+<h1>Configuração</h1>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a></nav>
+{{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: a configuração fica no ambiente (.env) e nos arquivos de segredo</span></div>
+<dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl></div>{{end}}
+{{if eq .Tab "agente"}}<div class="card"><div class="card-cab"><h2>Executáveis{{if .Version}} da versão {{.Version}}{{end}}</h2><span class="muted">a versão publicada, a mesma que os agentes recebem na atualização</span></div>
+{{if .Files}}<div class="tabela"><table><thead><tr><th>Sistema</th><th>Arquitetura</th><th>Arquivo</th><th>Tamanho</th><th>SHA-256</th></tr></thead>
+<tbody>{{range .Files}}<tr><td>{{.OS}}</td><td>{{.Arch}}</td><td><a href="{{.Href}}"><code>{{.Name}}</code></a></td><td class="num">{{.Size}}</td><td><code>{{.SHA}}…</code></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">{{.FilesNote}}</p>{{end}}</div>
+<div class="card"><div class="card-cab"><h2>CA do servidor</h2></div>
+{{if .CA}}<p><a class="btn" href="/painel/configuracao/agente/ca.crt">Baixar ca.crt</a> <span class="muted">SHA-256 <code>{{.CASHA}}…</code>. As máquinas confiam só nela para falar com o servidor (-ca-file).</span></p>
+{{else}}<p class="muted">Sem PATCHD_AGENT_CA_FILE: o comando de instalação sai sem -ca-file e o agente usa as CAs do sistema. Para uma CA interna, aponte PATCHD_AGENT_CA_FILE para o PEM dela.</p>{{end}}</div>
+<div class="card"><div class="card-cab"><h2>Tokens de registro</h2><span class="muted">os mesmos do patchd-server token</span></div>
+<form class="grade" method="post" action="/painel/configuracao/agente/token">
+<label for="nota">Descrição</label><input id="nota" name="nota" maxlength="{{.MaxNote}}" placeholder="ex.: laboratório da SEAT, outubro">
+<label for="validade">Validade</label><select id="validade" name="validade">{{range .TTLs}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label for="usos">Máquinas</label><input id="usos" name="usos" type="number" min="1" max="{{.MaxUses}}" value="1">
+<span></span><span><button type="submit">Criar token</button> <span class="muted">O token aparece uma única vez, com o comando de instalação. Prazo curto e poucos usos limitam o estrago de um vazamento.</span></span>
+</form>
+{{if .Tokens}}<div class="tabela"><table><thead><tr><th>ID</th><th>Descrição</th><th>Criado</th><th>Vence</th><th>Usos</th><th>Estado</th><th></th></tr></thead>
+<tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{.MaxUses}}</td><td>{{.Status}}</td>
+<td>{{if .CanRevoke}}<form class="inline" method="post" action="/painel/configuracao/agente/token/{{.ID}}/revogar"><button class="perigo" type="submit">Revogar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum token criado.</p>{{end}}</div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "token-criado"}}{{template "topo" .}}
+<p><a href="/painel/configuracao?aba=agente">← Configuração › Agente</a></p>
+<h1>Token de registro {{.ID}}</h1>
+<p class="aviso atencao">Guarde agora: o token não será mostrado de novo. Vale até {{.Expires}}, para {{.Uses}} máquina(s){{if .Note}} ({{.Note}}){{end}}.</p>
+<div class="card"><div class="card-cab"><h2>Token</h2></div><pre class="comando">{{.Token}}</pre></div>
+<div class="card"><div class="card-cab"><h2>Windows</h2><span class="muted">{{if .Version}}patchd-agent {{.Version}} · {{end}}baixe o executável{{if .CA}} e o ca.crt{{end}} em Configuração › Agente</span></div><pre class="comando">{{.WinCommand}}</pre></div>
+<div class="card"><div class="card-cab"><h2>Linux</h2></div><pre class="comando">{{.LinCommand}}</pre></div>
+<p class="muted">O token vai num arquivo temporário apagado em seguida: na linha de comando ele ficaria no histórico e na lista de processos. O install é repetível: rodar de novo na mesma máquina não gasta outro uso.</p>
+{{template "fim"}}{{end}}
 
 {{define "patch-geral"}}{{template "topo" .}}
 <h1>Patch <span class="muted">› Visão geral</span></h1>

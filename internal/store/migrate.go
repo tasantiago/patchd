@@ -64,6 +64,16 @@ func loadMigrations(fsys fs.FS, dir string) ([]migration, error) {
 	return list, nil
 }
 
+// SchemaVersion é a migração mais nova que este binário conhece (Aula 15.2): depois do
+// Migrate da partida, é a do banco.
+func SchemaVersion() int {
+	list, err := loadMigrations(migrationFiles, "migrations")
+	if err != nil || len(list) == 0 {
+		return 0
+	}
+	return list[len(list)-1].version
+}
+
 // Migrate aplica as migrations pendentes, cada uma na sua transação, e registra cada
 // uma em schema_migrations com o SHA-256 do arquivo. Recusa seguir se uma migration já
 // aplicada foi editada ou se o banco está numa versão que este binário não conhece.

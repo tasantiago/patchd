@@ -302,6 +302,17 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		apiOpts = append(apiOpts, api.WithReleases(release.Dir(cfg.ReleasesDir), info.Version))
 		logReleases(logger, release.Dir(cfg.ReleasesDir), info.Version)
 	}
+	// Configuração › Sistema e › Agente (Aula 15.2).
+	apiOpts = append(apiOpts, api.WithSystemInfo(systemInfo(info, cfg, st, certs)))
+	if path, _ := look("PATCHD_AGENT_CA_FILE"); path != "" {
+		pem, n, err := loadAgentCA(path)
+		if err != nil {
+			logger.Error("PATCHD_AGENT_CA_FILE", "error", err)
+			return exitConfig
+		}
+		apiOpts = append(apiOpts, api.WithAgentCA(pem))
+		logger.Info("CA do servidor oferecida em Configuração › Agente", "certificados", n)
+	}
 	var repo http.Handler
 	if cfg.RepoCacheDir != "" {
 		c, err := repocache.New(cfg.RepoCacheDir, cfg.RepoCacheHosts, "patchd-server/"+info.Version, logger)
