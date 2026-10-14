@@ -30,6 +30,7 @@ type tpVersionRow struct {
 	Approved                     bool
 	ApprovedBy, ApprovedAt, Note string
 	CanApprove, CanRevoke        bool
+	CampaignHref                 string // aprovada, admin e chave de jobs: o formulário da campanha já preenchido (Aula 14.8)
 }
 
 // installRule: a regra do Windows com install, se houver.
@@ -78,6 +79,9 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 				row.Approved, row.ApprovedBy, row.ApprovedAt, row.Note = true, ap.ApprovedBy, a.stamp(ap.ApprovedAt), ap.Note
 			}
 			row.CanApprove, row.CanRevoke = v.Admin && !row.Approved, v.Admin && row.Approved
+			if row.Approved && v.Admin && a.jobKey != nil {
+				row.CampaignHref = "/painel/campanhas?" + url.Values{"tipo": {"thirdparty"}, "programa": {p.AppID + " " + p.Version}}.Encode() + "#nova"
+			}
 			byVersion[p.Version] = row
 		}
 		row.Packages = append(row.Packages, tpPackageRow{Type: p.Type, Arch: p.Architecture, Size: pkgcache.Bytes(p.Size),

@@ -185,7 +185,7 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 			if c.State != StateRunning { // o lançamento pausou (anel sem janela, versão não pronta)
 				return e.save(ctx, c)
 			}
-			note := ringNote(c.Ring(), n, out)
+			note := RingNote(c.Ring(), n, out)
 			c.Notes = append(slices.Clone(c.Notes), note)
 			e.log(c, "anel liberado", "anel", c.Ring(), "jobs", n, "resumo", note)
 		}
@@ -329,8 +329,8 @@ func (e *Engine) launch(ctx context.Context, c *Campaign, now time.Time) (create
 	return created, out, nil
 }
 
-// ringNote resume a liberação de um anel: "anel 0: 1 job; fora: 1 em dia, 2 sem o programa".
-func ringNote(ring, created int, out map[string]int) string {
+// RingNote resume a liberação de um anel: "anel 0: 1 job; fora: 1 em dia, 2 sem o programa".
+func RingNote(ring, created int, out map[string]int) string {
 	s := fmt.Sprintf("anel %d: %d job(s)", ring, created)
 	if len(out) == 0 {
 		return s

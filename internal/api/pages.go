@@ -615,7 +615,7 @@ var pages = template.Must(template.New("").Parse(`
 <thead><tr><th>Versão</th><th>Instaladores</th><th>Aprovação</th></tr></thead>
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td>
 <td>{{range .Packages}}<div>{{.Type}} · {{.Arch}} · {{.Size}} · <code>{{.SHA}}</code> <span class="muted">{{.Fetched}}</span></div>{{end}}</td>
-<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
+<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CampaignHref}} <a class="btn" href="{{.CampaignHref}}">Campanha por anel</a>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
 {{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum instalador guardado. No servidor: <code>patchd-server package fetch -app {{.P.AppID}}</code>.</p>{{end}}
 {{if not .Admin}}<p class="muted">Aprovar exige o perfil admin.</p>{{end}}
@@ -881,11 +881,14 @@ var pages = template.Must(template.New("").Parse(`
 <td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
-{{if .CanNew}}<section><h2>Nova campanha</h2>
+{{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
 <form class="grade" method="post" action="/painel/campanhas/nova">
 <label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro">
 <span>Tipo</span><span><label><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}> buscar atualizações</label>
-<label><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}> atualizar pacotes (Linux)</label></span>
+<label><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}> atualizar pacotes (Linux)</label>
+{{if .Form.TPOn}}<label><input type="radio" name="tipo" value="thirdparty" {{if eq .Form.Type "thirdparty"}}checked{{end}}> instalar programa de terceiros (Windows)</label>{{end}}</span>
+{{if .Form.TPOn}}<label for="programa">Programa</label><span>{{if .Form.Programs}}<select id="programa" name="programa">{{range .Form.Programs}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<span class="muted">só no programa de terceiros: as versões aprovadas e guardadas</span>{{else}}<span class="muted">Nenhuma versão aprovada e guardada: aprove na página do programa, em Patch.</span>{{end}}</span>{{end}}
 <label for="fontes">Fontes</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="só no update: pacotes fonte das pendências, ex.: curl, bluez">
 <span>Anéis</span><span>{{range .Form.Rings}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label><br>{{end}}</span>
 <label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
@@ -900,17 +903,18 @@ var pages = template.Must(template.New("").Parse(`
 <h1>Conferir a campanha</h1>
 <div class="card"><dl class="dados">
 <dt>Nome</dt><dd>{{.Form.Name}}</dd>
-<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · fontes: {{.SourcesList}}{{end}}</dd>
+<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · fontes: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada anel concluído</dd>
 </dl></div>
-<div class="card"><div class="card-cab"><h2>Anéis, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Anel</th><th>Máquinas agora</th><th>Janela</th><th></th></tr></thead>
-<tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td><td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table></div></div>
+<div class="card"><div class="card-cab"><h2>Anéis, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Anel</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
+<tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td>{{if $.ProgramL}}<td>{{$r.Preview}}</td>{{end}}<td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table></div></div>
 {{range .Warnings}}<p class="aviso atencao">{{.}}</p>{{end}}
 <p>Ao criar, o servidor libera o primeiro anel no próximo minuto: os jobs vão para máquinas de verdade.</p>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}">
+<input type="hidden" name="programa" value="{{.Form.Program}}">
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
