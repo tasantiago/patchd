@@ -121,6 +121,16 @@ func TestInstall(t *testing.T) {
 	if !maps.Equal(signers, wantSigners) {
 		t.Errorf("assinantes padrão: %v", signers)
 	}
+	// Processos medidos (Aula 14.6b): só o VS Code (job 33, Code.exe aberto, Inno código 5).
+	procs := map[string]string{}
+	for _, a := range m.For("windows") {
+		if a.Install != nil && len(a.Install.Processes) > 0 {
+			procs[a.ID] = strings.Join(a.Install.Processes, ",")
+		}
+	}
+	if !maps.Equal(procs, map[string]string{"vscode": "Code.exe"}) {
+		t.Errorf("processos padrão: %v", procs)
+	}
 	regra := func(extra string) string {
 		return `{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "minimum", "match": "x", "min_version": "1"` + extra + `}]}`
 	}
@@ -128,6 +138,7 @@ func TestInstall(t *testing.T) {
 		regra(`, "install": {"winget": "Chrome"}`):                                                                                                    "fora da forma Fabricante.Programa",
 		regra(`, "install": {"winget": "Google.Chrome", "type": "msix"}`):                                                                             `install.type "msix"`,
 		regra(`, "install": {"winget": "Google.Chrome", "scope": "user"}`):                                                                            "unknown field",
+		regra(`, "install": {"winget": "Google.Chrome", "processes": ["C:\\x\\chrome.exe"]}`):                                                         "não é o nome de um executável",
 		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"winget": "a.b"}}]}`: "só vale para windows",
 		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                       "exige categoria feed ou minimum",
 	} {

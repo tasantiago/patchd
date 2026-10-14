@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -199,5 +201,23 @@ func TestAtualizarTerceirosSemChave(t *testing.T) {
 	}
 	if l := local(pagina(h, "POST", "/painel/maquinas/"+id+"/terceiros/atualizar", sessaoAdmin, url.Values{"app": {"notepad-plus-plus"}})); l != "/painel/maquinas/"+id+"?erro=sem-chave" {
 		t.Errorf("pedido: %s", l)
+	}
+}
+
+// A página do programa diz quando o agente não instala (Aula 14.6b).
+func TestProgramaComProcessos(t *testing.T) {
+	agora := time.Now().UTC()
+	src := &complianceFalso{
+		fleet: protocol.ComplianceFleet{EvaluatedAt: agora, Machines: []protocol.ComplianceStatus{{MachineID: "w1", Hostname: "pc-a"}}},
+		terceiros: map[string][]protocol.ThirdPartyItem{"w1": {{AppID: "vscode", Program: "Visual Studio Code",
+			Name: "Microsoft Visual Studio Code", State: "DESATUALIZADO", Installed: "1.123.0", Reference: "1.141.0"}}},
+	}
+	st := store.NewMemory()
+	abreSessao(t, st, sessaoTeste, agora)
+	m, _ := thirdparty.Default()
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m))
+	b := pagina(h, "GET", "/painel/patch/programa?app=vscode", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "assinatura exigida: Microsoft Corporation · não instala com Code.exe aberto") {
+		t.Errorf("programa vscode:\n%s", b)
 	}
 }

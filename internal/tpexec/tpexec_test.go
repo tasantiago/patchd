@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/platform"
 	"github.com/tasantiago/patchd/internal/wintrust"
 )
 
@@ -185,5 +186,55 @@ func TestInstalarCodigos(t *testing.T) {
 	e, _ = executor(t, inst, &runnerFalso{}, wintrust.Signature{}, wintrust.ErrUnsupported)
 	if d, _ := e.Install(ctx, 1, params(inst, "inno")); !strings.Contains(d, "assinatura não conferida") {
 		t.Errorf("sem WinVerifyTrust: %q", d)
+	}
+}
+
+// Aula 14.6b: o Inno grava o log do agente, e o programa aberto impede o job antes do download.
+func TestInstalarInnoEProgramaAberto(t *testing.T) {
+	inst := []byte("MZ instalador inno do vscode")
+	ctx := context.Background()
+	run := &runnerFalso{code: 5}
+	e, pedido := executor(t, inst, run, google, nil)
+	p := params(inst, "inno", "/VERYSILENT", "/mergetasks=!runcode")
+	p.ReturnCodes = nil
+	log := filepath.Join(e.LogDir, "instalar-job-33.log")
+	d, err := e.Install(ctx, 33, p)
+	if !errors.Is(err, ErrRetry) || errors.Is(err, jobs.ErrNotStarted) || !strings.Contains(d, "código 5 (fileInUse)") || !strings.Contains(d, "log do Inno: "+log) {
+		t.Errorf("inno 5: %q %v", d, err)
+	}
+	if strings.Join(run.args, "|") != "/VERYSILENT|/mergetasks=!runcode|/LOG="+log || strings.Join(p.Args, "|") != "/VERYSILENT|/mergetasks=!runcode" {
+		t.Errorf("argumentos: %v (job: %v)", run.args, p.Args)
+	}
+	// Pasta de log com espaço: sem /LOG (o argumento iria sem aspas).
+	e.LogDir = `C:\Program Data\patchd\logs`
+	if prog, args := e.command(1, "x.exe", p); prog != "x.exe" || len(args) != 2 {
+		t.Errorf("com espaço: %v", args)
+	}
+
+	// Programa aberto: nem baixa nem executa; o erro diz quantos, quais e em que sessão.
+	p.Processes = []string{"Code.exe"}
+	run = &runnerFalso{}
+	e, pedido = executor(t, inst, run, google, nil)
+	e.Processes = func() ([]platform.Process, error) {
+		return []platform.Process{{Name: "Code.exe", PID: 1, Session: 1}, {Name: "code.exe", PID: 2, Session: 1}, {Name: "explorer.exe", PID: 3, Session: 1}}, nil
+	}
+	_, err = e.Install(ctx, 34, p)
+	if !errors.Is(err, jobs.ErrNotStarted) || !errors.Is(err, ErrRetry) || *pedido != "" || run.prog != "" ||
+		!strings.Contains(err.Error(), "programa aberto (1 Code.exe, 1 code.exe na sessão 1)") {
+		t.Errorf("aberto: %v (baixou %q, executou %q)", err, *pedido, run.prog)
+	}
+	// Lista indisponível: também não roda.
+	e.Processes = func() ([]platform.Process, error) { return nil, platform.ErrNoProcessList }
+	if _, err := e.Install(ctx, 35, p); !errors.Is(err, jobs.ErrNotStarted) || run.prog != "" {
+		t.Errorf("sem lista: %v", err)
+	}
+	e.Processes = nil
+	if _, err := e.Install(ctx, 36, p); !errors.Is(err, jobs.ErrNotStarted) || run.prog != "" {
+		t.Errorf("sem função: %v", err)
+	}
+	// Fechado: segue normalmente.
+	e.Processes = func() ([]platform.Process, error) { return []platform.Process{{Name: "explorer.exe", Session: 1}}, nil }
+	if d, err := e.Install(ctx, 37, p); err != nil || !strings.HasPrefix(d, "código 0 (ok)") || run.prog == "" {
+		t.Errorf("fechado: %q %v", d, err)
 	}
 }

@@ -34,22 +34,26 @@ func TestThirdPartyParams(t *testing.T) {
 		}
 	}
 	casos := map[string]func(*ThirdPartyParams){
-		"programa":          func(p *ThirdPartyParams) { p.App = "../x" },
-		"versão":            func(p *ThirdPartyParams) { p.Version = "x y" },
-		"sha":               func(p *ThirdPartyParams) { p.SHA256 = strings.Repeat("A", 64) },
-		"tamanho":           func(p *ThirdPartyParams) { p.Size = 3 << 30 },
-		"tipo":              func(p *ThirdPartyParams) { p.Installer = "msix" },
-		"aspas":             func(p *ThirdPartyParams) { p.Args = []string{`/D="C:\x"`} },
-		"caminho":           func(p *ThirdPartyParams) { p.Args = []string{`/LOG=C:\x.log`} },
-		"espaço":            func(p *ThirdPartyParams) { p.Args = []string{"/S /x"} },
-		"msiexec /x":        func(p *ThirdPartyParams) { p.Installer, p.Args = "msi", []string{"/x"} },
-		"msiexec /a":        func(p *ThirdPartyParams) { p.Installer, p.Args = "wix", []string{"/a"} },
-		"TRANSFORMS":        func(p *ThirdPartyParams) { p.Installer, p.Args = "msi", []string{"TRANSFORMS=x.mst"} },
-		"patch minúsculo":   func(p *ThirdPartyParams) { p.Installer, p.Args = "msi", []string{"patch=x.msp"} },
-		"código":            func(p *ThirdPartyParams) { p.ReturnCodes = map[string]string{"x": "ok"} },
-		"resposta":          func(p *ThirdPartyParams) { p.ReturnCodes = map[string]string{"1": "a b"} },
-		"assinante":         func(p *ThirdPartyParams) { p.Signer = "Google\nLLC" },
-		"argumentos demais": func(p *ThirdPartyParams) { p.Args = make([]string, 33) },
+		"programa":           func(p *ThirdPartyParams) { p.App = "../x" },
+		"versão":             func(p *ThirdPartyParams) { p.Version = "x y" },
+		"sha":                func(p *ThirdPartyParams) { p.SHA256 = strings.Repeat("A", 64) },
+		"tamanho":            func(p *ThirdPartyParams) { p.Size = 3 << 30 },
+		"tipo":               func(p *ThirdPartyParams) { p.Installer = "msix" },
+		"aspas":              func(p *ThirdPartyParams) { p.Args = []string{`/D="C:\x"`} },
+		"caminho":            func(p *ThirdPartyParams) { p.Args = []string{`/LOG=C:\x.log`} },
+		"espaço":             func(p *ThirdPartyParams) { p.Args = []string{"/S /x"} },
+		"msiexec /x":         func(p *ThirdPartyParams) { p.Installer, p.Args = "msi", []string{"/x"} },
+		"msiexec /a":         func(p *ThirdPartyParams) { p.Installer, p.Args = "wix", []string{"/a"} },
+		"TRANSFORMS":         func(p *ThirdPartyParams) { p.Installer, p.Args = "msi", []string{"TRANSFORMS=x.mst"} },
+		"patch minúsculo":    func(p *ThirdPartyParams) { p.Installer, p.Args = "msi", []string{"patch=x.msp"} },
+		"código":             func(p *ThirdPartyParams) { p.ReturnCodes = map[string]string{"x": "ok"} },
+		"resposta":           func(p *ThirdPartyParams) { p.ReturnCodes = map[string]string{"1": "a b"} },
+		"assinante":          func(p *ThirdPartyParams) { p.Signer = "Google\nLLC" },
+		"argumentos demais":  func(p *ThirdPartyParams) { p.Args = make([]string, 33) },
+		"processo com pasta": func(p *ThirdPartyParams) { p.Processes = []string{`C:\x\Code.exe`} },
+		"processo relativo":  func(p *ThirdPartyParams) { p.Processes = []string{"../Code.exe"} },
+		"processo sem .exe":  func(p *ThirdPartyParams) { p.Processes = []string{"Code"} },
+		"processos demais":   func(p *ThirdPartyParams) { p.Processes = strings.Fields(strings.Repeat("a.exe ", 9)) },
 	}
 	for nome, muda := range casos {
 		p := tpValido()
@@ -60,6 +64,12 @@ func TestThirdPartyParams(t *testing.T) {
 	}
 	if _, err := SplitArgs("nullsoft", `/D="C:\Program Files\x"`); err == nil || !strings.Contains(err.Error(), "aspas") {
 		t.Errorf("aspas na linha: %v", err)
+	}
+	// Processos: o nome do executável, com espaço e caixa quaisquer.
+	p := tpValido()
+	p.Processes = []string{"Code.exe", "Microsoft Teams.EXE", "notepad++.exe"}
+	if err := p.Validate(); err != nil {
+		t.Errorf("processos: %v", err)
 	}
 	// Campo desconhecido: recusado (um agente não aceita o que não entende).
 	if _, err := ParseThirdPartyParams(json.RawMessage(`{"app":"7zip","command":"cmd /c"}`)); err == nil {

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/winget"
 )
 
@@ -74,6 +75,10 @@ type Install struct {
 	// Signer exige que o instalador seja assinado por esta organização (O= do certificado,
 	// Aula 14.4). Vazio: o agente confere e informa a assinatura, mas não exige.
 	Signer string `json:"signer,omitempty"`
+	// Processes lista os executáveis do programa (Aula 14.6b). Com algum deles aberto, o
+	// agente não instala e o job falha dizendo qual: o instalador não substitui arquivo em
+	// uso, e o patchd não fecha o programa de quem está trabalhando. Só os medidos entram.
+	Processes []string `json:"processes,omitempty"`
 }
 
 // Source diz de onde vem a versão de referência.
@@ -171,6 +176,13 @@ func (a *App) compile() error {
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
 		case len(a.Install.Signer) > 128 || strings.ContainsAny(a.Install.Signer, "\r\n\t"):
 			return fmt.Errorf("install.signer inválido")
+		case len(a.Install.Processes) > jobs.MaxProcesses:
+			return fmt.Errorf("install.processes: no máximo %d", jobs.MaxProcesses)
+		}
+		for _, n := range a.Install.Processes {
+			if !jobs.ValidProcess(n) {
+				return fmt.Errorf("install.processes: %q não é o nome de um executável (Code.exe)", n)
+			}
 		}
 	}
 	var err error

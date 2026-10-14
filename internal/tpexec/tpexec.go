@@ -15,8 +15,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -52,8 +54,11 @@ type Executor struct {
 	// devolve wintrust.ErrUnsupported.
 	Verify  func(path string) (wintrust.Signature, error)
 	Dir     string // onde o instalador fica enquanto roda (dentro da pasta de dados do agente)
-	LogDir  string // log do msiexec
+	LogDir  string // log do msiexec e do Inno
 	Msiexec string // caminho absoluto do msiexec.exe
+	// Processes lista os processos em execução (platform.Processes), para os jobs que
+	// trazem os executáveis do programa (Aula 14.6b).
+	Processes func() ([]platform.Process, error)
 }
 
 // Install executa o job e devolve o detalhe para o servidor. Erros com jobs.ErrRefused viram
@@ -62,6 +67,13 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	if err := os.MkdirAll(e.Dir, 0o700); err != nil {
 		return "", fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
 	}
+	// Programa aberto (Aula 14.6b): nem baixa. O instalador não substituiria os arquivos em
+	// uso (o Inno sai com 5, o MSI pede reinício), e fechar o programa perderia o trabalho
+	// de quem está nele. O job falha dizendo qual programa e onde; pedir de novo depois.
+	if err := e.checkRunning(p); err != nil {
+		return "", err
+	}
+
 	file := filepath.Join(e.Dir, FileName(p))
 	defer os.Remove(file) // o instalador não fica na máquina depois do job
 
@@ -98,8 +110,11 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	}
 	outcome, resp := inst.Outcome(code)
 	detail := fmt.Sprintf("código %d (%s) em %s; %s", code, cmpOr(resp, outcome), took, sigNote)
-	if jobs.MSIInstaller(p.Installer) {
+	switch {
+	case jobs.MSIInstaller(p.Installer):
 		detail += "; log do msiexec: " + e.logPath(jobID)
+	case e.innoLog(p):
+		detail += "; log do Inno: " + e.logPath(jobID)
 	}
 	switch outcome {
 	case winget.OutcomeOK:
@@ -169,7 +184,56 @@ func (e *Executor) command(jobID int64, file string, p jobs.ThirdPartyParams) (s
 		args = append(args, p.Args...)
 		return e.Msiexec, append(args, "/l*v", e.logPath(jobID))
 	}
+	if e.innoLog(p) {
+		// O /LOG é do agente, como o /l*v do msiexec: o job não pode pedir caminho nenhum.
+		return file, append(slices.Clone(p.Args), "/LOG="+e.logPath(jobID))
+	}
 	return file, p.Args
+}
+
+// innoLog: o Inno grava o log do agente. Sem aspas no argumento (o Inno não recebe um
+// caminho com espaço sem elas), o log só vai quando a pasta não tem espaço.
+func (e *Executor) innoLog(p jobs.ThirdPartyParams) bool {
+	return p.Installer == "inno" && e.LogDir != "" && !strings.ContainsAny(e.LogDir, ` "`)
+}
+
+// checkRunning confere se algum executável do programa está aberto. Sem lista de processos
+// não há como saber: o job não roda (melhor que arriscar o Abort no meio da instalação).
+func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
+	if len(p.Processes) == 0 {
+		return nil
+	}
+	if e.Processes == nil {
+		return fmt.Errorf("%w: o agente não lista processos e o job exige conferir %s", jobs.ErrNotStarted, strings.Join(p.Processes, ", "))
+	}
+	list, err := e.Processes()
+	if err != nil {
+		return fmt.Errorf("%w: não foi possível listar os processos para conferir %s: %v", jobs.ErrNotStarted, strings.Join(p.Processes, ", "), err)
+	}
+	running := platform.Running(list, p.Processes)
+	if len(running) == 0 {
+		return nil
+	}
+	count := map[string]int{}
+	var sessions []uint32
+	for _, r := range running {
+		count[r.Name]++
+		if !slices.Contains(sessions, r.Session) {
+			sessions = append(sessions, r.Session)
+		}
+	}
+	names := slices.Sorted(maps.Keys(count))
+	var parts []string
+	for _, n := range names {
+		parts = append(parts, fmt.Sprintf("%d %s", count[n], n))
+	}
+	slices.Sort(sessions)
+	var ss []string
+	for _, s := range sessions {
+		ss = append(ss, strconv.FormatUint(uint64(s), 10))
+	}
+	return fmt.Errorf("%w: %w: programa aberto (%s na sessão %s); nada foi baixado nem executado: peça de novo com o programa fechado",
+		jobs.ErrNotStarted, ErrRetry, strings.Join(parts, ", "), strings.Join(ss, ", "))
 }
 
 func (e *Executor) logPath(jobID int64) string {

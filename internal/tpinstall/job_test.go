@@ -33,6 +33,13 @@ func TestJobParams(t *testing.T) {
 	if _, err := JobParams(Plan(sw, m, []store.ThirdPartyPackage{pk}, "x64")[0]); err == nil || !strings.Contains(err.Error(), "não cabem no job") {
 		t.Errorf("aspas: %v", err)
 	}
+	// Os processos da regra vão no job (Aula 14.6b).
+	vsc := pacote("vscode", "1.141.0", "inno", "x64")
+	vsc.Size, vsc.Arguments = 120<<20, "/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /mergetasks=!runcode"
+	ds = Plan([]protocol.Software{maquina("Microsoft Visual Studio Code", "1.123.0", "Microsoft Corporation")}, m, []store.ThirdPartyPackage{vsc}, "x64")
+	if p, err := JobParams(ds[0]); err != nil || strings.Join(p.Processes, ",") != "Code.exe" || p.Signer != "Microsoft Corporation" {
+		t.Errorf("vscode: %+v %v", p, err)
+	}
 	if Labels[StateUpdate] != "ATUALIZAR" || len(Labels) != len(States) {
 		t.Errorf("rótulos: %v", Labels)
 	}

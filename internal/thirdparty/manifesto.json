@@ -32,7 +32,7 @@
     {"id": "vscode", "os": "windows", "name": "Visual Studio Code", "category": "feed",
      "publisher": "^Microsoft Corporation$", "match": "^Microsoft Visual Studio Code( \\(User\\))?$",
      "source": {"type": "winget", "id": "Microsoft.VisualStudioCode"},
-     "install": {"winget": "Microsoft.VisualStudioCode", "signer": "Microsoft Corporation"}},
+     "install": {"winget": "Microsoft.VisualStudioCode", "signer": "Microsoft Corporation", "processes": ["Code.exe"]}},
     {"id": "powershell-7", "os": "windows", "name": "PowerShell 7", "category": "feed",
      "publisher": "^Microsoft Corporation$", "match": "^PowerShell 7[.\\- ]",
      "source": {"type": "winget", "id": "Microsoft.PowerShell"},

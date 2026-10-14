@@ -610,7 +610,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if .P.Origin}}<dt>Origem</dt><dd>{{.P.Origin}}</dd>{{end}}
 <dt>Instalações</dt><dd>{{len .P.Installs}} ({{.P.Outdated}} desatualizadas, {{.P.EOL}} fora de suporte)</dd>
 </dl></div>
-{{if .Install}}<div class="card"><div class="card-cab"><h2>Instaladores guardados</h2><span class="muted">winget <code>{{.Install.Winget}}</code>{{if .Install.Type}} · tipo {{.Install.Type}}{{end}} · assinatura {{if .Install.Signer}}exigida: {{.Install.Signer}}{{else}}não exigida{{end}}</span></div>
+{{if .Install}}<div class="card"><div class="card-cab"><h2>Instaladores guardados</h2><span class="muted">winget <code>{{.Install.Winget}}</code>{{if .Install.Type}} · tipo {{.Install.Type}}{{end}} · assinatura {{if .Install.Signer}}exigida: {{.Install.Signer}}{{else}}não exigida{{end}}{{if .Install.Processes}} · não instala com {{.Install.Processes}} aberto{{end}}</span></div>
 {{if .Versions}}<div class="tabela"><table>
 <thead><tr><th>Versão</th><th>Instaladores</th><th>Aprovação</th></tr></thead>
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td>

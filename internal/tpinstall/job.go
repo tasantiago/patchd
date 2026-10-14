@@ -41,6 +41,7 @@ func JobParams(d Decision) (jobs.ThirdPartyParams, error) {
 	}
 	if d.App.Install != nil {
 		p.Signer = d.App.Install.Signer
+		p.Processes = d.App.Install.Processes
 	}
 	return p, p.Validate()
 }
