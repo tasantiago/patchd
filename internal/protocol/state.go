@@ -20,7 +20,31 @@ type MachineState struct {
 	CollectedAt time.Time      `json:"collected_at"`
 	Interfaces  []NetInterface `json:"interfaces"`
 	Disks       []Disk         `json:"disks"`
-	Errors      []string       `json:"errors,omitempty"` // falhas parciais da coleta
+	// Users: quem está conectado (Aula 15.6). null = o agente não coleta (anterior à 15.6
+	// ou SO sem suporte); [] = ninguém conectado.
+	Users  []LoggedUser `json:"users"`
+	Errors []string     `json:"errors,omitempty"` // falhas parciais da coleta
+}
+
+// LoggedUser é uma sessão de usuário aberta na máquina (Aula 15.6).
+type LoggedUser struct {
+	Account     string `json:"account"`                // DOMINIO\usuario (Windows) ou usuario (Linux)
+	DisplayName string `json:"display_name,omitempty"` // nome de exibição: o do AD (Windows) ou o GECOS (Linux)
+	Session     string `json:"session"`                // SessionConsole, SessionRDP, SessionSSH ou SessionTerminal
+	Active      bool   `json:"active"`                 // false: sessão desconectada (Windows), aberta mas sem ninguém na tela
+}
+
+// Tipos de sessão do usuário.
+const (
+	SessionConsole  = "console"  // na frente da máquina (tela e teclado; a VM pelo console do hipervisor)
+	SessionRDP      = "rdp"      // Área de Trabalho Remota
+	SessionSSH      = "ssh"      // terminal remoto
+	SessionTerminal = "terminal" // terminal local sem tela própria (pts sem host remoto)
+)
+
+// ValidSession diz se o tipo de sessão é conhecido.
+func ValidSession(s string) bool {
+	return s == SessionConsole || s == SessionRDP || s == SessionSSH || s == SessionTerminal
 }
 
 // NetInterface é uma interface de rede (sem a loopback).
@@ -52,6 +76,7 @@ const (
 	MaxStateInterfaces = 64
 	MaxStateAddrs      = 32 // por família, por interface
 	MaxStateDisks      = 64
+	MaxStateUsers      = 32
 	MaxStateErrors     = 16
 	maxStateText       = 256
 )
@@ -69,6 +94,8 @@ func (s MachineState) Check() error {
 		return fmt.Errorf("%d interfaces (máximo %d)", len(s.Interfaces), MaxStateInterfaces)
 	case len(s.Disks) > MaxStateDisks:
 		return fmt.Errorf("%d discos (máximo %d)", len(s.Disks), MaxStateDisks)
+	case len(s.Users) > MaxStateUsers:
+		return fmt.Errorf("%d usuários (máximo %d)", len(s.Users), MaxStateUsers)
 	case len(s.Errors) > MaxStateErrors:
 		return fmt.Errorf("%d erros (máximo %d)", len(s.Errors), MaxStateErrors)
 	}
@@ -124,6 +151,17 @@ func (s MachineState) Check() error {
 		}
 		if d.FreeBytes > d.TotalBytes {
 			return fmt.Errorf("disco %d: livre (%d) maior que o total (%d)", i, d.FreeBytes, d.TotalBytes)
+		}
+	}
+	for i, u := range s.Users {
+		if err := text("conta", u.Account, false); err != nil {
+			return fmt.Errorf("usuário %d: %w", i, err)
+		}
+		if err := text("nome de exibição", u.DisplayName, true); err != nil {
+			return fmt.Errorf("usuário %d: %w", i, err)
+		}
+		if !ValidSession(u.Session) {
+			return fmt.Errorf("usuário %d: tipo de sessão desconhecido %q", i, u.Session)
 		}
 	}
 	for i, e := range s.Errors {

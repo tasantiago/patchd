@@ -105,3 +105,57 @@ func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 		t.Error("check-in vindo de uma interface da máquina")
 	}
 }
+
+// Aula 15.6: quem está conectado, no resumo da máquina e na lista de Equipamentos.
+func TestUsuariosConectados(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	ctx := context.Background()
+	resumo := func() string {
+		return pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String()
+	}
+	// Agente anterior à 15.6: a linha não aparece.
+	if err := st.SaveHostState(ctx, "60ef97e4-0001", estadoTeste(), "192.0.2.1"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(resumo(), "Usuários conectados") {
+		t.Error("sem a coleta, não há o que mostrar")
+	}
+	// Ninguém conectado.
+	s := estadoTeste()
+	s.Users = []protocol.LoggedUser{}
+	_ = st.SaveHostState(ctx, "60ef97e4-0001", s, "192.0.2.1")
+	if b := resumo(); !strings.Contains(b, "<dt>Usuários conectados</dt><dd>ninguém <span class=\"muted\">· coletado agora") {
+		t.Errorf("ninguém:\n%s", b)
+	}
+	s.Users = []protocol.LoggedUser{
+		{Account: `EXEMPLO\fulano`, DisplayName: "Fulano <de> Tal", Session: protocol.SessionConsole, Active: true},
+		{Account: `EXEMPLO\suporte`, Session: protocol.SessionRDP},
+	}
+	_ = st.SaveHostState(ctx, "60ef97e4-0001", s, "192.0.2.1")
+	b := resumo()
+	for _, tr := range []string{
+		`<li>Fulano &lt;de&gt; Tal <span class="muted"><code>EXEMPLO\fulano</code></span> <span class="muted">· console</span></li>`,
+		`<li><code>EXEMPLO\suporte</code> <span class="muted">· Área de Trabalho Remota · desconectada</span></li>`,
+	} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("resumo: faltou %q", tr)
+		}
+	}
+
+	// Na lista: a coluna, a busca pelo nome ou pela conta, e a dica com todos.
+	l := pagina(h, "GET", "/painel/inventario?campo=usuario&q=fulano", sessaoTeste, nil).Body.String()
+	for _, tr := range []string{"1–1 de 1", `<option value="usuario" selected>Usuário conectado</option>`,
+		`<td title="Fulano &lt;de&gt; Tal (EXEMPLO\fulano, console); EXEMPLO\suporte (Área de Trabalho Remota, desconectada)">Fulano &lt;de&gt; Tal <span class="muted">+1</span></td>`,
+		`<a href="/painel/inventario?campo=usuario&amp;ordem=usuario&amp;q=fulano">Usuário</a>`} {
+		if !strings.Contains(l, tr) {
+			t.Errorf("lista: faltou %q", tr)
+		}
+	}
+	if l := pagina(h, "GET", "/painel/inventario?q=suporte", sessaoTeste, nil).Body.String(); !strings.Contains(l, "1–1 de 1") {
+		t.Error("a busca em todos os campos inclui a conta")
+	}
+	csv := pagina(h, "GET", "/painel/inventario.csv", sessaoTeste, nil).Body.String()
+	if !strings.Contains(csv, ";anel;usuarios") || !strings.Contains(csv, `Fulano <de> Tal (EXEMPLO\fulano, console); EXEMPLO\suporte (Área de Trabalho Remota, desconectada)`) {
+		t.Errorf("CSV:\n%s", csv)
+	}
+}
