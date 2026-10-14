@@ -53,9 +53,18 @@ type hourOption struct {
 	Selected bool
 }
 
+// programOption: uma versão aprovada e guardada de um programa de terceiros (Aula 14.8).
+type programOption struct {
+	Value, Label string // "libreoffice 26.8.1.1"; "LibreOffice 26.8.1.1"
+	Selected     bool
+}
+
 // campaignForm é o formulário (também o que volta para corrigir e o que vai na conferência).
 type campaignForm struct {
 	Name, Type, Sources, When string
+	Program                   string          // thirdparty: "programa versão"
+	Programs                  []programOption // as versões que podem virar campanha
+	TPOn                      bool            // o servidor tem as regras de terceiros
 	Rings                     []ringChoice
 	Observe, TTL              []hourOption
 	ObserveH, TTLH            int
@@ -138,9 +147,18 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
 	if v.CanNew {
 		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24}
+		// Vindo de "Campanha por anel" na página do programa (Aula 14.8): já preenchido.
+		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeThirdParty {
+			f.Type, f.Program = jobs.TypeThirdParty, q.Get("programa")
+			f.Name = f.Program
+		}
 		var err error
 		if f.Rings, err = a.ringChoices(r, nil); err != nil {
 			a.internalError(w, r, "listar anéis", err)
+			return
+		}
+		if err := a.programChoices(r, &f); err != nil {
+			a.internalError(w, r, "listar versões aprovadas", err)
 			return
 		}
 		f.Observe, f.TTL = hourOptions(observeHours, f.ObserveH), hourOptions(ttlHours, f.TTLH)
@@ -183,7 +201,7 @@ func ringsProgress(c campaign.Campaign) string {
 func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignForm, string) {
 	_ = r.ParseForm()
 	f := campaignForm{Name: strings.TrimSpace(r.PostFormValue("nome")), Type: r.PostFormValue("tipo"),
-		Sources: strings.TrimSpace(r.PostFormValue("fontes")), When: r.PostFormValue("quando")}
+		Sources: strings.TrimSpace(r.PostFormValue("fontes")), When: r.PostFormValue("quando"), Program: r.PostFormValue("programa")}
 	f.ObserveH, _ = strconv.Atoi(r.PostFormValue("observacao"))
 	f.TTLH, _ = strconv.Atoi(r.PostFormValue("prazo"))
 	seen := map[int]bool{}
@@ -198,9 +216,17 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
 		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela"}
+	if f.Type == jobs.TypeThirdParty {
+		// O select manda "programa versão"; nos outros tipos ele vai junto e é ignorado.
+		parts := strings.Fields(f.Program)
+		if len(parts) != 2 {
+			return c, f, "Escolha o programa e a versão aprovada."
+		}
+		c.App, c.Version = parts[0], parts[1]
+	}
 	switch {
-	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate:
-		return c, f, "Escolha o tipo: buscar atualizações ou atualizar pacotes."
+	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && (f.Type != jobs.TypeThirdParty || a.tpManifest == nil):
+		return c, f, "Escolha o tipo: buscar atualizações, atualizar pacotes ou instalar programa de terceiros."
 	case len(f.Chosen) == 0:
 		return c, f, "Marque ao menos um anel."
 	case !containsInt(observeHours, f.ObserveH):
@@ -249,6 +275,7 @@ func containsStr(list []string, x string) bool {
 // confirmRing é uma linha da conferência.
 type confirmRing struct {
 	Label, Window, Note string
+	Preview             string // thirdparty: o que o anel receberia agora (Aula 14.8)
 	Machines            int
 }
 
@@ -258,6 +285,7 @@ type campaignConfirmView struct {
 	TypeLabel, When string
 	Rings           []confirmRing
 	SourcesList     string
+	ProgramL        string
 	ObserveL        string
 	Warnings        []string
 	ChosenCSV       string
@@ -274,6 +302,17 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 	if err != nil {
 		a.internalError(w, r, "listar anéis", err)
 		return
+	}
+	// Terceiros (Aula 14.8): a mesma conferência da linha de comando e de cada anel.
+	if problem == "" && c.Type == jobs.TypeThirdParty {
+		reason, err := a.campaigner().Ready(r.Context(), c.App, c.Version)
+		if err != nil {
+			a.internalError(w, r, "conferir a versão", err)
+			return
+		}
+		if reason != "" {
+			problem = "A versão não está pronta para campanha: " + reason + "."
+		}
 	}
 	if problem == "" && c.UseWindow {
 		var missing []string
@@ -295,6 +334,10 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		}
 		f.Rings = choices
 		f.Observe, f.TTL = hourOptions(observeHours, f.ObserveH), hourOptions(ttlHours, f.TTLH)
+		if err := a.programChoices(r, &f); err != nil {
+			a.internalError(w, r, "listar versões aprovadas", err)
+			return
+		}
 		v.Form = f
 		a.renderCampaigns(w, r, status, v)
 		return
@@ -302,6 +345,15 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 	if r.PostFormValue("confirmar") != "1" {
 		v := campaignConfirmView{pageBase: a.baseFor(s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
 			SourcesList: strings.Join(c.Sources, ", "), ObserveL: hoursLabel(f.ObserveH)}
+		var preview map[int]string
+		if c.Type == jobs.TypeThirdParty {
+			v.ProgramL = "programa: " + c.Target()
+			if preview, err = a.thirdPartyPreview(r, c); err != nil {
+				a.internalError(w, r, "prever a campanha", err)
+				return
+			}
+			v.Warnings = append(v.Warnings, "No programa de terceiros, cada anel recebe o plano da hora em que for liberado: a coluna \"Hoje\" é a previsão de agora. A aprovação e o arquivo no cache são conferidos de novo a cada anel; revogada a aprovação, a campanha pausa.")
+		}
 		v.When = "com prazo de " + hoursLabel(f.TTLH) + " para cada job"
 		if c.UseWindow {
 			v.When = "na próxima janela de manutenção de cada anel"
@@ -315,7 +367,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			if !rc.Checked {
 				continue
 			}
-			cr := confirmRing{Label: rc.Label, Machines: rc.Machines, Window: dash(rc.Window)}
+			cr := confirmRing{Label: rc.Label, Machines: rc.Machines, Window: dash(rc.Window), Preview: preview[rc.Ring]}
 			if rc.Machines == 0 {
 				cr.Note = "nenhuma máquina: o anel passa sem jobs"
 				v.Warnings = append(v.Warnings, fmt.Sprintf("O anel %d não tem máquinas.", rc.Ring))
@@ -348,7 +400,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		return
 	}
 	a.logger.Info("campanha criada pelo painel", "campaign_id", id, "tipo", c.Type, "aneis", ringsProgress(c),
-		"fontes", len(c.Sources), "janela", c.UseWindow, "username", s.Username, "request_id", RequestID(r.Context()))
+		"fontes", len(c.Sources), "programa", c.Target(), "janela", c.UseWindow, "username", s.Username, "request_id", RequestID(r.Context()))
 	http.Redirect(w, r, fmt.Sprintf("/painel/campanhas/%d?criada=1", id), http.StatusSeeOther)
 }
 

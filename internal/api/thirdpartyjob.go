@@ -114,5 +114,14 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 	if c, err := version.CompareDotted(e.Installed, target); err != nil || c < 0 {
 		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC mostra %s %s, abaixo de %s; agente: %s", when, p.App, e.Software.Version, p.Version, agent)
 	}
-	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC mostra %s %s (%s); agente: %s", when, e.Software.Name, e.Software.Version, e.Kind, agent)
+	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC mostra %s (%s); agente: %s", when, nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
+}
+
+// nameVersion: o nome com a versão, sem repetir quando o nome já a traz ("LibreOffice
+// 26.8.1.1" mostrava "LibreOffice 26.8.1.1 26.8.1.1" no job 35).
+func nameVersion(name, version string) string {
+	if version == "" || strings.Contains(name, version) {
+		return name
+	}
+	return name + " " + version
 }
