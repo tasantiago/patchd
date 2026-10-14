@@ -193,7 +193,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			logger.Error("login pelo AD", "error", err)
 			return exitConfig
 		}
-		apiOpts = append(apiOpts, api.WithDirectory(dir))
+		apiOpts = append(apiOpts, api.WithDirectory(dir), api.WithADInfo(adInfo(adCfg, dir)))
 		// Sem o servidor, o domínio e os grupos: esses valores ficam no .env.
 		logger.Info("login pelo AD ligado (LDAPS, bind como o próprio usuário)",
 			"grupo_admin", adCfg.AdminGroup != "", "grupo_leitura", adCfg.ReadGroup != "", "base_explicita", adCfg.BaseDN != "")

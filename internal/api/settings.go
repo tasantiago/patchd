@@ -83,11 +83,13 @@ type settingsView struct {
 	TTLs      []hourOption
 	MaxUses   int
 	MaxNote   int
+	Access    *accessView // aba Acesso (Aula 15.3)
 }
 
 func (a *api) settingsTabs(tab string) string {
-	if tab == "agente" {
-		return "agente"
+	switch tab {
+	case "agente", "acesso":
+		return tab
 	}
 	return "sistema"
 }
@@ -104,10 +106,14 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		v.Error = "Esse token não existe; nada mudou."
 	}
 	var err error
-	if v.Tab == "sistema" {
+	switch v.Tab {
+	case "sistema":
 		v.System, err = a.systemRows(r)
-	} else {
+	case "agente":
 		err = a.agentView(r, &v)
+	case "acesso":
+		accessFlash(q, &v.pageBase)
+		err = a.accessView(r, s, &v)
 	}
 	if err != nil {
 		a.internalError(w, r, "montar a configuração", err)

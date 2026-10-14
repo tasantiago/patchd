@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/ad"
 	"github.com/tasantiago/patchd/internal/ldap/ldaptest"
+	"github.com/tasantiago/patchd/internal/panel"
 )
 
 func TestConfigDoAD(t *testing.T) {
@@ -83,5 +85,25 @@ func TestADCheck(t *testing.T) {
 				t.Errorf("a saída expõe %q:\n%s", proibido, o)
 			}
 		}
+	}
+}
+
+// adCheckResult (Aula 15.3): o relatório do ad.Check para a tela de acesso.
+func TestADCheckResult(t *testing.T) {
+	cfg := ad.Config{AdminGroup: "g-admin"}
+	res, err := adCheckResult(cfg, func() (ad.Report, error) { return ad.Report{TLSVersion: "TLS 1.3", Admin: true}, nil })
+	if err != nil || res.Role != panel.RoleAdmin || !res.AdminSet || res.ReadSet || res.TLSVersion != "TLS 1.3" {
+		t.Errorf("ok: %+v %v", res, err)
+	}
+	res, _ = adCheckResult(cfg, func() (ad.Report, error) { return ad.Report{}, &ad.UnavailableError{Reason: "sem resposta"} })
+	if res.Unavailable != "sem resposta" {
+		t.Errorf("indisponível: %+v", res)
+	}
+	res, _ = adCheckResult(cfg, func() (ad.Report, error) { return ad.Report{TLSVersion: "TLS 1.2"}, panel.ErrBadCredentials })
+	if !res.BadPassword || res.TLSVersion != "TLS 1.2" {
+		t.Errorf("senha: %+v", res)
+	}
+	if _, err := adCheckResult(cfg, func() (ad.Report, error) { return ad.Report{}, errors.New("x") }); err == nil {
+		t.Error("erro")
 	}
 }

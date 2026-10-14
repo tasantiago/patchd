@@ -584,7 +584,7 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a></nav>
 {{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: a configuração fica no ambiente (.env) e nos arquivos de segredo</span></div>
 <dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl></div>{{end}}
 {{if eq .Tab "agente"}}<div class="card"><div class="card-cab"><h2>Executáveis{{if .Version}} da versão {{.Version}}{{end}}</h2><span class="muted">a versão publicada, a mesma que os agentes recebem na atualização</span></div>
@@ -605,6 +605,44 @@ var pages = template.Must(template.New("").Parse(`
 <tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{.MaxUses}}</td><td>{{.Status}}</td>
 <td>{{if .CanRevoke}}<form class="inline" method="post" action="/painel/configuracao/agente/token/{{.ID}}/revogar"><button class="perigo" type="submit">Revogar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum token criado.</p>{{end}}</div>{{end}}
+{{if eq .Tab "acesso"}}{{with .Access}}
+<div class="card"><div class="card-cab"><h2>Login pelo AD (LDAPS)</h2><span class="muted">{{if .AD}}ligado{{else}}desligado{{end}} · os valores ficam só no .env (não aparecem aqui nem no log)</span></div>
+{{if .AD}}<dl class="dados">{{range .AD.Vars}}<dt><code>{{.Name}}</code></dt><dd>{{if .Set}}definida{{else}}vazia{{end}}{{if .Note}} <span class="muted">· {{.Note}}</span>{{end}}</dd>{{end}}</dl>
+<h3>Testar um login</h3>
+<form class="grade" method="post" action="/painel/configuracao/acesso/testar-ad" autocomplete="off">
+<label for="usuario">Usuário</label><input id="usuario" name="usuario" required maxlength="64" placeholder="usuário da rede, sem o domínio" autocomplete="off">
+<label for="senha">Senha</label><input id="senha" name="senha" type="password" required maxlength="1024" autocomplete="new-password">
+<span></span><span><button type="submit">Testar</button> <span class="muted">Confere a conexão LDAPS, a senha e os grupos, como o patchd-server ad check. Não abre sessão; a senha não vai para o log.</span></span>
+</form>
+{{with .ADResult}}<h3>Resultado para {{.User}}</h3><dl class="dados">{{range .Lines}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>{{end}}
+{{else}}<p class="muted">Sem PATCHD_LDAP_HOST. Para ligar, defina as PATCHD_LDAP_* no .env e reinicie o servidor.</p>{{end}}</div>
+<div class="card"><div class="card-cab"><h2>Login pelo RHBK (OIDC)</h2><span class="muted">{{if .OIDC}}ligado{{else}}desligado{{end}}</span></div>
+{{with .OIDC}}<dl class="dados"><dt>Emissor</dt><dd><code>{{.Issuer}}</code></dd><dt>Cliente</dt><dd><code>{{.ClientID}}</code> <span class="muted">· o segredo vem de arquivo</span></dd>
+<dt>Claim dos grupos</dt><dd><code>{{.Claim}}</code></dd><dt>Papel admin</dt><dd><code>{{.AdminRole}}</code></dd><dt>Papel leitura</dt><dd><code>{{.ReadRole}}</code></dd></dl>
+<form class="acao" method="post" action="/painel/configuracao/acesso/testar-oidc"><button class="sec" type="submit">Testar a descoberta</button></form>{{end}}
+{{if .OIDCResult}}<p class="aviso {{if .OIDCOK}}ok{{else}}erro{{end}}">{{.OIDCResult}}</p>{{end}}
+{{if not .OIDC}}<p class="muted">Sem PATCHD_OIDC_ISSUER. Para ligar, defina as PATCHD_OIDC_* no .env (o segredo do cliente por arquivo) e reinicie o servidor.</p>{{end}}</div>
+<div class="card"><div class="card-cab"><h2>Usuários locais</h2><span class="muted">{{.Local}}</span></div>
+{{if .Users}}<div class="tabela"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Criado</th><th></th></tr></thead>
+<tbody>{{range .Users}}<tr><td><code>{{.Name}}</code>{{if .Self}} <span class="muted">(você)</span>{{end}}</td><td>{{.Role}}</td><td>{{.Created}}</td>
+<td>{{if not .Self}}<form class="inline" method="post" action="/painel/configuracao/acesso/usuarios/{{.Name}}/senha"><button class="sec" type="submit">Nova senha</button></form>
+{{if not .Last}}<form class="inline" method="post" action="/painel/configuracao/acesso/usuarios/{{.Name}}/remover"><button class="perigo" type="submit">Remover</button></form>{{else}}<span class="muted">único admin local</span>{{end}}{{end}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="aviso atencao">Nenhum usuário local: se o AD cair, ninguém entra no painel. Crie ao menos um admin local.</p>{{end}}
+<h3>Novo usuário local</h3>
+<form class="grade" method="post" action="/painel/configuracao/acesso/usuarios">
+<label for="nome">Nome</label><input id="nome" name="nome" required maxlength="64" placeholder="ex.: contingencia.seat">
+<span>Perfil</span><span><label><input type="radio" name="perfil" value="admin"> admin</label> <label><input type="radio" name="perfil" value="leitura" checked> leitura</label></span>
+<span></span><span><button type="submit">Criar</button> <span class="muted">A senha é gerada pelo servidor e aparece uma única vez.</span></span>
+</form></div>
+{{end}}{{end}}
+{{template "fim"}}{{end}}
+
+{{define "senha-local"}}{{template "topo" .}}
+<p><a href="/painel/configuracao?aba=acesso">← Configuração › Acesso</a></p>
+<h1>{{if .Created}}Usuário local criado{{else}}Nova senha{{end}}: {{.User}}</h1>
+<p class="aviso atencao">Guarde agora: a senha não será mostrada de novo.{{if not .Created}} As sessões locais desse usuário foram encerradas.{{end}} Perfil: {{.Role}}.</p>
+<div class="card"><div class="card-cab"><h2>Senha</h2></div><pre class="comando">{{.Password}}</pre></div>
+<p class="muted">Entregue a senha por um canal separado do nome do usuário. Para trocar de novo, use "Nova senha" em Configuração › Acesso ou o patchd-server user password.</p>
 {{template "fim"}}{{end}}
 
 {{define "token-criado"}}{{template "topo" .}}

@@ -20,6 +20,7 @@ import (
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/oidc"
+	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/store"
@@ -86,6 +87,11 @@ type Store interface {
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
 	EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error)
 	RevokeEnrollmentToken(ctx context.Context, id int64) (bool, error)
+	// Usuários locais pelo painel (Aula 15.3): os mesmos do patchd-server user.
+	CreatePanelUser(ctx context.Context, u panel.User) error
+	PanelUsers(ctx context.Context) ([]panel.User, error)
+	SetPanelPassword(ctx context.Context, name, hash string) (bool, error)
+	DeletePanelUser(ctx context.Context, name string) (bool, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -125,6 +131,7 @@ type api struct {
 	hashSlots  chan struct{}        // conferências de senha simultâneas
 	system     *SystemInfo          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
 	agentCA    []byte               // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
+	adInfo     *ADInfo              // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -191,6 +198,11 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
 	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))
 	mux.Handle("POST /painel/configuracao/agente/token/{id}/revogar", a.sameOrigin(a.adminAction(a.revokeTokenAction)))
+	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))
+	mux.Handle("POST /painel/configuracao/acesso/testar-oidc", a.sameOrigin(a.adminAction(a.testOIDCAction)))
+	mux.Handle("POST /painel/configuracao/acesso/usuarios", a.sameOrigin(a.adminAction(a.createLocalUserAction)))
+	mux.Handle("POST /painel/configuracao/acesso/usuarios/{name}/senha", a.sameOrigin(a.adminAction(a.resetLocalPasswordAction)))
+	mux.Handle("POST /painel/configuracao/acesso/usuarios/{name}/remover", a.sameOrigin(a.adminAction(a.deleteLocalUserAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))
