@@ -224,7 +224,8 @@ type machineView struct {
 	NeedApproval                         bool           // há pendências do Linux, mas nenhuma aprovada
 	ThirdParty                           []tpMachineRow // programas de terceiros com problema (Aula 13.3)
 	ThirdPartyCurrent                    int
-	CanReboot                            bool // admin, chave, Linux com reinício pendente (Aula 8.6)
+	TPUpdate                             *tpUpdateCard // o plano de terceiros e o botão Atualizar (Aula 14.6)
+	CanReboot                            bool          // admin, chave, Linux com reinício pendente (Aula 8.6)
 	Delays                               []int
 	Window, NextWindow                   string
 	Channel                              string // canal do último check-in (Aula 9.2)
@@ -342,6 +343,10 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	v.Donuts = donuts(v.Host.Disks)
 	if err := a.inventoryView(r, id, &v); err != nil {
 		a.internalError(w, r, "ler o inventário", err)
+		return
+	}
+	if err := a.tpUpdateView(r, id, &v); err != nil {
+		a.internalError(w, r, "montar o plano de terceiros", err)
 		return
 	}
 	v.Jobs = jobTable{Admin: v.Admin, MachineID: d.MachineID}
@@ -820,6 +825,14 @@ var pages = template.Must(template.New("").Parse(`
 <tbody>{{range .ThirdParty}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td>{{.Name}}</td><td><code>{{.Installed}}</code></td><td>{{if .Reference}}<code>{{.Reference}}</code>{{else}}—{{end}}</td>
 <td><span class="estado {{.Class}}">{{.Label}}</span>{{if .Origin}}<div class="muted nota">{{.Origin}}</div>{{end}}</td><td>{{.ScopeLabel}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Todos os programas de terceiros identificados estão em dia.</p>{{end}}
+</div>{{end}}
+{{with .TPUpdate}}<div class="card"><div class="card-cab"><h2>Atualização pelo patchd</h2><span class="muted">{{.Updates}} para atualizar</span></div>
+<div class="tabela"><table>
+<thead><tr><th>Programa</th><th>Instalado</th><th>Decisão</th><th>Ação</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Installed}}</code></td>
+<td><span class="estado {{.Class}}">{{.Label}}</span><div class="muted nota">{{.Reason}}</div></td>
+<td>{{if .CanInstall}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/terceiros/atualizar"><input type="hidden" name="app" value="{{.App}}"><button type="submit">Atualizar para {{.Target}}</button></form>{{else if .ActionHref}}<a href="{{.ActionHref}}">{{.Action}}</a>{{else if .Action}}<span class="muted">{{.Action}}</span>{{else}}—{{end}}</td></tr>{{end}}</tbody></table></div>
+<p class="muted">O plano usa o último inventário e os instaladores guardados no servidor (o mesmo do <code>package plan</code>). Atualizar cria um job assinado: o agente baixa o instalador do servidor, confere o SHA-256 e a assinatura, instala em silêncio e manda o inventário; o job só conclui se o inventário mostrar a versão nova. Só versão aprovada na página do programa, uma instalação por vez.</p>
 </div>{{end}}
 {{if .CanReboot}}<section><h2>Reiniciar</h2>
 <p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (Windows: aviso na tela com o prazo; Linux: mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Um administrador na máquina pode cancelar (<code>shutdown /a</code> no Windows, <code>shutdown -c</code> no Linux).</p>

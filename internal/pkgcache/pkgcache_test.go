@@ -133,3 +133,31 @@ func TestBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestPresent(t *testing.T) {
+	dir := t.TempDir()
+	b := []byte("MZ instalador")
+	s := sum(b)
+	if err := Present(dir, s, false, int64(len(b))); !errors.Is(err, ErrMissing) {
+		t.Errorf("ausente: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, FileName(s, false)), b, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := Present(dir, s, false, int64(len(b))); err != nil {
+		t.Errorf("presente: %v", err)
+	}
+	// O mesmo SHA-256 como .msi é outro arquivo; tamanho diferente não serve.
+	if err := Present(dir, s, true, int64(len(b))); !errors.Is(err, ErrMissing) {
+		t.Errorf("outro tipo: %v", err)
+	}
+	if err := Present(dir, s, false, 99); err == nil || !strings.Contains(err.Error(), "13 bytes; o guardado diz 99") {
+		t.Errorf("tamanho: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, FileName(s, true)), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := Present(dir, s, true, 0); err == nil || !strings.Contains(err.Error(), "não é um arquivo comum") {
+		t.Errorf("pasta: %v", err)
+	}
+}

@@ -100,7 +100,7 @@ func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey
 			d.App.ID, d.Package.Version, err, d.App.ID)
 		return exitRuntime
 	}
-	p, err := thirdPartyParams(*d)
+	p, err := tpinstall.JobParams(*d)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
@@ -123,25 +123,4 @@ func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey
 		rec.ID, short(id), d.App.Name, d.Installed, p.Version, p.Installer, d.Package.Architecture, d.Package.SHA256[:12]+"…",
 		strconv.FormatInt(p.Size, 10), p.Args, signer, rec.NotAfter.Local().Format("02/01/2006 15:04"))
 	return exitOK
-}
-
-// thirdPartyParams monta os parâmetros do job a partir da decisão (o pacote guardado e a
-// regra). Os argumentos do manifesto viram tokens conferidos; o que não passa não vira job.
-func thirdPartyParams(d tpinstall.Decision) (jobs.ThirdPartyParams, error) {
-	pk := d.Package
-	args, err := jobs.SplitArgs(pk.Type, pk.Arguments)
-	if err != nil {
-		return jobs.ThirdPartyParams{}, fmt.Errorf("os argumentos do instalador guardado não cabem no job: %w", err)
-	}
-	p := jobs.ThirdPartyParams{App: d.App.ID, Version: pk.Version, SHA256: pk.SHA256, Size: pk.Size, Installer: pk.Type, Args: args}
-	if len(pk.ReturnCodes) > 0 {
-		p.ReturnCodes = map[string]string{}
-		for c, r := range pk.ReturnCodes {
-			p.ReturnCodes[strconv.Itoa(c)] = r
-		}
-	}
-	if d.App.Install != nil {
-		p.Signer = d.App.Install.Signer
-	}
-	return p, p.Validate()
 }
