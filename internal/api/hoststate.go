@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // Rede e discos no detalhe da máquina (Aula 12.1).
@@ -18,6 +20,41 @@ type hostView struct {
 	Ifs      []ifRow
 	Disks    []diskRow
 	Errors   []string
+	// Usuários conectados (Aula 15.6). UsersKnown: o agente coleta (mesmo que ninguém esteja).
+	UsersKnown bool
+	Users      []userRow
+}
+
+// userRow: uma sessão de usuário na máquina.
+type userRow struct {
+	Name, Account, Session string
+	Active                 bool
+}
+
+// sessionLabels: o tipo de sessão como o suporte fala.
+var sessionLabels = map[string]string{
+	protocol.SessionConsole:  "console",
+	protocol.SessionRDP:      "Área de Trabalho Remota",
+	protocol.SessionSSH:      "SSH",
+	protocol.SessionTerminal: "terminal",
+}
+
+// usersSummary: todos os usuários numa linha, para a dica da lista e para o CSV:
+// "Fulano de Tal (EXEMPLO\fulano, console); suporte (SSH, desconectada)".
+func usersSummary(us []protocol.LoggedUser) string {
+	parts := make([]string, 0, len(us))
+	for _, u := range us {
+		detail := []string{}
+		if u.DisplayName != "" {
+			detail = append(detail, u.Account)
+		}
+		detail = append(detail, sessionLabels[u.Session])
+		if !u.Active {
+			detail = append(detail, "desconectada")
+		}
+		parts = append(parts, userLabel(u)+" ("+strings.Join(detail, ", ")+")")
+	}
+	return strings.Join(parts, "; ")
 }
 
 type ifRow struct {
@@ -78,6 +115,10 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 		hv.Disks = append(hv.Disks, row)
 	}
 	hv.Errors = s.Errors
+	hv.UsersKnown = s.Users != nil
+	for _, u := range s.Users {
+		hv.Users = append(hv.Users, userRow{Name: u.DisplayName, Account: u.Account, Session: sessionLabels[u.Session], Active: u.Active})
+	}
 	return nil
 }
 

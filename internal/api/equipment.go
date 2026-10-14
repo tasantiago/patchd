@@ -14,6 +14,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/export"
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/version"
 )
@@ -43,11 +44,12 @@ const (
 var searchFields = []struct{ Key, Label string }{
 	{"todos", "Todos os campos"}, {"nome", "Nome"}, {"ip", "IP"}, {"serial", "Serial"},
 	{"so", "Sistema"}, {"modelo", "Fabricante e modelo"}, {"agente", "Versão do agente"}, {"categoria", "Categoria"},
+	{"usuario", "Usuário conectado"},
 }
 
 // Colunas da tabela, na ordem; a chave vai na URL (?ordem=).
 var equipColumns = []struct{ Key, Label string }{
-	{"nome", "Nome"}, {"status", "Status"}, {"agente", "Agente"}, {"ip", "IP"},
+	{"nome", "Nome"}, {"status", "Status"}, {"agente", "Agente"}, {"ip", "IP"}, {"usuario", "Usuário"},
 	{"inventario", "Inventário"}, {"contato", "Último contato"}, {"canal", "Canal"},
 	{"so", "Sistema"}, {"categoria", "Categoria"}, {"serial", "Serial"}, {"anel", "Anel"},
 }
@@ -110,6 +112,23 @@ type equip struct {
 	LastSeen                                                                time.Time
 	Collected                                                               *time.Time
 	ip                                                                      netip.Addr
+	Users                                                                   []protocol.LoggedUser // Aula 15.6
+}
+
+// userLabel: como a conta aparece nas listas: o nome de exibição, ou a conta.
+func userLabel(u protocol.LoggedUser) string {
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	return u.Account
+}
+
+// userKey: o usuário da lista (o primeiro: ativo, de console), para ordenar e mostrar.
+func (e equip) userKey() string {
+	if len(e.Users) == 0 {
+		return ""
+	}
+	return userLabel(e.Users[0])
 }
 
 func buildEquip(rows []store.InventoryRow, now time.Time) []equip {
@@ -131,6 +150,7 @@ func buildEquip(rows []store.InventoryRow, now time.Time) []equip {
 		if r.State != nil {
 			e.HasState = true
 			e.IP = r.State.PrimaryIPv4(r.CheckinAddr)
+			e.Users = r.State.Users
 		}
 		if e.IP == "" && r.CheckinAddr != "" {
 			e.IP, e.IPFromCheckin = r.CheckinAddr, true
@@ -224,8 +244,19 @@ func (e equip) texts(field string) []string {
 		return []string{e.Agent}
 	case "categoria":
 		return []string{e.Category}
+	case "usuario":
+		return e.userTexts()
 	}
-	return []string{e.Name, e.ID, e.IP, e.Serial, e.OS, e.Manufacturer + " " + e.Model, e.Agent, e.Category}
+	return append([]string{e.Name, e.ID, e.IP, e.Serial, e.OS, e.Manufacturer + " " + e.Model, e.Agent, e.Category}, e.userTexts()...)
+}
+
+// userTexts: a conta (com e sem o domínio) e o nome de cada usuário conectado.
+func (e equip) userTexts() []string {
+	var out []string
+	for _, u := range e.Users {
+		out = append(out, u.Account, u.DisplayName)
+	}
+	return out
 }
 
 // filterEquip: status e busca (sem diferença de maiúsculas, em qualquer parte do texto).
@@ -282,6 +313,8 @@ func compareEquip(a, b equip, order string) int {
 		return text(a.Agent, b.Agent)
 	case "ip":
 		return a.ip.Compare(b.ip)
+	case "usuario":
+		return text(a.userKey(), b.userKey())
 	case "inventario":
 		if a.Collected == nil || b.Collected == nil {
 			return 0 // o vazio já foi para o fim em sortEquip
@@ -319,6 +352,8 @@ func (e equip) isEmpty(order string) bool {
 		return e.Agent == ""
 	case "ip":
 		return !e.ip.IsValid()
+	case "usuario":
+		return len(e.Users) == 0
 	case "inventario":
 		return e.Collected == nil
 	case "canal":
@@ -356,6 +391,8 @@ func sortEquip(list []equip, order string, desc bool) {
 
 type equipRow struct {
 	ID, Name, Agent, IP, Collected, Seen, Channel, OS, Category, Serial, Ring string
+	User, UserAll                                                             string // o primeiro usuário; todos, na dica
+	UserMore                                                                  int    // quantos além do primeiro
 	Online, HasState, IPFromCheckin                                           bool
 }
 
@@ -505,6 +542,10 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		if e.Collected != nil {
 			row.Collected = a.stamp(*e.Collected)
 		}
+		row.User, row.UserAll = "—", usersSummary(e.Users)
+		if len(e.Users) > 0 {
+			row.User, row.UserMore = userLabel(e.Users[0]), len(e.Users)-1
+		}
 		v.Rows = append(v.Rows, row)
 	}
 	a.render(w, r, http.StatusOK, "inventario", v)
@@ -546,11 +587,11 @@ func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
 			collected = export.When(*e.Collected)
 		}
 		out = append(out, []string{e.ID, e.Name, status, e.Agent, e.IP, ipSrc, collected, export.When(e.LastSeen),
-			e.Channel, e.OS, e.Category, e.Manufacturer, e.Model, e.Serial, strconv.Itoa(e.Ring)})
+			e.Channel, e.OS, e.Category, e.Manufacturer, e.Model, e.Serial, strconv.Itoa(e.Ring), usersSummary(e.Users)})
 	}
 	name := "patchd-equipamentos-" + a.now().UTC().Format("20060102-1504") + ".csv"
 	a.sendCSV(w, r, name, len(out), func(b *bytes.Buffer) error {
 		return export.Table(b, []string{"maquina", "nome", "status", "agente", "ip", "ip_origem", "inventario_coletado_utc",
-			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "anel"}, out)
+			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "anel", "usuarios"}, out)
 	})
 }

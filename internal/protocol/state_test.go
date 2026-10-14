@@ -18,6 +18,8 @@ func estadoValido() MachineState {
 			{Name: "wlan0", MAC: "00:11:22:33:44:55", IPv4: []string{"198.51.100.7/24"}},
 		},
 		Disks: []Disk{{Mount: "/", FS: "ext4", Device: "/dev/sda2", TotalBytes: 100, FreeBytes: 40}},
+		Users: []LoggedUser{{Account: `EXEMPLO\fulano`, DisplayName: "Fulano de Tal", Session: SessionConsole, Active: true},
+			{Account: "suporte", Session: SessionSSH, Active: true}},
 	}
 }
 
@@ -33,17 +35,21 @@ func TestCheckEstado(t *testing.T) {
 		return l
 	}
 	casos := map[string]func(*MachineState){
-		"sem data":            func(s *MachineState) { s.CollectedAt = time.Time{} },
-		"MAC torto":           func(s *MachineState) { s.Interfaces[0].MAC = "02:42:zz" },
-		"IPv4 sem prefixo":    func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"192.0.2.10"} },
-		"IPv6 na lista v4":    func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"2001:db8::1/64"} },
-		"IPv4 na lista v6":    func(s *MachineState) { s.Interfaces[1].IPv6 = []string{"192.0.2.1/24"} },
-		"interface sem nome":  func(s *MachineState) { s.Interfaces[0].Name = "" },
-		"nome com controle":   func(s *MachineState) { s.Interfaces[0].Name = "eth0\x1b[31m" },
-		"montagem enorme":     func(s *MachineState) { s.Disks[0].Mount = "/" + strings.Repeat("a", 300) },
-		"livre > total":       func(s *MachineState) { s.Disks[0].FreeBytes = 101 },
-		"modelo com controle": func(s *MachineState) { s.Disks[0].Model = "WDC\x00" },
-		"interfaces demais":   func(s *MachineState) { s.Interfaces = muitas(MaxStateInterfaces + 1) },
+		"sem data":              func(s *MachineState) { s.CollectedAt = time.Time{} },
+		"MAC torto":             func(s *MachineState) { s.Interfaces[0].MAC = "02:42:zz" },
+		"IPv4 sem prefixo":      func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"192.0.2.10"} },
+		"IPv6 na lista v4":      func(s *MachineState) { s.Interfaces[1].IPv4 = []string{"2001:db8::1/64"} },
+		"IPv4 na lista v6":      func(s *MachineState) { s.Interfaces[1].IPv6 = []string{"192.0.2.1/24"} },
+		"interface sem nome":    func(s *MachineState) { s.Interfaces[0].Name = "" },
+		"nome com controle":     func(s *MachineState) { s.Interfaces[0].Name = "eth0\x1b[31m" },
+		"montagem enorme":       func(s *MachineState) { s.Disks[0].Mount = "/" + strings.Repeat("a", 300) },
+		"livre > total":         func(s *MachineState) { s.Disks[0].FreeBytes = 101 },
+		"modelo com controle":   func(s *MachineState) { s.Disks[0].Model = "WDC\x00" },
+		"interfaces demais":     func(s *MachineState) { s.Interfaces = muitas(MaxStateInterfaces + 1) },
+		"conta vazia":           func(s *MachineState) { s.Users[0].Account = "" },
+		"exibição com controle": func(s *MachineState) { s.Users[0].DisplayName = "Fulano\x1b]0;x" },
+		"sessão desconhecida":   func(s *MachineState) { s.Users[1].Session = "telnet" },
+		"usuários demais":       func(s *MachineState) { s.Users = make([]LoggedUser, MaxStateUsers+1) },
 	}
 	for nome, muda := range casos {
 		s := estadoValido()
@@ -96,6 +102,17 @@ func TestIsLocalMAC(t *testing.T) {
 		if IsLocalMAC(m) != quer {
 			t.Errorf("%s: quer %t", mac, quer)
 		}
+	}
+}
+
+// Aula 15.6: null (o agente não coleta) e [] (ninguém conectado) são diferentes no JSON.
+func TestUsuariosNuloEVazio(t *testing.T) {
+	var s MachineState
+	if err := json.Unmarshal([]byte(`{"collected_at":"2026-10-13T12:00:00Z","interfaces":[],"disks":[]}`), &s); err != nil || s.Users != nil {
+		t.Errorf("agente anterior: %+v %v", s.Users, err)
+	}
+	if err := json.Unmarshal([]byte(`{"collected_at":"2026-10-13T12:00:00Z","interfaces":[],"disks":[],"users":[]}`), &s); err != nil || s.Users == nil || len(s.Users) != 0 {
+		t.Errorf("ninguém conectado: %+v %v", s.Users, err)
 	}
 }
 

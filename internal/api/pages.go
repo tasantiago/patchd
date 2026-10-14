@@ -570,6 +570,7 @@ var pages = template.Must(template.New("").Parse(`
 <td>{{if .Online}}<span class="estado em_dia">online</span>{{else}}<span class="estado sem_dado_recente">offline</span>{{end}}</td>
 <td>{{.Agent}}</td>
 <td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
+<td{{if .UserAll}} title="{{.UserAll}}"{{end}}>{{.User}}{{if .UserMore}} <span class="muted">+{{.UserMore}}</span>{{end}}</td>
 <td>{{.Collected}}</td><td>{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td class="num">{{.Ring}}</td>
 </tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>
@@ -831,6 +832,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if .Model}}<dt>Fabricante e modelo</dt><dd>{{.Model}}</dd>{{end}}
 {{if .Serial}}<dt>Número de série</dt><dd><code>{{.Serial}}</code></dd>{{end}}
 {{if .Host.Has}}<dt>IP principal</dt><dd>{{.Host.Primary}}</dd>{{end}}
+{{if .Host.UsersKnown}}<dt>Usuários conectados</dt><dd>{{if .Host.Users}}<ul class="usuarios">{{range .Host.Users}}<li>{{if .Name}}{{.Name}} <span class="muted"><code>{{.Account}}</code></span>{{else}}<code>{{.Account}}</code>{{end}} <span class="muted">· {{.Session}}{{if not .Active}} · desconectada{{end}}</span></li>{{end}}</ul><span class="muted">coletado {{.Host.Age}}</span>{{else}}ninguém <span class="muted">· coletado {{.Host.Age}}</span>{{end}}</dd>{{end}}
 <dt>Último contato</dt><dd>{{.Seen}}</dd>
 <dt>Inventário coletado</dt><dd>{{.Collected}}</dd>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>

@@ -1,6 +1,7 @@
-// Package hoststate coleta o estado volátil da máquina (Aula 12.1): interfaces de rede e
-// espaço nos volumes locais. Diferente do inventário, não tem hash nem histórico: vai em
-// todo check-in, e o servidor guarda só o último.
+// Package hoststate coleta o estado volátil da máquina (Aula 12.1): interfaces de rede,
+// espaço nos volumes locais e, desde a Aula 15.6, quem está conectado. Diferente do
+// inventário, não tem hash nem histórico: vai em todo check-in, e o servidor guarda só o
+// último.
 package hoststate
 
 import (
@@ -26,6 +27,12 @@ func Collect(ctx context.Context) protocol.MachineState {
 	for _, e := range errs {
 		s.Errors = append(s.Errors, "discos: "+e.Error())
 	}
+	// Usuários conectados (Aula 15.6). nil: este SO ainda não coleta.
+	us, err := loggedUsers(ctx)
+	if err != nil {
+		s.Errors = append(s.Errors, "usuários: "+err.Error())
+	}
+	s.Users = us
 	trim(&s)
 	return s
 }
@@ -47,6 +54,9 @@ func trim(s *protocol.MachineState) {
 	}
 	if len(s.Disks) > protocol.MaxStateDisks {
 		s.Disks = s.Disks[:protocol.MaxStateDisks]
+	}
+	if len(s.Users) > protocol.MaxStateUsers {
+		s.Users = s.Users[:protocol.MaxStateUsers]
 	}
 	if len(s.Errors) > protocol.MaxStateErrors {
 		s.Errors = s.Errors[:protocol.MaxStateErrors]
