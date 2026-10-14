@@ -503,7 +503,7 @@ var pages = template.Must(template.New("").Parse(`
 <nav aria-label="principal">
 <a href="/painel/" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}><span class="ic">🖥️</span>Frota</a>
 <a href="/painel/inventario" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}><span class="ic">🗂️</span>Inventário</a>
-<a href="/painel/patch" {{if eq .Nav "patch"}}class="ativo" aria-current="page"{{end}}><span class="ic">🩹</span>Patch</a>
+<a href="/painel/patch?aba=geral" {{if eq .Nav "patch"}}class="ativo" aria-current="page"{{end}}><span class="ic">🩹</span>Patch</a>
 <a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Jobs</a>
 <a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}><span class="ic">🎯</span>Campanhas</a>
 <a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}><span class="ic">🔁</span>Anéis</a>
@@ -579,7 +579,35 @@ var pages = template.Must(template.New("").Parse(`
 </div>
 {{template "fim"}}{{end}}
 
-{{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
+{{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
+
+{{define "patch-geral"}}{{template "topo" .}}
+<h1>Patch <span class="muted">› Visão geral</span></h1>
+{{template "patch-abas" "geral"}}
+{{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
+<ul class="kpis">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>
+<div class="card"><div class="card-cab"><h2>Precisa de atenção</h2><span class="muted">avaliado em {{.EvaluatedAt}}</span></div>
+{{if .Attention}}<ul class="atencao-lista">{{range .Attention}}<li class="{{.Level}}"><a href="{{.Href}}">{{.Text}}</a></li>{{end}}</ul>
+{{else}}<p class="muted">Nada pede atenção agora.</p>{{end}}</div>
+<div class="duas-col">
+<div class="card"><div class="card-cab"><h2>Por anel</h2><a class="muted" href="/painel/aneis">Anéis</a></div>
+{{if .Rings}}<div class="tabela"><table><thead><tr><th>Anel</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
+<tbody>{{range .Rings}}<tr><td>{{.Ring}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Missing}}</td><td class="num">{{.Reboot}}</td><td class="num">{{.Stale}}</td><td class="num">{{.NA}}</td>
+<td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span style="width: {{.Pct}}%"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
+<div class="card"><div class="card-cab"><h2>Por sistema</h2></div>
+{{if .Systems}}<div class="tabela"><table><thead><tr><th>Sistema</th><th>Máquinas</th><th>Em dia</th><th>Pendentes</th><th>Exploradas</th><th>% em dia</th></tr></thead>
+<tbody>{{range .Systems}}<tr><td>{{.OS}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Pending}}</td><td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td>
+<td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span style="width: {{.Pct}}%"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
+</div>
+<div class="card"><div class="card-cab"><h2>Execução nos últimos 7 dias</h2><a class="muted" href="/painel/jobs">Jobs</a></div>
+{{if .Exec}}<div class="tabela"><table><thead><tr><th>Tipo</th><th>Criados</th><th>Concluídos</th><th>Sem sucesso</th><th>Adiados</th><th>Em aberto</th></tr></thead>
+<tbody>{{range .Exec}}<tr><td>{{.Type}}</td><td class="num">{{.Created}}</td><td class="num">{{.Done}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Postponed}}</td><td class="num">{{.Open}}</td></tr>{{end}}
+<tr class="total"><td>Total</td><td class="num">{{.ExecTotal.Created}}</td><td class="num">{{.ExecTotal.Done}}</td><td class="num">{{.ExecTotal.Failed}}</td><td class="num">{{.ExecTotal.Postponed}}</td><td class="num">{{.ExecTotal.Open}}</td></tr></tbody></table></div>
+{{else}}<p class="muted">Nenhum job nos últimos 7 dias.</p>{{end}}</div>
+{{end}}
+{{template "fim"}}{{end}}
 
 {{define "patch-terceiros"}}{{template "topo" .}}
 <h1>Patch <span class="muted">› Programas de terceiros</span></h1>

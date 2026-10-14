@@ -62,6 +62,10 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 .job.concluido,.job.concluida{color:#16692f;background:#e7f6ec}.job.falhou,.job.rejeitado{color:#a12424;background:#fbe9e9}
 .job.pendente,.job.entregue,.job.em_andamento{color:#0b4f96;background:#e6f0fb}.job.pausada,.job.adiado{color:#8a5a00;background:#fff4dc}.job.dispensado{color:#4b5563;background:#f1f3f5}
 .job.cancelado,.job.cancelada,.job.expirado{color:#4b5563;background:#f1f3f5}
+td.nowrap{white-space:nowrap}.barra{display:inline-block;vertical-align:middle;width:4.5rem;height:.45rem;background:#eef0f3;border-radius:999px;overflow:hidden}.barra>span{display:block;height:100%;background:var(--verde-ok)}
+.atencao-lista{list-style:none;margin:0;padding:0}.atencao-lista li{padding:.45rem .7rem;border-left:3px solid var(--laranja);background:#fffaf0;margin:0 0 .4rem;border-radius:4px}
+.atencao-lista li.erro{border-left-color:var(--vermelho);background:#fdf2f2}.atencao-lista a{color:var(--texto);text-decoration:none}.atencao-lista a:hover{text-decoration:underline}
+.duas-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(28rem,1fr));gap:0 1.25rem}tr.total td{font-weight:600}
 .motivos{margin:.15rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.84rem}
 .aviso{padding:.7rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}
 .ok{background:#e7f6ec;border-color:#b4e1c1;color:#14532d}.erro{background:#fbe9e9;border-color:#f3c4c4;color:#8a1c1c}.atencao{background:#fff4dc;border-color:#f6d68f;color:#7a4a00}
