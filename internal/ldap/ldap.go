@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/ber"
@@ -200,16 +201,51 @@ func InChain(attr, dn string) Filter {
 
 // SearchRequest é uma busca. Attributes vazio pede só os DNs (atributo "1.1").
 type SearchRequest struct {
-	BaseDN    string
-	Scope     int
-	Filter    Filter
-	SizeLimit int
-	TimeLimit int // segundos
+	BaseDN     string
+	Scope      int
+	Filter     Filter
+	SizeLimit  int
+	TimeLimit  int      // segundos
+	Attributes []string // atributos pedidos (Aula 15.5); vazio: nenhum
 }
 
-// Search devolve os DNs das entradas encontradas. As referências (o AD devolve as de
-// ForestDnsZones e DomainDnsZones numa busca a partir da raiz do domínio) são ignoradas.
+// Entry é uma entrada encontrada: o DN e os atributos pedidos, pelo nome em minúsculas.
+type Entry struct {
+	DN    string
+	Attrs map[string][]string
+}
+
+// First devolve o primeiro valor do atributo, ou vazio.
+func (e Entry) First(attr string) string {
+	if v := e.Attrs[strings.ToLower(attr)]; len(v) > 0 {
+		return v[0]
+	}
+	return ""
+}
+
+// Search devolve os DNs das entradas encontradas, sem atributos. Com um resultado de
+// erro no fim (limite de tamanho, por exemplo), devolve também o que já veio.
 func (c *Conn) Search(req SearchRequest) ([]string, error) {
+	req.Attributes = nil
+	entries, err := c.SearchEntries(req)
+	dns := make([]string, len(entries))
+	for i, e := range entries {
+		dns[i] = e.DN
+	}
+	return dns, err
+}
+
+// SearchEntries devolve as entradas encontradas com os atributos pedidos. As referências
+// (o AD devolve as de ForestDnsZones e DomainDnsZones numa busca a partir da raiz do
+// domínio) são ignoradas.
+func (c *Conn) SearchEntries(req SearchRequest) ([]Entry, error) {
+	attrs := [][]byte{ber.Str(ber.TagOctetString, "1.1")} // nenhum atributo: só o DN
+	if len(req.Attributes) > 0 {
+		attrs = attrs[:0]
+		for _, a := range req.Attributes {
+			attrs = append(attrs, ber.Str(ber.TagOctetString, a))
+		}
+	}
 	if err := c.send(ber.Cons(opSearchRequest,
 		ber.Str(ber.TagOctetString, req.BaseDN),
 		ber.Int(ber.TagEnumerated, int64(req.Scope)),
@@ -218,11 +254,11 @@ func (c *Conn) Search(req SearchRequest) ([]string, error) {
 		ber.Int(ber.TagInteger, int64(req.TimeLimit)),
 		ber.Bool(ber.TagBoolean, false),
 		req.Filter,
-		ber.Cons(ber.TagSequence, ber.Str(ber.TagOctetString, "1.1")), // nenhum atributo: só o DN
+		ber.Cons(ber.TagSequence, attrs...),
 	)); err != nil {
 		return nil, err
 	}
-	var dns []string
+	var entries []Entry
 	for {
 		op, err := c.read()
 		if err != nil {
@@ -230,16 +266,42 @@ func (c *Conn) Search(req SearchRequest) ([]string, error) {
 		}
 		switch op.ID {
 		case opSearchEntry:
-			if len(op.Children) < 1 || op.Children[0].ID != ber.TagOctetString {
-				return nil, errors.New("ldap: SearchResultEntry fora do formato")
+			e, err := parseEntry(op)
+			if err != nil {
+				return nil, err
 			}
-			dns = append(dns, op.Children[0].String())
+			entries = append(entries, e)
 		case opSearchReference:
 			// continuação em outro servidor: o login não segue referências
 		case opSearchDone:
-			return dns, result(op)
+			return entries, result(op)
 		default:
 			return nil, fmt.Errorf("ldap: resposta inesperada à busca (0x%02x)", op.ID)
 		}
 	}
+}
+
+// parseEntry lê um SearchResultEntry: objectName e a lista de PartialAttribute (tipo e
+// conjunto de valores).
+func parseEntry(op *ber.Packet) (Entry, error) {
+	if len(op.Children) < 1 || op.Children[0].ID != ber.TagOctetString {
+		return Entry{}, errors.New("ldap: SearchResultEntry fora do formato")
+	}
+	e := Entry{DN: op.Children[0].String()}
+	if len(op.Children) < 2 {
+		return e, nil
+	}
+	for _, pa := range op.Children[1].Children {
+		if pa.ID != ber.TagSequence || len(pa.Children) < 2 || pa.Children[0].ID != ber.TagOctetString || pa.Children[1].ID != ber.TagSet {
+			return Entry{}, errors.New("ldap: atributo fora do formato")
+		}
+		if e.Attrs == nil {
+			e.Attrs = map[string][]string{}
+		}
+		name := strings.ToLower(pa.Children[0].String())
+		for _, v := range pa.Children[1].Children {
+			e.Attrs[name] = append(e.Attrs[name], v.String())
+		}
+	}
+	return e, nil
 }

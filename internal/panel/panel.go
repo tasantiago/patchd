@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Perfis. O admin administra (usuários, tokens, ações nas máquinas, nos módulos
@@ -46,18 +48,70 @@ type User struct {
 
 // Session é uma sessão aberta no painel. Guardada pelo hash do segredo do cookie.
 type Session struct {
-	Username   string
-	Role       string
-	Source     string
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-	LastSeenAt time.Time
+	Username    string
+	DisplayName string // nome de exibição do AD ou do RHBK (Aula 15.5); vazio na conta local
+	Role        string
+	Source      string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	LastSeenAt  time.Time
 }
 
 // Valid diz se a sessão ainda vale em now: antes do prazo absoluto e sem passar do
 // prazo de inatividade.
 func (s Session) Valid(now time.Time) bool {
 	return now.Before(s.ExpiresAt) && now.Sub(s.LastSeenAt) < SessionIdle
+}
+
+// Greeting é o nome do "Olá": o de exibição, ou o usuário quando não há.
+func (s Session) Greeting() string {
+	if s.DisplayName != "" {
+		return s.DisplayName
+	}
+	return s.Username
+}
+
+// SourceLabel é a origem como o admin fala: AD, RHBK ou local.
+func (s Session) SourceLabel() string { return SourceLabel(s.Source) }
+
+// SourceLabel traduz a origem de uma sessão.
+func SourceLabel(src string) string {
+	switch src {
+	case SourceAD:
+		return "AD"
+	case SourceOIDC:
+		return "RHBK"
+	case SourceLocal:
+		return "local"
+	}
+	return src
+}
+
+// MaxDisplayName limita o nome de exibição guardado na sessão.
+const MaxDisplayName = 128
+
+// CleanDisplayName prepara o nome que veio do AD ou do RHBK para a tela: sem caracteres
+// de controle nem de formatação (os invisíveis que invertem o texto, por exemplo), com
+// os espaços juntados e no máximo MaxDisplayName caracteres. O HTML já é escapado pelo
+// modelo; aqui é para o nome não enganar quem lê.
+func CleanDisplayName(s string) string {
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "")
+	}
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsSpace(r):
+			return ' '
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) > MaxDisplayName {
+		s = strings.TrimSpace(string([]rune(s)[:MaxDisplayName]))
+	}
+	return s
 }
 
 // ErrUserExists: já há um usuário local com o nome.

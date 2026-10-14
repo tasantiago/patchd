@@ -259,16 +259,16 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.limiter.succeed(user, ip)
-	if !a.openSession(w, r, user, res.role, res.source) {
+	if !a.openSession(w, r, user, res.name, res.role, res.source) {
 		return
 	}
 	a.count(loginsOf, "senha", "ok")
 	http.Redirect(w, r, "/painel/", http.StatusSeeOther)
 }
 
-// openSession abre a sessão e põe o cookie (login por senha e pelo RHBK). Em erro, já
-// respondeu e devolve false.
-func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, role, source string) bool {
+// openSession abre a sessão e põe o cookie (login por senha e pelo RHBK). name é o nome
+// de exibição (vazio na conta local). Em erro, já respondeu e devolve false.
+func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, name, role, source string) bool {
 	now := a.now()
 	if n, err := a.store.DeleteExpiredPanelSessions(r.Context(), now); err != nil {
 		a.logger.Warn("limpeza das sessões vencidas", "error", err)
@@ -277,7 +277,7 @@ func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, role, so
 	}
 	// Segredo novo a cada login: um cookie antigo plantado no navegador nunca vira sessão.
 	plain, hash := identity.NewSecret(panel.SessionPrefix)
-	s := panel.Session{Username: user, Role: role, Source: source,
+	s := panel.Session{Username: user, DisplayName: panel.CleanDisplayName(name), Role: role, Source: source,
 		CreatedAt: now, ExpiresAt: now.Add(panel.SessionMaxAge), LastSeenAt: now}
 	if err := a.store.CreatePanelSession(r.Context(), hash, s); err != nil {
 		a.internalError(w, r, "abrir sessão do painel", err)
@@ -292,11 +292,11 @@ func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, role, so
 	return true
 }
 
-// Directory confere a senha num diretório externo (o AD, Aula 7.3) e devolve o perfil.
-// Erros: panel.ErrBadCredentials e panel.ErrNoRole recusam o login; qualquer outro quer
+// Directory confere a senha num diretório externo (o AD, Aula 7.3) e devolve o perfil e
+// o nome de exibição (Aula 15.5; vazio quando o diretório não tem). Erros: panel.ErrBadCredentials e panel.ErrNoRole recusam o login; qualquer outro quer
 // dizer "não foi possível conferir", e só aí a conta local de contingência é tentada.
 type Directory interface {
-	Authenticate(ctx context.Context, user, password string) (role string, err error)
+	Authenticate(ctx context.Context, user, password string) (role, name string, err error)
 }
 
 // WithDirectory liga o login pelo AD.
@@ -305,9 +305,9 @@ func WithDirectory(d Directory) Option {
 }
 
 type authResult struct {
-	ok           bool
-	role, source string
-	reason       string // por que foi recusado (só para o log)
+	ok                 bool
+	role, source, name string
+	reason             string // por que foi recusado (só para o log)
 }
 
 // authenticate decide quem confere a senha. Com o AD ligado, só ele; a conta local
@@ -316,10 +316,10 @@ type authResult struct {
 // (desligamento, bloqueio, troca de senha).
 func (a *api) authenticate(r *http.Request, user, pw string) (authResult, error) {
 	if a.directory != nil {
-		role, err := a.directory.Authenticate(r.Context(), user, pw)
+		role, name, err := a.directory.Authenticate(r.Context(), user, pw)
 		switch {
 		case err == nil:
-			return authResult{ok: true, role: role, source: panel.SourceAD}, nil
+			return authResult{ok: true, role: role, name: name, source: panel.SourceAD}, nil
 		case errors.Is(err, panel.ErrBadCredentials), errors.Is(err, panel.ErrNoRole):
 			return authResult{reason: "AD: " + err.Error()}, nil
 		}

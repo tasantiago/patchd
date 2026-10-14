@@ -106,3 +106,29 @@ func TestValidadeDaSessao(t *testing.T) {
 		t.Error("o prazo absoluto vence mesmo em uso")
 	}
 }
+
+// Aula 15.5: o nome de exibição que vem do AD ou do RHBK.
+func TestNomeDeExibicao(t *testing.T) {
+	longo := strings.Repeat("Á", MaxDisplayName+10)
+	for in, want := range map[string]string{
+		"  Fulano   de\tTal ":           "Fulano de Tal",
+		"Ana‮Lima":                      "AnaLima", // o caractere que inverte o texto some
+		"Bia\x00\x1b[31m Souza":         "Bia[31m Souza",
+		"":                              "",
+		"\xffZé":                        "Zé",
+		longo:                           strings.Repeat("Á", MaxDisplayName),
+		"João da Silva (Secretaria/TI)": "João da Silva (Secretaria/TI)",
+	} {
+		if got := CleanDisplayName(in); got != want {
+			t.Errorf("CleanDisplayName(%q) = %q, quer %q", in, got, want)
+		}
+	}
+	s := Session{Username: "fulano", Source: SourceOIDC}
+	if s.Greeting() != "fulano" || s.SourceLabel() != "RHBK" {
+		t.Errorf("sem nome: %q %q", s.Greeting(), s.SourceLabel())
+	}
+	s.DisplayName = "Fulano de Tal"
+	if s.Greeting() != "Fulano de Tal" {
+		t.Errorf("com nome: %q", s.Greeting())
+	}
+}

@@ -19,22 +19,23 @@ import (
 type adFalso struct {
 	fora     bool
 	contas   map[string][2]string // usuário → senha, perfil ("" = sem grupo)
+	nomes    map[string]string    // usuário → displayName (Aula 15.5)
 	chamadas int
 }
 
-func (f *adFalso) Authenticate(_ context.Context, user, pw string) (string, error) {
+func (f *adFalso) Authenticate(_ context.Context, user, pw string) (string, string, error) {
 	f.chamadas++
 	if f.fora {
-		return "", errors.New("AD indisponível: dial: connect: connection refused")
+		return "", "", errors.New("AD indisponível: dial: connect: connection refused")
 	}
 	c, ok := f.contas[user]
 	if !ok || c[0] != pw {
-		return "", fmt.Errorf("%w: senha inválida (52e)", panel.ErrBadCredentials)
+		return "", "", fmt.Errorf("%w: senha inválida (52e)", panel.ErrBadCredentials)
 	}
 	if c[1] == "" {
-		return "", panel.ErrNoRole
+		return "", "", panel.ErrNoRole
 	}
-	return c[1], nil
+	return c[1], f.nomes[user], nil
 }
 
 // ambienteAD: o usuário local admin.lab (senhaAdmin) e um AD com três contas.
@@ -54,7 +55,7 @@ func ambienteAD(t *testing.T) (http.Handler, *store.Memory, *adFalso, *syncBuffe
 		"beltrano": {"senha-do-ad-3", ""},
 		// Mesmo nome e senha da conta local: com o AD no ar, quem decide é o AD.
 		"admin.lab": {"outra-senha-no-ad", panel.RoleRead},
-	}}
+	}, nomes: map[string]string{"fulano": "Fulano de Tal"}}
 	log := &syncBuffer{}
 	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithDirectory(dir))
 	return h, st, dir, log
@@ -77,9 +78,20 @@ func TestLoginPeloAD(t *testing.T) {
 		if s.Source != panel.SourceAD || s.Role != perfil || s.Username != strings.ToLower(usuario) {
 			t.Errorf("%s: sessão %+v", usuario, s)
 		}
-		if r := comCookie(h, "GET", "/painel/", c); !strings.Contains(r.Body.String(), strings.ToLower(usuario)+" (ad)") {
+		if r := comCookie(h, "GET", "/painel/", c); !strings.Contains(r.Body.String(), strings.ToLower(usuario)+" · AD") {
 			t.Errorf("%s: painel %s", usuario, r.Body)
 		}
+		// O "Olá" usa o displayName; sem ele, o usuário (Aula 15.5).
+		ola := map[string]string{"fulano": "Olá, Fulano de Tal", "Ciclano": "Olá, ciclano"}[usuario]
+		if s.DisplayName != map[string]string{"fulano": "Fulano de Tal"}[usuario] {
+			t.Errorf("%s: nome na sessão %q", usuario, s.DisplayName)
+		}
+		if b := comCookie(h, "GET", "/painel/", c).Body.String(); !strings.Contains(b, `<span class="ola">`+ola+`</span>`) {
+			t.Errorf("%s: faltou %q", usuario, ola)
+		}
+	}
+	if strings.Contains(log.String(), "Fulano de Tal") {
+		t.Error("o nome de exibição não vai para o log: o usuário já identifica")
 	}
 
 	// Senha errada no AD e conta sem grupo: a mesma resposta genérica; o motivo vai para o log.
@@ -107,7 +119,7 @@ func TestContaLocalSoComOADForaDoAr(t *testing.T) {
 	if r.Code != http.StatusSeeOther {
 		t.Fatalf("contingência: %d", r.Code)
 	}
-	if r := comCookie(h, "GET", "/painel/", cookieDaSessao(t, r)); !strings.Contains(r.Body.String(), "admin.lab (local)") {
+	if r := comCookie(h, "GET", "/painel/", cookieDaSessao(t, r)); !strings.Contains(r.Body.String(), "admin.lab · local") {
 		t.Errorf("sessão local: %s", r.Body)
 	}
 	if r := entra(h, "fulano", "senha-do-ad-1", "198.51.100.31"); r.Code != http.StatusUnauthorized {

@@ -176,7 +176,7 @@ func TestLoginESaida(t *testing.T) {
 	}
 
 	r = comCookie(h, "GET", "/painel/", c)
-	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "thyago (local)") || !strings.Contains(r.Body.String(), "admin") {
+	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "thyago · local") || !strings.Contains(r.Body.String(), "admin") {
 		t.Errorf("painel: %d %s", r.Code, r.Body)
 	}
 	if r := comCookie(h, "GET", "/painel/entrar", c); r.Code != http.StatusSeeOther || r.Header().Get("Location") != "/painel/" {

@@ -149,7 +149,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, "Não foi possível concluir o login pelo RHBK.", "troca do código ou ID token", err)
 		return
 	}
-	if !a.openSession(w, r, id.Username, id.Role, panel.SourceOIDC) {
+	if !a.openSession(w, r, id.Username, id.Name, id.Role, panel.SourceOIDC) {
 		return
 	}
 	a.count(loginsOf, "rhbk", "ok")

@@ -25,14 +25,14 @@ type PanelSessionRow struct {
 // PanelSessions lista as sessões, da usada mais recentemente para a mais antiga.
 func (p *Postgres) PanelSessions(ctx context.Context) ([]PanelSessionRow, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT token_hash, username, role, source, created_at, expires_at, last_seen_at
+		SELECT token_hash, username, display_name, role, source, created_at, expires_at, last_seen_at
 		FROM panel_sessions ORDER BY last_seen_at DESC, username`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (PanelSessionRow, error) {
 		var s PanelSessionRow
-		err := r.Scan(&s.Hash, &s.Username, &s.Role, &s.Source, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt)
+		err := r.Scan(&s.Hash, &s.Username, &s.DisplayName, &s.Role, &s.Source, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt)
 		s.CreatedAt, s.ExpiresAt, s.LastSeenAt = s.CreatedAt.UTC(), s.ExpiresAt.UTC(), s.LastSeenAt.UTC()
 		return s, err
 	})

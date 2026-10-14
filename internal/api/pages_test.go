@@ -86,7 +86,7 @@ func TestPaginaDaFrota(t *testing.T) {
 		"1 pacote com correção pendente", `<span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">3</span>`,
 		`<span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">1</span>`,
 		"&lt;script&gt;alert(1)&lt;/script&gt;",
-		"consulta (local) · leitura",
+		"consulta · local · leitura",
 	} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)

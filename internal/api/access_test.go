@@ -126,7 +126,7 @@ func TestTestesDeLogin(t *testing.T) {
 		if pw != "certa" {
 			return api.ADCheckResult{TLSVersion: "TLS 1.3", BadPassword: true}, nil
 		}
-		return api.ADCheckResult{TLSVersion: "TLS 1.3", AdminSet: true, ReadSet: true, Admin: true, Role: panel.RoleAdmin}, nil
+		return api.ADCheckResult{TLSVersion: "TLS 1.3", Name: "Fulano de Tal", AdminSet: true, ReadSet: true, Admin: true, Role: panel.RoleAdmin}, nil
 	}
 	h, _, log := ambientePaginas(t, api.WithOIDC(prov), api.WithADInfo(api.ADInfo{Check: check,
 		Vars: []api.ADVar{{Name: "PATCHD_LDAP_HOST", Set: true}, {Name: "PATCHD_LDAP_BASE_DN", Note: "a base é derivada do domínio"}}}))
@@ -144,7 +144,7 @@ func TestTestesDeLogin(t *testing.T) {
 	b = testa("fulano", "certa")
 	for _, tr := range []string{"Resultado para fulano", "<dt>Conexão LDAPS</dt><dd>ok (TLS 1.3)</dd>", "<dt>Senha</dt><dd>conferida pelo AD</dd>",
 		"<dt>Grupo admin (PATCHD_LDAP_ADMIN_GROUP)</dt><dd>membro</dd>", `<dt>Grupo leitura (PATCHD_LDAP_READ_GROUP)</dt><dd class="nivel-atencao">não membro</dd>`,
-		"<dt>Perfil no painel</dt><dd>admin</dd>"} {
+		"<dt>Perfil no painel</dt><dd>admin</dd>", "<dt>Nome de exibição</dt><dd>Fulano de Tal</dd>"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("ok: faltou %q", tr)
 		}
@@ -187,7 +187,7 @@ func TestSessoesAbertas(t *testing.T) {
 	ctx := context.Background()
 	agora := time.Now().UTC()
 	sessaoBia := panel.SessionPrefix + "sessao-da-bia"
-	st.CreatePanelSession(ctx, identity.Hash(sessaoBia), panel.Session{Username: "bia", Role: panel.RoleAdmin, Source: panel.SourceOIDC,
+	st.CreatePanelSession(ctx, identity.Hash(sessaoBia), panel.Session{Username: "bia", DisplayName: "Bia Lima", Role: panel.RoleAdmin, Source: panel.SourceOIDC,
 		CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora})
 	// Uma vencida não aparece.
 	st.CreatePanelSession(ctx, identity.Hash(panel.SessionPrefix+"velha"), panel.Session{Username: "velho", Role: panel.RoleRead, Source: panel.SourceAD,
@@ -196,9 +196,9 @@ func TestSessoesAbertas(t *testing.T) {
 	idBia := hex.EncodeToString(identity.Hash(sessaoBia))
 
 	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
-	for _, tr := range []string{"<td><code>thyago</code> <span class=\"muted\">(esta sessão)</span></td><td>AD</td>", "<td><code>bia</code></td><td>RHBK</td>",
+	for _, tr := range []string{"<td><code>thyago</code> <span class=\"muted\">(esta sessão)</span></td><td>AD</td>", "<td>Bia Lima · <code>bia</code></td><td>RHBK</td>",
 		"<td><code>consulta</code></td><td>local</td>", `action="/painel/configuracao/acesso/sessoes/` + idBia + `/encerrar"`,
-		`<option value="bia">bia</option><option value="consulta">consulta</option></select>`} {
+		`<option value="bia">Bia Lima (bia)</option><option value="consulta">consulta</option></select>`} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
 		}

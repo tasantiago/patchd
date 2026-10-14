@@ -18,7 +18,7 @@ func servidor(t *testing.T) *ldaptest.Server {
 	return ldaptest.Start(t, ldaptest.Directory{
 		Domain: "exemplo.test",
 		Users: map[string]ldaptest.User{
-			"fulano":   {DN: "CN=Fulano de Tal,OU=TI," + base, Password: "senha-do-fulano", MemberOf: []string{"CN=Equipe Infra,OU=Grupos," + base}},
+			"fulano":   {DN: "CN=Fulano de Tal,OU=TI," + base, DisplayName: "Fulano  de Tal\u202e", Password: "senha-do-fulano", MemberOf: []string{"CN=Equipe Infra,OU=Grupos," + base}},
 			"ciclano":  {DN: "CN=Ciclano,OU=Gabinetes," + base, Password: "senha-do-ciclano", MemberOf: []string{"CN=Consulta Patchd,OU=Grupos," + base}},
 			"beltrano": {DN: "CN=Beltrano,OU=Gabinetes," + base, Password: "senha-do-beltrano"},
 			"inativo":  {DN: "CN=Inativo,OU=TI," + base, Password: "senha-do-inativo", Disabled: true},
@@ -54,24 +54,27 @@ func TestPerfisPelosGrupos(t *testing.T) {
 	if err != nil || !rep.Admin || rep.Read || rep.Role() != panel.RoleAdmin || !strings.HasPrefix(rep.TLSVersion, "TLS 1.") {
 		t.Fatalf("fulano (admin por grupo aninhado): %+v %v", rep, err)
 	}
-	if role, err := d.Authenticate(ctx, "ciclano", "senha-do-ciclano"); err != nil || role != panel.RoleRead {
-		t.Errorf("ciclano: %q %v", role, err)
+	if rep.Name != "Fulano de Tal" {
+		t.Errorf("nome de exibição: %q (espaços juntados, sem o caractere invisível)", rep.Name)
 	}
-	if _, err := d.Authenticate(ctx, "beltrano", "senha-do-beltrano"); !errors.Is(err, panel.ErrNoRole) {
+	if role, name, err := d.Authenticate(ctx, "ciclano", "senha-do-ciclano"); err != nil || role != panel.RoleRead || name != "" {
+		t.Errorf("ciclano (sem displayName): %q %q %v", role, name, err)
+	}
+	if _, _, err := d.Authenticate(ctx, "beltrano", "senha-do-beltrano"); !errors.Is(err, panel.ErrNoRole) {
 		t.Errorf("beltrano, sem grupo: %v", err)
 	}
 	// Grupo pelo DN em vez do nome: o mesmo resultado.
 	d2 := diretorio(t, s, func(c *Config) { c.AdminGroup = "CN=Admins Patchd,OU=Grupos," + base; c.ReadGroup = "" })
-	if role, err := d2.Authenticate(ctx, "fulano", "senha-do-fulano"); err != nil || role != panel.RoleAdmin {
+	if role, name, err := d2.Authenticate(ctx, "fulano", "senha-do-fulano"); err != nil || role != panel.RoleAdmin || name != "Fulano de Tal" {
 		t.Errorf("grupo por DN: %q %v", role, err)
 	}
-	if _, err := d2.Authenticate(ctx, "ciclano", "senha-do-ciclano"); !errors.Is(err, panel.ErrNoRole) {
+	if _, _, err := d2.Authenticate(ctx, "ciclano", "senha-do-ciclano"); !errors.Is(err, panel.ErrNoRole) {
 		t.Errorf("sem grupo de leitura configurado: %v", err)
 	}
 	// Base de busca explícita (uma OU) que não contém o usuário: não encontrado.
 	d3 := diretorio(t, s, func(c *Config) { c.BaseDN = "OU=Gabinetes," + base })
 	var ue *UnavailableError
-	if _, err := d3.Authenticate(ctx, "fulano", "senha-do-fulano"); !errors.As(err, &ue) || !strings.Contains(ue.Reason, "PATCHD_LDAP_BASE_DN") {
+	if _, _, err := d3.Authenticate(ctx, "fulano", "senha-do-fulano"); !errors.As(err, &ue) || !strings.Contains(ue.Reason, "PATCHD_LDAP_BASE_DN") {
 		t.Errorf("fora da base: %v", err)
 	}
 }
@@ -85,7 +88,7 @@ func TestSenhasRecusadas(t *testing.T) {
 		{"ninguem", "qualquer", "senha inválida (52e)"}, // o AD não distingue no bind por UPN
 		{"inativo", "senha-do-inativo", "conta desativada (533)"},
 	} {
-		_, err := d.Authenticate(ctx, c.user, c.pw)
+		_, _, err := d.Authenticate(ctx, c.user, c.pw)
 		if !errors.Is(err, panel.ErrBadCredentials) || !strings.Contains(err.Error(), c.motivo) {
 			t.Errorf("%s: %v", c.user, err)
 		}
@@ -93,7 +96,7 @@ func TestSenhasRecusadas(t *testing.T) {
 	// Senha vazia e nome fora do padrão nem chegam ao AD.
 	antes := s.Binds.Load()
 	for _, c := range [][2]string{{"fulano", ""}, {"dominio\\fulano", "x"}, {"fulano@outro", "x"}, {"*", "x"}} {
-		if _, err := d.Authenticate(ctx, c[0], c[1]); !errors.Is(err, panel.ErrBadCredentials) {
+		if _, _, err := d.Authenticate(ctx, c[0], c[1]); !errors.Is(err, panel.ErrBadCredentials) {
 			t.Errorf("%q: %v", c[0], err)
 		}
 	}
@@ -114,7 +117,7 @@ func TestIndisponivelSemExporOServidor(t *testing.T) {
 	}
 	for want, mod := range casos {
 		d := diretorio(t, s, mod)
-		_, err := d.Authenticate(ctx, "fulano", "senha-do-fulano")
+		_, _, err := d.Authenticate(ctx, "fulano", "senha-do-fulano")
 		t.Logf("%s → %v", want, err)
 		var ue *UnavailableError
 		// O texto exato do erro de DNS depende do resolvedor da rede; o tipo, não.
