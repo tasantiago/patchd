@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,7 +14,7 @@ import (
 // Campanhas (Aula 8.5).
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
-	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at`
+	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
@@ -21,7 +22,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var observe, ttl int
 	var cur, launched, accepted int16
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
-		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes)
 	if err != nil {
 		return c, err
 	}
@@ -35,6 +36,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	if c.Sources == nil {
 		c.Sources = []string{}
 	}
+	c.Notes = notes(c.Notes)
 	return c, nil
 }
 
@@ -45,9 +47,10 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 	}
 	var id int64
 	err := p.pool.QueryRow(ctx, `
-		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8) RETURNING id`,
-		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy).Scan(&id)
+		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10) RETURNING id`,
+		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
+		c.App, c.Version).Scan(&id)
 	return id, err
 }
 
@@ -93,9 +96,17 @@ func (p *Postgres) campaigns(ctx context.Context, q string, args ...any) ([]camp
 func (p *Postgres) SaveCampaign(ctx context.Context, c campaign.Campaign, from string) (bool, error) {
 	tag, err := p.pool.Exec(ctx, `
 		UPDATE campaigns SET state = $2, current_idx = $3, launched_idx = $4, accepted_idx = $5, ring_done_at = $6,
-			detail = $7, updated_at = now()
-		WHERE id = $1 AND state = $8`, c.ID, c.State, c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx, c.RingDoneAt, c.Detail, from)
+			detail = $7, notes = $9, updated_at = now()
+		WHERE id = $1 AND state = $8`, c.ID, c.State, c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx, c.RingDoneAt, c.Detail, from, notes(c.Notes))
 	return tag.RowsAffected() == 1, err
+}
+
+// notes: o text[] não aceita NULL.
+func notes(n []string) []string {
+	if n == nil {
+		return []string{}
+	}
+	return n
 }
 
 // CampaignJobs lista os jobs da campanha num anel (posição idx).
@@ -124,6 +135,7 @@ func (m *Memory) CreateCampaign(ctx context.Context, c campaign.Campaign) (int64
 	if c.Sources == nil {
 		c.Sources = []string{}
 	}
+	c.Notes = []string{}
 	m.campaigns = append(m.campaigns, c)
 	return c.ID, nil
 }
@@ -171,6 +183,7 @@ func (m *Memory) SaveCampaign(ctx context.Context, c campaign.Campaign, from str
 	for i := range m.campaigns {
 		if m.campaigns[i].ID == c.ID && m.campaigns[i].State == from {
 			c.UpdatedAt = m.now()
+			c.Notes = notes(slices.Clone(c.Notes))
 			m.campaigns[i] = c
 			return true, nil
 		}

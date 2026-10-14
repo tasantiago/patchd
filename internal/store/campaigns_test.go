@@ -34,13 +34,31 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 		c.Observe != 90*time.Minute || c.TTL != 6*time.Hour || c.State != campaign.StateRunning || c.LaunchedIdx != -1 || c.AcceptedIdx != -1 {
 		t.Fatalf("lida: %+v %t %v", c, ok, err)
 	}
-	// Andamento.
+	if c.App != "" || c.Version != "" || c.Notes == nil || len(c.Notes) != 0 {
+		t.Errorf("update sem programa e sem notas: %+v", c)
+	}
+	// Campanha de terceiros (Aula 14.7): o programa e a versão.
+	tp, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "libreoffice", Type: "thirdparty", App: "libreoffice", Version: "26.8.1.1",
+		Rings: []int{0}, Observe: time.Hour, TTL: 24 * time.Hour, CreatedBy: "thyago"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c3, _, _ := st.Campaign(ctx, tp); c3.App != "libreoffice" || c3.Version != "26.8.1.1" || len(c3.Sources) != 0 {
+		t.Errorf("terceiros: %+v", c3)
+	}
+	c3, _, _ := st.Campaign(ctx, tp)
+	c3.State = campaign.StateCanceled
+	_, _ = st.SaveCampaign(ctx, c3, campaign.StateRunning)
+
+	// Andamento, com a nota do anel liberado.
 	agora := time.Now().UTC().Truncate(time.Microsecond)
 	c.CurrentIdx, c.LaunchedIdx, c.RingDoneAt, c.Detail = 1, 1, &agora, "observando"
+	c.Notes = []string{"anel 0: 1 job(s)", "anel 2: 0 job(s); fora: 1 sem pendência aprovada"}
 	if ok, err := st.SaveCampaign(ctx, c, campaign.StateRunning); !ok || err != nil {
 		t.Fatal(ok, err)
 	}
-	if c2, _, _ := st.Campaign(ctx, id); c2.CurrentIdx != 1 || c2.RingDoneAt == nil || !c2.RingDoneAt.Equal(agora) || c2.Detail != "observando" {
+	if c2, _, _ := st.Campaign(ctx, id); c2.CurrentIdx != 1 || c2.RingDoneAt == nil || !c2.RingDoneAt.Equal(agora) || c2.Detail != "observando" ||
+		len(c2.Notes) != 2 || c2.Notes[1] != "anel 2: 0 job(s); fora: 1 sem pendência aprovada" {
 		t.Errorf("gravada: %+v", c2)
 	}
 	if l, _ := st.RunningCampaigns(ctx); len(l) != 1 {
@@ -56,7 +74,7 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	if l, _ := st.RunningCampaigns(ctx); len(l) != 0 {
 		t.Error("pausada não está em andamento")
 	}
-	if l, _ := st.Campaigns(ctx, 10); len(l) != 1 || l[0].State != campaign.StatePaused {
+	if l, _ := st.Campaigns(ctx, 10); len(l) != 2 || l[1].State != campaign.StatePaused || l[0].State != campaign.StateCanceled {
 		t.Errorf("lista: %+v", l)
 	}
 

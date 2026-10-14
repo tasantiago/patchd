@@ -160,7 +160,7 @@ func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int
 		if c.UseWindow {
 			typ += ", na janela"
 		}
-		v.Rows = append(v.Rows, campaignRow{ID: c.ID, Name: c.Name, Type: typ, Sources: dash(strings.Join(c.Sources, ", ")),
+		v.Rows = append(v.Rows, campaignRow{ID: c.ID, Name: c.Name, Type: typ, Sources: dash(c.Target()),
 			Rings: ringsProgress(c), State: c.State, Label: campaignLabel(c.State), Detail: dash(c.Detail),
 			By: c.CreatedBy, Created: ago(a.now().Sub(c.CreatedAt))})
 	}
@@ -403,7 +403,7 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	if c.UseWindow {
 		v.When = "na janela de cada anel"
 	}
-	v.Sources, v.Observe = dash(strings.Join(c.Sources, ", ")), hoursLabel(int(c.Observe.Hours()))
+	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
 	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"
 	if v.Admin {
 		v.CanPause = c.State == campaign.StateRunning

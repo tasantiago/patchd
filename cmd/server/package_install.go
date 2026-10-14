@@ -124,7 +124,7 @@ func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey
 		rec.ID, short(id), d.App.Name, d.Installed, p.Version, p.Installer, d.Package.Architecture, d.Package.SHA256[:12]+"…",
 		strconv.FormatInt(p.Size, 10), p.Args, signer)
 	if len(p.Processes) > 0 {
-		fmt.Fprintf(stdout, "  em uso      não instala com %s aberto (agente v0.14.2 ou mais novo)\n", strings.Join(p.Processes, ", "))
+		fmt.Fprintf(stdout, "  em uso      não instala com %s aberto (agente v0.14.3 ou mais novo)\n", strings.Join(p.Processes, ", "))
 	}
 	fmt.Fprintf(stdout, "  prazo       %s\n", rec.NotAfter.Local().Format("02/01/2006 15:04"))
 	return exitOK

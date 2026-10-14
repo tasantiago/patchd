@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,15 +29,35 @@ func TestKeygenEAssinatura(t *testing.T) {
 		t.Error("keygen não pode sobrescrever uma chave existente")
 	}
 
+	// O sign confere os executáveis (Aula 14.7): têm de ser executáveis Go com a versão
+	// dentro. O próprio executável deste teste serve: tem o build info e as strings
+	// "v0.5.1" e "v0.5.2" deste arquivo.
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe, _ := os.ReadFile(self)
 	dist := filepath.Join(dir, "dist")
 	_ = os.MkdirAll(dist, 0o755)
-	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-linux-amd64"), []byte("agente linux"), 0o755)
-	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-windows-amd64.exe"), []byte("agente windows"), 0o755)
+	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-linux-amd64"), exe, 0o755)
+	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-windows-amd64.exe"), exe, 0o755)
 	rel := filepath.Join(dir, "releases")
+
+	// Versão que não está nos executáveis (montada em tempo de execução, para não virar
+	// string deste binário): nada é assinado.
+	outra := "v0." + strconv.Itoa(7) + ".7"
+	errs.Reset()
+	if code := run([]string{"sign", "-key", key, "-version", outra, "-dist", dist, "-out", rel}, &out, &errs); code != exitConfig ||
+		!strings.Contains(errs.String(), "patchd-agent-linux-amd64 não é da versão "+outra) || !strings.Contains(errs.String(), "nada foi assinado") {
+		t.Errorf("outra versão: %d %s", code, errs.String())
+	}
+	if _, err := os.Stat(filepath.Join(rel, outra)); !os.IsNotExist(err) {
+		t.Error("a pasta da versão recusada foi criada")
+	}
 
 	out.Reset()
 	args := []string{"sign", "-key", key, "-version", "v0.5.1", "-dist", dist, "-out", rel}
-	if code := run(args, &out, &errs); code != exitOK || !strings.Contains(out.String(), "2 executáveis") {
+	if code := run(args, &out, &errs); code != exitOK || !strings.Contains(out.String(), "2 executáveis, commit ") {
 		t.Fatalf("sign: %d %s %s", code, out.String(), errs.String())
 	}
 	data, _ := os.ReadFile(filepath.Join(rel, "v0.5.1", release.ManifestFile))
@@ -91,5 +112,26 @@ func TestPubkeyDaPrivada(t *testing.T) {
 	}
 	if code := run([]string{"pubkey"}, &refeita, &errs); code == exitOK {
 		t.Error("pubkey sem -key deveria ser recusado")
+	}
+}
+
+// Um arquivo que não é executável Go, mesmo com a versão dentro, não é assinado.
+func TestSignRecusaNaoGo(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "release.key")
+	var out, errs bytes.Buffer
+	if code := run([]string{"keygen", "-key", key}, &out, &errs); code != exitOK {
+		t.Fatal(errs.String())
+	}
+	dist := filepath.Join(dir, "dist")
+	_ = os.MkdirAll(dist, 0o755)
+	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-linux-amd64"), []byte("agente v0.5.1"), 0o755)
+	errs.Reset()
+	if code := run([]string{"sign", "-key", key, "-version", "v0.5.1", "-dist", dist, "-out", filepath.Join(dir, "rel")}, &out, &errs); code != exitConfig ||
+		!strings.Contains(errs.String(), "não é um executável Go") {
+		t.Errorf("não Go: %d %s", code, errs.String())
+	}
+	if shortRev("962696cb6ecbb63278041f3601ae5ad215dc12b0") != "962696cb6ecb" || shortRev("") != "sem commit gravado" {
+		t.Error("shortRev")
 	}
 }

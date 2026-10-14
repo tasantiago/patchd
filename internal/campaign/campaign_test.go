@@ -2,6 +2,7 @@ package campaign_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -171,13 +172,15 @@ func TestValidarCampanha(t *testing.T) {
 		t.Fatal(err)
 	}
 	for nome, c := range map[string]campaign.Campaign{
-		"sem nome":            {Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Hour},
-		"update sem fonte":    {Name: "x", Type: jobs.TypeUpdate, Rings: []int{0}, TTL: time.Hour},
-		"rescan com fonte":    {Name: "x", Type: jobs.TypeRescan, Sources: []string{"a"}, Rings: []int{0}, TTL: time.Hour},
-		"anéis fora de ordem": {Name: "x", Type: jobs.TypeRescan, Rings: []int{1, 0}, TTL: time.Hour},
-		"anel 10":             {Name: "x", Type: jobs.TypeRescan, Rings: []int{10}, TTL: time.Hour},
-		"sem anéis":           {Name: "x", Type: jobs.TypeRescan, TTL: time.Hour},
-		"prazo curto":         {Name: "x", Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Minute},
+		"sem nome":             {Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Hour},
+		"update sem fonte":     {Name: "x", Type: jobs.TypeUpdate, Rings: []int{0}, TTL: time.Hour},
+		"rescan com fonte":     {Name: "x", Type: jobs.TypeRescan, Sources: []string{"a"}, Rings: []int{0}, TTL: time.Hour},
+		"anéis fora de ordem":  {Name: "x", Type: jobs.TypeRescan, Rings: []int{1, 0}, TTL: time.Hour},
+		"anel 10":              {Name: "x", Type: jobs.TypeRescan, Rings: []int{10}, TTL: time.Hour},
+		"sem anéis":            {Name: "x", Type: jobs.TypeRescan, TTL: time.Hour},
+		"prazo curto":          {Name: "x", Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Minute},
+		"terceiros sem versão": {Name: "x", Type: jobs.TypeThirdParty, App: "vscode", Rings: []int{0}, TTL: time.Hour},
+		"rescan com programa":  {Name: "x", Type: jobs.TypeRescan, App: "vscode", Version: "1", Rings: []int{0}, TTL: time.Hour},
 	} {
 		if c.Validate() == nil {
 			t.Errorf("%s: aceita", nome)
@@ -188,5 +191,83 @@ func TestValidarCampanha(t *testing.T) {
 	}
 	if _, err := campaign.ParseRings("1,0"); err == nil {
 		t.Error("fora de ordem")
+	}
+}
+
+// planejadorFalso: a versão pronta ou não, e a decisão de cada máquina.
+type planejadorFalso struct {
+	motivo  string
+	decisao map[string]string // máquina → motivo de ficar fora; ausente: recebe o job
+	prontas int
+}
+
+func (p *planejadorFalso) Ready(context.Context, string, string) (string, error) {
+	p.prontas++
+	return p.motivo, nil
+}
+
+func (p *planejadorFalso) Job(_ context.Context, id, app, version string) (*jobs.ThirdPartyParams, string, error) {
+	if skip, ok := p.decisao[id]; ok {
+		return nil, skip, nil
+	}
+	return &jobs.ThirdPartyParams{App: app, Version: version, SHA256: strings.Repeat("a", 64), Size: 10, Installer: "msi",
+		Args: []string{"/quiet"}, Signer: "The Document Foundation"}, "", nil
+}
+
+// Campanha de terceiros (Aula 14.7): a aprovação conferida a cada anel, quem fica fora
+// com o motivo, e as notas de cada anel.
+func TestCampanhaDeTerceiros(t *testing.T) {
+	a := novoAmbiente(t)
+	plan := &planejadorFalso{decisao: map[string]string{"a2": "em dia", "b1": "sem o programa"}}
+	a.e.ThirdParty = plan
+	id := a.cria(campaign.Campaign{Name: "libreoffice 26.8", Type: jobs.TypeThirdParty, App: "libreoffice", Version: "26.8.1.1",
+		Rings: []int{0, 1, 2}, Observe: 10 * time.Minute, TTL: 24 * time.Hour, CreatedBy: "t"})
+	c := a.passo(id, 0)
+	l, _ := a.st.Jobs(context.Background(), "p1", 5)
+	if len(l) != 1 || l[0].Type != jobs.TypeThirdParty || len(c.Notes) != 1 || c.Notes[0] != "anel 0: 1 job(s)" || plan.prontas != 1 {
+		t.Fatalf("piloto: %+v %+v", l, c)
+	}
+	env, _ := a.st.DeliverJobs(context.Background(), "p1", a.agora)
+	var j jobs.Job
+	_ = json.Unmarshal([]byte(env[0].Payload), &j)
+	if p, err := jobs.ParseThirdPartyParams(j.Params); err != nil || p.App != "libreoffice" || p.Version != "26.8.1.1" {
+		t.Errorf("parâmetros: %+v %v", p, err)
+	}
+	a.encerra(id, 0, jobs.StateDone)
+	a.passo(id, time.Minute)
+
+	// Aprovação revogada antes do anel 1: a campanha pausa, sem job, com o motivo.
+	plan.motivo = "libreoffice 26.8.1.1 não está aprovado (a aprovação pode ter sido revogada)"
+	c = a.passo(id, 12*time.Minute)
+	if c.State != campaign.StatePaused || !strings.Contains(c.Detail, "anel 1 não liberado: libreoffice 26.8.1.1 não está aprovado") {
+		t.Fatalf("revogada: %+v", c)
+	}
+	if l, _ := a.st.Jobs(context.Background(), "a1", 5); len(l) != 0 {
+		t.Error("job no anel 1 sem aprovação")
+	}
+	// Aprovada de novo e retomada: o anel 1 sai; a2 fica fora (em dia).
+	plan.motivo = ""
+	if err := campaign.Resume(&c); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := a.st.SaveCampaign(context.Background(), c, campaign.StatePaused); !ok {
+		t.Fatal("retomar")
+	}
+	c = a.passo(id, 13*time.Minute)
+	if len(c.Notes) != 2 || c.Notes[1] != "anel 1: 1 job(s); fora: 1 em dia" {
+		t.Fatalf("anel 1: %+v", c)
+	}
+	a.encerra(id, 1, jobs.StateDone)
+	a.passo(id, 14*time.Minute)
+	c = a.passo(id, 30*time.Minute)
+	if c.State != campaign.StateDone || len(c.Notes) != 3 || c.Notes[2] != "anel 2: 0 job(s); fora: 1 sem o programa" || c.Target() != "libreoffice 26.8.1.1" {
+		t.Errorf("fim: %+v", c)
+	}
+
+	// Sem planejador (servidor sem as regras): pausa no primeiro anel.
+	a.e.ThirdParty = nil
+	id2 := a.cria(campaign.Campaign{Name: "x", Type: jobs.TypeThirdParty, App: "vscode", Version: "1.141.0", Rings: []int{0}, TTL: time.Hour, CreatedBy: "t"})
+	if c := a.passo(id2, 31*time.Minute); c.State != campaign.StatePaused || !strings.Contains(c.Detail, "sem as regras de terceiros") {
+		t.Errorf("sem planejador: %+v", c)
 	}
 }

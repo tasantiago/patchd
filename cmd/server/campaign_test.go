@@ -3,6 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +15,8 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpinstall"
 )
 
 func TestComandosDeCampanha(t *testing.T) {
@@ -23,7 +29,7 @@ func TestComandosDeCampanha(t *testing.T) {
 	agora := time.Now().UTC()
 	roda := func(args ...string) (int, string, string) {
 		var o, e bytes.Buffer
-		code := campaignCommand(ctx, mem, args, agora, &o, &e)
+		code := campaignCommand(ctx, mem, nil, args, agora, &o, &e)
 		return code, o.String(), e.String()
 	}
 	for _, c := range []struct {
@@ -77,5 +83,60 @@ func TestComandosDeCampanha(t *testing.T) {
 	}
 	if code, _, e := roda("show", "-id", "9"); code != exitRuntime || !strings.Contains(e, "não existe") {
 		t.Errorf("inexistente: %s", e)
+	}
+}
+
+// Campanha de terceiros pela linha de comando (Aula 14.7): a versão tem de estar pronta na
+// criação; o show diz o programa e o que cada anel liberou.
+func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
+	ctx := context.Background()
+	mem := store.NewMemory()
+	dir := t.TempDir()
+	inst := []byte("MSI do LibreOffice")
+	h := sha256.Sum256(inst)
+	sum := hex.EncodeToString(h[:])
+	_, _ = mem.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: "libreoffice", WingetID: "TheDocumentFoundation.LibreOffice",
+		Version: "26.8.1.1", Architecture: "x64", Type: "msi", URL: "https://x", SHA256: sum, Size: int64(len(inst)), Arguments: "/quiet /norestart"})
+	_ = os.WriteFile(filepath.Join(dir, sum+".msi"), inst, 0o640)
+	for maq, sw := range map[string][]protocol.Software{
+		"92fc3b93-0002": {{Name: "LibreOffice 25.2.1.1", Version: "25.2.1.1", Publisher: "The Document Foundation", Scope: "machine", ProductCode: "{LO}"}},
+		"aaaa0000-0003": {{Name: "Google Chrome", Version: "155.0", Publisher: "Google LLC", Scope: "machine"}},
+	} {
+		_, _ = mem.SaveInventory(ctx, maq, protocol.InventoryReport{SchemaVersion: 1, Hash: maq, OS: protocol.OSInfo{ID: "windows", Arch: "amd64"}, Software: sw})
+		_, _ = mem.SetMachineRing(ctx, maq, 0)
+	}
+	m, _ := thirdparty.Default()
+	tp := &tpinstall.Campaigner{Store: mem, Manifest: m, Dir: dir}
+	roda := func(args ...string) (int, string, string) {
+		var o, e bytes.Buffer
+		code := campaignCommand(ctx, mem, tp, args, time.Now().UTC(), &o, &e)
+		return code, o.String(), e.String()
+	}
+	criar := []string{"create", "-type", "thirdparty", "-app", "libreoffice", "-version", "26.8.1.1", "-rings", "0,1", "-observe", "1h"}
+	if code, _, e := roda("create", "-type", "thirdparty", "-app", "libreoffice", "-rings", "0"); code != exitConfig || !strings.Contains(e, "-app e -version") {
+		t.Errorf("sem versão: %d %s", code, e)
+	}
+	if code, _, e := roda(criar...); code != exitRuntime || !strings.Contains(e, "a campanha não foi criada: libreoffice 26.8.1.1 não está aprovado") {
+		t.Errorf("sem aprovação: %d %s", code, e)
+	}
+	_, _ = mem.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: "libreoffice", Version: "26.8.1.1", ApprovedBy: "ana"})
+	code, o, e := roda(criar...)
+	if code != exitOK || strings.TrimSpace(o) != "1" {
+		t.Fatalf("create: %d %q %s", code, o, e)
+	}
+	_, key, _ := jobs.GenerateKey()
+	eng := &campaign.Engine{Store: mem, Key: key, ThirdParty: tp}
+	if err := eng.Step(ctx, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	_, o, _ = roda("show", "-id", "1")
+	for _, tr := range []string{"campanha 1: libreoffice 26.8.1.1", "tipo: thirdparty (programa: libreoffice 26.8.1.1)",
+		"liberação: anel 0: 1 job(s); fora: 1 sem o programa", "92fc3b93  pendente"} {
+		if !strings.Contains(o, tr) {
+			t.Errorf("show: faltou %q\n%s", tr, o)
+		}
+	}
+	if _, o, _ := roda("list"); !strings.Contains(o, "thirdparty (libreoffice 26.8.1.1)") {
+		t.Errorf("list:\n%s", o)
 	}
 }

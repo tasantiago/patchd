@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -268,6 +269,21 @@ func TestPaginaDeCampanhas(t *testing.T) {
 	for _, tr := range []string{"&lt;b&gt;bluez&lt;/b&gt;", "atualizar pacotes, na janela", "<code>[0] → 1</code>", `<span class="job em_andamento">em andamento</span>`, "thyago"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
+		}
+	}
+	// Campanha de terceiros (Aula 14.7): o programa e as liberações.
+	id, _ := st.CreateCampaign(ctx, campaign.Campaign{Name: "libreoffice 26.8.1.1", Type: jobs.TypeThirdParty, App: "libreoffice",
+		Version: "26.8.1.1", Rings: []int{0, 1}, TTL: 24 * time.Hour, CreatedBy: "thyago"})
+	c, _, _ := st.Campaign(ctx, id)
+	c.Notes, c.LaunchedIdx = []string{"anel 0: 1 job(s); fora: 1 em dia"}, 0
+	_, _ = st.SaveCampaign(ctx, c, campaign.StateRunning)
+	if b := pagina(h, "GET", "/painel/campanhas", sessaoTeste, nil).Body.String(); !strings.Contains(b, "<td>instalar programa de terceiros</td><td>libreoffice 26.8.1.1</td>") {
+		t.Errorf("lista com terceiros:\n%s", b)
+	}
+	b = pagina(h, "GET", fmt.Sprintf("/painel/campanhas/%d", id), sessaoTeste, nil).Body.String()
+	for _, tr := range []string{"<dt>Programa</dt><dd>libreoffice 26.8.1.1</dd>", "<dt>Liberações</dt><dd><div>anel 0: 1 job(s); fora: 1 em dia</div></dd>"} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("campanha de terceiros: faltou %q", tr)
 		}
 	}
 }
