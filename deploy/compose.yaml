@@ -60,6 +60,9 @@ services:
       PATCHD_HTTP_CACHE_ONLY: ${PATCHD_HTTP_CACHE_ONLY:-false}
       # A URL HTTPS como os agentes a veem (Aula 9.2): obrigatória.
       PATCHD_PUBLIC_URL: ${PATCHD_PUBLIC_URL:?defina PATCHD_PUBLIC_URL em deploy/.env}
+      # CA que as máquinas devem confiar, oferecida em Configuração › Agente (Aula 15.2): só
+      # certificados em PEM. Ex.: o ca.crt na pasta do TLS, /run/patchd/tls/ca.crt. Vazio: sem.
+      PATCHD_AGENT_CA_FILE: ${PATCHD_AGENT_CA_FILE:-}
       # Jobs pelo painel e campanhas (Aula 8.2): a MESMA chave cuja pública está nos agentes.
       PATCHD_JOB_SIGNING_KEY_FILE: /run/secrets/job_signing_key
       # Atualização dos agentes (Aula 5.4): só leitura. Assinar e publicar é fora daqui.

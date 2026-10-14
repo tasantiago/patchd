@@ -42,8 +42,9 @@ func (d Dir) Current() (string, error) {
 	return v, nil
 }
 
-// Check lê o manifesto da versão e confere cada executável contra ele.
-func (d Dir) Check(version string) (Manifest, error) {
+// Manifest lê e confere o manifesto da versão, sem ler os executáveis (Aula 15.2: a página
+// de distribuição do agente lista os arquivos e os SHA-256 a cada visita).
+func (d Dir) Manifest(version string) (Manifest, error) {
 	var m Manifest
 	if !VersionPattern.MatchString(version) {
 		return m, fmt.Errorf("versão %q inválida", version)
@@ -67,6 +68,16 @@ func (d Dir) Check(version string) (Manifest, error) {
 	if m.Version != version {
 		return m, fmt.Errorf("a pasta %s contém o manifesto da versão %s", version, m.Version)
 	}
+	return m, nil
+}
+
+// Check lê o manifesto da versão e confere cada executável contra ele.
+func (d Dir) Check(version string) (Manifest, error) {
+	m, err := d.Manifest(version)
+	if err != nil {
+		return m, err
+	}
+	vdir := filepath.Join(string(d), version)
 	for _, f := range m.Files {
 		size, sum, err := hashFile(filepath.Join(vdir, f.Name))
 		if err != nil {

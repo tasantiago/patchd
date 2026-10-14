@@ -82,6 +82,10 @@ type Store interface {
 	Campaign(ctx context.Context, id int64) (campaign.Campaign, bool, error)
 	SaveCampaign(ctx context.Context, c campaign.Campaign, from string) (bool, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
+	// Tokens de registro pelo painel (Aula 15.2): os mesmos do patchd-server token.
+	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
+	EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error)
+	RevokeEnrollmentToken(ctx context.Context, id int64) (bool, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -119,6 +123,8 @@ type api struct {
 	metrics    *Metrics             // contadores da Aula 10.2; nil: desligados
 	limiter    loginLimiter         // falhas de login por usuário+IP e por IP
 	hashSlots  chan struct{}        // conferências de senha simultâneas
+	system     *SystemInfo          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
+	agentCA    []byte               // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -179,6 +185,12 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/reiniciar", a.sameOrigin(a.adminAction(a.rebootAction)))
 	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
 	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
+	// Configuração (Aula 15.2): só admin, inclusive para ver.
+	mux.Handle("GET /painel/configuracao", a.adminAction(a.settingsPage))
+	mux.Handle("GET /painel/configuracao/agente/arquivo/{name}", a.adminAction(a.agentFile))
+	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
+	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))
+	mux.Handle("POST /painel/configuracao/agente/token/{id}/revogar", a.sameOrigin(a.adminAction(a.revokeTokenAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))

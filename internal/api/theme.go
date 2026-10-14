@@ -65,6 +65,8 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 td.nowrap{white-space:nowrap}.barra{display:inline-block;vertical-align:middle;width:4.5rem;height:.45rem;background:#eef0f3;border-radius:999px;overflow:hidden}.barra>span{display:block;height:100%;background:var(--verde-ok)}
 .atencao-lista{list-style:none;margin:0;padding:0}.atencao-lista li{padding:.45rem .7rem;border-left:3px solid var(--laranja);background:#fffaf0;margin:0 0 .4rem;border-radius:4px}
 .atencao-lista li.erro{border-left-color:var(--vermelho);background:#fdf2f2}.atencao-lista a{color:var(--texto);text-decoration:none}.atencao-lista a:hover{text-decoration:underline}
+pre.comando{margin:0;padding:.75rem 1rem;background:#0f172a;color:#e2e8f0;border-radius:6px;overflow-x:auto;font-size:.82rem;white-space:pre}
+dd.nivel-atencao{color:#8a5a00}dd.nivel-erro{color:var(--vermelho)}
 .duas-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(28rem,1fr));gap:0 1.25rem}tr.total td{font-weight:600}
 .motivos{margin:.15rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.84rem}
 .aviso{padding:.7rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}
