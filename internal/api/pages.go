@@ -511,7 +511,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if .Admin}}<a href="/painel/configuracao" {{if eq .Nav "configuracao"}}class="ativo" aria-current="page"{{end}}><span class="ic">⚙️</span>Configuração</a>{{end}}
 <form method="post" action="/painel/sair"><button type="submit" title="Sair"><span class="ic">🔓</span>Sair</button></form>
 </nav>
-<span class="quem">{{.Session.Username}} ({{.Session.Source}}) · {{.Session.Role}}</span>
+<span class="quem" title="{{.Session.Greeting}}"><span class="ola">Olá, {{.Session.Greeting}}</span><span>{{.Session.Username}} · {{.Session.SourceLabel}} · {{.Session.Role}}</span></span>
 </header><main>
 {{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
@@ -608,9 +608,9 @@ var pages = template.Must(template.New("").Parse(`
 {{if eq .Tab "acesso"}}{{with .Access}}
 <div class="card"><div class="card-cab"><h2>Sessões abertas</h2><span class="muted">tirar alguém de um grupo do AD ou do RHBK não derruba a sessão que já está aberta: encerre aqui</span></div>
 {{if .Sessions}}<div class="tabela"><table><thead><tr><th>Usuário</th><th>Origem</th><th>Perfil</th><th>Entrou</th><th>Último uso</th><th>Vence</th><th></th></tr></thead>
-<tbody>{{range .Sessions}}<tr><td><code>{{.User}}</code>{{if .Current}} <span class="muted">(esta sessão)</span>{{end}}</td><td>{{.Source}}</td><td>{{.Role}}</td><td>{{.Created}}</td><td>{{.Seen}}</td><td>{{.Expires}}</td>
+<tbody>{{range .Sessions}}<tr><td>{{if .Name}}{{.Name}} · {{end}}<code>{{.User}}</code>{{if .Current}} <span class="muted">(esta sessão)</span>{{end}}</td><td>{{.Source}}</td><td>{{.Role}}</td><td>{{.Created}}</td><td>{{.Seen}}</td><td>{{.Expires}}</td>
 <td>{{if not .Current}}<form class="inline" method="post" action="/painel/configuracao/acesso/sessoes/{{.ID}}/encerrar"><button class="perigo" type="submit">Encerrar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
-{{if .SessUsers}}<form class="lote" method="post" action="/painel/configuracao/acesso/sessoes/usuario"><label>Encerrar todas as sessões de <select name="usuario">{{range .SessUsers}}<option value="{{.}}">{{.}}</option>{{end}}</select></label><button class="perigo" type="submit">Encerrar todas</button></form>{{end}}
+{{if .SessUsers}}<form class="lote" method="post" action="/painel/configuracao/acesso/sessoes/usuario"><label>Encerrar todas as sessões de <select name="usuario">{{range .SessUsers}}<option value="{{.User}}">{{if .Name}}{{.Name}} ({{.User}}){{else}}{{.User}}{{end}}</option>{{end}}</select></label><button class="perigo" type="submit">Encerrar todas</button></form>{{end}}
 {{else}}<p class="muted">Nenhuma sessão aberta.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Login pelo AD (LDAPS)</h2><span class="muted">{{if .AD}}ligado{{else}}desligado{{end}} · os valores ficam só no .env (não aparecem aqui nem no log)</span></div>
 {{if .AD}}<dl class="dados">{{range .AD.Vars}}<dt><code>{{.Name}}</code></dt><dd>{{if .Set}}definida{{else}}vazia{{end}}{{if .Note}} <span class="muted">· {{.Note}}</span>{{end}}</dd>{{end}}</dl>

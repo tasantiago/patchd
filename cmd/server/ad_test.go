@@ -40,7 +40,7 @@ func TestADCheck(t *testing.T) {
 	s := ldaptest.Start(t, ldaptest.Directory{
 		Domain: "exemplo.test",
 		Users: map[string]ldaptest.User{
-			"fulano":   {DN: "CN=Fulano,OU=TI," + base, Password: "senha-do-fulano", MemberOf: []string{"CN=Equipe,OU=G," + base}},
+			"fulano":   {DN: "CN=Fulano,OU=TI," + base, DisplayName: "Fulano de Tal", Password: "senha-do-fulano", MemberOf: []string{"CN=Equipe,OU=G," + base}},
 			"beltrano": {DN: "CN=Beltrano,OU=TI," + base, Password: "senha-do-beltrano"},
 		},
 		Groups: map[string]ldaptest.Group{
@@ -61,10 +61,12 @@ func TestADCheck(t *testing.T) {
 
 	code, out := roda("fulano", "senha-do-fulano")
 	if code != exitOK || !strings.Contains(out, "senha: conferida pelo AD") || !strings.Contains(out, "grupo admin (PATCHD_LDAP_ADMIN_GROUP): membro") ||
-		!strings.Contains(out, "grupo leitura (PATCHD_LDAP_READ_GROUP): não configurado") || !strings.Contains(out, "perfil no painel: admin") {
+		!strings.Contains(out, "grupo leitura (PATCHD_LDAP_READ_GROUP): não configurado") || !strings.Contains(out, "perfil no painel: admin") ||
+		!strings.Contains(out, "nome de exibição (displayName): preenchido") || strings.Contains(out, "Fulano de Tal") {
 		t.Errorf("fulano: %d\n%s", code, out)
 	}
-	if code, out := roda("beltrano", "senha-do-beltrano"); code != exitRuntime || !strings.Contains(out, "perfil no painel: nenhum") {
+	if code, out := roda("beltrano", "senha-do-beltrano"); code != exitRuntime || !strings.Contains(out, "perfil no painel: nenhum") ||
+		!strings.Contains(out, "nome de exibição (displayName): vazio") {
 		t.Errorf("beltrano: %d\n%s", code, out)
 	}
 	if code, out := roda("fulano", "errada"); code != exitRuntime || !strings.Contains(out, "senha inválida (52e)") {

@@ -48,8 +48,18 @@ func TestLoginCompleto(t *testing.T) {
 
 	l := login(t, p, prov, "Fulano.Lab", "outro", "patchd-admin")
 	id, err := prov.Exchange(ctx, oidctest.Code, l)
-	if err != nil || id.Username != "fulano.lab" || id.Role != panel.RoleAdmin || id.Subject != "sub-Fulano.Lab" {
+	if err != nil || id.Username != "fulano.lab" || id.Role != panel.RoleAdmin || id.Subject != "sub-Fulano.Lab" || id.Name != "Nome de Fulano.Lab" {
 		t.Fatalf("admin: %+v %v", id, err)
+	}
+	// Sem o claim "name": nome e sobrenome; sem nenhum dos três, vazio.
+	for want, c := range map[string]map[string]any{
+		"Ana Souza": {"given_name": "Ana", "family_name": " Souza"},
+		"":          {},
+		"Bia Lima":  {"name": "  Bia\tLima\u200f "},
+	} {
+		if got := displayName(c); got != want {
+			t.Errorf("displayName(%v) = %q, quer %q", c, got, want)
+		}
 	}
 	// Leitura pelo outro grupo; o grupo com o caminho completo também vale.
 	l = login(t, p, prov, "beltrano", "/patchd-leitura")

@@ -26,11 +26,12 @@ import (
 
 // User é uma conta do diretório.
 type User struct {
-	DN       string
-	Password string
-	MemberOf []string // DNs dos grupos dos quais é membro direto
-	Disabled bool
-	Locked   bool
+	DN          string
+	DisplayName string // devolvido quando a busca pede displayName (Aula 15.5)
+	Password    string
+	MemberOf    []string // DNs dos grupos dos quais é membro direto
+	Disabled    bool
+	Locked      bool
 }
 
 // Group é um grupo do diretório; MemberOf faz o aninhamento.
@@ -167,15 +168,16 @@ type object struct {
 	class    []string
 	sam      string
 	memberOf []string
+	display  string
 }
 
 func (s *Server) objects() []object {
 	var out []object
 	for sam, u := range s.dir.Users {
-		out = append(out, object{u.DN, []string{"top", "person", "organizationalPerson", "user"}, sam, u.MemberOf})
+		out = append(out, object{u.DN, []string{"top", "person", "organizationalPerson", "user"}, sam, u.MemberOf, u.DisplayName})
 	}
 	for sam, g := range s.dir.Groups {
-		out = append(out, object{g.DN, []string{"top", "group"}, sam, g.MemberOf})
+		out = append(out, object{g.DN, []string{"top", "group"}, sam, g.MemberOf, ""})
 	}
 	return out
 }
@@ -267,6 +269,12 @@ func (s *Server) search(c net.Conn, id int64, op *ber.Packet) {
 	scope, _ := op.Children[1].Int()
 	limit, _ := op.Children[3].Int()
 	filter := op.Children[6]
+	wantDisplay := false
+	if len(op.Children) > 7 {
+		for _, a := range op.Children[7].Children {
+			wantDisplay = wantDisplay || strings.EqualFold(a.String(), "displayName")
+		}
+	}
 	s.mu.Lock()
 	s.Filters = append(s.Filters, describe(filter))
 	s.mu.Unlock()
@@ -282,7 +290,12 @@ func (s *Server) search(c net.Conn, id int64, op *ber.Packet) {
 			reply(c, id, ldapResult(ber.ClassApplication|ber.Constructed|5, 4, ""))
 			return
 		}
-		reply(c, id, ber.Cons(ber.ClassApplication|ber.Constructed|4, ber.Str(ber.TagOctetString, o.dn), ber.Cons(ber.TagSequence)))
+		var attrs [][]byte
+		if wantDisplay && o.display != "" {
+			attrs = append(attrs, ber.Cons(ber.TagSequence, ber.Str(ber.TagOctetString, "displayName"),
+				ber.Cons(ber.TagSet, ber.Str(ber.TagOctetString, o.display))))
+		}
+		reply(c, id, ber.Cons(ber.ClassApplication|ber.Constructed|4, ber.Str(ber.TagOctetString, o.dn), ber.Cons(ber.TagSequence, attrs...)))
 		n++
 	}
 	if scope == ldap.ScopeSubtree {

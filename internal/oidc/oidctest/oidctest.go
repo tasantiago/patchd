@@ -112,7 +112,8 @@ func (p *Provider) Authorize(authURL string, user string, groups ...string) {
 		gs[i] = g
 	}
 	p.claims = map[string]any{"iss": p.Issuer(), "aud": ClientID, "sub": "sub-" + user, "nonce": p.nonce,
-		"iat": agora, "exp": agora + 300, "preferred_username": user, "groups": gs}
+		"iat": agora, "exp": agora + 300, "preferred_username": user, "groups": gs,
+		"name": "Nome de " + user, "given_name": "Nome", "family_name": "de " + user}
 }
 
 // SetClaims troca os claims do próximo token.

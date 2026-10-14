@@ -108,6 +108,7 @@ func isLoopback(host string) bool {
 type Identity struct {
 	Subject  string
 	Username string
+	Name     string // nome de exibição (claim "name"), já limpo (Aula 15.5); pode ser vazio
 	Role     string
 	Roles    []string // o que veio no claim, para o log quando nenhum serve
 }
@@ -457,7 +458,7 @@ func (p *Provider) identity(claims map[string]any) (Identity, error) {
 	sub, _ := claims["sub"].(string)
 	user, _ := claims["preferred_username"].(string)
 	user = panel.NormalizeUsername(user)
-	id := Identity{Subject: sub, Username: user, Roles: RolesAt(claims, p.cfg.RolesClaim)}
+	id := Identity{Subject: sub, Username: user, Name: displayName(claims), Roles: RolesAt(claims, p.cfg.RolesClaim)}
 	if !panel.ValidUsername(user) {
 		return id, ErrNoUsername
 	}
@@ -470,6 +471,16 @@ func (p *Provider) identity(claims map[string]any) (Identity, error) {
 		return id, panel.ErrNoRole
 	}
 	return id, nil
+}
+
+// displayName: o claim "name" (no RHBK, nome e sobrenome do usuário, que a federação com o
+// AD preenche); sem ele, given_name e family_name.
+func displayName(claims map[string]any) string {
+	str := func(k string) string { s, _ := claims[k].(string); return s }
+	if n := panel.CleanDisplayName(str("name")); n != "" {
+		return n
+	}
+	return panel.CleanDisplayName(str("given_name") + " " + str("family_name"))
 }
 
 // RolesAt lê o claim no caminho (com pontos): uma lista de textos ou um texto. Grupos com

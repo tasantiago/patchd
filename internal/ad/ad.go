@@ -110,8 +110,9 @@ func New(cfg Config) (*Directory, error) {
 // Report é o resultado de um login conferido, para o login e para o "patchd-server ad check".
 type Report struct {
 	TLSVersion string
-	Admin      bool // membro do grupo admin (direto ou aninhado)
-	Read       bool // membro do grupo leitura
+	Name       string // displayName da conta, já limpo (Aula 15.5); vazio se o AD não tem
+	Admin      bool   // membro do grupo admin (direto ou aninhado)
+	Read       bool   // membro do grupo leitura
 }
 
 // Role é o perfil do painel: admin vence leitura; nenhum dos dois, vazio.
@@ -133,19 +134,19 @@ type UnavailableError struct {
 
 func (e *UnavailableError) Error() string { return "AD indisponível: " + e.Reason }
 
-// Authenticate confere usuário e senha e devolve o perfil. Erros:
+// Authenticate confere usuário e senha e devolve o perfil e o nome de exibição. Erros:
 // panel.ErrBadCredentials (senha, conta desativada ou bloqueada), panel.ErrNoRole (fora
 // dos grupos) ou *UnavailableError.
-func (d *Directory) Authenticate(ctx context.Context, user, password string) (string, error) {
+func (d *Directory) Authenticate(ctx context.Context, user, password string) (role, name string, err error) {
 	rep, err := d.Check(ctx, user, password)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	role := rep.Role()
+	role = rep.Role()
 	if role == "" {
-		return "", panel.ErrNoRole
+		return "", "", panel.ErrNoRole
 	}
-	return role, nil
+	return role, rep.Name, nil
 }
 
 // Check faz o login e confere os dois grupos.
@@ -175,7 +176,10 @@ func (d *Directory) Check(ctx context.Context, user, password string) (Report, e
 	}
 
 	base := d.cfg.baseDN()
-	userDN, err := d.findOne(c, base, ldap.And(ldap.Equal("objectClass", "user"), ldap.Equal("sAMAccountName", user)))
+	// O displayName vem na mesma busca: é o nome que o Outlook e o Teams mostram.
+	entry, err := d.findEntry(c, base, ldap.And(ldap.Equal("objectClass", "user"), ldap.Equal("sAMAccountName", user)), "displayName")
+	userDN := entry.DN
+	rep.Name = panel.CleanDisplayName(entry.First("displayName"))
 	if errors.Is(err, errNotFound) {
 		return rep, &UnavailableError{Reason: "usuário autenticado, mas fora da base de busca (confira PATCHD_LDAP_BASE_DN)"}
 	}
@@ -194,18 +198,25 @@ func (d *Directory) Check(ctx context.Context, user, password string) (Report, e
 // errNotFound: a busca não achou a entrada.
 var errNotFound = errors.New("não encontrado")
 
-// findOne exige exatamente uma entrada.
+// findOne exige exatamente uma entrada e devolve o DN.
 func (d *Directory) findOne(c *ldap.Conn, base string, f ldap.Filter) (string, error) {
-	dns, err := c.Search(ldap.SearchRequest{BaseDN: base, Scope: ldap.ScopeSubtree, Filter: f, SizeLimit: 2, TimeLimit: int(d.cfg.Timeout.Seconds())})
+	e, err := d.findEntry(c, base, f)
+	return e.DN, err
+}
+
+// findEntry exige exatamente uma entrada e devolve os atributos pedidos.
+func (d *Directory) findEntry(c *ldap.Conn, base string, f ldap.Filter, attrs ...string) (ldap.Entry, error) {
+	es, err := c.SearchEntries(ldap.SearchRequest{BaseDN: base, Scope: ldap.ScopeSubtree, Filter: f, SizeLimit: 2,
+		TimeLimit: int(d.cfg.Timeout.Seconds()), Attributes: attrs})
 	switch {
 	case err != nil:
-		return "", errors.New(describe(err))
-	case len(dns) == 0:
-		return "", errNotFound
-	case len(dns) > 1:
-		return "", errors.New("mais de uma entrada com o mesmo nome")
+		return ldap.Entry{}, errors.New(describe(err))
+	case len(es) == 0:
+		return ldap.Entry{}, errNotFound
+	case len(es) > 1:
+		return ldap.Entry{}, errors.New("mais de uma entrada com o mesmo nome")
 	}
-	return dns[0], nil
+	return es[0], nil
 }
 
 // memberOf diz se o usuário é membro do grupo, direto ou aninhado. Grupo vazio: não.

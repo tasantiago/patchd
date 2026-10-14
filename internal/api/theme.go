@@ -36,7 +36,8 @@ header nav .ic{font-size:1.1rem;line-height:1.2}
 header nav a:hover,header nav button:hover{background:rgba(255,255,255,.1)}
 header nav a.ativo{border-bottom-color:#fff;font-weight:600}
 header nav form{display:flex;margin:0}
-.quem{color:#d5efe0;font-size:.78rem;white-space:nowrap}
+.quem{display:flex;flex-direction:column;line-height:1.2;color:#d5efe0;font-size:.72rem;white-space:nowrap;max-width:16rem}
+.quem .ola{color:#fff;font-size:.86rem;font-weight:600;overflow:hidden;text-overflow:ellipsis}
 main{max-width:90rem;margin:0 auto;padding:1.5rem 1.25rem 3rem}
 h1{font-size:1.3rem;font-weight:600;margin:.25rem 0 1.1rem}h2{font-size:1rem;font-weight:600;margin:0 0 .75rem}
 .card,section{background:#fff;border:1px solid var(--borda);border-radius:var(--raio);box-shadow:var(--sombra);padding:1rem 1.25rem;margin:0 0 1.25rem}

@@ -116,6 +116,12 @@ func adCheck(ctx context.Context, dir *ad.Directory, cfg ad.Config, user, pw str
 	}
 	fmt.Fprintf(stdout, "conexão LDAPS: ok (%s)\n", rep.TLSVersion)
 	fmt.Fprintln(stdout, "senha: conferida pelo AD")
+	// Só se há nome, não o nome: a saída pode ir para um chamado ou para o chat.
+	if rep.Name != "" {
+		fmt.Fprintln(stdout, "nome de exibição (displayName): preenchido")
+	} else {
+		fmt.Fprintln(stdout, "nome de exibição (displayName): vazio (o painel mostra o usuário)")
+	}
 	fmt.Fprintf(stdout, "grupo admin (PATCHD_LDAP_ADMIN_GROUP): %s\n", grupo(cfg.AdminGroup != "", rep.Admin))
 	fmt.Fprintf(stdout, "grupo leitura (PATCHD_LDAP_READ_GROUP): %s\n", grupo(cfg.ReadGroup != "", rep.Read))
 	if role := rep.Role(); role != "" {
@@ -150,7 +156,7 @@ func adInfo(cfg ad.Config, dir *ad.Directory) api.ADInfo {
 // adCheckResult traduz o relatório do ad.Check para a tela.
 func adCheckResult(cfg ad.Config, check func() (ad.Report, error)) (api.ADCheckResult, error) {
 	rep, err := check()
-	res := api.ADCheckResult{TLSVersion: rep.TLSVersion, AdminSet: cfg.AdminGroup != "", ReadSet: cfg.ReadGroup != ""}
+	res := api.ADCheckResult{TLSVersion: rep.TLSVersion, Name: rep.Name, AdminSet: cfg.AdminGroup != "", ReadSet: cfg.ReadGroup != ""}
 	var ue *ad.UnavailableError
 	switch {
 	case errors.As(err, &ue):

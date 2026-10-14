@@ -62,7 +62,7 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		}
 	}
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("anel", "")); !strings.Contains(r.Body.String(), `value="busca de outubro"`) ||
-		!strings.Contains(r.Body.String(), "thyago (ad) · admin") {
+		!strings.Contains(r.Body.String(), "thyago · AD · admin") {
 		t.Error("o formulário volta preenchido")
 	}
 
@@ -71,7 +71,7 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 	b = r.Body.String()
 	if r.Code != http.StatusOK || !strings.Contains(b, "Conferir a campanha") || !strings.Contains(b, "O anel 3 não tem máquinas") ||
 		!strings.Contains(b, `<input type="hidden" name="anel" value="0"><input type="hidden" name="anel" value="3">`) ||
-		!strings.Contains(b, `name="confirmar" value="1"`) || !strings.Contains(b, "thyago (ad) · admin") {
+		!strings.Contains(b, `name="confirmar" value="1"`) || !strings.Contains(b, "thyago · AD · admin") {
 		t.Errorf("conferência:\n%s", b)
 	}
 	if l, _ := st.Campaigns(ctx, 10); len(l) != 0 {

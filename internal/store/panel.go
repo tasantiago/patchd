@@ -83,9 +83,9 @@ func (p *Postgres) changeUser(ctx context.Context, name, query string, args ...a
 // CreatePanelSession guarda a sessão pelo hash do segredo.
 func (p *Postgres) CreatePanelSession(ctx context.Context, tokenHash []byte, s panel.Session) error {
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO panel_sessions (token_hash, username, role, source, created_at, expires_at, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		tokenHash, s.Username, s.Role, s.Source, s.CreatedAt, s.ExpiresAt, s.LastSeenAt)
+		INSERT INTO panel_sessions (token_hash, username, display_name, role, source, created_at, expires_at, last_seen_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		tokenHash, s.Username, s.DisplayName, s.Role, s.Source, s.CreatedAt, s.ExpiresAt, s.LastSeenAt)
 	return err
 }
 
@@ -93,8 +93,8 @@ func (p *Postgres) CreatePanelSession(ctx context.Context, tokenHash []byte, s p
 func (p *Postgres) PanelSession(ctx context.Context, tokenHash []byte) (panel.Session, bool, error) {
 	var s panel.Session
 	err := p.pool.QueryRow(ctx, `
-		SELECT username, role, source, created_at, expires_at, last_seen_at FROM panel_sessions WHERE token_hash = $1`,
-		tokenHash).Scan(&s.Username, &s.Role, &s.Source, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt)
+		SELECT username, display_name, role, source, created_at, expires_at, last_seen_at FROM panel_sessions WHERE token_hash = $1`,
+		tokenHash).Scan(&s.Username, &s.DisplayName, &s.Role, &s.Source, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return panel.Session{}, false, nil
 	}

@@ -35,6 +35,7 @@ type ADVar struct {
 type ADCheckResult struct {
 	Unavailable                    string // o AD não respondeu: o motivo
 	TLSVersion                     string
+	Name                           string // displayName da conta (Aula 15.5); vazio se não há
 	BadPassword                    bool
 	AdminSet, ReadSet, Admin, Read bool
 	Role                           string // vazio: o login seria recusado
@@ -63,13 +64,16 @@ type oidcView struct {
 // sessionRow: uma sessão aberta (Aula 15.4). ID é o hash do segredo em hexadecimal:
 // identifica a sessão sem permitir usá-la.
 type sessionRow struct {
-	ID, User, Source, Role, Created, Seen, Expires string
-	Current                                        bool
+	ID, User, Name, Source, Role, Created, Seen, Expires string
+	Current                                              bool
 }
+
+// sessUser: uma opção do "Encerrar todas as sessões de", com o nome quando há.
+type sessUser struct{ User, Name string }
 
 type accessView struct {
 	Sessions   []sessionRow
-	SessUsers  []string // quem tem sessão aberta, menos você
+	SessUsers  []sessUser // quem tem sessão aberta, menos você
 	AD         *ADInfo
 	ADResult   *adResultView
 	OIDC       *oidcView
@@ -121,19 +125,6 @@ func (a *api) accessView(r *http.Request, s panel.Session, v *settingsView) erro
 	return nil
 }
 
-// sourceLabel: a origem da sessão, como o admin fala.
-func sourceLabel(src string) string {
-	switch src {
-	case panel.SourceAD:
-		return "AD"
-	case panel.SourceOIDC:
-		return "RHBK"
-	case panel.SourceLocal:
-		return "local"
-	}
-	return src
-}
-
 // sessionRows: as sessões ainda válidas, a desta requisição marcada.
 func (a *api) sessionRows(r *http.Request, s panel.Session, acc *accessView) error {
 	list, err := a.store.PanelSessions(r.Context())
@@ -145,7 +136,7 @@ func (a *api) sessionRows(r *http.Request, s panel.Session, acc *accessView) err
 		mine = identity.Hash(c.Value)
 	}
 	now := a.now()
-	users := map[string]bool{}
+	users := map[string]string{} // usuário → nome de exibição
 	for _, x := range list {
 		if !x.Valid(now) {
 			continue
@@ -154,14 +145,18 @@ func (a *api) sessionRows(r *http.Request, s panel.Session, acc *accessView) err
 		if idle := x.LastSeenAt.Add(panel.SessionIdle); idle.Before(exp) {
 			exp = idle
 		}
-		row := sessionRow{ID: hex.EncodeToString(x.Hash), User: x.Username, Source: sourceLabel(x.Source), Role: x.Role,
+		row := sessionRow{ID: hex.EncodeToString(x.Hash), User: x.Username, Name: x.DisplayName, Source: panel.SourceLabel(x.Source), Role: x.Role,
 			Created: a.stamp(x.CreatedAt), Seen: ago(now.Sub(x.LastSeenAt)), Expires: a.stamp(exp), Current: bytes.Equal(x.Hash, mine)}
 		acc.Sessions = append(acc.Sessions, row)
 		if x.Username != s.Username {
-			users[x.Username] = true
+			if users[x.Username] == "" {
+				users[x.Username] = x.DisplayName
+			}
 		}
 	}
-	acc.SessUsers = slices.Sorted(maps.Keys(users))
+	for _, u := range slices.Sorted(maps.Keys(users)) {
+		acc.SessUsers = append(acc.SessUsers, sessUser{User: u, Name: users[u]})
+	}
 	return nil
 }
 
@@ -298,6 +293,11 @@ func adResultLines(user string, res ADCheckResult) adResultView {
 		return v
 	}
 	add("Senha", "conferida pelo AD", "")
+	if res.Name != "" {
+		add("Nome de exibição", res.Name, "")
+	} else {
+		add("Nome de exibição", "vazio no AD: o painel mostra o usuário", "atencao")
+	}
 	grupo := func(set, member bool) (string, string) {
 		switch {
 		case !set:

@@ -18,7 +18,7 @@ func diretorio() ldaptest.Directory {
 	return ldaptest.Directory{
 		Domain: "exemplo.test",
 		Users: map[string]ldaptest.User{
-			"fulano": {DN: "CN=Fulano,OU=TI," + base, Password: "senha-do-fulano", MemberOf: []string{"CN=Equipe,OU=Grupos," + base}},
+			"fulano": {DN: "CN=Fulano,OU=TI," + base, DisplayName: "Fulano de Tal", Password: "senha-do-fulano", MemberOf: []string{"CN=Equipe,OU=Grupos," + base}},
 		},
 		Groups: map[string]ldaptest.Group{
 			"equipe":  {DN: "CN=Equipe,OU=Grupos," + base, MemberOf: []string{"CN=Admins,OU=Grupos," + base}},
@@ -84,6 +84,16 @@ func TestBindEBusca(t *testing.T) {
 		Filter: ldap.And(ldap.Equal("objectClass", "user"), ldap.Equal("sAMAccountName", "*)(objectClass=*"))})
 	if err != nil || len(dns) != 0 {
 		t.Errorf("injeção: %v %v", dns, err)
+	}
+	// Atributos pedidos (Aula 15.5): o displayName vem com o DN; sem pedir, nada vem.
+	es, err := c.SearchEntries(ldap.SearchRequest{BaseDN: base, Scope: ldap.ScopeSubtree, SizeLimit: 2,
+		Filter: ldap.Equal("sAMAccountName", "fulano"), Attributes: []string{"displayName"}})
+	if err != nil || len(es) != 1 || es[0].DN != "CN=Fulano,OU=TI,"+base || es[0].First("DISPLAYNAME") != "Fulano de Tal" {
+		t.Errorf("com atributo: %+v %v", es, err)
+	}
+	es, err = c.SearchEntries(ldap.SearchRequest{BaseDN: base, Scope: ldap.ScopeSubtree, SizeLimit: 2, Filter: ldap.Equal("sAMAccountName", "fulano")})
+	if err != nil || len(es) != 1 || es[0].Attrs != nil || es[0].First("displayName") != "" {
+		t.Errorf("sem atributo: %+v %v", es, err)
 	}
 	// Limite de tamanho: devolve o que veio e o código 4.
 	dns, err = c.Search(ldap.SearchRequest{BaseDN: base, Scope: ldap.ScopeSubtree, SizeLimit: 1, Filter: ldap.Equal("objectClass", "group")})

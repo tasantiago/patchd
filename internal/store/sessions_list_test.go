@@ -26,7 +26,7 @@ func testarSessoesEContagem(t *testing.T, st contratoSessoesEContagem) {
 	for i, s := range []panel.Session{
 		{Username: "ana", Role: panel.RoleAdmin, Source: panel.SourceAD},
 		{Username: "ana", Role: panel.RoleAdmin, Source: panel.SourceLocal},
-		{Username: "bia", Role: panel.RoleRead, Source: panel.SourceOIDC},
+		{Username: "bia", DisplayName: "Bia Lima", Role: panel.RoleRead, Source: panel.SourceOIDC},
 	} {
 		s.CreatedAt, s.ExpiresAt, s.LastSeenAt = agora, agora.Add(time.Hour), agora.Add(time.Duration(i)*time.Minute)
 		if err := st.CreatePanelSession(ctx, []byte{byte(i), 1, 2}, s); err != nil {
@@ -34,8 +34,18 @@ func testarSessoesEContagem(t *testing.T, st contratoSessoesEContagem) {
 		}
 	}
 	l, err := st.PanelSessions(ctx)
-	if err != nil || len(l) != 3 || l[0].Username != "bia" || l[0].Source != panel.SourceOIDC || len(l[0].Hash) != 3 || !l[2].LastSeenAt.Equal(agora) {
+	if err != nil || len(l) != 3 || l[0].Username != "bia" || l[0].DisplayName != "Bia Lima" || l[0].Source != panel.SourceOIDC || len(l[0].Hash) != 3 || !l[2].LastSeenAt.Equal(agora) {
 		t.Fatalf("sessões: %+v %v", l, err)
+	}
+	// O nome de exibição também volta na sessão do cookie (Aula 15.5).
+	if p, ok := st.(interface {
+		PanelSession(ctx context.Context, tokenHash []byte) (panel.Session, bool, error)
+	}); ok {
+		if s, found, err := p.PanelSession(ctx, []byte{2, 1, 2}); !found || err != nil || s.DisplayName != "Bia Lima" {
+			t.Errorf("sessão da bia: %+v %v %v", s, found, err)
+		}
+	} else {
+		t.Error("o armazenamento não tem PanelSession")
 	}
 	if n, err := st.DeleteUserSessions(ctx, "ana"); n != 2 || err != nil {
 		t.Errorf("encerrar as da ana: %d %v", n, err)
