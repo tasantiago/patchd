@@ -1,13 +1,20 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/panel"
 )
 
@@ -53,7 +60,16 @@ type oidcView struct {
 	Issuer, ClientID, Claim, AdminRole, ReadRole string
 }
 
+// sessionRow: uma sessão aberta (Aula 15.4). ID é o hash do segredo em hexadecimal:
+// identifica a sessão sem permitir usá-la.
+type sessionRow struct {
+	ID, User, Source, Role, Created, Seen, Expires string
+	Current                                        bool
+}
+
 type accessView struct {
+	Sessions   []sessionRow
+	SessUsers  []string // quem tem sessão aberta, menos você
 	AD         *ADInfo
 	ADResult   *adResultView
 	OIDC       *oidcView
@@ -98,8 +114,109 @@ func (a *api) accessView(r *http.Request, s panel.Session, v *settingsView) erro
 		acc.Users = append(acc.Users, localUserRow{Name: u.Name, Role: u.Role, Created: a.stamp(u.CreatedAt),
 			Self: s.Source == panel.SourceLocal && s.Username == u.Name, Last: u.Role == panel.RoleAdmin && admins == 1})
 	}
+	if err := a.sessionRows(r, s, acc); err != nil {
+		return err
+	}
 	v.Access = acc
 	return nil
+}
+
+// sourceLabel: a origem da sessão, como o admin fala.
+func sourceLabel(src string) string {
+	switch src {
+	case panel.SourceAD:
+		return "AD"
+	case panel.SourceOIDC:
+		return "RHBK"
+	case panel.SourceLocal:
+		return "local"
+	}
+	return src
+}
+
+// sessionRows: as sessões ainda válidas, a desta requisição marcada.
+func (a *api) sessionRows(r *http.Request, s panel.Session, acc *accessView) error {
+	list, err := a.store.PanelSessions(r.Context())
+	if err != nil {
+		return err
+	}
+	var mine []byte
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		mine = identity.Hash(c.Value)
+	}
+	now := a.now()
+	users := map[string]bool{}
+	for _, x := range list {
+		if !x.Valid(now) {
+			continue
+		}
+		exp := x.ExpiresAt
+		if idle := x.LastSeenAt.Add(panel.SessionIdle); idle.Before(exp) {
+			exp = idle
+		}
+		row := sessionRow{ID: hex.EncodeToString(x.Hash), User: x.Username, Source: sourceLabel(x.Source), Role: x.Role,
+			Created: a.stamp(x.CreatedAt), Seen: ago(now.Sub(x.LastSeenAt)), Expires: a.stamp(exp), Current: bytes.Equal(x.Hash, mine)}
+		acc.Sessions = append(acc.Sessions, row)
+		if x.Username != s.Username {
+			users[x.Username] = true
+		}
+	}
+	acc.SessUsers = slices.Sorted(maps.Keys(users))
+	return nil
+}
+
+// endSessionAction: POST /painel/configuracao/acesso/sessoes/{id}/encerrar. A da própria
+// requisição não: para ela existe o Sair.
+func (a *api) endSessionAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	hash, err := hex.DecodeString(r.PathValue("id"))
+	if err != nil || len(hash) != sha256.Size {
+		http.NotFound(w, r)
+		return
+	}
+	if c, err := r.Cookie(sessionCookie); err == nil && bytes.Equal(identity.Hash(c.Value), hash) {
+		http.Redirect(w, r, "/painel/configuracao?aba=acesso&erro=propria-sessao", http.StatusSeeOther)
+		return
+	}
+	target, found, err := a.store.PanelSession(r.Context(), hash)
+	if err != nil {
+		a.internalError(w, r, "ler sessão", err)
+		return
+	}
+	if !found {
+		http.Redirect(w, r, "/painel/configuracao?aba=acesso&erro=sessao", http.StatusSeeOther)
+		return
+	}
+	if err := a.store.DeletePanelSession(r.Context(), hash); err != nil {
+		a.internalError(w, r, "encerrar sessão", err)
+		return
+	}
+	a.logger.Info("sessão encerrada pelo painel", "session_user", target.Username, "source", target.Source, "username", s.Username,
+		"request_id", RequestID(r.Context()))
+	http.Redirect(w, r, "/painel/configuracao?aba=acesso&"+url.Values{"encerrada": {target.Username}}.Encode(), http.StatusSeeOther)
+}
+
+// endUserSessionsAction: POST /painel/configuracao/acesso/sessoes/usuario. Todas as
+// sessões de alguém, de qualquer origem: tirar do grupo do AD não derruba quem já entrou.
+func (a *api) endUserSessionsAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	if !parseSmallForm(w, r) {
+		return
+	}
+	user := panel.NormalizeUsername(r.PostFormValue("usuario"))
+	switch {
+	case !panel.ValidUsername(user):
+		http.Redirect(w, r, "/painel/configuracao?aba=acesso&erro=sessao", http.StatusSeeOther)
+		return
+	case user == s.Username:
+		http.Redirect(w, r, "/painel/configuracao?aba=acesso&erro=propria-sessao", http.StatusSeeOther)
+		return
+	}
+	n, err := a.store.DeleteUserSessions(r.Context(), user)
+	if err != nil {
+		a.internalError(w, r, "encerrar sessões", err)
+		return
+	}
+	a.logger.Info("sessões encerradas pelo painel", "session_user", user, "count", n, "username", s.Username, "request_id", RequestID(r.Context()))
+	http.Redirect(w, r, "/painel/configuracao?aba=acesso&"+url.Values{"encerradas": {strconv.FormatInt(n, 10)}, "de": {user}}.Encode(), http.StatusSeeOther)
 }
 
 // renderAccess: a aba Acesso, com um aviso ou o resultado de um teste.
@@ -358,5 +475,13 @@ func accessFlash(q url.Values, b *pageBase) {
 		b.Error = "Essa é a conta da sua sessão: troque a senha ou remova por outra conta (ou pela linha de comando)."
 	case q.Get("erro") == "ultimo-admin":
 		b.Error = "É o único admin local: a contingência ficaria sem admin. Crie outro antes de remover."
+	case q.Has("encerrada"):
+		b.Flash = fmt.Sprintf("Sessão de %s encerrada: no próximo clique, o painel pede login.", q.Get("encerrada"))
+	case q.Has("encerradas"):
+		b.Flash = fmt.Sprintf("%s sessão(ões) de %s encerrada(s).", q.Get("encerradas"), q.Get("de"))
+	case q.Get("erro") == "propria-sessao":
+		b.Error = "Essa é a sua sessão: para sair, use Sair."
+	case q.Get("erro") == "sessao":
+		b.Error = "Essa sessão já não existe; nada mudou."
 	}
 }
