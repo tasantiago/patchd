@@ -4,15 +4,20 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"debug/buildinfo"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/release"
@@ -147,6 +152,11 @@ func sign(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "patchd-release: nenhum executável do agente em %s (rode o scripts/build.sh)\n", *dist)
 		return exitConfig
 	}
+	commit, err := checkBuild(contents, *version)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-release: %v\nnada foi assinado: rode o scripts/build.sh %s, espere ele terminar e assine de novo\n", err, *version)
+		return exitConfig
+	}
 
 	vdir := filepath.Join(*out, *version)
 	if err := os.MkdirAll(*out, 0o755); err != nil {
@@ -177,8 +187,66 @@ func sign(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime
 	}
-	fmt.Fprintf(stdout, "versão %s assinada em %s (%d executáveis)\n", *version, vdir, len(m.Files))
+	fmt.Fprintf(stdout, "versão %s assinada em %s (%d executáveis, commit %s)\n", *version, vdir, len(m.Files), commit)
 	return exitOK
+}
+
+// checkBuild confere os executáveis antes de assinar (Aula 14.7). Na v0.14.2 o sign rodou
+// antes de o build terminar e assinou o dist/ da versão anterior; o agente recusou ("não se
+// identificou como v0.14.2"), mas só depois de baixar. Aqui a conferência vem antes:
+//   - a versão pedida está dentro de cada executável (o build a injeta com -X; medido: a
+//     string aparece uma vez, e a versão anterior não aparece);
+//   - cada um é um executável Go com o commit gravado, sem alterações locais, e todos do
+//     mesmo commit (o -trimpath não grava o -ldflags, mas grava o vcs.revision).
+//
+// Devolve o commit (12 dígitos), para quem assina comparar com o git log.
+func checkBuild(contents map[string][]byte, version string) (string, error) {
+	names := slices.Sorted(maps.Keys(contents))
+	commits := map[string][]string{}
+	for _, name := range names {
+		data := contents[name]
+		if !bytes.Contains(data, []byte(version)) {
+			return "", fmt.Errorf("%s não é da versão %s (o build ainda não terminou, ou o dist/ é de outra versão)", name, version)
+		}
+		bi, err := buildinfo.Read(bytes.NewReader(data))
+		if err != nil {
+			return "", fmt.Errorf("%s não é um executável Go com informação de build: %v", name, err)
+		}
+		rev, modified := "", false
+		for _, st := range bi.Settings {
+			switch st.Key {
+			case "vcs.revision":
+				rev = st.Value
+			case "vcs.modified":
+				modified = st.Value == "true"
+			}
+		}
+		if modified {
+			return "", fmt.Errorf("%s foi compilado com alterações não commitadas", name)
+		}
+		commits[rev] = append(commits[rev], name)
+	}
+	if len(commits) > 1 {
+		var parts []string
+		for _, rev := range slices.Sorted(maps.Keys(commits)) {
+			parts = append(parts, fmt.Sprintf("%s: %s", shortRev(rev), strings.Join(commits[rev], ", ")))
+		}
+		return "", fmt.Errorf("os executáveis vêm de commits diferentes (%s)", strings.Join(parts, "; "))
+	}
+	for rev := range commits {
+		return shortRev(rev), nil
+	}
+	return "", nil
+}
+
+func shortRev(rev string) string {
+	switch {
+	case rev == "":
+		return "sem commit gravado"
+	case len(rev) > 12:
+		return rev[:12]
+	}
+	return rev
 }
 
 // pubkey imprime a chave pública da chave privada (Aula 9.1b): o PATCHD_UPDATE_PUBKEY se

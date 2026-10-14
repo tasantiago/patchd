@@ -18,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/ad"
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
@@ -260,7 +261,14 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	case jobKey == nil:
 		logger.Info("campanhas paradas (sem PATCHD_JOB_SIGNING_KEY_FILE): nenhum anel é liberado")
 	default:
-		go campaignLoop(ctx, logger, pg, newCampaignEngine(pg, jobKey, logger))
+		var tp campaign.ThirdPartyPlanner
+		switch c, err := newCampaigner(pg, look); {
+		case err != nil:
+			logger.Error("campanhas de terceiros paradas (pausam no primeiro anel)", "error", err)
+		default:
+			tp = c
+		}
+		go campaignLoop(ctx, logger, pg, newCampaignEngine(pg, jobKey, tp, logger))
 		logger.Info("campanhas ligadas: o servidor libera os anéis a cada minuto")
 	}
 

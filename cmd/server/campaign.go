@@ -18,15 +18,17 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpinstall"
 )
 
 const campaignUsage = `uso: patchd-server campaign <comando> [opções]
 
 comandos:
-  create  cria a campanha: -name "nome" -type rescan|update [-sources fonte,fonte]
-          -rings 0,1 [-observe 24h] [-ttl 24h | -window]. O servidor libera o primeiro
-          anel no próximo minuto e cada anel seguinte sozinho, quando o anterior termina
-          sem falha e a observação passa
+  create  cria a campanha: -name "nome" -type rescan|update|thirdparty [-sources fonte,fonte]
+          [-app programa -version versão] -rings 0,1 [-observe 24h] [-ttl 24h | -window].
+          O servidor libera o primeiro anel no próximo minuto e cada anel seguinte sozinho,
+          quando o anterior termina sem falha e a observação passa
   list    lista as campanhas, da mais nova para a mais antiga [-n 20]
   show    mostra a campanha e os jobs de cada anel: -id N
   pause   pausa: -id N (os jobs já criados seguem; nenhum anel novo é liberado)
@@ -36,6 +38,12 @@ comandos:
 update: -sources são pacotes fonte, como aparecem nas pendências do painel (bluez, curl).
 Cada máquina do anel recebe os binários instalados dessas fontes que estiverem pendentes
 na avaliação do servidor; quem não tem nenhuma pendente fica sem job.
+
+thirdparty (Aula 14.7): -app é a regra (libreoffice) e -version, a versão aprovada e
+guardada (package list). Cada máquina do anel passa pelo package plan com os instaladores
+dessa versão: só quem está em ATUALIZAR recebe job; em dia, duplicado, bundle e os outros
+ficam fora, com o motivo nas notas da campanha. A cada anel liberado o servidor confere de
+novo a aprovação e o arquivo no cache: revogada ou faltando, a campanha pausa.
 `
 
 // campaignStore é o que os comandos de campanha usam do banco.
@@ -48,10 +56,11 @@ type campaignStore interface {
 }
 
 // newCampaignEngine monta o motor das campanhas com o PostgreSQL: as pendências vêm da
-// mesma avaliação do painel, e a janela, do anel da máquina.
-func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, logger *slog.Logger) *campaign.Engine {
+// mesma avaliação do painel, e a janela, do anel da máquina. tp decide as campanhas de
+// terceiros (nil: elas pausam, dizendo por quê).
+func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, tp campaign.ThirdPartyPlanner, logger *slog.Logger) *campaign.Engine {
 	cs := newComplianceService(pg, logger)
-	return &campaign.Engine{Store: pg, Key: key, Logger: logger,
+	return &campaign.Engine{Store: pg, Key: key, Logger: logger, ThirdParty: tp,
 		// Só o que está aprovado em Patch (Aula 13.2), conferido na hora em que cada anel é
 		// liberado: uma aprovação revogada no meio da campanha já não entra no anel seguinte.
 		Pending: func(ctx context.Context, id string) ([]protocol.PendingItem, bool, error) {
@@ -136,17 +145,44 @@ func runCampaign(args []string, look config.Lookup, stdout, stderr io.Writer) in
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
-	return campaignCommand(ctx, store.NewPostgres(pool), args, time.Now().UTC(), stdout, stderr)
+	pg := store.NewPostgres(pool)
+	tp, err := newCampaigner(pg, look)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		return exitConfig
+	}
+	return campaignCommand(ctx, pg, tp, args, time.Now().UTC(), stdout, stderr)
 }
 
-func campaignCommand(ctx context.Context, st campaignStore, args []string, now time.Time, stdout, stderr io.Writer) int {
+// newCampaigner monta o planejador das campanhas de terceiros (Aula 14.7): o manifesto
+// das regras e a pasta dos instaladores, os mesmos do package plan e do painel.
+func newCampaigner(st tpinstall.CampaignStore, look config.Lookup) (*tpinstall.Campaigner, error) {
+	path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
+	m, err := thirdparty.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("manifesto dos programas de terceiros: %w", err)
+	}
+	dir, err := contentDir(look)
+	if err != nil {
+		return nil, err
+	}
+	c := &tpinstall.Campaigner{Store: st, Manifest: m}
+	if dir != "" {
+		c.Dir = packagesDir(dir)
+	}
+	return c, nil
+}
+
+func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPartyPlanner, args []string, now time.Time, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("campaign "+args[0], flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	switch args[0] {
 	case "create":
 		name := fs.String("name", "", "nome da campanha")
-		typ := fs.String("type", "", "rescan ou update")
+		typ := fs.String("type", "", "rescan, update ou thirdparty")
 		sources := fs.String("sources", "", "update: pacotes fonte, separados por vírgula")
+		app := fs.String("app", "", "thirdparty: a regra do programa (libreoffice)")
+		ver := fs.String("version", "", "thirdparty: a versão aprovada e guardada")
 		rings := fs.String("rings", "", "anéis em ordem, separados por vírgula (ex.: 0,1)")
 		observe := fs.Duration("observe", 24*time.Hour, "tempo de observação depois de cada anel concluído")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo dos jobs sem janela")
@@ -160,7 +196,10 @@ func campaignCommand(ctx context.Context, st campaignStore, args []string, now t
 			return exitConfig
 		}
 		c := campaign.Campaign{Name: strings.TrimSpace(*name), Type: *typ, Rings: r, Observe: *observe, TTL: *ttl,
-			UseWindow: *win, CreatedBy: "linha de comando"}
+			UseWindow: *win, CreatedBy: "linha de comando", App: strings.TrimSpace(*app), Version: strings.TrimSpace(*ver)}
+		if c.Type == jobs.TypeThirdParty && c.Name == "" && c.App != "" {
+			c.Name = c.App + " " + c.Version
+		}
 		if *sources != "" {
 			for _, s := range strings.Split(*sources, ",") {
 				c.Sources = append(c.Sources, strings.TrimSpace(s))
@@ -169,6 +208,21 @@ func campaignCommand(ctx context.Context, st campaignStore, args []string, now t
 		if err := c.Validate(); err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitConfig
+		}
+		// Terceiros: a versão tem de estar pronta já na criação (a mesma conferência de cada
+		// anel), para a campanha não nascer pausada.
+		if c.Type == jobs.TypeThirdParty {
+			reason := "o servidor está sem as regras de terceiros"
+			if tp != nil {
+				if reason, err = tp.Ready(ctx, c.App, c.Version); err != nil {
+					fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+					return exitRuntime
+				}
+			}
+			if reason != "" {
+				fmt.Fprintf(stderr, "patchd-server: a campanha não foi criada: %s\n", reason)
+				return exitRuntime
+			}
 		}
 		id, err := st.CreateCampaign(ctx, c)
 		if err != nil {
@@ -192,7 +246,11 @@ func campaignCommand(ctx context.Context, st campaignStore, args []string, now t
 		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "ID\tNOME\tTIPO\tANÉIS\tESTADO\tDETALHE")
 		for _, c := range list {
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", c.ID, c.Name, c.Type, ringsProgress(c), c.State, orDash(c.Detail))
+			typ := c.Type
+			if c.Type == jobs.TypeThirdParty {
+				typ += " (" + c.Target() + ")"
+			}
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", c.ID, c.Name, typ, ringsProgress(c), c.State, orDash(c.Detail))
 		}
 		_ = tw.Flush()
 		fmt.Fprintf(stdout, "%d campanha(s)\n", len(list))
@@ -247,7 +305,10 @@ func campaignChange(ctx context.Context, st campaignStore, c campaign.Campaign, 
 func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "campanha %d: %s\n", c.ID, c.Name)
 	fmt.Fprintf(stdout, "tipo: %s", c.Type)
-	if len(c.Sources) > 0 {
+	switch {
+	case c.Type == jobs.TypeThirdParty:
+		fmt.Fprintf(stdout, " (programa: %s)", c.Target())
+	case len(c.Sources) > 0:
 		fmt.Fprintf(stdout, " (fontes: %s)", strings.Join(c.Sources, ", "))
 	}
 	when := fmt.Sprintf("prazo de %v", c.TTL)
@@ -255,6 +316,9 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 		when = "na janela de cada anel"
 	}
 	fmt.Fprintf(stdout, "\njobs: %s; observação: %v\nestado: %s\ndetalhe: %s\n", when, c.Observe, c.State, orDash(c.Detail))
+	for _, n := range c.Notes {
+		fmt.Fprintf(stdout, "liberação: %s\n", n)
+	}
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ANEL\tJOB\tMÁQUINA\tESTADO\tDETALHE")
 	for idx, ring := range c.Rings {

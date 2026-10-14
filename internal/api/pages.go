@@ -876,7 +876,7 @@ var pages = template.Must(template.New("").Parse(`
 <h1>Campanhas</h1>
 <p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir.</p>
 <div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Fontes</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
+<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
@@ -923,10 +923,11 @@ var pages = template.Must(template.New("").Parse(`
 <h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
 <div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
-<dt>Fontes</dt><dd>{{.Sources}}</dd>
+<dt>{{if eq .C.Type "thirdparty"}}Programa{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.Observe}}</dd>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{.C.Detail}}{{else}}—{{end}}</dd>
+{{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
 </dl>
 {{if or .CanPause .CanResume .CanCancel}}<div class="lote">
