@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/ad"
+	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/panel"
 )
@@ -123,4 +124,44 @@ func adCheck(ctx context.Context, dir *ad.Directory, cfg ad.Config, user, pw str
 	}
 	fmt.Fprintln(stdout, "perfil no painel: nenhum (o login seria recusado)")
 	return exitRuntime
+}
+
+// adInfo: o cartão do AD em Configuração › Acesso (Aula 15.3): quais variáveis estão
+// definidas (nunca os valores) e o mesmo login de teste do ad check.
+func adInfo(cfg ad.Config, dir *ad.Directory) api.ADInfo {
+	baseNote := ""
+	if cfg.BaseDN == "" {
+		baseNote = "a base é derivada do domínio"
+	}
+	return api.ADInfo{
+		Vars: []api.ADVar{
+			{Name: "PATCHD_LDAP_HOST", Set: cfg.Host != ""},
+			{Name: "PATCHD_LDAP_DOMAIN", Set: cfg.Domain != ""},
+			{Name: "PATCHD_LDAP_BASE_DN", Set: cfg.BaseDN != "", Note: baseNote},
+			{Name: "PATCHD_LDAP_ADMIN_GROUP", Set: cfg.AdminGroup != ""},
+			{Name: "PATCHD_LDAP_READ_GROUP", Set: cfg.ReadGroup != ""},
+		},
+		Check: func(ctx context.Context, user, pw string) (api.ADCheckResult, error) {
+			return adCheckResult(cfg, func() (ad.Report, error) { return dir.Check(ctx, user, pw) })
+		},
+	}
+}
+
+// adCheckResult traduz o relatório do ad.Check para a tela.
+func adCheckResult(cfg ad.Config, check func() (ad.Report, error)) (api.ADCheckResult, error) {
+	rep, err := check()
+	res := api.ADCheckResult{TLSVersion: rep.TLSVersion, AdminSet: cfg.AdminGroup != "", ReadSet: cfg.ReadGroup != ""}
+	var ue *ad.UnavailableError
+	switch {
+	case errors.As(err, &ue):
+		res.Unavailable = ue.Reason
+		return res, nil
+	case errors.Is(err, panel.ErrBadCredentials):
+		res.BadPassword = true
+		return res, nil
+	case err != nil:
+		return res, err
+	}
+	res.Admin, res.Read, res.Role = rep.Admin, rep.Read, rep.Role()
+	return res, nil
 }

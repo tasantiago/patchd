@@ -109,3 +109,30 @@ func CheckPasswordUnknownUser(pw string) bool {
 	CheckPassword(dummyHash(), pw)
 	return false
 }
+
+// passwordAlphabet: sem os caracteres que se confundem ao ditar ou copiar (0/O, 1/l/I).
+const passwordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+// GeneratedPasswordChars: o tamanho das senhas geradas pelo painel (Aula 15.3): 20 de 57
+// símbolos, cerca de 116 bits.
+const GeneratedPasswordChars = 20
+
+// GeneratePassword gera uma senha aleatória para um usuário local (Aula 15.3). O painel
+// gera em vez de pedir: ninguém escolhe a senha de outra pessoa, e nenhuma senha fraca
+// passa pela política.
+func GeneratePassword() (string, error) {
+	b := make([]byte, GeneratedPasswordChars)
+	limit := byte(256 - 256%len(passwordAlphabet)) // sem viés: descarta o resto
+	for i := 0; i < len(b); {
+		var r [1]byte
+		if _, err := rand.Read(r[:]); err != nil {
+			return "", err
+		}
+		if r[0] >= limit {
+			continue
+		}
+		b[i] = passwordAlphabet[int(r[0])%len(passwordAlphabet)]
+		i++
+	}
+	return string(b), nil
+}

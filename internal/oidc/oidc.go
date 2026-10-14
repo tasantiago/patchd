@@ -142,6 +142,20 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 // Issuer devolve o emissor configurado (para o log).
 func (p *Provider) Issuer() string { return p.cfg.Issuer }
 
+// Public devolve a configuração sem o segredo do cliente (Aula 15.3: a tela de acesso).
+func (p *Provider) Public() Config {
+	c := p.cfg
+	c.ClientSecret = ""
+	return c
+}
+
+// Probe busca a descoberta de novo e confere, sem guardar nada (Aula 15.3: o botão de
+// teste). O Discover guarda o resultado na primeira vez e não serve para testar depois.
+func (p *Provider) Probe(ctx context.Context) error {
+	_, err := p.fetchDiscovery(ctx)
+	return err
+}
+
 // discovery do provedor: .well-known/openid-configuration.
 type discoveryDoc struct {
 	Issuer        string `json:"issuer"`
@@ -158,21 +172,30 @@ func (p *Provider) Discover(ctx context.Context) error {
 	if p.discovery {
 		return nil
 	}
-	var doc discoveryDoc
-	if err := p.getJSON(ctx, strings.TrimRight(p.cfg.Issuer, "/")+"/.well-known/openid-configuration", &doc); err != nil {
-		return fmt.Errorf("descoberta do provedor: %w", err)
-	}
-	if doc.Issuer != p.cfg.Issuer {
-		return fmt.Errorf("o provedor se apresenta como %q, não como o PATCHD_OIDC_ISSUER configurado (%q)", doc.Issuer, p.cfg.Issuer)
-	}
-	for name, u := range map[string]string{"authorization_endpoint": doc.AuthEndpoint, "token_endpoint": doc.TokenEndpoint, "jwks_uri": doc.JWKSURI} {
-		if err := checkURL(name, u); err != nil {
-			return fmt.Errorf("descoberta do provedor: %w", err)
-		}
+	doc, err := p.fetchDiscovery(ctx)
+	if err != nil {
+		return err
 	}
 	p.authURL, p.tokenURL, p.jwksURL = doc.AuthEndpoint, doc.TokenEndpoint, doc.JWKSURI
 	p.discovery = true
 	return nil
+}
+
+// fetchDiscovery busca e confere o documento de descoberta.
+func (p *Provider) fetchDiscovery(ctx context.Context) (discoveryDoc, error) {
+	var doc discoveryDoc
+	if err := p.getJSON(ctx, strings.TrimRight(p.cfg.Issuer, "/")+"/.well-known/openid-configuration", &doc); err != nil {
+		return doc, fmt.Errorf("descoberta do provedor: %w", err)
+	}
+	if doc.Issuer != p.cfg.Issuer {
+		return doc, fmt.Errorf("o provedor se apresenta como %q, não como o PATCHD_OIDC_ISSUER configurado (%q)", doc.Issuer, p.cfg.Issuer)
+	}
+	for name, u := range map[string]string{"authorization_endpoint": doc.AuthEndpoint, "token_endpoint": doc.TokenEndpoint, "jwks_uri": doc.JWKSURI} {
+		if err := checkURL(name, u); err != nil {
+			return doc, fmt.Errorf("descoberta do provedor: %w", err)
+		}
+	}
+	return doc, nil
 }
 
 func (p *Provider) getJSON(ctx context.Context, u string, out any) error {
