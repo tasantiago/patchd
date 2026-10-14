@@ -271,3 +271,67 @@ func TestCampanhaDeTerceiros(t *testing.T) {
 		t.Errorf("sem planejador: %+v", c)
 	}
 }
+
+// Aula 14.9: o adiado ganha nova tentativa depois de RetryAfter; se o plano mudou, é
+// dispensado; esgotadas as tentativas, pausa; revogada a versão, a nova tentativa espera.
+func TestCampanhaComAdiados(t *testing.T) {
+	a := novoAmbiente(t)
+	plan := &planejadorFalso{decisao: map[string]string{"a2": "em dia", "b1": "sem o programa"}}
+	a.e.ThirdParty = plan
+	ctx := context.Background()
+	id := a.cria(campaign.Campaign{Name: "vscode", Type: jobs.TypeThirdParty, App: "vscode", Version: "1.141.0",
+		Rings: []int{0, 1}, TTL: 24 * time.Hour, CreatedBy: "t"})
+	a.passo(id, 0)
+	a.encerra(id, 0, jobs.StatePostponed) // programa aberto às 14:00
+
+	c := a.passo(id, time.Minute)
+	if c.State != campaign.StateRunning || !strings.Contains(c.Detail, "1 adiada(s), nova tentativa a partir de 2026-10-09 15:00 UTC") {
+		t.Fatalf("esperando: %+v", c)
+	}
+	// Passada a hora: um job novo para a mesma máquina, no mesmo anel.
+	c = a.passo(id, 61*time.Minute)
+	l, _ := a.st.CampaignJobs(ctx, id, 0)
+	if len(l) != 2 || l[1].MachineID != "p1" || l[1].State != jobs.StatePending || !strings.Contains(c.Detail, "1 de 1 job(s) em aberto") {
+		t.Fatalf("nova tentativa: %+v %+v", l, c)
+	}
+	// Adiado de novo, e a versão é revogada: a nova tentativa espera a aprovação.
+	if ok, _ := a.st.FinishJob(ctx, l[1].ID, jobs.StatePostponed, "programa aberto", a.agora.Add(62*time.Minute)); !ok {
+		t.Fatal("encerrar")
+	}
+	plan.motivo = "vscode 1.141.0 não está aprovado"
+	c = a.passo(id, 123*time.Minute)
+	if c.State != campaign.StatePaused || !strings.Contains(c.Detail, "anel 0: nova tentativa suspensa: vscode 1.141.0 não está aprovado") {
+		t.Fatalf("revogada: %+v", c)
+	}
+	// Aprovada de novo e retomada; enquanto isso a máquina foi atualizada à mão: o plano diz
+	// "em dia", o adiado vira dispensado, e o anel 1 sai.
+	plan.motivo, plan.decisao["p1"] = "", "em dia"
+	_ = campaign.Resume(&c)
+	_, _ = a.st.SaveCampaign(ctx, c, campaign.StatePaused)
+	c = a.passo(id, 124*time.Minute)
+	l, _ = a.st.CampaignJobs(ctx, id, 0)
+	if l[1].State != jobs.StateDismissed || !strings.Contains(l[1].Detail, "nova tentativa dispensada: em dia") {
+		t.Errorf("dispensado: %+v", l[1])
+	}
+	if c.CurrentIdx != 1 || len(c.Notes) != 2 {
+		t.Errorf("anel 1: %+v", c)
+	}
+
+	// Tentativas esgotadas: conta como falha e pausa.
+	b := novoAmbiente(t)
+	b.e.ThirdParty = &planejadorFalso{}
+	id2 := b.cria(campaign.Campaign{Name: "x", Type: jobs.TypeThirdParty, App: "vscode", Version: "1.141.0", Rings: []int{0}, TTL: 24 * time.Hour, CreatedBy: "t"})
+	at := time.Duration(0)
+	for i := 0; i < campaign.MaxAttempts; i++ {
+		b.passo(id2, at)
+		l, _ := b.st.CampaignJobs(ctx, id2, 0)
+		if len(l) != i+1 {
+			t.Fatalf("tentativa %d: %d job(s)", i+1, len(l))
+		}
+		b.st.FinishJob(ctx, l[i].ID, jobs.StatePostponed, "programa aberto", b.agora.Add(at))
+		at += campaign.RetryAfter
+	}
+	if c := b.passo(id2, at); c.State != campaign.StatePaused || !strings.Contains(c.Detail, "adiado na tentativa 24 de 24") {
+		t.Errorf("esgotadas: %+v", c)
+	}
+}

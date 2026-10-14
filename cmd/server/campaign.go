@@ -44,6 +44,11 @@ guardada (package list). Cada máquina do anel passa pelo package plan com os in
 dessa versão: só quem está em ATUALIZAR recebe job; em dia, duplicado, bundle e os outros
 ficam fora, com o motivo nas notas da campanha. A cada anel liberado o servidor confere de
 novo a aprovação e o arquivo no cache: revogada ou faltando, a campanha pausa.
+
+Jobs adiados (Aula 14.9; agente v0.14.4 ou mais novo): programa aberto ou outro instalador
+rodando não é falha. A campanha pede de novo à mesma máquina a cada 1 h, refazendo o plano
+(se a máquina não precisa mais, o adiado vira "dispensado"), até 24 tentativas no anel;
+esgotadas, conta como falha e pausa.
 `
 
 // campaignStore é o que os comandos de campanha usam do banco.

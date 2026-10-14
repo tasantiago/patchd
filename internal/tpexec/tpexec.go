@@ -42,8 +42,8 @@ func FileName(p jobs.ThirdPartyParams) string {
 }
 
 // ErrRetry: o instalador pediu para tentar depois (outro instalador rodando, programa
-// aberto). Vira "falhou", com o motivo; quem decide repetir é o operador ou a campanha.
-var ErrRetry = errors.New("tentar depois")
+// aberto). O agente responde "adiado" (Aula 14.9), e a campanha pede de novo mais tarde.
+var ErrRetry = jobs.ErrRetry
 
 // Executor executa os jobs thirdparty.
 type Executor struct {

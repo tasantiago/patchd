@@ -17,6 +17,7 @@ type contratoCampanhas interface {
 	RunningCampaigns(ctx context.Context) ([]campaign.Campaign, error)
 	SaveCampaign(ctx context.Context, c campaign.Campaign, from string) (bool, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
+	DismissJob(ctx context.Context, id int64, why string) (bool, error)
 }
 
 func testarCampanhas(t *testing.T, st contratoCampanhas) {
@@ -95,6 +96,26 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	}
 	if l, _ := st.CampaignJobs(ctx, id, 0); len(l) != 0 {
 		t.Error("anel sem jobs")
+	}
+	// Aula 14.9: o adiado (aceito pela restrição da 0030) traz quando encerrou e pode ser
+	// dispensado; só o adiado.
+	l, _ := st.CampaignJobs(ctx, id, 1)
+	if ok, err := st.FinishJob(ctx, l[0].ID, "adiado", "adiado pelo agente: programa aberto", agora); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if ok, _ := st.DismissJob(ctx, l[1].ID, "x"); ok {
+		t.Error("dispensou um pendente")
+	}
+	l, _ = st.CampaignJobs(ctx, id, 1)
+	if l[0].State != "adiado" || l[0].FinishedAt == nil || !l[0].FinishedAt.Equal(agora) {
+		t.Errorf("adiado: %+v", l[0])
+	}
+	if ok, err := st.DismissJob(ctx, l[0].ID, "nova tentativa dispensada: em dia"); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	l, _ = st.CampaignJobs(ctx, id, 1)
+	if l[0].State != "dispensado" || l[0].Detail != "adiado pelo agente: programa aberto; nova tentativa dispensada: em dia" {
+		t.Errorf("dispensado: %+v", l[0])
 	}
 }
 

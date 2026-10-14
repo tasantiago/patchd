@@ -41,8 +41,9 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 	if !decodeJSON(w, r, &res) {
 		return
 	}
-	if res.Status != protocol.JobResultOK && res.Status != protocol.JobResultFailed && res.Status != protocol.JobResultRejected {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_status", "status deve ser ok, falhou ou rejeitado")
+	if res.Status != protocol.JobResultOK && res.Status != protocol.JobResultFailed && res.Status != protocol.JobResultRejected &&
+		res.Status != protocol.JobResultPostponed {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_status", "status deve ser ok, falhou, rejeitado ou adiado")
 		return
 	}
 	if len(res.Detail) > 2000 {
@@ -93,6 +94,8 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 		return jobs.StateRejected, "recusado pelo agente: " + res.Detail
 	case protocol.JobResultFailed:
 		return jobs.StateFailed, "o agente informou falha: " + res.Detail
+	case protocol.JobResultPostponed:
+		return jobs.StatePostponed, "adiado pelo agente: " + res.Detail
 	}
 	if job.Type == jobs.TypeServerURL {
 		return a.judgeServerURL(r, job)

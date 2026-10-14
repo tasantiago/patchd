@@ -60,7 +60,7 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 .sem_dado_recente{color:#4b5563;background:#f1f3f5;border-color:#d7dbe0}.desconhecido{color:#3b4a6b;background:#edf2fb;border-color:#cdd8ee}
 .em_dia{color:#16692f;background:#e7f6ec;border-color:#b4e1c1}
 .job.concluido,.job.concluida{color:#16692f;background:#e7f6ec}.job.falhou,.job.rejeitado{color:#a12424;background:#fbe9e9}
-.job.pendente,.job.entregue,.job.em_andamento{color:#0b4f96;background:#e6f0fb}.job.pausada{color:#8a5a00;background:#fff4dc}
+.job.pendente,.job.entregue,.job.em_andamento{color:#0b4f96;background:#e6f0fb}.job.pausada,.job.adiado{color:#8a5a00;background:#fff4dc}.job.dispensado{color:#4b5563;background:#f1f3f5}
 .job.cancelado,.job.cancelada,.job.expirado{color:#4b5563;background:#f1f3f5}
 .motivos{margin:.15rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.84rem}
 .aviso{padding:.7rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}

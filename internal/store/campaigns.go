@@ -112,15 +112,24 @@ func notes(n []string) []string {
 // CampaignJobs lista os jobs da campanha num anel (posição idx).
 func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, machine_id, state, detail FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
+		SELECT id, machine_id, state, detail, finished_at FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (campaign.JobState, error) {
 		var j campaign.JobState
-		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail)
+		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt)
+		j.FinishedAt = utc(j.FinishedAt)
 		return j, err
 	})
+}
+
+// DismissJob encerra um job adiado cuja nova tentativa não faz mais sentido (Aula 14.9):
+// adiado → dispensado, com o motivo acrescentado ao detalhe. Só sai de "adiado".
+func (p *Postgres) DismissJob(ctx context.Context, id int64, why string) (bool, error) {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE jobs SET state = 'dispensado', detail = detail || '; ' || $2 WHERE id = $1 AND state = 'adiado'`, id, why)
+	return tag.RowsAffected() == 1, err
 }
 
 // --- Memória -------------------------------------------------------------------------
@@ -198,8 +207,21 @@ func (m *Memory) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaig
 	var out []campaign.JobState
 	for _, j := range m.jobs {
 		if j.campaignID == id && j.campaignIdx == idx {
-			out = append(out, campaign.JobState{ID: j.ID, MachineID: j.MachineID, State: j.State, Detail: j.Detail})
+			out = append(out, campaign.JobState{ID: j.ID, MachineID: j.MachineID, State: j.State, Detail: j.Detail, FinishedAt: j.FinishedAt})
 		}
 	}
 	return out, nil
+}
+
+// DismissJob: adiado → dispensado.
+func (m *Memory) DismissJob(ctx context.Context, id int64, why string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, j := range m.jobs {
+		if j.ID == id && j.State == "adiado" {
+			j.State, j.Detail = "dispensado", j.Detail+"; "+why
+			return true, nil
+		}
+	}
+	return false, nil
 }
