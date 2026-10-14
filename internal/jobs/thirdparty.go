@@ -24,6 +24,10 @@ const TypeThirdParty = "thirdparty"
 // ErrRefused: o agente se recusou a executar (hash, assinatura, sistema). Vira "rejeitado".
 var ErrRefused = errors.New("o agente recusou executar")
 
+// ErrNotStarted (Aula 14.5): o instalador não chegou a rodar (o download falhou). Vira
+// "falhou"; como nada mudou na máquina, o agente não reenvia o inventário.
+var ErrNotStarted = errors.New("o instalador não chegou a rodar")
+
 // ThirdPartyParams são os parâmetros do job thirdparty.
 type ThirdPartyParams struct {
 	App         string            `json:"app"`     // regra do manifesto: 7zip

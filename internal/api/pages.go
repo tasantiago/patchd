@@ -605,6 +605,16 @@ var pages = template.Must(template.New("").Parse(`
 {{if .P.Origin}}<dt>Origem</dt><dd>{{.P.Origin}}</dd>{{end}}
 <dt>Instalações</dt><dd>{{len .P.Installs}} ({{.P.Outdated}} desatualizadas, {{.P.EOL}} fora de suporte)</dd>
 </dl></div>
+{{if .Install}}<div class="card"><div class="card-cab"><h2>Instaladores guardados</h2><span class="muted">winget <code>{{.Install.Winget}}</code>{{if .Install.Type}} · tipo {{.Install.Type}}{{end}} · assinatura {{if .Install.Signer}}exigida: {{.Install.Signer}}{{else}}não exigida{{end}}</span></div>
+{{if .Versions}}<div class="tabela"><table>
+<thead><tr><th>Versão</th><th>Instaladores</th><th>Aprovação</th></tr></thead>
+<tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td>
+<td>{{range .Packages}}<div>{{.Type}} · {{.Arch}} · {{.Size}} · <code>{{.SHA}}</code> <span class="muted">{{.Fetched}}</span></div>{{end}}</td>
+<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
+{{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum instalador guardado. No servidor: <code>patchd-server package fetch -app {{.P.AppID}}</code>.</p>{{end}}
+{{if not .Admin}}<p class="muted">Aprovar exige o perfil admin.</p>{{end}}
+</div>{{end}}
 <div class="card"><div class="card-cab"><h2>Instalações</h2></div><div class="tabela"><table>
 <thead><tr><th>Máquina</th><th>Como aparece no inventário</th><th>Instalada</th><th>Situação</th><th>Escopo</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=pendencias">{{if .Machine}}{{.Machine}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td>

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/pkgcache"
+	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
 )
@@ -25,8 +27,8 @@ type installStore interface {
 // packageInstall cria o job thirdparty para um programa numa máquina (Aula 14.4). Só cria
 // quando o plano da máquina diz ATUALIZAR: o job leva o instalador guardado da família da
 // máquina, com o SHA-256, o tamanho e os argumentos conferidos.
-func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey, manifest thirdparty.Manifest, args []string,
-	now time.Time, stdout, stderr io.Writer) int {
+func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey, manifest thirdparty.Manifest, dir string,
+	args []string, now time.Time, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("package install", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, packageUsage) }
@@ -79,6 +81,23 @@ func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey
 	}
 	if d.State != tpinstall.StateUpdate {
 		fmt.Fprintf(stderr, "patchd-server: nada a instalar: %s: %s\n", stateLabels[d.State], d.Reason)
+		return exitRuntime
+	}
+	// A aprovação manda (Aula 14.5): a versão do instalador escolhido tem de estar aprovada.
+	approvals, err := st.ThirdPartyApprovals(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		return exitRuntime
+	}
+	if _, ok := approvalIndex(approvals)[store.TPApprovalKey(d.App.ID, d.Package.Version)]; !ok {
+		fmt.Fprintf(stderr, "patchd-server: %s %s ainda não foi aprovado: package approve -app %s -version %s\n",
+			d.App.ID, d.Package.Version, d.App.ID, d.Package.Version)
+		return exitRuntime
+	}
+	// O arquivo tem de estar no cache, e conferir: senão o job só falharia na máquina (404).
+	if _, err := pkgcache.Check(dir, d.Package.SHA256, d.Package.MSI()); err != nil {
+		fmt.Fprintf(stderr, "patchd-server: o instalador de %s %s não está no cache ou não confere (%v): package fetch -app %s\n",
+			d.App.ID, d.Package.Version, err, d.App.ID)
 		return exitRuntime
 	}
 	p, err := thirdPartyParams(*d)

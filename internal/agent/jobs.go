@@ -130,13 +130,16 @@ func (a *Agent) runUpdates(ctx context.Context, updates []acceptedUpdate) []Pend
 	return out
 }
 
-// runThirdParty executa os jobs thirdparty, um por vez (Aula 14.4).
-func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) []PendingJobResult {
-	var out []PendingJobResult
+// runThirdParty executa os jobs thirdparty, um por vez (Aula 14.4). ran diz se algum
+// instalador chegou a rodar: só então o inventário pode ter mudado (Aula 14.5).
+func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) (out []PendingJobResult, ran bool) {
 	for _, j := range list {
 		a.Logger.Info("instalação de terceiros iniciada", "job_id", j.id, "app", j.p.App, "version", j.p.Version)
 		start := a.now()
 		detail, err := a.ThirdParty(ctx, j.id, j.p)
+		if !errors.Is(err, jobs.ErrRefused) && !errors.Is(err, jobs.ErrNotStarted) {
+			ran = true
+		}
 		status := protocol.JobResultOK
 		switch {
 		case errors.Is(err, jobs.ErrRefused):
@@ -151,7 +154,7 @@ func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) []
 		}
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}
-	return out
+	return out, ran
 }
 
 // joinDetail junta o erro e o detalhe (o que o instalador disse antes de falhar).
