@@ -167,6 +167,15 @@ func TestInstalarCodigos(t *testing.T) {
 	if _, err := e.Install(ctx, 1, params(inst, "nullsoft", "/S")); err == nil || errors.Is(err, ErrRetry) || errors.Is(err, jobs.ErrRefused) {
 		t.Errorf("2: %v", err)
 	}
+	// Download falhou: não rodou (ErrNotStarted), e nada foi executado.
+	run := &runnerFalso{}
+	e, _ = executor(t, inst, run, google, nil)
+	e.Download = func(context.Context, string, io.Writer, int64) (int64, error) {
+		return 0, errors.New("404 content_not_found")
+	}
+	if _, err := e.Install(ctx, 1, params(inst, "nullsoft")); !errors.Is(err, jobs.ErrNotStarted) || !strings.Contains(err.Error(), "404") || run.prog != "" {
+		t.Errorf("download: %v", err)
+	}
 	// Prazo esgotado: falhou, sem código.
 	e, _ = executor(t, inst, &runnerFalso{err: errors.New("prazo de 30m0s esgotado")}, google, nil)
 	if _, err := e.Install(ctx, 1, params(inst, "inno")); err == nil || !strings.Contains(err.Error(), "o instalador não terminou") {

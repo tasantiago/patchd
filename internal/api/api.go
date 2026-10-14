@@ -56,6 +56,11 @@ type Store interface {
 	ApprovePatch(ctx context.Context, a store.PatchApproval) (bool, error)
 	ApprovePatches(ctx context.Context, list []store.PatchApproval) ([]store.PatchApproval, error)
 	RevokePatch(ctx context.Context, item, fixedIn string) (bool, error)
+	// Instaladores de terceiros guardados e a aprovação deles (Aulas 14.2 e 14.5).
+	ThirdPartyPackages(ctx context.Context) ([]store.ThirdPartyPackage, error)
+	ThirdPartyApprovals(ctx context.Context) ([]store.ThirdPartyApproval, error)
+	ApproveThirdParty(ctx context.Context, a store.ThirdPartyApproval) (bool, error)
+	RevokeThirdParty(ctx context.Context, app, version string) (bool, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -148,6 +153,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/patch", a.panelPage(a.patchPage))
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))
 	mux.Handle("GET /painel/patch/programa", a.panelPage(a.thirdPartyProgramPage))
+	mux.Handle("POST /painel/patch/terceiros/aprovar", a.sameOrigin(a.adminAction(a.approveThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))
 	mux.Handle("POST /painel/patch/aprovar", a.sameOrigin(a.adminAction(a.approvePatchAction)))
 	mux.Handle("POST /painel/patch/revogar", a.sameOrigin(a.adminAction(a.revokePatchAction)))
 	mux.Handle("POST /painel/patch/aprovar-lote", a.sameOrigin(a.adminAction(a.approveBatchAction)))

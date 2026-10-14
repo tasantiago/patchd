@@ -104,6 +104,17 @@ func TestInstall(t *testing.T) {
 			t.Errorf("%s: %q; esperava %q", id, com[id], w)
 		}
 	}
+	// Assinantes medidos no lab da 14.4 (Get-AuthenticodeSignature e o log do agente). O
+	// 7-Zip não é assinado: exigir assinatura impediria a atualização.
+	signers := map[string]string{}
+	for _, a := range m.For("windows") {
+		if a.Install != nil && a.Install.Signer != "" {
+			signers[a.ID] = a.Install.Signer
+		}
+	}
+	if len(signers) != 2 || signers["google-chrome"] != "Google LLC" || signers["notepad-plus-plus"] != "NOTEPAD++" {
+		t.Errorf("assinantes padrão: %v", signers)
+	}
 	regra := func(extra string) string {
 		return `{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "minimum", "match": "x", "min_version": "1"` + extra + `}]}`
 	}

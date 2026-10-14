@@ -31,6 +31,9 @@ comandos:
   list   lista os instaladores guardados
   plan   o que fazer em cada máquina Windows, pelo inventário e pelos guardados (Aula 14.3)
   install  cria o job que atualiza um programa numa máquina, se o plano disser ATUALIZAR (Aula 14.4)
+           e a versão estiver aprovada (Aula 14.5)
+  approve  aprova um programa numa versão guardada: -app ID -version V [-note TEXTO]
+  revoke   revoga a aprovação: -app ID -version V
 
 show e fetch:
   -app ID        a regra do manifesto de terceiros (ex.: 7zip, google-chrome)
@@ -58,6 +61,7 @@ list e plan usam o PostgreSQL; fetch e list, também PATCHD_CONTENT_DIR/pacotes.
 type packageStore interface {
 	SaveThirdPartyPackage(ctx context.Context, p store.ThirdPartyPackage) (bool, error)
 	ThirdPartyPackages(ctx context.Context) ([]store.ThirdPartyPackage, error)
+	ThirdPartyApprovals(ctx context.Context) ([]store.ThirdPartyApproval, error)
 }
 
 // packagesDir: a pasta dos instaladores, dentro da pasta de conteúdo. O wsusscn2 fica na
@@ -65,7 +69,7 @@ type packageStore interface {
 func packagesDir(contentDir string) string { return filepath.Join(contentDir, "pacotes") }
 
 func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan", "install"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan", "install", "approve", "revoke"}, args[0]) {
 		fmt.Fprint(stderr, packageUsage)
 		return exitConfig
 	}
@@ -89,7 +93,7 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitConfig
 	}
-	if dir == "" && args[0] != "plan" && args[0] != "install" {
+	if dir == "" && (args[0] == "fetch" || args[0] == "list" || args[0] == "install") {
 		fmt.Fprintln(stderr, "patchd-server: defina PATCHD_CONTENT_DIR (os instaladores ficam em PATCHD_CONTENT_DIR/pacotes)")
 		return exitConfig
 	}
@@ -130,7 +134,11 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitConfig
 		}
-		return packageInstall(ctx, st, key, manifest, args[1:], time.Now().UTC(), stdout, stderr)
+		return packageInstall(ctx, st, key, manifest, packagesDir(dir), args[1:], time.Now().UTC(), stdout, stderr)
+	case "approve":
+		return packageApprove(ctx, st, manifest, args[1:], "linha de comando", stdout, stderr)
+	case "revoke":
+		return packageRevoke(ctx, st, args[1:], stdout, stderr)
 	}
 	return packageFetch(ctx, c, pkgcache.NewFetcher(ua), st, manifest, packagesDir(dir), args[1:], stdout, stderr)
 }
@@ -422,20 +430,30 @@ func packageList(ctx context.Context, st packageStore, dir string, args []string
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
+	approvals, err := st.ThirdPartyApprovals(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		return exitRuntime
+	}
+	approved := approvalIndex(approvals)
 	if len(list) == 0 {
 		fmt.Fprintln(stdout, "nenhum instalador guardado (use package fetch)")
 		return exitOK
 	}
 	bad := false
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROGRAMA\tVERSÃO\tTIPO\tARQ\tTAMANHO\tSHA-256\tBAIXADO HÁ\tARQUIVO")
+	fmt.Fprintln(tw, "PROGRAMA\tVERSÃO\tTIPO\tARQ\tTAMANHO\tSHA-256\tBAIXADO HÁ\tARQUIVO\tAPROVAÇÃO")
 	for _, p := range list {
 		state := fileState(dir, p, *verify)
 		if state != "presente" && state != "conferido" {
 			bad = true
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", p.AppID, p.Version, p.Type, p.Architecture, pkgcache.Bytes(p.Size),
-			p.SHA256[:12], sinceLabel(now.Sub(p.FetchedAt)), state)
+		ap := "aguardando"
+		if a, ok := approved[store.TPApprovalKey(p.AppID, p.Version)]; ok {
+			ap = "aprovado (" + a.ApprovedBy + ")"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", p.AppID, p.Version, p.Type, p.Architecture, pkgcache.Bytes(p.Size),
+			p.SHA256[:12], sinceLabel(now.Sub(p.FetchedAt)), state, ap)
 	}
 	tw.Flush()
 	if bad {

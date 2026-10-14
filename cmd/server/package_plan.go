@@ -55,6 +55,12 @@ func packagePlan(ctx context.Context, st planStore, manifest thirdparty.Manifest
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
+	approvals, err := st.ThirdPartyApprovals(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+		return exitRuntime
+	}
+	approved := approvalIndex(approvals)
 	if *machine != "" {
 		// O começo do ID basta, como no machine list (que mostra 8 caracteres).
 		id, ok, err := st.ResolveMachine(ctx, *machine)
@@ -93,7 +99,7 @@ func packagePlan(ctx context.Context, st planStore, manifest thirdparty.Manifest
 			fmt.Fprintln(stdout, "\nnenhum programa com \"install\" na regra está instalado nesta máquina")
 		}
 		for _, d := range ds {
-			printDecision(d, stdout)
+			printDecision(d, approved, stdout)
 		}
 		return exitOK
 	}
@@ -174,11 +180,16 @@ func sortedApps(m thirdparty.Manifest, apps []string) []string {
 	return out
 }
 
-func printDecision(d tpinstall.Decision, out io.Writer) {
+func printDecision(d tpinstall.Decision, approved map[string]store.ThirdPartyApproval, out io.Writer) {
 	fmt.Fprintf(out, "\n%s (%s)\n", d.App.Name, d.App.ID)
 	fmt.Fprintf(out, "  decisão     %s: %s\n", stateLabels[d.State], d.Reason)
 	if d.State == tpinstall.StateUpdate && d.Package != nil {
 		fmt.Fprintf(out, "  pacote      %s\n", filepath.Join("pacotes", pkgcache.FileName(d.Package.SHA256, d.Package.MSI())))
+		if a, ok := approved[store.TPApprovalKey(d.App.ID, d.Package.Version)]; ok {
+			fmt.Fprintf(out, "  aprovação   %s, %s UTC\n", a.ApprovedBy, a.ApprovedAt.UTC().Format("02/01/2006 15:04"))
+		} else {
+			fmt.Fprintf(out, "  aprovação   aguardando: package approve -app %s -version %s\n", d.App.ID, d.Package.Version)
+		}
 	}
 	for _, e := range d.Entries {
 		fmt.Fprintf(out, "  instalado   %s · %s · %s\n", e.Software.Name, e.Kind, e.Software.Version)

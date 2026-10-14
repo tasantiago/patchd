@@ -234,14 +234,17 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// Programas de terceiros (Aula 14.4): depois das instalações do sistema; o inventário
 	// de depois vai antes dos resultados, que o servidor confere por ele.
 	if len(accepted.thirdParty) > 0 {
-		res := a.runThirdParty(ctx, accepted.thirdParty)
+		res, ran := a.runThirdParty(ctx, accepted.thirdParty)
 		state.PendingJobResults = append(state.PendingJobResults, res...)
 		if ctx.Err() != nil {
-			state.InventoryFirst = true
+			state.InventoryFirst = state.InventoryFirst || ran
 			a.saveStateOrLog(state)
 			return outcomeTransient
 		}
-		a.resendInventory(ctx, &state)
+		// Nenhum instalador rodou (download falhou, recusa): o inventário não mudou.
+		if ran {
+			a.resendInventory(ctx, &state)
+		}
 		a.saveStateOrLog(state)
 	}
 

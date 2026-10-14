@@ -246,11 +246,16 @@ type tpProgramView struct {
 	pageBase
 	P    tpProgram
 	Rows []tpInstallRow
+	// Instaladores guardados e aprovação (Aula 14.5); Install nil: a regra não tem install.
+	Install  *tpInstallInfo
+	Versions []tpVersionRow
+	MaxNote  int
 }
 
 func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {
 	app := r.URL.Query().Get("app")
 	v := tpProgramView{pageBase: a.base(r, "Programa", "patch")}
+	v.Flash, v.Error = tpApprovalFlash(r.URL.Query())
 	if app == "" || a.compliance == nil {
 		a.render(w, r, http.StatusNotFound, "patch-nao-encontrado", v.pageBase)
 		return
@@ -275,6 +280,10 @@ func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {
 	v.Title = v.P.Program
 	for _, in := range v.P.Installs {
 		v.Rows = append(v.Rows, tpInstallRow{tpInstall: in, Label: strings.ToLower(in.State), Class: tpClass(in.State), ScopeLabel: scopeLabel(in.Scope)})
+	}
+	if err := a.fillInstallers(r, &v); err != nil {
+		a.internalError(w, r, "listar os instaladores guardados", err)
+		return
 	}
 	a.render(w, r, http.StatusOK, "patch-programa", v)
 }

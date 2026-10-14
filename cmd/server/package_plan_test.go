@@ -54,6 +54,7 @@ func TestPackagePlan(t *testing.T) {
 	for _, tr := range []string{
 		"máquina aaaa0000-0001 · Windows 11 Pro 25H2 · x64\n",
 		"Notepad++ (notepad-plus-plus)\n  decisão     ATUALIZAR: 8.9.7 → 8.9.8.1 · nullsoft · x64\n  pacote      pacotes/" + strings.Repeat("26", 32) + ".exe\n" +
+			"  aprovação   aguardando: package approve -app notepad-plus-plus -version 8.9.8.1\n" +
 			"  instalado   Notepad++ (64-bit x64) · exe · 8.9.7\n",
 		"7-Zip (7zip)\n  decisão     DUPLICADO: 2 instalações visíveis (exe 26.02, msi 26.02.00.0): limpar antes, deixando uma\n",
 		"  instalado   7-Zip 26.02 (x64 edition) · msi · 26.02.00.0\n",

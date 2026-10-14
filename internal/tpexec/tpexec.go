@@ -60,7 +60,7 @@ type Executor struct {
 // "rejeitado" (nada foi executado); com ErrRetry ou outros, "falhou".
 func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyParams) (string, error) {
 	if err := os.MkdirAll(e.Dir, 0o700); err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
 	}
 	file := filepath.Join(e.Dir, FileName(p))
 	defer os.Remove(file) // o instalador não fica na máquina depois do job
@@ -116,7 +116,7 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 func (e *Executor) fetch(ctx context.Context, file string, p jobs.ThirdPartyParams) error {
 	tmp, err := os.CreateTemp(e.Dir, ".baixando-*")
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
 	}
 	defer os.Remove(tmp.Name())
 	h := sha256.New()
@@ -125,7 +125,7 @@ func (e *Executor) fetch(ctx context.Context, file string, p jobs.ThirdPartyPara
 		err = cerr
 	}
 	if err != nil {
-		return fmt.Errorf("download do instalador: %w", err)
+		return fmt.Errorf("%w (download do instalador: %v)", jobs.ErrNotStarted, err)
 	}
 	if n != p.Size {
 		return fmt.Errorf("%w: o servidor entregou %d bytes; o job diz %d", jobs.ErrRefused, n, p.Size)
