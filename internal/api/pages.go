@@ -606,6 +606,12 @@ var pages = template.Must(template.New("").Parse(`
 <td>{{if .CanRevoke}}<form class="inline" method="post" action="/painel/configuracao/agente/token/{{.ID}}/revogar"><button class="perigo" type="submit">Revogar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum token criado.</p>{{end}}</div>{{end}}
 {{if eq .Tab "acesso"}}{{with .Access}}
+<div class="card"><div class="card-cab"><h2>Sessões abertas</h2><span class="muted">tirar alguém de um grupo do AD ou do RHBK não derruba a sessão que já está aberta: encerre aqui</span></div>
+{{if .Sessions}}<div class="tabela"><table><thead><tr><th>Usuário</th><th>Origem</th><th>Perfil</th><th>Entrou</th><th>Último uso</th><th>Vence</th><th></th></tr></thead>
+<tbody>{{range .Sessions}}<tr><td><code>{{.User}}</code>{{if .Current}} <span class="muted">(esta sessão)</span>{{end}}</td><td>{{.Source}}</td><td>{{.Role}}</td><td>{{.Created}}</td><td>{{.Seen}}</td><td>{{.Expires}}</td>
+<td>{{if not .Current}}<form class="inline" method="post" action="/painel/configuracao/acesso/sessoes/{{.ID}}/encerrar"><button class="perigo" type="submit">Encerrar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{if .SessUsers}}<form class="lote" method="post" action="/painel/configuracao/acesso/sessoes/usuario"><label>Encerrar todas as sessões de <select name="usuario">{{range .SessUsers}}<option value="{{.}}">{{.}}</option>{{end}}</select></label><button class="perigo" type="submit">Encerrar todas</button></form>{{end}}
+{{else}}<p class="muted">Nenhuma sessão aberta.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Login pelo AD (LDAPS)</h2><span class="muted">{{if .AD}}ligado{{else}}desligado{{end}} · os valores ficam só no .env (não aparecem aqui nem no log)</span></div>
 {{if .AD}}<dl class="dados">{{range .AD.Vars}}<dt><code>{{.Name}}</code></dt><dd>{{if .Set}}definida{{else}}vazia{{end}}{{if .Note}} <span class="muted">· {{.Note}}</span>{{end}}</dd>{{end}}</dl>
 <h3>Testar um login</h3>
@@ -627,7 +633,7 @@ var pages = template.Must(template.New("").Parse(`
 <tbody>{{range .Users}}<tr><td><code>{{.Name}}</code>{{if .Self}} <span class="muted">(você)</span>{{end}}</td><td>{{.Role}}</td><td>{{.Created}}</td>
 <td>{{if not .Self}}<form class="inline" method="post" action="/painel/configuracao/acesso/usuarios/{{.Name}}/senha"><button class="sec" type="submit">Nova senha</button></form>
 {{if not .Last}}<form class="inline" method="post" action="/painel/configuracao/acesso/usuarios/{{.Name}}/remover"><button class="perigo" type="submit">Remover</button></form>{{else}}<span class="muted">único admin local</span>{{end}}{{end}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="aviso atencao">Nenhum usuário local: se o AD cair, ninguém entra no painel. Crie ao menos um admin local.</p>{{end}}
+{{else}}<p class="aviso atencao">Nenhum usuário local: {{if .AD}}se o AD cair, ninguém entra no painel{{else}}sem AD, ninguém entra pelo formulário de senha{{end}}. Crie ao menos um admin local.</p>{{end}}
 <h3>Novo usuário local</h3>
 <form class="grade" method="post" action="/painel/configuracao/acesso/usuarios">
 <label for="nome">Nome</label><input id="nome" name="nome" required maxlength="64" placeholder="ex.: contingencia.seat">

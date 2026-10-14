@@ -22,7 +22,6 @@ import (
 
 const (
 	overviewJobsWindow = 7 * 24 * time.Hour
-	overviewJobsScan   = 2000 // jobs mais recentes lidos para a janela de 7 dias
 	overviewCampaigns  = 50
 )
 
@@ -113,11 +112,6 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	machines, err := a.store.Machines(ctx)
 	if err != nil {
 		a.internalError(w, r, "listar máquinas", err)
-		return
-	}
-	recent, err := a.store.Jobs(ctx, "", overviewJobsScan)
-	if err != nil {
-		a.internalError(w, r, "listar jobs", err)
 		return
 	}
 	camps, err := a.store.Campaigns(ctx, overviewCampaigns)
@@ -211,31 +205,35 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Execução nos últimos 7 dias, por tipo.
+	// Execução nos últimos 7 dias, por tipo: contada no banco (Aula 15.4), exata em
+	// qualquer volume.
+	counts, err := a.store.JobCounts(ctx, now.Add(-overviewJobsWindow))
+	if err != nil {
+		a.internalError(w, r, "contar jobs", err)
+		return
+	}
+	failed24, err := a.store.JobsFinishedSince(ctx, []string{jobs.StateFailed, jobs.StateRejected, jobs.StateExpired}, now.Add(-24*time.Hour))
+	if err != nil {
+		a.internalError(w, r, "contar jobs sem sucesso", err)
+		return
+	}
 	byType := map[string]*ovExec{}
-	failed24 := 0
-	for _, j := range recent {
-		if now.Sub(j.CreatedAt) > overviewJobsWindow {
-			continue
-		}
-		er := byType[j.Type]
+	for _, c := range counts {
+		er := byType[c.Type]
 		if er == nil {
-			er = &ovExec{Type: typeLabel(j.Type)}
-			byType[j.Type] = er
+			er = &ovExec{Type: typeLabel(c.Type)}
+			byType[c.Type] = er
 		}
-		er.Created++
-		switch j.State {
+		er.Created += c.N
+		switch c.State {
 		case jobs.StateDone:
-			er.Done++
+			er.Done += c.N
 		case jobs.StatePostponed, jobs.StateDismissed:
-			er.Postponed++
+			er.Postponed += c.N
 		case jobs.StateFailed, jobs.StateRejected, jobs.StateExpired:
-			er.Failed++
-			if j.FinishedAt != nil && now.Sub(*j.FinishedAt) <= 24*time.Hour {
-				failed24++
-			}
+			er.Failed += c.N
 		case jobs.StatePending, jobs.StateDelivered:
-			er.Open++
+			er.Open += c.N
 		}
 	}
 	for _, t := range slices.Sorted(maps.Keys(byType)) {

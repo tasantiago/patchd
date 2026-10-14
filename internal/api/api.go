@@ -92,6 +92,11 @@ type Store interface {
 	PanelUsers(ctx context.Context) ([]panel.User, error)
 	SetPanelPassword(ctx context.Context, name, hash string) (bool, error)
 	DeletePanelUser(ctx context.Context, name string) (bool, error)
+	// Sessões abertas e contagem dos jobs no banco (Aula 15.4).
+	PanelSessions(ctx context.Context) ([]store.PanelSessionRow, error)
+	DeleteUserSessions(ctx context.Context, username string) (int64, error)
+	JobCounts(ctx context.Context, since time.Time) ([]store.JobCount, error)
+	JobsFinishedSince(ctx context.Context, states []string, since time.Time) (int, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -203,6 +208,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/configuracao/acesso/usuarios", a.sameOrigin(a.adminAction(a.createLocalUserAction)))
 	mux.Handle("POST /painel/configuracao/acesso/usuarios/{name}/senha", a.sameOrigin(a.adminAction(a.resetLocalPasswordAction)))
 	mux.Handle("POST /painel/configuracao/acesso/usuarios/{name}/remover", a.sameOrigin(a.adminAction(a.deleteLocalUserAction)))
+	mux.Handle("POST /painel/configuracao/acesso/sessoes/{id}/encerrar", a.sameOrigin(a.adminAction(a.endSessionAction)))
+	mux.Handle("POST /painel/configuracao/acesso/sessoes/usuario", a.sameOrigin(a.adminAction(a.endUserSessionsAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))

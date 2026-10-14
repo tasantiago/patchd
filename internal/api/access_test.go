@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -27,7 +28,7 @@ func TestUsuariosLocaisPeloPainel(t *testing.T) {
 	aba := "/painel/configuracao?aba=acesso"
 
 	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
-	for _, tr := range []string{"Nenhum usuário local: se o AD cair", "o login do painel (sem AD nem RHBK)", "Sem PATCHD_LDAP_HOST", "Sem PATCHD_OIDC_ISSUER"} {
+	for _, tr := range []string{"Nenhum usuário local: sem AD, ninguém entra pelo formulário de senha", "o login do painel (sem AD nem RHBK)", "Sem PATCHD_LDAP_HOST", "Sem PATCHD_OIDC_ISSUER"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("vazio: faltou %q", tr)
 		}
@@ -177,5 +178,71 @@ func TestTestesDeLogin(t *testing.T) {
 	p.Close()
 	if b := pagina(h, "POST", "/painel/configuracao/acesso/testar-oidc", sessaoAdmin, url.Values{}).Body.String(); !strings.Contains(b, `<p class="aviso erro">descoberta do provedor:`) {
 		t.Error("oidc fora do ar")
+	}
+}
+
+// Aula 15.4: as sessões abertas, encerradas uma a uma ou todas de um usuário.
+func TestSessoesAbertas(t *testing.T) {
+	h, st, log := ambientePaginas(t)
+	ctx := context.Background()
+	agora := time.Now().UTC()
+	sessaoBia := panel.SessionPrefix + "sessao-da-bia"
+	st.CreatePanelSession(ctx, identity.Hash(sessaoBia), panel.Session{Username: "bia", Role: panel.RoleAdmin, Source: panel.SourceOIDC,
+		CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora})
+	// Uma vencida não aparece.
+	st.CreatePanelSession(ctx, identity.Hash(panel.SessionPrefix+"velha"), panel.Session{Username: "velho", Role: panel.RoleRead, Source: panel.SourceAD,
+		CreatedAt: agora.Add(-3 * time.Hour), ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora.Add(-2 * time.Hour)})
+	aba := "/painel/configuracao?aba=acesso"
+	idBia := hex.EncodeToString(identity.Hash(sessaoBia))
+
+	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
+	for _, tr := range []string{"<td><code>thyago</code> <span class=\"muted\">(esta sessão)</span></td><td>AD</td>", "<td><code>bia</code></td><td>RHBK</td>",
+		"<td><code>consulta</code></td><td>local</td>", `action="/painel/configuracao/acesso/sessoes/` + idBia + `/encerrar"`,
+		`<option value="bia">bia</option><option value="consulta">consulta</option></select>`} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("faltou %q", tr)
+		}
+	}
+	if strings.Contains(b, "velho") {
+		t.Error("sessão vencida na lista")
+	}
+	if r := pagina(h, "POST", "/painel/configuracao/acesso/sessoes/"+idBia+"/encerrar", sessaoTeste, url.Values{}); r.Code != http.StatusForbidden {
+		t.Errorf("leitura encerra: %d", r.Code)
+	}
+
+	// Encerrar a da bia: o próximo clique dela pede login.
+	if l := local(pagina(h, "POST", "/painel/configuracao/acesso/sessoes/"+idBia+"/encerrar", sessaoAdmin, url.Values{})); l != aba+"&encerrada=bia" {
+		t.Errorf("encerrar: %s", l)
+	}
+	if l := local(pagina(h, "GET", "/painel/", sessaoBia, nil)); l != "/painel/entrar" {
+		t.Errorf("bia depois: %s", l)
+	}
+	if !strings.Contains(log.String(), `msg="sessão encerrada pelo painel" session_user=bia source=oidc username=thyago`) {
+		t.Errorf("log:\n%s", log)
+	}
+	// A própria não; uma que não existe; um id fora do formato.
+	idMinha := hex.EncodeToString(identity.Hash(sessaoAdmin))
+	if l := local(pagina(h, "POST", "/painel/configuracao/acesso/sessoes/"+idMinha+"/encerrar", sessaoAdmin, url.Values{})); l != aba+"&erro=propria-sessao" {
+		t.Errorf("própria: %s", l)
+	}
+	if l := local(pagina(h, "POST", "/painel/configuracao/acesso/sessoes/"+idBia+"/encerrar", sessaoAdmin, url.Values{})); l != aba+"&erro=sessao" {
+		t.Errorf("de novo: %s", l)
+	}
+	if r := pagina(h, "POST", "/painel/configuracao/acesso/sessoes/xyz/encerrar", sessaoAdmin, url.Values{}); r.Code != http.StatusNotFound {
+		t.Errorf("id: %d", r.Code)
+	}
+
+	// Todas de um usuário; as suas, não.
+	if l := local(pagina(h, "POST", "/painel/configuracao/acesso/sessoes/usuario", sessaoAdmin, url.Values{"usuario": {"thyago"}})); l != aba+"&erro=propria-sessao" {
+		t.Errorf("as minhas: %s", l)
+	}
+	if l := local(pagina(h, "POST", "/painel/configuracao/acesso/sessoes/usuario", sessaoAdmin, url.Values{"usuario": {"consulta"}})); l != aba+"&de=consulta&encerradas=1" {
+		t.Errorf("todas: %s", l)
+	}
+	if l := local(pagina(h, "GET", "/painel/", sessaoTeste, nil)); l != "/painel/entrar" {
+		t.Errorf("consulta depois: %s", l)
+	}
+	if b := pagina(h, "GET", aba+"&de=consulta&encerradas=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "1 sessão(ões) de consulta encerrada(s).") {
+		t.Error("aviso")
 	}
 }
