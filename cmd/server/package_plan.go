@@ -26,15 +26,7 @@ type planStore interface {
 	ResolveMachine(ctx context.Context, prefix string) (string, bool, error)
 }
 
-var stateLabels = map[string]string{
-	tpinstall.StateUpdate:     "ATUALIZAR",
-	tpinstall.StateNoPackage:  "SEM PACOTE",
-	tpinstall.StateDuplicate:  "DUPLICADO",
-	tpinstall.StateBundle:     "BUNDLE",
-	tpinstall.StateUserOnly:   "USUÁRIO",
-	tpinstall.StateBadVersion: "VERSÃO ILEGÍVEL",
-	tpinstall.StateCurrent:    "EM DIA",
-}
+var stateLabels = tpinstall.Labels
 
 // packagePlan mostra a decisão de cada programa numa máquina, ou o resumo da frota.
 func packagePlan(ctx context.Context, st planStore, manifest thirdparty.Manifest, args []string, stdout, stderr io.Writer) int {

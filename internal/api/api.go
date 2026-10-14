@@ -178,6 +178,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/atualizar", a.sameOrigin(a.adminAction(a.updateAction)))
 	mux.Handle("POST /painel/maquinas/{id}/reiniciar", a.sameOrigin(a.adminAction(a.rebootAction)))
 	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
+	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
 	// Leitura: exigem a sessão do painel.
 	mux.Handle("GET /api/v1/machines/{id}/inventory", a.sessionAuth(a.getInventory))
 	mux.Handle("GET /api/v1/machines/{id}/scan", a.sessionAuth(a.getScan))

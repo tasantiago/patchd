@@ -146,6 +146,8 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		n = 0
 	}
 	switch {
+	case tpUpdateFlash(get("erro"), n) != "":
+		b.Error = tpUpdateFlash(get("erro"), n)
 	case get("erro") == "job-aberto" && n > 0:
 		b.Error = fmt.Sprintf("Já existe uma busca pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
 	case get("erro") == "sem-chave":

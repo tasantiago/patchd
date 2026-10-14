@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -249,6 +250,27 @@ func Check(dir, sha256hex string, msi bool) (int64, error) {
 		return size, fmt.Errorf("conteúdo com SHA-256 %s…", got[:12])
 	}
 	return size, nil
+}
+
+// ErrMissing: o instalador não está no cache.
+var ErrMissing = errors.New("o instalador não está no cache")
+
+// Present confere, sem ler o arquivo, que o instalador está no cache com o tamanho
+// guardado (Aula 14.6): é o que o painel usa para montar a página. Criar o job continua
+// exigindo Check, que confere o SHA-256.
+func Present(dir, sha256hex string, msi bool, size int64) error {
+	st, err := os.Stat(filepath.Join(dir, FileName(sha256hex, msi)))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return ErrMissing
+	case err != nil:
+		return err
+	case !st.Mode().IsRegular():
+		return fmt.Errorf("%s não é um arquivo comum", FileName(sha256hex, msi))
+	case st.Size() != size:
+		return fmt.Errorf("o arquivo no cache tem %d bytes; o guardado diz %d", st.Size(), size)
+	}
+	return nil
 }
 
 // Bytes formata um tamanho: 1,6 MiB.

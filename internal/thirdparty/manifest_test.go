@@ -1,6 +1,7 @@
 package thirdparty
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,15 +105,20 @@ func TestInstall(t *testing.T) {
 			t.Errorf("%s: %q; esperava %q", id, com[id], w)
 		}
 	}
-	// Assinantes medidos no lab da 14.4 (Get-AuthenticodeSignature e o log do agente). O
-	// 7-Zip não é assinado: exigir assinatura impediria a atualização.
+	// Assinantes medidos nos labs da 14.4 e da 14.5 (Get-AuthenticodeSignature e o log do
+	// agente). O 7-Zip não é assinado: exigir assinatura impediria a atualização. O Firefox
+	// ESR fica sem até ser medido.
 	signers := map[string]string{}
 	for _, a := range m.For("windows") {
 		if a.Install != nil && a.Install.Signer != "" {
 			signers[a.ID] = a.Install.Signer
 		}
 	}
-	if len(signers) != 2 || signers["google-chrome"] != "Google LLC" || signers["notepad-plus-plus"] != "NOTEPAD++" {
+	wantSigners := map[string]string{
+		"google-chrome": "Google LLC", "notepad-plus-plus": "NOTEPAD++", "mozilla-firefox": "Mozilla Corporation",
+		"vscode": "Microsoft Corporation", "powershell-7": "Microsoft Corporation", "libreoffice": "The Document Foundation",
+	}
+	if !maps.Equal(signers, wantSigners) {
 		t.Errorf("assinantes padrão: %v", signers)
 	}
 	regra := func(extra string) string {

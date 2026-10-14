@@ -30,7 +30,8 @@ var (
 	tabOfError = map[string]string{
 		"nada-marcado": "pendencias", "nao-aprovado": "pendencias", "pacotes": "pendencias", "quando": "pendencias", "sem-janela": "pendencias",
 		"sem-reinicio": "pendencias", "reinicio-form": "pendencias",
-		"job-aberto": "tarefas", "update-aberto": "tarefas", "https-aberto": "tarefas", "reinicio-aberto": "tarefas",
+		"terceiros-nada": "pendencias", "terceiros-nao-aprovado": "pendencias", "terceiros-sem-arquivo": "pendencias", "terceiros-job": "pendencias",
+		"job-aberto": "tarefas", "update-aberto": "tarefas", "https-aberto": "tarefas", "reinicio-aberto": "tarefas", "terceiros-aberto": "tarefas",
 		"sem-chave": "tarefas", "sem-url": "tarefas", "cancelar": "tarefas",
 	}
 )
