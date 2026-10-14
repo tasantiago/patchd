@@ -43,7 +43,7 @@ func stateLabel(s string) string {
 	case jobs.StateRejected:
 		return "recusado"
 	}
-	return s
+	return s // adiado e dispensado (Aula 14.9) se leem como estão
 }
 
 func typeLabel(t string) string {

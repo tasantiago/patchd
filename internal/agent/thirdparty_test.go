@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -181,6 +182,33 @@ func TestThirdPartySemDownloadNaoReenviaInventario(t *testing.T) {
 	j := criaJob(t, srv, priv, id, func(j *jobs.Job) { j.Type, j.Params = jobs.TypeThirdParty, paramsNpp() })
 	a.CheckIn(ctx)
 	if e := estadoDoJob(srv, id, j); e.State != jobs.StateFailed || !strings.Contains(e.Detail, "404") {
+		t.Errorf("job: %+v", e)
+	}
+	if n := srv.conta("/api/v1/agent/inventory"); n != antes {
+		t.Errorf("o inventário foi reenviado sem instalação: %d → %d", antes, n)
+	}
+}
+
+// Aula 14.9: programa aberto (tentar depois, sem rodar) vira "adiado", não "falhou", e o
+// inventário não é reenviado.
+func TestThirdPartyAdiado(t *testing.T) {
+	m, _ := thirdparty.Default()
+	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(&m))
+	pub, priv, _ := jobs.GenerateKey()
+	var buscas atomic.Int32
+	a := agenteDeTeste(t, srv, cred, &buscas, &bytes.Buffer{})
+	a.MachineID, a.JobKey = id, pub
+	pc := &maquinaWindows{sw: []protocol.Software{npp("8.9.7")}}
+	a.Inventory = pc.inventario
+	ctx := context.Background()
+	a.CheckIn(ctx)
+	a.ThirdParty = func(context.Context, int64, jobs.ThirdPartyParams) (string, error) {
+		return "", fmt.Errorf("%w: %w: programa aberto (2 notepad++.exe na sessão 1)", jobs.ErrNotStarted, jobs.ErrRetry)
+	}
+	antes := srv.conta("/api/v1/agent/inventory")
+	j := criaJob(t, srv, priv, id, func(j *jobs.Job) { j.Type, j.Params = jobs.TypeThirdParty, paramsNpp() })
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j); e.State != jobs.StatePostponed || !strings.Contains(e.Detail, "adiado pelo agente: o instalador não chegou a rodar: tentar depois: programa aberto") {
 		t.Errorf("job: %+v", e)
 	}
 	if n := srv.conta("/api/v1/agent/inventory"); n != antes {

@@ -39,8 +39,9 @@ func KnownType(t string) bool {
 	return t == TypeRescan || t == TypeUpdate || t == TypeReboot || t == TypeServerURL || t == TypeThirdParty
 }
 
-// Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado;
-// pendente ou entregue → cancelado (pelo operador) | expirado (passou de NotAfter).
+// Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado |
+// adiado; pendente ou entregue → cancelado (pelo operador) | expirado (passou de NotAfter);
+// adiado → dispensado (a campanha viu que a nova tentativa não faz mais sentido).
 const (
 	StatePending   = "pendente"
 	StateDelivered = "entregue"
@@ -49,7 +50,15 @@ const (
 	StateRejected  = "rejeitado" // o agente recusou: assinatura, máquina, prazo, tipo
 	StateCanceled  = "cancelado"
 	StateExpired   = "expirado"
+	// Aula 14.9: o agente não executou agora (programa aberto, outro instalador rodando)
+	// e pede para tentar depois; numa campanha, vira uma nova tentativa mais tarde.
+	StatePostponed = "adiado"
+	StateDismissed = "dispensado"
 )
+
+// ErrRetry: o executor pede para tentar depois (Aula 14.4; aqui desde a 14.9, para o
+// agente responder "adiado" em vez de "falhou").
+var ErrRetry = errors.New("tentar depois")
 
 // Final diz se o estado não muda mais.
 func Final(s string) bool {

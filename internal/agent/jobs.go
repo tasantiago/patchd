@@ -145,6 +145,10 @@ func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) (o
 		case errors.Is(err, jobs.ErrRefused):
 			status, detail = protocol.JobResultRejected, joinDetail(err.Error(), detail)
 			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case errors.Is(err, jobs.ErrRetry):
+			// Aula 14.9: programa aberto, outro instalador rodando: não é falha, é "agora não".
+			status, detail = protocol.JobResultPostponed, joinDetail(err.Error(), detail)
+			a.Logger.Warn("instalação de terceiros adiada", "job_id", j.id, "app", j.p.App, "reason", detail)
 		case err != nil:
 			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
 			a.Logger.Error("instalação de terceiros falhou", "job_id", j.id, "app", j.p.App, "error", detail)

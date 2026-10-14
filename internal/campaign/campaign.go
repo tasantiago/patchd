@@ -107,10 +107,11 @@ func (c Campaign) Validate() error {
 
 // JobState é o que a campanha precisa saber de cada job dela.
 type JobState struct {
-	ID        int64
-	MachineID string
-	State     string
-	Detail    string
+	ID         int64
+	MachineID  string
+	State      string
+	Detail     string
+	FinishedAt *time.Time // quando encerrou (Aula 14.9: o adiado conta o intervalo daqui)
 }
 
 // Store é o que a campanha usa do banco.
@@ -121,7 +122,16 @@ type Store interface {
 	SaveCampaign(ctx context.Context, c Campaign, from string) (bool, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]JobState, error)
 	RingMachines(ctx context.Context, ring int) ([]string, error)
+	DismissJob(ctx context.Context, id int64, why string) (bool, error)
 }
+
+// Novas tentativas dos jobs adiados (Aula 14.9): o agente responde "adiado" quando não deu
+// agora (programa aberto, outro instalador rodando). A campanha pede de novo depois de
+// RetryAfter, até MaxAttempts jobs por máquina no anel; esgotadas, conta como falha e pausa.
+const (
+	RetryAfter  = time.Hour
+	MaxAttempts = 24
+)
 
 // ThirdPartyPlanner decide a campanha de terceiros (Aula 14.7). Ready confere, a cada anel
 // liberado, que a versão continua aprovada e que o instalador confere no cache: reason não
@@ -193,23 +203,28 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 		if err != nil {
 			return err
 		}
-		open, failed := 0, []string{}
-		for _, j := range list {
-			switch {
-			case !jobs.Final(j.State):
-				open++
-			case j.State != jobs.StateDone:
-				failed = append(failed, fmt.Sprintf("job %d %s", j.ID, j.State))
+		st := ringStatus(list, now)
+		if len(st.retry) > 0 {
+			reissued, err := e.retry(ctx, c, st.retry, now)
+			if err != nil {
+				return err
 			}
+			if c.State != StateRunning { // a versão deixou de estar pronta, ou o anel ficou sem janela
+				return e.save(ctx, c)
+			}
+			st.open += reissued
 		}
 		switch {
-		case open > 0:
-			c.Detail = fmt.Sprintf("anel %d: %d de %d job(s) em aberto", c.Ring(), open, len(list))
+		case st.open > 0 || st.waiting > 0:
+			c.Detail = fmt.Sprintf("anel %d: %d de %d job(s) em aberto", c.Ring(), st.open+st.waiting, st.machines)
+			if st.waiting > 0 {
+				c.Detail += fmt.Sprintf("; %d adiada(s), nova tentativa a partir de %s UTC", st.waiting, st.next.UTC().Format("2006-01-02 15:04"))
+			}
 			return e.save(ctx, c)
-		case len(failed) > 0 && c.AcceptedIdx != c.CurrentIdx:
+		case len(st.failed) > 0 && c.AcceptedIdx != c.CurrentIdx:
 			c.State = StatePaused
-			c.Detail = fmt.Sprintf("anel %d: %d job(s) sem sucesso (%s); retome (campaign resume) para aceitar e seguir", c.Ring(), len(failed), strings.Join(failed, ", "))
-			e.log(c, "campanha pausada", "anel", c.Ring(), "sem_sucesso", len(failed))
+			c.Detail = fmt.Sprintf("anel %d: %d job(s) sem sucesso (%s); retome (campaign resume) para aceitar e seguir", c.Ring(), len(st.failed), strings.Join(st.failed, ", "))
+			e.log(c, "campanha pausada", "anel", c.Ring(), "sem_sucesso", len(st.failed))
 			return e.save(ctx, c)
 		}
 		if c.RingDoneAt == nil {
@@ -252,81 +267,173 @@ func (e *Engine) log(c *Campaign, msg string, args ...any) {
 // as máquinas que ficaram fora, por motivo.
 func (e *Engine) launch(ctx context.Context, c *Campaign, now time.Time) (created int, out map[string]int, err error) {
 	out = map[string]int{}
-	if c.Type == jobs.TypeThirdParty {
-		// A aprovação manda a cada anel (Aula 14.7): revogada no meio da campanha, o anel
-		// seguinte não sai; o mesmo se o instalador sumiu ou mudou no cache.
-		reason := "o servidor está sem as regras de terceiros"
-		if e.ThirdParty != nil {
-			if reason, err = e.ThirdParty.Ready(ctx, c.App, c.Version); err != nil {
-				return 0, out, err
-			}
-		}
-		if reason != "" {
-			c.State = StatePaused
-			c.Detail = fmt.Sprintf("anel %d não liberado: %s; resolva e retome (campaign resume)", c.Ring(), reason)
-			e.log(c, "campanha pausada", "anel", c.Ring(), "motivo", reason)
-			return 0, out, nil
-		}
+	if ok, err := e.ready(ctx, c, fmt.Sprintf("anel %d não liberado", c.Ring())); err != nil || !ok {
+		return 0, out, err
 	}
 	machines, err := e.Store.RingMachines(ctx, c.Ring())
 	if err != nil {
 		return 0, out, err
 	}
 	for _, id := range machines {
-		req := jobs.Request{MachineID: id, Type: c.Type, TTL: c.TTL, By: "campanha " + fmt.Sprint(c.ID),
-			CampaignID: c.ID, CampaignIdx: c.CurrentIdx}
-		switch c.Type {
-		case jobs.TypeUpdate:
-			items, found, err := e.Pending(ctx, id)
-			if err != nil {
-				return created, out, err
-			}
-			p := jobs.ParamsFromPending(items, c.Sources)
-			if !found || len(p.Packages) == 0 {
-				out["sem pendência aprovada"]++
-				continue
-			}
-			if req.Params, err = json.Marshal(p); err != nil {
-				return created, out, err
-			}
-		case jobs.TypeThirdParty:
-			p, skip, err := e.ThirdParty.Job(ctx, id, c.App, c.Version)
-			if err != nil {
-				return created, out, err
-			}
-			if p == nil {
-				out[skip]++
-				continue
-			}
-			if req.Params, err = json.Marshal(p); err != nil {
-				return created, out, err
-			}
-		}
-		if c.UseWindow {
-			start, end, ok, err := e.Window(ctx, id, now)
-			if err != nil {
-				return created, out, err
-			}
-			if !ok {
-				c.State = StatePaused
-				c.Detail = fmt.Sprintf("anel %d sem janela de manutenção (ring window); defina e retome", c.Ring())
-				e.log(c, "campanha pausada", "anel", c.Ring(), "motivo", "sem janela")
-				return created, out, nil
-			}
-			req.NotBefore = start
-			req.TTL = end.Sub(later(now, start))
-		}
-		if _, err := jobs.Issue(ctx, e.Store, e.Key, req, now); err != nil {
-			if errors.Is(err, jobs.ErrMachineUnavailable) {
-				out["aposentada"]++
-				continue
-			}
+		ok, skip, err := e.issue(ctx, c, id, now)
+		switch {
+		case err != nil:
 			return created, out, err
+		case c.State != StateRunning: // anel sem janela
+			return created, out, nil
+		case ok:
+			created++
+		default:
+			out[skip]++
 		}
-		created++
 	}
 	c.LaunchedIdx = c.CurrentIdx
 	return created, out, nil
+}
+
+// ready confere, no thirdparty, que a versão continua pronta (Aula 14.7): a aprovação manda
+// a cada anel e a cada nova tentativa. Não pronta: a campanha pausa com o motivo.
+func (e *Engine) ready(ctx context.Context, c *Campaign, what string) (bool, error) {
+	if c.Type != jobs.TypeThirdParty {
+		return true, nil
+	}
+	reason := "o servidor está sem as regras de terceiros"
+	if e.ThirdParty != nil {
+		var err error
+		if reason, err = e.ThirdParty.Ready(ctx, c.App, c.Version); err != nil {
+			return false, err
+		}
+	}
+	if reason == "" {
+		return true, nil
+	}
+	c.State = StatePaused
+	c.Detail = fmt.Sprintf("%s: %s; resolva e retome (campaign resume)", what, reason)
+	e.log(c, "campanha pausada", "anel", c.Ring(), "motivo", reason)
+	return false, nil
+}
+
+// issue cria o job de uma máquina no anel atual; sem job, skip diz por quê. Um anel sem
+// janela pausa a campanha (c.State muda).
+func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Time) (bool, string, error) {
+	req := jobs.Request{MachineID: id, Type: c.Type, TTL: c.TTL, By: "campanha " + fmt.Sprint(c.ID),
+		CampaignID: c.ID, CampaignIdx: c.CurrentIdx}
+	switch c.Type {
+	case jobs.TypeUpdate:
+		items, found, err := e.Pending(ctx, id)
+		if err != nil {
+			return false, "", err
+		}
+		p := jobs.ParamsFromPending(items, c.Sources)
+		if !found || len(p.Packages) == 0 {
+			return false, "sem pendência aprovada", nil
+		}
+		if req.Params, err = json.Marshal(p); err != nil {
+			return false, "", err
+		}
+	case jobs.TypeThirdParty:
+		p, skip, err := e.ThirdParty.Job(ctx, id, c.App, c.Version)
+		if err != nil || p == nil {
+			return false, skip, err
+		}
+		if req.Params, err = json.Marshal(p); err != nil {
+			return false, "", err
+		}
+	}
+	if c.UseWindow {
+		start, end, ok, err := e.Window(ctx, id, now)
+		if err != nil {
+			return false, "", err
+		}
+		if !ok {
+			c.State = StatePaused
+			c.Detail = fmt.Sprintf("anel %d sem janela de manutenção (ring window); defina e retome", c.Ring())
+			e.log(c, "campanha pausada", "anel", c.Ring(), "motivo", "sem janela")
+			return false, "", nil
+		}
+		req.NotBefore = start
+		req.TTL = end.Sub(later(now, start))
+	}
+	if _, err := jobs.Issue(ctx, e.Store, e.Key, req, now); err != nil {
+		if errors.Is(err, jobs.ErrMachineUnavailable) {
+			return false, "aposentada", nil
+		}
+		return false, "", err
+	}
+	return true, "", nil
+}
+
+// ringState: o anel atual, máquina a máquina, pelo job mais recente de cada uma.
+type ringState struct {
+	machines, open, waiting int
+	failed                  []string
+	retry                   []JobState // adiados cujo intervalo passou
+	next                    time.Time  // a próxima nova tentativa entre os que esperam
+}
+
+func ringStatus(list []JobState, now time.Time) ringState {
+	latest, attempts := map[string]JobState{}, map[string]int{}
+	for _, j := range list {
+		attempts[j.MachineID]++
+		if cur, ok := latest[j.MachineID]; !ok || j.ID > cur.ID {
+			latest[j.MachineID] = j
+		}
+	}
+	st := ringState{machines: len(latest)}
+	for _, m := range slices.Sorted(maps.Keys(latest)) {
+		j := latest[m]
+		switch {
+		case !jobs.Final(j.State):
+			st.open++
+		case j.State == jobs.StatePostponed && attempts[m] >= MaxAttempts:
+			st.failed = append(st.failed, fmt.Sprintf("job %d adiado na tentativa %d de %d", j.ID, attempts[m], MaxAttempts))
+		case j.State == jobs.StatePostponed:
+			at := now
+			if j.FinishedAt != nil {
+				at = j.FinishedAt.Add(RetryAfter)
+			}
+			if now.Before(at) {
+				st.waiting++
+				if st.next.IsZero() || at.Before(st.next) {
+					st.next = at
+				}
+				continue
+			}
+			st.retry = append(st.retry, j)
+		case j.State == jobs.StateDone, j.State == jobs.StateDismissed:
+		default:
+			st.failed = append(st.failed, fmt.Sprintf("job %d %s", j.ID, j.State))
+		}
+	}
+	return st
+}
+
+// retry pede de novo às máquinas adiadas cujo intervalo passou. O plano é refeito: se a
+// máquina não precisa mais (em dia, sem o programa, sem pendência), o adiado vira
+// "dispensado" e ela sai do anel resolvida. Devolve quantos jobs novos foram criados.
+func (e *Engine) retry(ctx context.Context, c *Campaign, list []JobState, now time.Time) (int, error) {
+	if ok, err := e.ready(ctx, c, fmt.Sprintf("anel %d: nova tentativa suspensa", c.Ring())); err != nil || !ok {
+		return 0, err
+	}
+	created := 0
+	for _, j := range list {
+		ok, skip, err := e.issue(ctx, c, j.MachineID, now)
+		switch {
+		case err != nil:
+			return created, err
+		case c.State != StateRunning:
+			return created, nil
+		case ok:
+			created++
+			e.log(c, "nova tentativa", "anel", c.Ring(), "machine_id", j.MachineID, "adiado", j.ID)
+		default:
+			if _, err := e.Store.DismissJob(ctx, j.ID, "nova tentativa dispensada: "+skip); err != nil {
+				return created, err
+			}
+			e.log(c, "nova tentativa dispensada", "anel", c.Ring(), "machine_id", j.MachineID, "adiado", j.ID, "motivo", skip)
+		}
+	}
+	return created, nil
 }
 
 // RingNote resume a liberação de um anel: "anel 0: 1 job; fora: 1 em dia, 2 sem o programa".

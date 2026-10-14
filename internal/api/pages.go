@@ -874,7 +874,7 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "campanhas"}}{{template "topo" .}}
 <h1>Campanhas</h1>
-<p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir.</p>
+<p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
 <div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>

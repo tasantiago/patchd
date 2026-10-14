@@ -194,6 +194,9 @@ const (
 	JobResultOK       = "ok"        // executou; o servidor ainda confere pelo efeito (RF-08)
 	JobResultFailed   = "falhou"    // tentou e não conseguiu
 	JobResultRejected = "rejeitado" // não executou: assinatura, máquina, prazo, tipo
+	// JobResultPostponed (Aula 14.9): não deu agora (programa aberto, outro instalador
+	// rodando); o servidor guarda como "adiado", e a campanha pede de novo mais tarde.
+	JobResultPostponed = "adiado"
 )
 
 // JobResult é o que o agente envia ao terminar (ou recusar) um job.
