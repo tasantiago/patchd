@@ -504,9 +504,7 @@ var pages = template.Must(template.New("").Parse(`
 <a href="/painel/" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}><span class="ic">🖥️</span>Frota</a>
 <a href="/painel/inventario" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}><span class="ic">🗂️</span>Inventário</a>
 <a href="/painel/patch?aba=geral" {{if eq .Nav "patch"}}class="ativo" aria-current="page"{{end}}><span class="ic">🩹</span>Patch</a>
-<a href="/painel/jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Jobs</a>
-<a href="/painel/campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}><span class="ic">🎯</span>Campanhas</a>
-<a href="/painel/aneis" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}><span class="ic">🔁</span>Anéis</a>
+<a href="/painel/campanhas" {{if or (eq .Nav "campanhas") (eq .Nav "jobs") (eq .Nav "aneis")}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Automação</a>
 <a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}><span class="ic">📦</span>Aposentadas</a>
 {{if .Admin}}<a href="/painel/configuracao" {{if eq .Nav "configuracao"}}class="ativo" aria-current="page"{{end}}><span class="ic">⚙️</span>Configuração</a>{{end}}
 <form method="post" action="/painel/sair"><button type="submit" title="Sair"><span class="ic">🔓</span>Sair</button></form>
@@ -582,6 +580,9 @@ var pages = template.Must(template.New("").Parse(`
 {{template "fim"}}{{end}}
 
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
+
+{{/* Automação (Aula 15.11): campanhas, jobs e anéis numa entrada só do menu, em abas. */}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/aneis"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Anéis e janelas</a></nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
@@ -1010,13 +1011,15 @@ var pages = template.Must(template.New("").Parse(`
 </tr>{{end}}</tbody></table></div>{{end}}
 
 {{define "jobs"}}{{template "topo" .}}
-<h1>Jobs</h1>
+<h1>Automação <span class="muted">› Jobs</span></h1>
+{{template "automacao-abas" "jobs"}}
 <div class="card"><div class="card-cab"><h2>Mais recentes</h2><span class="muted">Os {{.N}} mais recentes da frota. Para pedir uma busca, abra a máquina na Frota.</span></div>
 {{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "campanhas"}}{{template "topo" .}}
-<h1>Campanhas</h1>
+<h1>Automação <span class="muted">› Campanhas</span></h1>
+{{template "automacao-abas" "campanhas"}}
 <p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
 <div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
@@ -1095,7 +1098,8 @@ var pages = template.Must(template.New("").Parse(`
 {{template "fim"}}{{end}}
 
 {{define "aneis"}}{{template "topo" .}}
-<h1>Anéis e janelas</h1>
+<h1>Automação <span class="muted">› Anéis e janelas</span></h1>
+{{template "automacao-abas" "aneis"}}
 <p class="muted">Anel 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos anéis em ordem. A janela de manutenção de um anel é quando os jobs "na janela" daquele anel podem rodar. Para pôr máquinas num anel, marque-as na <a href="/painel/">Frota</a> ou use o detalhe da máquina.</p>
 <div class="card"><div class="card-cab"><h2>Anéis em uso</h2><span class="muted">{{.Total}} máquina(s) na frota</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Anel</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
