@@ -40,6 +40,9 @@ type Memory struct {
 
 	panelUsers    map[string]panel.User    // usuários locais do painel, pelo nome
 	panelSessions map[string]panel.Session // sessões do painel, pelo hash do segredo (como texto)
+
+	audit    []AuditEvent // trilha de auditoria (Aula 15.13), na ordem de gravação
+	auditSeq int64
 }
 
 type memMachine struct {

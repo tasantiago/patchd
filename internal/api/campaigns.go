@@ -401,6 +401,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	a.logger.Info("campanha criada pelo painel", "campaign_id", id, "tipo", c.Type, "aneis", ringsProgress(c),
 		"fontes", len(c.Sources), "programa", c.Target(), "janela", c.UseWindow, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "campanha.criar", fmt.Sprintf("campanha %d", id), c.Name+" · "+typeLabel(c.Type))
 	http.Redirect(w, r, fmt.Sprintf("/painel/campanhas/%d?criada=1", id), http.StatusSeeOther)
 }
 
@@ -544,5 +545,6 @@ func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s pan
 	}
 	a.logger.Info("campanha alterada pelo painel", "campaign_id", id, "op", op, "jobs_cancelados", n,
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "campanha.alterar", fmt.Sprintf("campanha %d", id), fmt.Sprintf("%s · %d job(s) cancelado(s)", r.PathValue("op"), n))
 	http.Redirect(w, r, fmt.Sprintf("%s?feito=%s&jobs=%d", back, r.PathValue("op"), n), http.StatusSeeOther)
 }

@@ -211,6 +211,7 @@ func (a *api) setWindowAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	}
 	a.logger.Info("janela do anel definida pelo painel", "ring", ring, "janela", win.String(),
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "janela.definir", fmt.Sprintf("anel %d", ring), win.String())
 	back(fmt.Sprintf("janela=1&anel=%d", ring))
 }
 
@@ -258,6 +259,7 @@ func (a *api) deleteWindowAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	a.logger.Info("janela do anel removida pelo painel", "ring", ring, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "janela.remover", fmt.Sprintf("anel %d", ring), "")
 	http.Redirect(w, r, fmt.Sprintf("/painel/aneis?removida=1&anel=%d", ring), http.StatusSeeOther)
 }
 
@@ -284,6 +286,7 @@ func (a *api) machineRingAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	a.logger.Info("anel da máquina alterado pelo painel", "machine_id", id, "ring", ring,
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "maquina.anel", id, fmt.Sprintf("anel %d", ring))
 	http.Redirect(w, r, fmt.Sprintf("%s?anel-alterado=1&anel=%d", machinePath(id), ring), http.StatusSeeOther)
 }
 
@@ -326,6 +329,7 @@ func (a *api) fleetRingAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	}
 	a.logger.Info("anel alterado pelo painel em lote", "ring", ring, "maquinas", moved, "ignoradas", skipped,
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "maquina.anel_lote", fmt.Sprintf("anel %d", ring), fmt.Sprintf("%d movida(s), %d ignorada(s)", moved, skipped))
 	http.Redirect(w, r, fmt.Sprintf("%smovidas=%d&ignoradas=%d&anel=%d", back, moved, skipped, ring), http.StatusSeeOther)
 }
 

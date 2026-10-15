@@ -243,6 +243,7 @@ func (a *api) thirdPartyUpdateAction(w http.ResponseWriter, r *http.Request, s p
 	}
 	a.logger.Info("job criado pelo painel", "job_id", rec.ID, "machine_id", id, "type", rec.Type, "app", p.App, "version", p.Version,
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "job.criar", id, fmt.Sprintf("job %d · %s · %s %s", rec.ID, typeLabel(rec.Type), p.App, p.Version))
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }
 

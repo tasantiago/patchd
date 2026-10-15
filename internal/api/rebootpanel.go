@@ -120,5 +120,6 @@ func (a *api) rebootAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	a.logger.Info("job criado pelo painel", "job_id", rec.ID, "machine_id", id, "type", rec.Type, "delay_min", delay,
 		"window", when == "janela", "sessoes_ativas", active, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "job.criar", id, fmt.Sprintf("job %d · %s · aviso %d min · sessões ativas %d", rec.ID, typeLabel(rec.Type), delay, active))
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }

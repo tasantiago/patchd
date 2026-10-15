@@ -20,6 +20,7 @@ func (a *api) sendCSV(w http.ResponseWriter, r *http.Request, name string, rows 
 	}
 	s, _ := SessionFrom(r.Context())
 	a.logger.Info("exportação CSV", "username", s.Username, "path", r.URL.Path, "rows", rows, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "exportar.csv", r.URL.Path, fmt.Sprintf("%d linha(s)", rows))
 	h := w.Header()
 	h.Set("Content-Type", "text/csv; charset=utf-8")
 	h.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))

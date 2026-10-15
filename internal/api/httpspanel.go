@@ -83,5 +83,6 @@ func (a *api) serverURLAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	}
 	a.logger.Info("job criado pelo painel", "job_id", rec.ID, "machine_id", id, "type", rec.Type, "url", a.publicURL,
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "job.criar", id, fmt.Sprintf("job %d · %s", rec.ID, typeLabel(rec.Type)))
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }

@@ -435,6 +435,7 @@ func (a *api) approvePatchAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	a.logger.Info("patch aprovado", "item", id, "fixed_in", fixed, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "patch.aprovar", id, "correção "+fixed)
 	http.Redirect(w, r, back+"&aprovado=1", http.StatusSeeOther)
 }
 
@@ -452,6 +453,7 @@ func (a *api) revokePatchAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	if removed {
 		a.logger.Info("aprovação de patch revogada", "item", id, "fixed_in", fixed, "username", s.Username, "request_id", RequestID(r.Context()))
+		a.audit(r, s, "patch.revogar", id, "correção "+fixed)
 	}
 	http.Redirect(w, r, patchItemPath(id, fixed)+"&revogado=1", http.StatusSeeOther)
 }

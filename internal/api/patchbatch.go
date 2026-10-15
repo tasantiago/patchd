@@ -151,6 +151,7 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 	already := len(list) - len(created)
 	a.logger.Info("lote de aprovação", "aprovados", len(created), "ja_aprovados", already, "fora", skipped,
 		"username", s.Username, "request_id", rid)
+	a.audit(r, s, "patch.aprovar_lote", "", fmt.Sprintf("%d aprovado(s), %d já aprovado(s), %d fora", len(created), already, skipped))
 	http.Redirect(w, r, withParams(back, "lote", strconv.Itoa(len(created)), "ja", strconv.Itoa(already),
 		"fora", strconv.Itoa(skipped)), http.StatusSeeOther)
 }
