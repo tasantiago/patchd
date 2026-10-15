@@ -27,7 +27,7 @@ comandos:
           sai na tela, para o build dos agentes (PATCHD_JOB_PUBKEY)
   pubkey  mostra a chave pública da chave privada configurada (para conferir ou refazer
           o PATCHD_JOB_PUBKEY) e a impressão curta que aparece nos logs
-  create  cria um job: -machine ID (ou -ring N) -type rescan|update|reboot|server_url [-packages p=v,...] [-delay 15m] [-url https://...]
+  create  cria um job: -machine ID (ou -ring N) -type rescan|update|windows_update|reboot|server_url [-packages p=v,...] [-kb N,...] [-delay 15m] [-url https://...]
           [-ttl 24h | -window]. O agente o recebe no próximo check-in (ou na janela do
           anel), confere a assinatura e executa
   list    lista os jobs, do mais novo para o mais antigo: [-machine ID] [-n 20]
@@ -37,7 +37,9 @@ Tipos: rescan (coleta o inventário e faz a busca de atualizações agora) e upd
 atualiza os pacotes de -packages pelo apt ou pelo dnf, se a busca da máquina os mostrar
 pendentes com candidata pelo menos na versão pedida; não reinicia) e reboot (Linux: se
 houver reinício pendente, reinicia depois do aviso de -delay aos usuários) e server_url
-(passa o agente para o endereço HTTPS de -url, deste mesmo servidor; Aula 9.2).
+(passa o agente para o endereço HTTPS de -url, deste mesmo servidor; Aula 9.2) e
+windows_update (Windows: instala pelo Windows Update da máquina os KBs de -kb que a busca
+dela mostra pendentes; o servidor troca cada KB pelo UpdateID da busca; não reinicia).
 A chave privada vem de PATCHD_JOB_SIGNING_KEY_FILE (ou PATCHD_JOB_SIGNING_KEY); o create
 e o pubkey precisam dela. Com ela, o servidor também cria jobs pelo painel (Aula 8.2).
 A URL do banco vem da configuração do servidor.
@@ -49,6 +51,8 @@ type jobStore interface {
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	NextJobID(ctx context.Context) (int64, error)
 	CreateJob(ctx context.Context, j store.NewJob) error
+	// LatestScan: o windows_update sai da busca atual da máquina (Aula 16.1).
+	LatestScan(ctx context.Context, id string) (protocol.PatchScanReport, bool, error)
 	ExpireJobs(ctx context.Context, now time.Time) (int64, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
@@ -179,7 +183,8 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 	case "create":
 		prefix := fs.String("machine", "", "ID (ou começo do ID) da máquina")
 		ringFlag := fs.Int("ring", -1, "em vez de -machine: um job para cada máquina do anel")
-		typ := fs.String("type", "", "tipo do job: rescan, update, reboot ou server_url")
+		typ := fs.String("type", "", "tipo do job: rescan, update, windows_update, reboot ou server_url")
+		kbList := fs.String("kb", "", "windows_update: números de KB, separados por vírgula (ex.: 5127648)")
 		pkgList := fs.String("packages", "", "update: pacote=versão_mínima, separados por vírgula (ex.: curl=8.18.0-1ubuntu2.10)")
 		delay := fs.Duration("delay", 15*time.Minute, "reboot: aviso aos usuários antes do reinício (2m a 60m)")
 		newURL := fs.String("url", "", "server_url: o endereço HTTPS deste servidor para o agente usar (ex.: $PATCHD_PUBLIC_URL)")
@@ -195,13 +200,16 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 			fmt.Fprintln(stderr, "patchd-server: o job thirdparty sai do plano da máquina: use package install -machine ID -app PROGRAMA")
 			return exitConfig
 		case !jobs.KnownType(*typ):
-			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan, update, reboot ou server_url")
+			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan, update, windows_update, reboot ou server_url")
 			return exitConfig
 		case (*typ == jobs.TypeServerURL) != (*newURL != ""):
 			fmt.Fprintln(stderr, "patchd-server: -url vai com -type server_url, e só com ele")
 			return exitConfig
 		case (*typ == jobs.TypeUpdate) != (*pkgList != ""):
 			fmt.Fprintln(stderr, "patchd-server: -packages vai com -type update, e só com ele")
+			return exitConfig
+		case (*typ == jobs.TypeWinUpdate) != (*kbList != ""):
+			fmt.Fprintln(stderr, "patchd-server: -kb vai com -type windows_update, e só com ele")
 			return exitConfig
 		case *ttl < jobs.MinTTL || *ttl > jobs.MaxTTL:
 			fmt.Fprintln(stderr, "patchd-server: -ttl deve ficar entre 10m e 168h")
@@ -274,8 +282,19 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 				return exitRuntime
 			}
 		}
+		created := 0
 		for _, id := range targets {
 			req := jobs.Request{MachineID: id, Type: *typ, TTL: *ttl, By: "linha de comando", Params: params}
+			if *kbList != "" {
+				raw, skip, code := winUpdateParams(ctx, st, id, *kbList, stderr)
+				if code != exitOK {
+					return code
+				}
+				if skip {
+					continue
+				}
+				req.Params = raw
+			}
 			where := ""
 			if *inWindow {
 				ring, ok, err := st.MachineRing(ctx, id)
@@ -307,6 +326,11 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 			}
 			fmt.Fprintf(stderr, "job %d (%s) criado para a máquina %s%s\n", rec.ID, rec.Type, short(id), where)
 			fmt.Fprintln(stdout, rec.ID)
+			created++
+		}
+		if created == 0 {
+			fmt.Fprintln(stderr, "patchd-server: nenhum job criado")
+			return exitRuntime
 		}
 		if *inWindow {
 			fmt.Fprintln(stderr, "O servidor só entrega a partir do início da janela; o agente confere de novo pelo payload assinado.")
@@ -466,4 +490,43 @@ func printJobs(list []store.JobRow, now time.Time, out io.Writer) {
 	}
 	_ = tw.Flush()
 	fmt.Fprintf(out, "%d job(s)\n", len(list))
+}
+
+// winUpdateParams monta o windows_update de uma máquina a partir da busca atual dela (Aula
+// 16.1). skip: nenhum dos KBs está pendente nela (num anel, as outras seguem). Um KB que só
+// o catálogo offline mostra entra, com o aviso de que o agente vai recusar.
+func winUpdateParams(ctx context.Context, st jobStore, id, kbList string, stderr io.Writer) (json.RawMessage, bool, int) {
+	var kbs []string
+	for _, kb := range strings.Split(kbList, ",") {
+		if kb = strings.TrimSpace(kb); kb != "" {
+			kbs = append(kbs, kb)
+		}
+	}
+	rep, found, err := st.LatestScan(ctx, id)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-server: busca da máquina %s: %v\n", short(id), err)
+		return nil, false, exitRuntime
+	}
+	if !found {
+		fmt.Fprintf(stderr, "patchd-server: a máquina %s ainda não enviou busca; nenhum job para ela\n", short(id))
+		return nil, true, exitOK
+	}
+	p, notFound, offlineOnly := jobs.WinUpdatesForKBs(rep, kbs)
+	if len(notFound) > 0 {
+		fmt.Fprintf(stderr, "máquina %s: a busca de %s UTC não mostra pendente: KB%s\n", short(id),
+			rep.ScannedAt.UTC().Format("2006-01-02 15:04"), strings.Join(notFound, ", KB"))
+	}
+	if len(offlineOnly) > 0 {
+		fmt.Fprintf(stderr, "máquina %s: KB%s só aparece no catálogo offline; a fonte da máquina (WSUS?) ainda não oferece, e o agente vai recusar\n",
+			short(id), strings.Join(offlineOnly, ", KB"))
+	}
+	if len(p.Updates) == 0 {
+		return nil, true, exitOK
+	}
+	if err := p.Validate(); err != nil {
+		fmt.Fprintf(stderr, "patchd-server: -kb: %v\n", err)
+		return nil, false, exitConfig
+	}
+	raw, _ := json.Marshal(p)
+	return raw, false, exitOK
 }

@@ -55,6 +55,10 @@ type Agent struct {
 	// de terceiros. nil: o agente recusa esses jobs (só o Windows instala). Erro com
 	// jobs.ErrRefused vira "rejeitado" (nada foi executado).
 	ThirdParty func(ctx context.Context, jobID int64, p jobs.ThirdPartyParams) (string, error)
+	// WinUpdate instala atualizações do Windows pelo WUA (job windows_update, Aula 16.1).
+	// nil: o agente recusa esses jobs (só o Windows). Erro com jobs.ErrNotPending vira
+	// "rejeitado"; com jobs.ErrRetry, "adiado". Nunca reinicia.
+	WinUpdate func(ctx context.Context, jobID int64, updates []jobs.WinUpdate) (string, error)
 
 	// Injetáveis nos testes.
 	now   func() time.Time
@@ -222,6 +226,8 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// Instalações (Aula 8.4) antes da busca: a busca seguinte mostra o efeito. O job já foi
 	// gravado como visto: se o agente cair no meio, ele não roda de novo (no máximo uma vez).
 	updateResults := a.runUpdates(ctx, accepted.updates)
+	// Atualizações do Windows (Aula 16.1): mesma regra; o resultado vai depois da busca.
+	updateResults = append(updateResults, a.runWinUpdates(ctx, accepted.winUpdates)...)
 	if ctx.Err() != nil {
 		state.PendingJobResults = append(state.PendingJobResults, updateResults...)
 		if rebooted != 0 {

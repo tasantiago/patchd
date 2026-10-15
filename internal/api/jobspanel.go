@@ -58,6 +58,8 @@ func typeLabel(t string) string {
 		return "reiniciar"
 	case jobs.TypeThirdParty:
 		return "instalar programa de terceiros"
+	case jobs.TypeWinUpdate:
+		return "instalar atualizações do Windows"
 	}
 	return t
 }
