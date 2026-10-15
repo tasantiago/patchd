@@ -203,6 +203,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
 	// Configuração (Aula 15.2): só admin, inclusive para ver.
 	mux.Handle("GET /painel/configuracao", a.adminAction(a.settingsPage))
+	mux.Handle("GET /painel/configuracao/auditoria.csv", a.adminAction(a.auditCSV))
 	mux.Handle("GET /painel/configuracao/agente/arquivo/{name}", a.adminAction(a.agentFile))
 	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
 	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))

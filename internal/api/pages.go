@@ -433,6 +433,7 @@ func (a *api) adminAction(next func(http.ResponseWriter, *http.Request, panel.Se
 		if s.Role != panel.RoleAdmin {
 			a.logger.Warn("ação de admin recusada", "username", s.Username, "role", s.Role, "path", r.URL.Path,
 				"request_id", RequestID(r.Context()))
+			a.audit(r, s, "acesso.negado", r.URL.Path, "perfil "+s.Role)
 			b := pageBase{Title: "Sem permissão", Session: s, Nav: "frota"}
 			a.render(w, r, http.StatusForbidden, "proibido", b)
 			return
@@ -588,7 +589,20 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a></nav>
+{{if eq .Tab "auditoria"}}{{with .Audit}}
+<div class="card"><div class="card-cab"><h2>Trilha de auditoria</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
+<p class="muted">Logins, ações pelo painel e exportações, do mais novo para o mais antigo. Só se acrescenta: nada aqui se edita. O request_id liga cada evento à linha do log do servidor.</p>
+<form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="auditoria">
+<input type="search" name="usuario" value="{{.Q.User}}" maxlength="64" placeholder="Usuário (exato)" aria-label="usuário">
+<select name="acao" aria-label="ação"><option value="">Todas as ações</option><optgroup label="Grupos">{{range .Groups}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</optgroup><optgroup label="Ações">{{range .Actions}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</optgroup></select>
+<select name="periodo" aria-label="período">{{range .Periods}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<button type="submit">Filtrar</button></form>
+{{if .Rows}}<div class="tabela"><table><thead><tr><th>Quando</th><th>Usuário</th><th>Origem</th><th>Ação</th><th>Alvo</th><th>Detalhe</th><th>De onde</th><th>Request ID</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td class="nowrap">{{.When}}</td><td><code>{{.User}}</code></td><td>{{.Source}}</td><td>{{if .Denied}}<span class="expl">{{.Action}}</span>{{else}}{{.Action}}{{end}}</td><td><code>{{.Target}}</code></td><td>{{.Detail}}</td><td><code>{{.Remote}}</code></td><td><code>{{.RequestID}}</code></td></tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas">{{if .First}}<a href="{{.First}}">« mais novos</a>{{end}}{{if .Next}}<a href="{{.Next}}">mais antigos ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhum evento com esse filtro.</p>{{end}}</div>
+{{end}}{{end}}
 {{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: a configuração fica no ambiente (.env) e nos arquivos de segredo</span></div>
 <dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl></div>{{end}}
 {{if eq .Tab "agente"}}<div class="card"><div class="card-cab"><h2>Executáveis{{if .Version}} da versão {{.Version}}{{end}}</h2><span class="muted">a versão publicada, a mesma que os agentes recebem na atualização</span></div>
