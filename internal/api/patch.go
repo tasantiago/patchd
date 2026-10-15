@@ -165,6 +165,9 @@ type patchView struct {
 	CanBatch       bool
 	FilterWaiting  int
 	Page, MaxBatch int
+	// Aula 15.9: o filtro é uma correção só (CVEs de um build): aprovar inteira.
+	WholeFix  string
+	WholeFixN int
 }
 
 // patchQuery: o que a URL pede, conferido.
@@ -286,6 +289,9 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	v.CanBatch = v.Admin && v.FilterWaiting > 0
+	if v.Admin && q.Q != "" {
+		v.WholeFix, v.WholeFixN = singleFix(found)
+	}
 	pages := max(1, (len(found)+patchPerPage-1)/patchPerPage)
 	q.Page = min(q.Page, pages)
 	v.Page = q.Page

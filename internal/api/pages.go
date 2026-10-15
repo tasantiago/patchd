@@ -683,10 +683,10 @@ var pages = template.Must(template.New("").Parse(`
 {{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
 </div>
 <div class="card"><div class="card-cab"><h2>Correções aguardando aprovação</h2><a class="muted" href="{{.FixesHref}}">todos os itens aguardando</a></div>
-{{if .Fixes}}<p class="muted">No Windows e no macOS, uma atualização (build ou KB) fecha muitas CVEs de uma vez: aprove pela correção. "Ver e aprovar" abre os itens dela, prontos para a aprovação em lote.</p>
+{{if .Fixes}}<p class="muted">No Windows e no macOS, uma atualização (build ou KB) fecha muitas CVEs de uma vez: aprove pela correção, depois de conferir o resumo. Pacotes do Linux seguem aprovados item a item ou em lote.</p>
 <div class="tabela"><table><thead><tr><th>Correção</th><th>Tipo</th><th>Sistemas</th><th>Itens</th><th>Exploradas</th><th>Máquinas</th><th></th></tr></thead>
 <tbody>{{range .Fixes}}<tr><td>{{if .FixedIn}}<code>{{.FixedIn}}</code>{{else}}<span class="muted">sem correção indicada</span>{{end}}</td><td>{{.Kind}}</td><td>{{.Systems}}</td><td class="num">{{.Items}}</td>
-<td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td class="num">{{.Machines}}</td><td><a href="{{.Href}}">Ver e aprovar</a></td></tr>{{end}}</tbody></table></div>
+<td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td class="num">{{.Machines}}</td><td class="nowrap"><a href="{{.Href}}">{{if and $.Admin .Whole}}Ver{{else}}Ver e aprovar{{end}}</a>{{if and $.Admin .Whole}} <form class="inline" method="post" action="/painel/patch/correcao"><input type="hidden" name="fix" value="{{.FixedIn}}"><button class="sec" type="submit">Aprovar a correção</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{if .MoreFixes}}<p class="muted">E mais {{.MoreFixes}} correção(ões): <a href="{{.FixesHref}}">ver todos os itens aguardando</a>.</p>{{end}}
 {{else}}<p class="muted">Nenhuma correção aguardando aprovação.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Execução nos últimos 7 dias</h2><a class="muted" href="/painel/jobs">Jobs</a></div>
@@ -756,6 +756,7 @@ var pages = template.Must(template.New("").Parse(`
 <form class="busca" method="get" action="/painel/patch">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}
 <input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Item, correção ou aviso (curl, CVE-2026-…, KB…)" aria-label="buscar item">
 <button type="submit">Buscar</button>{{if .HasFilter}} <a href="/painel/patch">Limpar</a>{{end}}</form>
+{{if .WholeFix}}<form class="aviso atencao" method="post" action="/painel/patch/correcao"><input type="hidden" name="fix" value="{{.WholeFix}}">Os {{.WholeFixN}} itens aguardando deste filtro são CVEs da mesma correção, <code>{{.WholeFix}}</code>. <button type="submit">Conferir a correção inteira</button></form>{{end}}
 {{if .Rows}}{{if .CanBatch}}<form method="post" action="/painel/patch/aprovar-lote">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}{{if gt .Page 1}}<input type="hidden" name="pagina" value="{{.Page}}">{{end}}{{end}}
 <div class="tabela"><table>
 <thead><tr>{{if .CanBatch}}<th class="col-lote">Lote</th>{{end}}<th>Item</th><th>Tipo</th><th>Corrigido em</th><th>Severidade</th><th>Explorada</th><th>Sistemas</th><th>Catálogo</th><th>Aprovação</th></tr></thead>
@@ -789,6 +790,31 @@ var pages = template.Must(template.New("").Parse(`
 <div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todos os itens (opcional), ex.: testado no anel piloto em 10/10" aria-label="observação"></div>
 <div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if eq (len .Rows) 1}}item{{else}}itens{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
 <span class="muted">O servidor confere cada item de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.</span></div>
+</div></form>
+{{template "fim"}}{{end}}
+
+{{define "patch-correcao"}}{{template "topo" .}}
+<p><a href="{{.Back}}">← Itens da correção</a></p>
+<h1>Aprovar a correção <code>{{.FixedIn}}</code> <span class="muted">› conferência</span></h1>
+<p class="aviso atencao">{{.Items}} {{if eq .Items 1}}CVE será aprovada{{else}}CVEs serão aprovadas{{end}}{{if .Exploited}}, {{.Exploited}} com exploração conhecida{{end}}, em {{.Machines}} máquina(s) ({{.Systems}}). A partir daí, essa correção pode entrar em atualização e em campanha.</p>
+<div class="grade2">
+<div class="card"><div class="card-cab"><h2>Resumo</h2><span class="muted">avaliação de agora</span></div><dl class="dados">
+<dt>Correção</dt><dd><code>{{.FixedIn}}</code></dd>
+<dt>CVEs aguardando</dt><dd>{{.Items}}</dd>
+<dt>Exploradas</dt><dd>{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}nenhuma conhecida{{end}}</dd>
+<dt>Máquinas</dt><dd>{{.Machines}} · {{.Systems}}</dd>
+{{range .Severities}}<dt>{{.Label}}</dt><dd>{{.N}}</dd>{{end}}
+</dl></div>
+<div class="card"><div class="card-cab"><h2>Amostra</h2><span class="muted">as exploradas e as mais graves primeiro</span></div>
+<div class="tabela"><table><thead><tr><th>CVE</th><th>Severidade</th><th>Explorada</th><th>Máquinas</th></tr></thead>
+<tbody>{{range .Sample}}<tr><td><code>{{.ID}}</code></td><td>{{.Severity}}</td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td class="num">{{.Machines}}</td></tr>{{end}}</tbody></table></div>
+{{if .More}}<p class="muted">E mais {{.More}}: <a href="{{.Back}}">a lista completa</a>.</p>{{end}}</div>
+</div>
+<form method="post" action="/painel/patch/correcao"><input type="hidden" name="fix" value="{{.FixedIn}}"><input type="hidden" name="confirmar" value="1"><input type="hidden" name="conferido" value="{{.Digest}}">
+<div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
+<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todas (opcional), ex.: KB testado no anel piloto em 10/10" aria-label="observação"></div>
+<div class="lote"><button type="submit">Aprovar {{.Items}} {{if eq .Items 1}}CVE{{else}}CVEs{{end}} da correção</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
+<span class="muted">O servidor refaz a lista no clique e só aprova se for a mesma desta conferência.</span></div>
 </div></form>
 {{template "fim"}}{{end}}
 
