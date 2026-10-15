@@ -84,11 +84,12 @@ type settingsView struct {
 	MaxUses   int
 	MaxNote   int
 	Access    *accessView // aba Acesso (Aula 15.3)
+	Audit     *auditView  // aba Auditoria (Aula 15.14)
 }
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
-	case "agente", "acesso":
+	case "agente", "acesso", "auditoria":
 		return tab
 	}
 	return "sistema"
@@ -114,6 +115,8 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	case "acesso":
 		accessFlash(q, &v.pageBase)
 		err = a.accessView(r, s, &v)
+	case "auditoria":
+		err = a.auditTab(r, &v)
 	}
 	if err != nil {
 		a.internalError(w, r, "montar a configuração", err)

@@ -74,6 +74,7 @@ var auditActions = []struct{ Key, Label string }{
 	{"maquina.aposentar", "Máquina aposentada"},
 	{"maquina.restaurar", "Máquina restaurada"},
 	{"exportar.csv", "Exportação CSV"},
+	{"acesso.negado", "Acesso negado (perfil)"},
 }
 
 // AuditLabel: o rótulo da ação; a chave quando não há (ação de uma versão mais nova).
