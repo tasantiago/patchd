@@ -176,6 +176,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/patch/aprovar", a.sameOrigin(a.adminAction(a.approvePatchAction)))
 	mux.Handle("POST /painel/patch/revogar", a.sameOrigin(a.adminAction(a.revokePatchAction)))
 	mux.Handle("POST /painel/patch/aprovar-lote", a.sameOrigin(a.adminAction(a.approveBatchAction)))
+	mux.Handle("POST /painel/patch/correcao", a.sameOrigin(a.adminAction(a.approveFixAction)))
 	mux.Handle("GET /painel/aposentadas", a.panelPage(a.retiredPage))
 	mux.Handle("GET /painel/frota.csv", a.panelPage(a.fleetCSV))
 	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))

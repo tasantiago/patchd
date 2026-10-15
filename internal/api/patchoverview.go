@@ -54,6 +54,7 @@ type ovFix struct {
 	FixedIn, Kind, Systems     string
 	Items, Exploited, Machines int
 	Href                       string
+	Whole                      bool // CVEs de um build: dá para aprovar a correção inteira (Aula 15.9)
 }
 
 // maxOverviewFixes: as correções que a visão geral mostra, as que fecham mais itens antes.
@@ -369,7 +370,8 @@ func waitingFixes(agg []patchItem) fixSummary {
 		}
 		f := byKey[key]
 		if f == nil {
-			f = &ovFix{FixedIn: p.FixedIn, Kind: fixKind(p), Href: (patchQuery{Status: "aguardando", Q: p.FixedIn}).href()}
+			f = &ovFix{FixedIn: p.FixedIn, Kind: fixKind(p), Href: (patchQuery{Status: "aguardando", Q: p.FixedIn}).href(),
+				Whole: p.Kind == "CVE" && p.FixedIn != ""}
 			if p.FixedIn == "" {
 				f.Href = (patchQuery{Status: "aguardando"}).href()
 			}

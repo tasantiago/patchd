@@ -201,6 +201,10 @@ func batchFlash(q url.Values) (flash, errMsg string) {
 		return "", "Nenhum item aguardando aprovação foi marcado."
 	case "lote-grande":
 		return "", fmt.Sprintf("Um lote tem no máximo %d itens.", maxApproveBatch)
+	case "correcao":
+		return "", "Correção ausente ou fora do formato."
+	case "correcao-grande":
+		return "", fmt.Sprintf("A correção tem mais de %d itens aguardando: aprove em lotes.", maxFixItems)
 	}
 	if !q.Has("lote") {
 		return "", ""
