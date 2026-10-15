@@ -20,8 +20,8 @@ const winUpdateTimeout = 100 * time.Minute
 func NewWinUpdater() WinUpdater { return installWindowsUpdates }
 
 // installWindowsUpdates faz, numa sessão COM identificada como patchd-agent (é o nome que o
-// histórico do Windows Update mostra): busca os UpdateIDs pedidos na fonte da política,
-// confere, aceita a licença, baixa e instala. Nunca reinicia.
+// histórico do Windows Update mostra): busca as pendentes na fonte da política, separa os
+// UpdateIDs pedidos, confere, aceita a licença, baixa e instala. Nunca reinicia.
 func installWindowsUpdates(ctx context.Context, jobID int64, req []jobs.WinUpdate) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, winUpdateTimeout)
 	defer cancel()
@@ -37,13 +37,14 @@ func installWindowsUpdates(ctx context.Context, jobID int64, req []jobs.WinUpdat
 			return err
 		}
 
-		// 1. Busca: a mesma fonte da busca online (WSUS quando a política define).
+		// 1. Busca: a mesma fonte e o mesmo critério da busca online (WSUS quando a política
+		// define). O filtro pelos UpdateIDs pedidos é feito na conferência (Aula 16.1b).
 		searcher, err := wincom.CallObject(session, "CreateUpdateSearcher")
 		if err != nil {
 			return err
 		}
 		defer searcher.Release()
-		result, err := wincom.CallObject(searcher, "Search", winCriteria(req))
+		result, err := wincom.CallObject(searcher, "Search", onlineCriteria)
 		if err != nil {
 			return comFailure("busca", err)
 		}
