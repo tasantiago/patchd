@@ -47,6 +47,25 @@ type ovExec struct {
 	Created, Done, Failed, Postponed, Open int
 }
 
+// ovFix: uma correção aguardando aprovação (Aula 15.7). No Windows e no macOS, o item é a
+// CVE e a correção é o build ou KB que a resolve: uma atualização acumulada fecha centenas
+// de CVEs de uma vez. No Linux, o item é o pacote e cada pacote tem a sua versão corrigida.
+type ovFix struct {
+	FixedIn, Kind, Systems     string
+	Items, Exploited, Machines int
+	Href                       string
+}
+
+// maxOverviewFixes: as correções que a visão geral mostra, as que fecham mais itens antes.
+const maxOverviewFixes = 10
+
+// concentration: a partir de quantos itens aguardando uma máquina que concentra a maior
+// parte vira aviso (uma máquina esquecida infla o número da frota inteira).
+const (
+	concentrationMin = 50
+	concentrationPct = 50
+)
+
 type ovAttention struct {
 	Text, Href, Level string // Level: erro, atencao
 }
@@ -57,6 +76,9 @@ type overviewView struct {
 	KPIs        []ovKPI
 	Rings       []ovRing
 	Systems     []ovSystem
+	Fixes       []ovFix
+	MoreFixes   int // correções além das mostradas
+	FixesHref   string
 	Exec        []ovExec
 	ExecTotal   ovExec
 	Attention   []ovAttention
@@ -191,6 +213,12 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	fx := waitingFixes(agg)
+	v.Fixes, v.FixesHref = fx.list, (patchQuery{Status: "aguardando"}).href()
+	if len(v.Fixes) > maxOverviewFixes {
+		v.MoreFixes = len(v.Fixes) - maxOverviewFixes
+		v.Fixes = v.Fixes[:maxOverviewFixes]
+	}
 	tpInstalls, eol := 0, 0
 	tpPrograms := map[string]bool{}
 	for _, m := range items {
@@ -263,7 +291,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	v.KPIs = []ovKPI{
 		{Label: "Máquinas em dia", Value: fmt.Sprintf("%d%%", pct(ok, total)), Sub: fmt.Sprintf("%d de %d", ok, total), Href: "/painel/?estado=em_dia", Color: "v-verde"},
-		{Label: "Sistema: aguardando aprovação", Value: fmt.Sprint(waiting), Sub: fmt.Sprintf("%d com exploração conhecida · %d item(ns) pendente(s) no total", expWaiting, len(agg)),
+		{Label: "Sistema: correções aguardando", Value: fmt.Sprint(len(fx.list)), Sub: fx.summary(waiting, expWaiting),
 			Href: (patchQuery{Status: "aguardando"}).href(), Color: waitColor},
 		{Label: "Terceiros com problema", Value: fmt.Sprint(tpInstalls), Sub: fmt.Sprintf("instalações, em %d programa(s)", len(tpPrograms)), Href: "/painel/patch?aba=terceiros", Color: "v-laranja"},
 		{Label: "Jobs nos últimos 7 dias", Value: fmt.Sprint(v.ExecTotal.Created), Sub: fmt.Sprintf("%d concluídos · %d sem sucesso · %d adiados", v.ExecTotal.Done, v.ExecTotal.Failed, v.ExecTotal.Postponed), Href: "/painel/jobs"},
@@ -274,6 +302,11 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	if expWaiting > 0 {
 		v.Attention = append(v.Attention, ovAttention{Level: "erro", Href: (patchQuery{Status: "exploradas"}).href(),
 			Text: fmt.Sprintf("%d item(ns) com exploração conhecida aguardando aprovação", expWaiting)})
+	}
+	if m, ok := fx.concentrated(waiting); ok {
+		v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: "/painel/maquinas/" + m.ID + "?aba=pendencias",
+			Text: fmt.Sprintf("%s concentra %d dos %d itens aguardando (%d%%): atualizar essa máquina muda o retrato da frota",
+				dash(m.Name), m.N, waiting, pct(m.N, waiting))})
 	}
 	for _, c := range paused {
 		v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: fmt.Sprintf("/painel/campanhas/%d", c.ID),
@@ -299,4 +332,128 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 			Text: fmt.Sprintf("%d instalação(ões) de programa fora de suporte", eol)})
 	}
 	a.render(w, r, http.StatusOK, "patch-geral", v)
+}
+
+// fixSummary: as correções aguardando, quantos itens de cada tipo e por máquina.
+type fixSummary struct {
+	list      []ovFix
+	cves, pkg int
+	machines  map[string]*machineCount
+}
+
+type machineCount struct {
+	ID, Name string
+	N        int
+}
+
+// waitingFixes junta os itens sem aprovação por correção: CVE pelo build ou KB, pacote
+// pelo próprio pacote e versão. Ordem: as que fecham mais itens, depois as exploradas.
+func waitingFixes(agg []patchItem) fixSummary {
+	fs := fixSummary{machines: map[string]*machineCount{}}
+	byKey := map[string]*ovFix{}
+	machinesOf := map[string]map[string]bool{}
+	systemsOf := map[string]map[string]bool{}
+	var order []string
+	for _, p := range agg {
+		if p.Approval != nil {
+			continue
+		}
+		key := p.Kind + "\x00" + p.FixedIn
+		if p.Kind != "CVE" {
+			key += "\x00" + p.ID // pacote: uma correção por pacote
+		}
+		if p.Kind == "CVE" {
+			fs.cves++
+		} else {
+			fs.pkg++
+		}
+		f := byKey[key]
+		if f == nil {
+			f = &ovFix{FixedIn: p.FixedIn, Kind: fixKind(p), Href: (patchQuery{Status: "aguardando", Q: p.FixedIn}).href()}
+			if p.FixedIn == "" {
+				f.Href = (patchQuery{Status: "aguardando"}).href()
+			}
+			byKey[key] = f
+			machinesOf[key], systemsOf[key] = map[string]bool{}, map[string]bool{}
+			order = append(order, key)
+		}
+		f.Items++
+		if p.Exploited {
+			f.Exploited++
+		}
+		for _, m := range p.Machines {
+			machinesOf[key][m.ID] = true
+			systemsOf[key][osFamily(m.OS)] = true
+			mc := fs.machines[m.ID]
+			if mc == nil {
+				mc = &machineCount{ID: m.ID, Name: m.Name}
+				fs.machines[m.ID] = mc
+			}
+			mc.N++
+		}
+	}
+	for _, k := range order {
+		f := byKey[k]
+		f.Machines = len(machinesOf[k])
+		f.Systems = strings.Join(slices.Sorted(maps.Keys(systemsOf[k])), ", ")
+		fs.list = append(fs.list, *f)
+	}
+	slices.SortStableFunc(fs.list, func(a, b ovFix) int {
+		if a.Items != b.Items {
+			return b.Items - a.Items
+		}
+		if a.Exploited != b.Exploited {
+			return b.Exploited - a.Exploited
+		}
+		return strings.Compare(a.FixedIn, b.FixedIn)
+	})
+	return fs
+}
+
+// fixKind: como a correção aparece na tabela.
+func fixKind(p patchItem) string {
+	if p.Kind == "CVE" {
+		return "atualização do sistema"
+	}
+	return "pacote " + p.ID
+}
+
+// summary: a linha de baixo do cartão. "1006 itens (980 CVEs, 26 pacotes) em 3 máquinas".
+func (fs fixSummary) summary(waiting, exploited int) string {
+	if waiting == 0 {
+		return "nada aguardando aprovação"
+	}
+	plural := func(n int, um, varios string) string {
+		if n == 1 {
+			return "1 " + um
+		}
+		return fmt.Sprintf("%d %s", n, varios)
+	}
+	var parts []string
+	if fs.cves > 0 {
+		parts = append(parts, plural(fs.cves, "CVE", "CVEs"))
+	}
+	if fs.pkg > 0 {
+		parts = append(parts, plural(fs.pkg, "pacote", "pacotes"))
+	}
+	out := fmt.Sprintf("%d item(ns) (%s) em %d máquina(s)", waiting, strings.Join(parts, ", "), len(fs.machines))
+	if exploited > 0 {
+		out += fmt.Sprintf(" · %d com exploração conhecida", exploited)
+	}
+	return out
+}
+
+// concentrated: a máquina com a maior parte dos itens aguardando, quando o número é grande
+// e uma máquina só responde por pelo menos concentrationPct dele.
+func (fs fixSummary) concentrated(waiting int) (machineCount, bool) {
+	if waiting < concentrationMin || len(fs.machines) < 2 {
+		return machineCount{}, false
+	}
+	var top machineCount
+	for _, m := range fs.machines {
+		if m.N > top.N || (m.N == top.N && m.ID < top.ID) {
+			top = *m
+		}
+	}
+	return top, pct(top.N, waiting) >= concentrationPct
 }

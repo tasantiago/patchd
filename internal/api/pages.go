@@ -682,6 +682,13 @@ var pages = template.Must(template.New("").Parse(`
 <td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span style="width: {{.Pct}}%"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
 </div>
+<div class="card"><div class="card-cab"><h2>Correções aguardando aprovação</h2><a class="muted" href="{{.FixesHref}}">todos os itens aguardando</a></div>
+{{if .Fixes}}<p class="muted">No Windows e no macOS, uma atualização (build ou KB) fecha muitas CVEs de uma vez: aprove pela correção. "Ver e aprovar" abre os itens dela, prontos para a aprovação em lote.</p>
+<div class="tabela"><table><thead><tr><th>Correção</th><th>Tipo</th><th>Sistemas</th><th>Itens</th><th>Exploradas</th><th>Máquinas</th><th></th></tr></thead>
+<tbody>{{range .Fixes}}<tr><td>{{if .FixedIn}}<code>{{.FixedIn}}</code>{{else}}<span class="muted">sem correção indicada</span>{{end}}</td><td>{{.Kind}}</td><td>{{.Systems}}</td><td class="num">{{.Items}}</td>
+<td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td class="num">{{.Machines}}</td><td><a href="{{.Href}}">Ver e aprovar</a></td></tr>{{end}}</tbody></table></div>
+{{if .MoreFixes}}<p class="muted">E mais {{.MoreFixes}} correção(ões): <a href="{{.FixesHref}}">ver todos os itens aguardando</a>.</p>{{end}}
+{{else}}<p class="muted">Nenhuma correção aguardando aprovação.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Execução nos últimos 7 dias</h2><a class="muted" href="/painel/jobs">Jobs</a></div>
 {{if .Exec}}<div class="tabela"><table><thead><tr><th>Tipo</th><th>Criados</th><th>Concluídos</th><th>Sem sucesso</th><th>Adiados</th><th>Em aberto</th></tr></thead>
 <tbody>{{range .Exec}}<tr><td>{{.Type}}</td><td class="num">{{.Created}}</td><td class="num">{{.Done}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Postponed}}</td><td class="num">{{.Open}}</td></tr>{{end}}
