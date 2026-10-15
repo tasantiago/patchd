@@ -121,14 +121,16 @@ func TestInstall(t *testing.T) {
 	if !maps.Equal(signers, wantSigners) {
 		t.Errorf("assinantes padrão: %v", signers)
 	}
-	// Processos medidos (Aula 14.6b): só o VS Code (job 33, Code.exe aberto, Inno código 5).
+	// Processos (Aula 14.6b, o VS Code medido no job 33: Code.exe aberto, Inno código 5; Aula
+	// 15.10, os demais programas que o patchd instala e que travam arquivos quando abertos).
 	procs := map[string]string{}
 	for _, a := range m.For("windows") {
 		if a.Install != nil && len(a.Install.Processes) > 0 {
 			procs[a.ID] = strings.Join(a.Install.Processes, ",")
 		}
 	}
-	if !maps.Equal(procs, map[string]string{"vscode": "Code.exe"}) {
+	if !maps.Equal(procs, map[string]string{"vscode": "Code.exe", "mozilla-firefox": "firefox.exe", "mozilla-firefox-esr": "firefox.exe",
+		"7zip": "7zFM.exe,7zG.exe", "notepad-plus-plus": "notepad++.exe", "libreoffice": "soffice.exe"}) {
 		t.Errorf("processos padrão: %v", procs)
 	}
 	regra := func(extra string) string {
