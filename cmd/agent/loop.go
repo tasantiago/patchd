@@ -179,6 +179,10 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	if tp := newThirdParty(client, opts.DataDir); tp != nil {
 		ag.ThirdParty = tp
 	}
+	// Job windows_update (Aula 16.1): só no Windows, pelo WUA.
+	if wu := patch.NewWinUpdater(); wu != nil {
+		ag.WinUpdate = wu
+	}
 	// Job reboot (Aula 8.6): o estado de reinício vem do mesmo scanner da busca.
 	if restart := newRestart(platform.ExecRunner{}); restart != nil {
 		ag.Restart = restart

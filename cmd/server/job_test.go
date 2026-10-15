@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,5 +105,50 @@ func TestJobKeygenECreate(t *testing.T) {
 	_, o, _ = roda("list", "-machine", "60ef")
 	if !strings.Contains(o, "2   60ef97e4  rescan  cancelado") || !strings.Contains(o, "1   60ef97e4  rescan  entregue") || !strings.Contains(o, "2 job(s)") {
 		t.Errorf("list:\n%s", o)
+	}
+}
+
+// Aula 16.1: o windows_update sai da busca atual da máquina; o KB vira o UpdateID dela.
+func TestJobWindowsUpdatePorKB(t *testing.T) {
+	_, key, _ := jobs.GenerateKey()
+	pub := key.Public().(ed25519.PublicKey)
+	ctx := context.Background()
+	mem := store.NewMemory()
+	const cu = "0b9b6f0c-1d2e-4f3a-9b8c-7d6e5f4a3b2c"
+	for _, id := range []string{"60ef97e4-0001", "8bb71e2a-0003"} {
+		_, _ = mem.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: id})
+	}
+	_ = mem.SaveScan(ctx, "60ef97e4-0001", protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, ScannedAt: time.Now().UTC(),
+		Scans: []protocol.ScanResult{{Source: "wua-default", Missing: []protocol.MissingUpdate{{ID: cu, KBs: []string{"5127648"}, Source: "wua-default"}}}}})
+	st := memoriaComPrefixo{mem}
+	agora := time.Now().UTC()
+	roda := func(args ...string) (int, string, string) {
+		var o, e bytes.Buffer
+		code := jobCommand(ctx, st, key, args, agora, &o, &e)
+		return code, o.String(), e.String()
+	}
+	code, o, e := roda("create", "-machine", "60ef", "-type", "windows_update", "-kb", "KB5127648, 5999999")
+	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, "não mostra pendente: KB5999999") {
+		t.Fatalf("create: %d %q %s", code, o, e)
+	}
+	env, _ := mem.DeliverJobs(ctx, "60ef97e4-0001", agora)
+	j, err := jobs.Verify(pub, env[0], "60ef97e4-0001", agora, 0)
+	p, _ := jobs.ParseWinUpdateParams(j.Params)
+	if err != nil || j.Type != jobs.TypeWinUpdate || len(p.Updates) != 1 || p.Updates[0].ID != cu || p.Updates[0].KB != "5127648" {
+		t.Errorf("job: %+v %+v %v", j, p, err)
+	}
+	for _, c := range []struct {
+		args []string
+		code int
+		msg  string
+	}{
+		{[]string{"create", "-machine", "60ef", "-type", "windows_update"}, exitConfig, "-kb vai com -type windows_update"},
+		{[]string{"create", "-machine", "60ef", "-type", "rescan", "-kb", "5127648"}, exitConfig, "-kb vai com"},
+		{[]string{"create", "-machine", "60ef", "-type", "windows_update", "-kb", "5999999"}, exitRuntime, "nenhum job criado"},
+		{[]string{"create", "-machine", "8bb7", "-type", "windows_update", "-kb", "5127648"}, exitRuntime, "ainda não enviou busca"},
+	} {
+		if code, _, e := roda(c.args...); code != c.code || !strings.Contains(e, c.msg) {
+			t.Errorf("%v: %d %s", c.args, code, e)
+		}
 	}
 }

@@ -18,6 +18,12 @@ type acceptedJobs struct {
 	updates    []acceptedUpdate
 	reboots    []acceptedReboot
 	thirdParty []acceptedThirdParty
+	winUpdates []acceptedWinUpdate
+}
+
+type acceptedWinUpdate struct {
+	id int64
+	p  jobs.WinUpdateParams
 }
 
 type acceptedThirdParty struct {
@@ -35,7 +41,9 @@ type acceptedUpdate struct {
 	pkgs []jobs.Package
 }
 
-func (j acceptedJobs) forceScan() bool { return len(j.rescans) > 0 || len(j.updates) > 0 }
+func (j acceptedJobs) forceScan() bool {
+	return len(j.rescans) > 0 || len(j.updates) > 0 || len(j.winUpdates) > 0
+}
 
 // acceptJobs confere os jobs recebidos no check-in (Aula 8.1). Os recusados viram resultado
 // "rejeitado", com o motivo.
@@ -80,6 +88,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			a.Logger.Info("job aceito: instalar programa de terceiros", "job_id", j.ID, "app", p.App, "version", p.Version,
 				"installer", p.Installer)
 			acc.thirdParty = append(acc.thirdParty, acceptedThirdParty{id: j.ID, p: p})
+		case jobs.TypeWinUpdate:
+			p, _ := jobs.ParseWinUpdateParams(j.Params) // o Verify já conferiu
+			if a.WinUpdate == nil {
+				why := "este sistema não instala atualizações do Windows (só o agente do Windows)"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: instalar atualizações do Windows", "job_id", j.ID, "updates", strings.Join(p.Labels(), ","))
+			acc.winUpdates = append(acc.winUpdates, acceptedWinUpdate{id: j.ID, p: p})
 		case jobs.TypeServerURL:
 			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
 			reject := func(why string) {
@@ -126,6 +144,34 @@ func (a *Agent) runUpdates(ctx context.Context, updates []acceptedUpdate) []Pend
 				"duration", a.now().Sub(start).Round(time.Second).String())
 		}
 		out = append(out, PendingJobResult{ID: u.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out
+}
+
+// runWinUpdates instala as atualizações dos jobs windows_update, um job por vez (Aula
+// 16.1). Os resultados vão depois da busca, que mostra o efeito ao servidor.
+func (a *Agent) runWinUpdates(ctx context.Context, list []acceptedWinUpdate) []PendingJobResult {
+	var out []PendingJobResult
+	for _, j := range list {
+		a.Logger.Info("instalação de atualizações do Windows iniciada", "job_id", j.id, "updates", strings.Join(j.p.Labels(), ","))
+		start := a.now()
+		detail, err := a.WinUpdate(ctx, j.id, j.p.Updates)
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrNotPending):
+			status, detail = protocol.JobResultRejected, joinDetail(err.Error(), detail)
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case errors.Is(err, jobs.ErrRetry):
+			status, detail = protocol.JobResultPostponed, joinDetail(err.Error(), detail)
+			a.Logger.Warn("instalação de atualizações do Windows adiada", "job_id", j.id, "reason", detail)
+		case err != nil:
+			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
+			a.Logger.Error("instalação de atualizações do Windows falhou", "job_id", j.id, "error", detail)
+		default:
+			a.Logger.Info("instalação de atualizações do Windows concluída", "job_id", j.id, "detail", detail,
+				"duration", a.now().Sub(start).Round(time.Second).String())
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}
 	return out
 }

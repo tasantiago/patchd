@@ -1,0 +1,80 @@
+package jobs
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/tasantiago/patchd/internal/protocol"
+)
+
+const (
+	guidCU  = "0b9b6f0c-1d2e-4f3a-9b8c-7d6e5f4a3b2c"
+	guidNET = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+)
+
+func TestWinUpdateParams(t *testing.T) {
+	ok := `{"updates":[{"id":"` + guidCU + `","kb":"5127648"},{"id":"` + strings.ToUpper(guidNET) + `"}]}`
+	p, err := ParseWinUpdateParams(json.RawMessage(ok))
+	if err != nil || len(p.Updates) != 2 || strings.Join(p.Labels(), ",") != "KB5127648,A1B2C3D4" {
+		t.Fatalf("válido: %+v %v", p, err)
+	}
+	ruins := map[string]string{
+		"vazio":          `{"updates":[]}`,
+		"aspa no GUID":   `{"updates":[{"id":"0b9b6f0c' or IsInstalled=1 or UpdateID='x"}]}`,
+		"KB com letras":  `{"updates":[{"id":"` + guidCU + `","kb":"KB5127648"}]}`,
+		"repetido":       `{"updates":[{"id":"` + guidCU + `"},{"id":"` + strings.ToUpper(guidCU) + `"}]}`,
+		"campo estranho": `{"updates":[{"id":"` + guidCU + `"}],"reboot":true}`,
+	}
+	for nome, raw := range ruins {
+		if _, err := ParseWinUpdateParams(json.RawMessage(raw)); err == nil {
+			t.Errorf("%s: deveria recusar", nome)
+		}
+	}
+	var muitos []string
+	for i := range MaxWinUpdates + 1 {
+		muitos = append(muitos, fmt.Sprintf(`{"id":"%08d-0000-4000-8000-000000000000"}`, i))
+	}
+	if _, err := ParseWinUpdateParams(json.RawMessage(`{"updates":[` + strings.Join(muitos, ",") + `]}`)); err == nil {
+		t.Error("mais que o limite")
+	}
+	// O tipo entra na lista fechada, e a assinatura confere os parâmetros.
+	if !KnownType(TypeWinUpdate) || checkParams(Job{Type: TypeWinUpdate}) == nil {
+		t.Error("windows_update sem parâmetros não vale")
+	}
+}
+
+func buscaWindows() protocol.PatchScanReport {
+	return protocol.PatchScanReport{Scans: []protocol.ScanResult{
+		{Source: "wua-default", Missing: []protocol.MissingUpdate{
+			{ID: guidCU, KBs: []string{"5127648"}, Title: "Atualização cumulativa", Source: "wua-default"},
+		}},
+		{Source: "wua-offline", Missing: []protocol.MissingUpdate{
+			{ID: guidCU, KBs: []string{"5127648"}, Source: "wua-offline"},
+			{ID: guidNET, KBs: []string{"5130001"}, Source: "wua-offline"},
+		}},
+	}}
+}
+
+func TestWinUpdatesForKBs(t *testing.T) {
+	p, nao, soOff := WinUpdatesForKBs(buscaWindows(), []string{"KB5127648", "5130001", "5999999"})
+	if len(p.Updates) != 2 || p.Updates[0].ID != guidCU || p.Updates[0].KB != "5127648" || p.Updates[1].ID != guidNET {
+		t.Errorf("atualizações: %+v", p.Updates)
+	}
+	if strings.Join(nao, ",") != "5999999" || strings.Join(soOff, ",") != "5130001" {
+		t.Errorf("não encontrados %v, só no catálogo offline %v", nao, soOff)
+	}
+}
+
+func TestStillMissing(t *testing.T) {
+	p := WinUpdateParams{Updates: []WinUpdate{{ID: guidCU, KB: "5127648"}, {ID: guidNET}}}
+	if still, f := StillMissing(p, buscaWindows()); f != "" || strings.Join(still, ",") != "KB5127648" {
+		t.Errorf("pendentes: %v %q", still, f)
+	}
+	rep := buscaWindows()
+	rep.Scans[0].Missing, rep.Scans[0].Error = nil, "0x8024402C"
+	if _, f := StillMissing(p, rep); !strings.Contains(f, "falhou (0x8024402C)") {
+		t.Errorf("busca que falhou não prova nada: %q", f)
+	}
+}

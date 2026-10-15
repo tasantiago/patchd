@@ -120,6 +120,8 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 		return a.judgeUpdate(r, job, when)
 	case jobs.TypeReboot:
 		return a.judgeReboot(r, job, when)
+	case jobs.TypeWinUpdate:
+		return a.judgeWinUpdate(r, job, res, when)
 	}
 	return jobs.StateFailed, "tipo de job sem conferência no servidor: " + job.Type
 }
@@ -145,6 +147,37 @@ func (a *api) judgeUpdate(r *http.Request, job store.JobRow, when string) (strin
 		return jobs.StateFailed, fmt.Sprintf("a busca de %s UTC ainda mostra pendente: %s", when, strings.Join(still, "; "))
 	}
 	return jobs.StateDone, fmt.Sprintf("%d pacote(s) conferidos na busca de %s UTC: %s", len(params.Packages), when, strings.Join(params.Names(), ", "))
+}
+
+// judgeWinUpdate confere, na busca nova, as atualizações do job windows_update (Aula 16.1).
+// Sumiram da busca da fonte da política: concluído. Continuam lá com reinício pendente: o
+// Windows só as dá por instaladas depois do boot; concluído, com o aviso. Continuam lá sem
+// reinício pendente: o "ok" do agente não se confirma.
+func (a *api) judgeWinUpdate(r *http.Request, job store.JobRow, res protocol.JobResult, when string) (string, string) {
+	var payload jobs.Job
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+		return jobs.StateFailed, "o servidor não conseguiu ler as atualizações do job"
+	}
+	params, err := jobs.ParseWinUpdateParams(payload.Params)
+	if err != nil {
+		return jobs.StateFailed, "atualizações do job ilegíveis: " + err.Error()
+	}
+	rep, found, err := a.store.LatestScan(r.Context(), job.MachineID)
+	if err != nil || !found {
+		return jobs.StateFailed, "o servidor não conseguiu ler a busca nova"
+	}
+	agent := "agente: " + res.Detail
+	still, failed := jobs.StillMissing(params, rep)
+	switch {
+	case failed != "":
+		return jobs.StateFailed, fmt.Sprintf("%s na busca de %s UTC; %s", failed, when, agent)
+	case len(still) == 0:
+		return jobs.StateDone, fmt.Sprintf("a busca de %s UTC não mostra mais %s; %s", when, strings.Join(params.Labels(), ", "), agent)
+	case rep.Reboot != nil && rep.Reboot.Pending != nil && *rep.Reboot.Pending:
+		return jobs.StateDone, fmt.Sprintf("instalada(s), aguardando reinício: a busca de %s UTC ainda mostra %s e há reinício pendente; %s",
+			when, strings.Join(still, ", "), agent)
+	}
+	return jobs.StateFailed, fmt.Sprintf("a busca de %s UTC ainda mostra pendente: %s, sem reinício pendente; %s", when, strings.Join(still, ", "), agent)
 }
 
 // judgeReboot confere o reinício na busca nova (Aula 8.6): o último boot é posterior à
