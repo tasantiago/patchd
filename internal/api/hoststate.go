@@ -23,6 +23,7 @@ type hostView struct {
 	// Usuários conectados (Aula 15.6). UsersKnown: o agente coleta (mesmo que ninguém esteja).
 	UsersKnown bool
 	Users      []userRow
+	Active     int // sessões ativas (alguém na tela): o reinício "agora" pede confirmação (Aula 15.12)
 }
 
 // userRow: uma sessão de usuário na máquina.
@@ -119,6 +120,7 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 	for _, u := range s.Users {
 		hv.Users = append(hv.Users, userRow{Name: u.DisplayName, Account: u.Account, Session: sessionLabels[u.Session], Active: u.Active})
 	}
+	hv.Active = activeSessions(s.Users)
 	return nil
 }
 
@@ -136,4 +138,16 @@ func bytesLabel(n uint64) string {
 	}
 	s := fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 	return strings.Replace(s, ".", ",", 1)
+}
+
+// activeSessions: quantas sessões têm alguém na tela agora. A desconectada não conta: quem
+// está nela não vê o aviso de reinício, mas também não está trabalhando nela agora.
+func activeSessions(us []protocol.LoggedUser) int {
+	n := 0
+	for _, u := range us {
+		if u.Active {
+			n++
+		}
+	}
+	return n
 }

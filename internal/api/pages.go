@@ -980,7 +980,9 @@ var pages = template.Must(template.New("").Parse(`
 </div>{{end}}
 {{if .CanReboot}}<section><h2>Reiniciar</h2>
 <p class="muted">A última busca mostra reinício pendente. O agente confere de novo, avisa quem estiver na máquina (Windows: aviso na tela com o prazo; Linux: mensagem nos terminais e bloqueio de login nos 5 minutos finais) e reinicia; o resultado vem da busca depois do boot. Um administrador na máquina pode cancelar (<code>shutdown /a</code> no Windows, <code>shutdown -c</code> no Linux).</p>
+{{if .Host.UsersKnown}}<p>{{if .Host.Users}}Conectados agora <span class="muted">(coletado {{.Host.Age}})</span>: {{range $i, $u := .Host.Users}}{{if $i}}; {{end}}{{if $u.Name}}{{$u.Name}}{{else}}<code>{{$u.Account}}</code>{{end}} <span class="muted">({{$u.Session}}{{if not $u.Active}}, desconectada{{end}})</span>{{end}}{{else}}Ninguém conectado <span class="muted">(coletado {{.Host.Age}})</span>.{{end}}</p>{{end}}
 <form class="lote" method="post" action="/painel/maquinas/{{.D.MachineID}}/reiniciar">
+{{if .Host.Active}}<label><input type="checkbox" name="ciente" value="1"> sei que há gente conectada ({{.Host.Active}} {{if eq .Host.Active 1}}sessão ativa{{else}}sessões ativas{{end}}) e quero reiniciar agora</label>{{end}}
 <label>Aviso <select name="aviso">{{range .Delays}}<option value="{{.}}" {{if eq . 15}}selected{{end}}>{{.}} min</option>{{end}}</select></label>
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
 {{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}

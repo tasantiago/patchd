@@ -64,6 +64,24 @@ func (a *api) rebootAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		http.Redirect(w, r, back+"?erro=sem-reinicio", http.StatusSeeOther)
 		return
 	}
+	// Aula 15.12: reiniciar agora com gente trabalhando na máquina pede confirmação. O aviso
+	// do agente avisa, mas quem decide derrubar o trabalho de alguém é o admin, sabendo disso.
+	// Na janela do anel, não: a janela já é o horário combinado para isso.
+	active := 0
+	if when == "agora" {
+		h, found, err := a.store.HostState(r.Context(), id)
+		if err != nil {
+			a.internalError(w, r, "ler quem está conectado", err)
+			return
+		}
+		if found && h.State != nil {
+			active = activeSessions(h.State.Users)
+		}
+		if active > 0 && r.PostFormValue("ciente") != "1" {
+			http.Redirect(w, r, fmt.Sprintf("%s?erro=reinicio-usuarios&n=%d", back, active), http.StatusSeeOther)
+			return
+		}
+	}
 	open, err := a.openJob(r.Context(), id, jobs.TypeReboot)
 	if err != nil {
 		a.internalError(w, r, "procurar job em aberto", err)
@@ -101,6 +119,6 @@ func (a *api) rebootAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		return
 	}
 	a.logger.Info("job criado pelo painel", "job_id", rec.ID, "machine_id", id, "type", rec.Type, "delay_min", delay,
-		"window", when == "janela", "username", s.Username, "request_id", RequestID(r.Context()))
+		"window", when == "janela", "sessoes_ativas", active, "username", s.Username, "request_id", RequestID(r.Context()))
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }

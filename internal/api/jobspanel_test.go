@@ -381,3 +381,55 @@ func TestPassarParaHTTPSPeloPainel(t *testing.T) {
 		t.Errorf("já em HTTPS:\n%s", b)
 	}
 }
+
+// Aula 15.12: reiniciar agora com gente na tela pede confirmação, e a página diz quem está.
+func TestReiniciarComGenteConectada(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	h, st, log := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	win := "92fc3b93-0003"
+	maq := "/painel/maquinas/" + win
+	sim := true
+	_, _ = st.SaveInventory(ctx, win, protocol.InventoryReport{SchemaVersion: 1, Hash: "w", OS: protocol.OSInfo{Family: "windows"}})
+	_ = st.SaveScan(ctx, win, protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, Reboot: &protocol.RebootStatus{Pending: &sim}})
+	_ = st.SaveHostState(ctx, win, &protocol.MachineState{CollectedAt: time.Now().UTC(), Users: []protocol.LoggedUser{
+		{Account: `EXEMPLO\fulano`, DisplayName: "Fulano de Tal", Session: protocol.SessionConsole, Active: true},
+		{Account: `EXEMPLO\suporte`, Session: protocol.SessionRDP},
+	}}, "192.0.2.1")
+
+	b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String()
+	for _, tr := range []string{"Conectados agora", `Fulano de Tal <span class="muted">(console)</span>; <code>EXEMPLO\suporte</code> <span class="muted">(Área de Trabalho Remota, desconectada)</span>`,
+		`<input type="checkbox" name="ciente" value="1"> sei que há gente conectada (1 sessão ativa)`} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("página: faltou %q", tr)
+		}
+	}
+	pede := func(form url.Values) string {
+		t.Helper()
+		return local(pagina(h, "POST", maq+"/reiniciar", sessaoAdmin, form))
+	}
+	// Sem confirmar: nada é criado, e a página explica.
+	if l := pede(url.Values{"aviso": {"15"}, "quando": {"agora"}}); l != maq+"?erro=reinicio-usuarios&n=1" {
+		t.Fatalf("sem confirmar: %s", l)
+	}
+	if b := pagina(h, "GET", maq+"?erro=reinicio-usuarios&n=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Há 1 sessão ativa na máquina agora") ||
+		!strings.Contains(b, `class="ativa" aria-current="page">Pendências`) {
+		t.Error("aviso na aba Pendências")
+	}
+	if n, _ := st.DeliverJobs(ctx, win, time.Now().UTC()); len(n) != 0 {
+		t.Fatal("nenhum job sem a confirmação")
+	}
+	// Confirmando: o job sai, e o log diz quantas sessões havia.
+	if l := pede(url.Values{"aviso": {"15"}, "quando": {"agora"}, "ciente": {"1"}}); l != maq+"?criado=1&job=1" {
+		t.Fatalf("confirmado: %s", l)
+	}
+	if !strings.Contains(log.String(), "sessoes_ativas=1") {
+		t.Errorf("log:\n%s", log)
+	}
+	// Só sessões desconectadas: a página não pede a confirmação.
+	_ = st.SaveHostState(ctx, win, &protocol.MachineState{CollectedAt: time.Now().UTC(), Users: []protocol.LoggedUser{
+		{Account: `EXEMPLO\suporte`, Session: protocol.SessionRDP}}}, "192.0.2.1")
+	if b := pagina(h, "GET", maq+"?aba=pendencias", sessaoAdmin, nil).Body.String(); strings.Contains(b, `name="ciente"`) {
+		t.Error("sem sessão ativa, sem a caixa")
+	}
+}

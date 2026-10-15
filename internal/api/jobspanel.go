@@ -172,6 +172,10 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = fmt.Sprintf("Já existe um reinício pedido e ainda em aberto para esta máquina (job %d).", n)
 	case get("erro") == "sem-reinicio":
 		b.Error = "A última busca desta máquina não mostra reinício pendente (ou ela é macOS); nada foi pedido."
+	case get("erro") == "reinicio-usuarios":
+		k, _ := strconv.Atoi(get("n"))
+		b.Error = fmt.Sprintf("Há %d %s na máquina agora. Para reiniciar mesmo assim, marque \"sei que há gente conectada\"; ou escolha a janela do anel. Nada foi pedido.",
+			max(k, 1), plural(max(k, 1), "sessão ativa", "sessões ativas"))
 	case get("erro") == "reinicio-form":
 		b.Error = "Escolha o aviso (5, 15, 30 ou 60 minutos) e quando."
 	case get("erro") == "cancelar" && n > 0:
