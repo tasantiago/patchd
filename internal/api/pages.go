@@ -468,6 +468,7 @@ func (a *api) retireAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	if changed {
 		a.logger.Info("máquina aposentada pelo painel", "machine_id", id, "username", s.Username, "reason", reason,
 			"request_id", RequestID(r.Context()))
+		a.audit(r, s, "maquina.aposentar", id, reason)
 	}
 	http.Redirect(w, r, "/painel/aposentadas?aposentada=1", http.StatusSeeOther)
 }
@@ -489,6 +490,7 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 		return
 	}
 	a.logger.Info("máquina restaurada pelo painel", "machine_id", id, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "maquina.restaurar", id, "")
 	http.Redirect(w, r, machinePath(id)+"?restaurada=1", http.StatusSeeOther)
 }
 

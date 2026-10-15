@@ -242,6 +242,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	if a.limiter.blocked(user, ip, now) {
 		a.count(loginsOf, "senha", "bloqueado")
 		a.logger.Warn("login bloqueado: tentativas demais", "username", logUser, "remote", ip, "request_id", RequestID(r.Context()))
+		a.auditAs(r, logUser, "", "login.bloqueado", "", "tentativas demais")
 		a.renderLogin(w, http.StatusTooManyRequests, loginData{Username: user, Error: "Tentativas demais. Aguarde 15 minutos.", AD: a.directory != nil})
 		return
 	}
@@ -255,6 +256,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		a.count(loginsOf, "senha", "recusado")
 		a.limiter.fail(user, ip, now)
 		a.logger.Warn("login recusado", "username", logUser, "reason", res.reason, "remote", ip, "request_id", RequestID(r.Context()))
+		a.auditAs(r, logUser, "", "login.recusado", "", res.reason)
 		a.renderLogin(w, http.StatusUnauthorized, loginData{Username: user, Error: "Usuário ou senha inválidos.", AD: a.directory != nil})
 		return
 	}
@@ -289,6 +291,7 @@ func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, name, ro
 	})
 	a.logger.Info("login no painel", "username", s.Username, "role", s.Role, "source", s.Source,
 		"remote", remoteIP(r), "request_id", RequestID(r.Context()))
+	a.audit(r, s, "login.ok", "", "perfil "+s.Role)
 	return true
 }
 
@@ -372,6 +375,7 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.logger.Info("saída do painel", "username", s.Username, "remote", remoteIP(r), "request_id", RequestID(r.Context()))
+		a.audit(r, s, "sessao.sair", "", "")
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil})

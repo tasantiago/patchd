@@ -272,6 +272,7 @@ func (a *api) rescanAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	a.logger.Info("job criado pelo painel", "job_id", rec.ID, "machine_id", id, "type", rec.Type, "username", s.Username,
 		"request_id", RequestID(r.Context()))
+	a.audit(r, s, "job.criar", id, fmt.Sprintf("job %d · %s", rec.ID, typeLabel(rec.Type)))
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }
 
@@ -302,6 +303,7 @@ func (a *api) cancelJobAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		return
 	}
 	a.logger.Info("job cancelado pelo painel", "job_id", id, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "job.cancelar", fmt.Sprintf("job %d", id), "")
 	http.Redirect(w, r, fmt.Sprintf("%s?cancelado=1&job=%d", back, id), http.StatusSeeOther)
 }
 

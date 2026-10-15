@@ -134,6 +134,7 @@ func (a *api) approveThirdPartyAction(w http.ResponseWriter, r *http.Request, s 
 		return
 	}
 	a.logger.Info("instalador de terceiros aprovado", "app", app, "version", ver, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "terceiros.aprovar", app, ver)
 	http.Redirect(w, r, back+"&aprovado=1", http.StatusSeeOther)
 }
 
@@ -152,6 +153,7 @@ func (a *api) revokeThirdPartyAction(w http.ResponseWriter, r *http.Request, s p
 	if removed {
 		a.logger.Info("aprovação de instalador de terceiros revogada", "app", app, "version", ver, "username", s.Username,
 			"request_id", RequestID(r.Context()))
+		a.audit(r, s, "terceiros.revogar", app, ver)
 	}
 	http.Redirect(w, r, tpProgramPath(app)+"&revogado=1", http.StatusSeeOther)
 }

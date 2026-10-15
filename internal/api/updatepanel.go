@@ -125,6 +125,7 @@ func (a *api) updateAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	a.logger.Info("job criado pelo painel", "job_id", rec.ID, "machine_id", id, "type", rec.Type, "packages", len(params.Packages),
 		"window", when == "janela", "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "job.criar", id, fmt.Sprintf("job %d · %s · %d pacote(s)", rec.ID, typeLabel(rec.Type), len(params.Packages)))
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }
 

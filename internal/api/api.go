@@ -94,6 +94,9 @@ type Store interface {
 	DeletePanelUser(ctx context.Context, name string) (bool, error)
 	// Sessões abertas e contagem dos jobs no banco (Aula 15.4).
 	PanelSessions(ctx context.Context) ([]store.PanelSessionRow, error)
+	// Trilha de auditoria (Aula 15.13).
+	RecordAudit(ctx context.Context, e store.AuditEvent) error
+	AuditEvents(ctx context.Context, f store.AuditFilter) ([]store.AuditEvent, error)
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	JobCounts(ctx context.Context, since time.Time) ([]store.JobCount, error)
 	JobsFinishedSince(ctx context.Context, states []string, since time.Time) (int, error)

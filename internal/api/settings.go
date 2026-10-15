@@ -285,6 +285,7 @@ func (a *api) agentFile(w http.ResponseWriter, r *http.Request, s panel.Session)
 		return
 	}
 	a.logger.Info("agente baixado pelo painel", "file", name, "version", ver, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "agente.baixar", name, ver)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeContent(w, r, name, st.ModTime(), f)
@@ -352,6 +353,7 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "expires_at", expires.Format(time.RFC3339),
 		"username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), fmt.Sprintf("%d uso(s), vence %s", uses, expires.Format(time.RFC3339)))
 	v := tokenCreatedView{pageBase: a.baseFor(s, "Token de registro", "configuracao"), ID: id, Token: plain,
 		Expires: expires.Format("02/01/2006 15:04") + " UTC", Note: note, Uses: uses, CA: len(a.agentCA) > 0}
 	v.Server = a.publicURL
@@ -412,5 +414,6 @@ func (a *api) revokeTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 		return
 	}
 	a.logger.Info("token de registro revogado pelo painel", "token_id", id, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "token.revogar", fmt.Sprintf("token %d", id), "")
 	http.Redirect(w, r, fmt.Sprintf("/painel/configuracao?aba=agente&revogado=%d", id), http.StatusSeeOther)
 }

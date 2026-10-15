@@ -139,6 +139,7 @@ func (a *api) approveFixAction(w http.ResponseWriter, r *http.Request, s panel.S
 	// Uma linha para a decisão: cada item aprovado fica no banco, com quem e a observação.
 	a.logger.Info("correção aprovada pelo painel", "fixed_in", fix, "aprovados", len(created), "ja_aprovados", already,
 		"exploradas", exploited, "conferencia", digest, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "patch.aprovar_correcao", fix, fmt.Sprintf("%d aprovada(s), %d já aprovada(s), %d explorada(s) · conferência %s", len(created), already, exploited, digest))
 	http.Redirect(w, r, withParams((patchQuery{Status: "aprovados", Q: fix}).href(), "lote", strconv.Itoa(len(created)),
 		"ja", strconv.Itoa(already)), http.StatusSeeOther)
 }

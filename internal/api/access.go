@@ -187,6 +187,7 @@ func (a *api) endSessionAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	a.logger.Info("sessão encerrada pelo painel", "session_user", target.Username, "source", target.Source, "username", s.Username,
 		"request_id", RequestID(r.Context()))
+	a.audit(r, s, "sessao.encerrar", target.Username, "origem "+panel.SourceLabel(target.Source))
 	http.Redirect(w, r, "/painel/configuracao?aba=acesso&"+url.Values{"encerrada": {target.Username}}.Encode(), http.StatusSeeOther)
 }
 
@@ -211,6 +212,7 @@ func (a *api) endUserSessionsAction(w http.ResponseWriter, r *http.Request, s pa
 		return
 	}
 	a.logger.Info("sessões encerradas pelo painel", "session_user", user, "count", n, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "sessao.encerrar_todas", user, fmt.Sprintf("%d sessão(ões)", n))
 	http.Redirect(w, r, "/painel/configuracao?aba=acesso&"+url.Values{"encerradas": {strconv.FormatInt(n, 10)}, "de": {user}}.Encode(), http.StatusSeeOther)
 }
 
@@ -275,6 +277,7 @@ func (a *api) testADAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	view := adResultLines(user, res)
 	a.logger.Info("teste de login no AD pelo painel", "tested_user", user, "ok", view.OK, "role", res.Role, "username", s.Username,
 		"request_id", RequestID(r.Context()))
+	a.audit(r, s, "ad.testar", user, fmt.Sprintf("ok=%t perfil=%q", view.OK, res.Role))
 	a.renderAccess(w, r, s, http.StatusOK, func(v *settingsView) { v.Access.ADResult = &view })
 }
 
@@ -330,6 +333,7 @@ func (a *api) testOIDCAction(w http.ResponseWriter, r *http.Request, s panel.Ses
 	defer cancel()
 	err := a.oidc.Probe(ctx)
 	a.logger.Info("teste da descoberta do RHBK pelo painel", "ok", err == nil, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "oidc.testar", "", fmt.Sprintf("ok=%t", err == nil))
 	a.renderAccess(w, r, s, http.StatusOK, func(v *settingsView) {
 		v.Access.OIDCOK = err == nil
 		v.Access.OIDCResult = "Descoberta conferida: o RHBK respondeu e se apresenta com o emissor configurado."
@@ -387,6 +391,7 @@ func (a *api) createLocalUserAction(w http.ResponseWriter, r *http.Request, s pa
 		return
 	}
 	a.logger.Info("usuário local criado pelo painel", "local_user", name, "role", role, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "usuario.criar", name, "perfil "+role)
 	a.localPasswordPage(w, r, s, passwordView{User: name, Role: role, Password: pw, Created: true})
 }
 
@@ -447,6 +452,7 @@ func (a *api) resetLocalPasswordAction(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	a.logger.Info("senha de usuário local trocada pelo painel", "local_user", u.Name, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "usuario.senha", u.Name, "senha nova gerada pelo painel")
 	a.localPasswordPage(w, r, s, passwordView{User: u.Name, Role: u.Role, Password: pw})
 }
 
@@ -461,6 +467,7 @@ func (a *api) deleteLocalUserAction(w http.ResponseWriter, r *http.Request, s pa
 		return
 	}
 	a.logger.Info("usuário local removido pelo painel", "local_user", u.Name, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "usuario.remover", u.Name, "")
 	http.Redirect(w, r, "/painel/configuracao?aba=acesso&"+url.Values{"removido": {u.Name}}.Encode(), http.StatusSeeOther)
 }
 

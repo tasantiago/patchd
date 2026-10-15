@@ -113,6 +113,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 		}
 		a.count(loginsOf, "rhbk", "recusado")
 		a.logger.Warn("login pelo RHBK recusado", args...)
+		a.auditAs(r, "", panel.SourceOIDC, "login.recusado", "", reason)
 		a.renderLogin(w, status, loginData{Error: msg, AD: a.directory != nil})
 	}
 	if e := q.Get("error"); e != "" {
@@ -143,6 +144,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 		a.count(loginsOf, "rhbk", "sem_grupo")
 		a.logger.Warn("login pelo RHBK recusado", "reason", "sem grupo do painel", "username", id.Username,
 			"grupos", id.Roles, "remote", remoteIP(r), "request_id", RequestID(r.Context()))
+		a.auditAs(r, id.Username, panel.SourceOIDC, "login.recusado", "", "sem grupo do painel")
 		a.renderLogin(w, http.StatusForbidden, loginData{Error: "Seu usuário não está em nenhum grupo do painel.", AD: a.directory != nil})
 		return
 	case err != nil:
