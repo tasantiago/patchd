@@ -16,7 +16,7 @@ func TestJanelasPeloPainel(t *testing.T) {
 
 	// Leitura vê a tabela, sem formulário; o admin vê o formulário com o fuso sugerido.
 	b := pagina(h, "GET", "/painel/aneis", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "<h1>Anéis e janelas</h1>") || !strings.Contains(b, "1 (padrão)") || strings.Contains(b, `action="/painel/aneis/janela"`) {
+	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Anéis e janelas</span></h1>") || !strings.Contains(b, "1 (padrão)") || strings.Contains(b, `action="/painel/aneis/janela"`) {
 		t.Errorf("leitura:\n%s", b)
 	}
 	b = pagina(h, "GET", "/painel/aneis", sessaoAdmin, nil).Body.String()
@@ -161,5 +161,30 @@ func TestAnelEmLoteNaFrota(t *testing.T) {
 	r = pagina(h, "POST", "/painel/aneis/maquinas", sessaoAdmin, url.Values{"anel": {"2"}, "estado": {"x&admin=1"}})
 	if local(r) != "/painel/?erro=nenhuma" {
 		t.Errorf("sem marcadas: %s", local(r))
+	}
+}
+
+// Aula 15.11: Campanhas, Jobs e Anéis viraram abas de uma entrada só do menu, Automação.
+func TestMenuAutomacao(t *testing.T) {
+	h, _, _ := ambientePaginas(t)
+	menu := `<a href="/painel/campanhas" class="ativo" aria-current="page"><span class="ic">🚀</span>Automação</a>`
+	for path, aba := range map[string]string{
+		"/painel/campanhas": `<a href="/painel/campanhas" class="ativa" aria-current="page">Campanhas</a>`,
+		"/painel/jobs":      `<a href="/painel/jobs" class="ativa" aria-current="page">Jobs</a>`,
+		"/painel/aneis":     `<a href="/painel/aneis" class="ativa" aria-current="page">Anéis e janelas</a>`,
+	} {
+		b := pagina(h, "GET", path, sessaoAdmin, nil).Body.String()
+		if !strings.Contains(b, menu) || !strings.Contains(b, aba) || strings.Count(b, `class="ativa"`) != 1 {
+			t.Errorf("%s: menu ou aba", path)
+		}
+		for _, velho := range []string{"</span>Jobs</a>", "</span>Campanhas</a>", "</span>Anéis</a>"} {
+			if strings.Contains(b, velho) {
+				t.Errorf("%s: o menu ainda tem %q", path, velho)
+			}
+		}
+	}
+	if b := pagina(h, "GET", "/painel/patch?aba=geral", sessaoAdmin, nil).Body.String(); strings.Contains(b, menu) ||
+		!strings.Contains(b, `<a href="/painel/campanhas" ><span class="ic">🚀</span>Automação</a>`) {
+		t.Error("fora da Automação, o item do menu aparece sem destaque")
 	}
 }
