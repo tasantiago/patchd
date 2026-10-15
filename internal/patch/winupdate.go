@@ -53,27 +53,19 @@ const (
 	orcAborted            = 5
 )
 
-// winCriteria monta a busca pelos UpdateIDs pedidos, sem IsInstalled: uma já instalada
-// volta marcada como tal, e o job a dá por feita. O "or" só vale no nível de cima do
-// critério do WUA, que é como ele é usado aqui. Os IDs já passaram pelo formato de GUID.
-func winCriteria(updates []jobs.WinUpdate) string {
-	parts := make([]string, len(updates))
-	for i, u := range updates {
-		parts[i] = "UpdateID='" + strings.ToLower(u.ID) + "'"
-	}
-	return strings.Join(parts, " or ")
-}
-
-// planWinUpdate confere o que a busca devolveu contra o pedido: cada UpdateID tem de vir,
-// com o KB pedido. Devolve os índices (em found) a instalar e os já instalados. Faltou
-// algum: recusa o job inteiro, sem instalar nada (o pedido não confere com esta máquina).
+// planWinUpdate confere o pedido contra a busca do instalador, que é a mesma da busca
+// online (IsInstalled=0 and IsHidden=0): cada UpdateID tem de estar lá, com o KB pedido.
+// Aula 16.1b: a busca não filtra por UpdateID. O critério UpdateID='…' devolveu SOAP fault
+// (0x80244007) na fonte da VM do lab; o critério da busca de sempre funciona nela, e o
+// filtro passou para cá. Devolve os índices (em found) a instalar e os já instalados (só
+// aparecem se a busca os trouxer). Faltou algum: recusa o job inteiro, sem instalar nada.
 func planWinUpdate(req []jobs.WinUpdate, found []wuaTarget) (todo, already []int, err error) {
 	var problems []string
 	for _, r := range req {
 		i := slices.IndexFunc(found, func(t wuaTarget) bool { return strings.EqualFold(t.UpdateID, r.ID) })
 		switch {
 		case i < 0:
-			problems = append(problems, r.Label()+" não é oferecida a esta máquina pela fonte do Windows Update dela (WSUS sem aprovação, substituída por uma mais nova ou já instalada?)")
+			problems = append(problems, r.Label()+" não está pendente na fonte do Windows Update desta máquina (já instalada, substituída por uma mais nova ou WSUS sem aprovação?)")
 		case r.KB != "" && !slices.Contains(found[i].KBs, r.KB):
 			problems = append(problems, fmt.Sprintf("o UpdateID %s é de %s, não do KB%s pedido", r.ID[:8], found[i].label(), r.KB))
 		case found[i].Installed:
@@ -97,6 +89,7 @@ var retryHResults = map[uint32]bool{
 // hresultNames: os códigos que mais aparecem, com o nome que a documentação da Microsoft usa.
 var hresultNames = map[uint32]string{
 	0x80240016: "WU_E_INSTALL_NOT_ALLOWED",
+	0x80244007: "WU_E_PT_SOAPCLIENT_SOAPFAULT",
 	0x80240017: "WU_E_NOT_APPLICABLE",
 	0x8024001E: "WU_E_SERVICE_STOP",
 	0x80240022: "WU_E_ALL_UPDATES_FAILED",

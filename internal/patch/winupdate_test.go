@@ -14,13 +14,6 @@ const (
 	idNET = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
 )
 
-func TestWinCriteria(t *testing.T) {
-	got := winCriteria([]jobs.WinUpdate{{ID: strings.ToUpper(idCU)}, {ID: idNET}})
-	if got != "UpdateID='"+idCU+"' or UpdateID='"+idNET+"'" {
-		t.Errorf("critério: %s", got)
-	}
-}
-
 func TestPlanWinUpdate(t *testing.T) {
 	found := []wuaTarget{
 		{UpdateID: idNET, KBs: []string{"5130001"}, Installed: true},
@@ -32,7 +25,7 @@ func TestPlanWinUpdate(t *testing.T) {
 	}
 	// A fonte não devolveu (WSUS sem aprovação): recusa, sem instalar nada.
 	_, _, err = planWinUpdate([]jobs.WinUpdate{{ID: idCU, KB: "5127648"}, {ID: "11111111-2222-4333-8444-555555555555", KB: "5999999"}}, found)
-	if !errors.Is(err, jobs.ErrNotPending) || !strings.Contains(err.Error(), "KB5999999 não é oferecida") {
+	if !errors.Is(err, jobs.ErrNotPending) || !strings.Contains(err.Error(), "KB5999999 não está pendente") {
 		t.Errorf("faltando: %v", err)
 	}
 	// O UpdateID veio, mas de outro KB: recusa.
@@ -71,5 +64,10 @@ func TestResultadoDaInstalacao(t *testing.T) {
 	}
 	if err := comFailure("instalação", &wincom.Error{Op: "Install", HResult: 0x80240016}); !errors.Is(err, jobs.ErrRetry) {
 		t.Errorf("chamada COM recusada por estar ocupado: %v", err)
+	}
+	// Aula 16.1b: o erro da busca do job 40 do lab, com o nome.
+	if err := comFailure("busca", &wincom.Error{Op: "Search", HResult: 0x80244007}); errors.Is(err, jobs.ErrRetry) ||
+		err.Error() != "busca: 0x80244007 WU_E_PT_SOAPCLIENT_SOAPFAULT" {
+		t.Errorf("SOAP fault: %v", err)
 	}
 }
