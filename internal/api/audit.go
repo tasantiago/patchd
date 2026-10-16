@@ -65,6 +65,8 @@ var auditActions = []struct{ Key, Label string }{
 	{"terceiros.revogar", "Aprovação de instalador revogada"},
 	{"job.criar", "Job criado"},
 	{"job.cancelar", "Job cancelado"},
+	{"autoatendimento.oferta", "Oferta do autoatendimento gravada"},
+	{"autoatendimento.remover", "Programa fora do autoatendimento"},
 	{"campanha.criar", "Campanha criada"},
 	{"campanha.alterar", "Campanha alterada"},
 	{"janela.definir", "Janela definida"},

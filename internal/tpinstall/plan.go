@@ -238,3 +238,14 @@ func Counts(ds []Decision) map[string]int {
 	}
 	return out
 }
+
+// ForNewInstall (Aula 17.1): o instalador para uma instalação nova, numa máquina que não tem
+// o programa. Sem instalação para seguir, vale o tipo da regra (o 7-Zip exige exe: instalar o
+// MSI criaria outro padrão na frota); regra sem tipo, qualquer família.
+func ForNewInstall(app thirdparty.App, pkgs []store.ThirdPartyPackage, arch string) *store.ThirdPartyPackage {
+	types := append(slices.Clone(families[KindExe]), families[KindMSI]...)
+	if app.Install != nil && app.Install.Type != "" {
+		types = []string{app.Install.Type}
+	}
+	return newest(pkgs, app.ID, types, arch)
+}

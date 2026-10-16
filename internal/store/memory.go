@@ -43,6 +43,8 @@ type Memory struct {
 
 	audit    []AuditEvent // trilha de auditoria (Aula 15.13), na ordem de gravação
 	auditSeq int64
+
+	offers map[string]SelfServiceOffer // autoatendimento (Aula 17.1), por programa
 }
 
 type memMachine struct {

@@ -35,6 +35,10 @@ type Store interface {
 	LatestInventory(ctx context.Context, machineID string) (protocol.InventoryReport, bool, error)
 	SaveScan(ctx context.Context, machineID string, rep protocol.PatchScanReport) error
 	LatestScan(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
+	// Autoatendimento (Aula 17.1).
+	SelfServiceOffers(ctx context.Context) ([]store.SelfServiceOffer, error)
+	SetSelfServiceOffer(ctx context.Context, o store.SelfServiceOffer) error
+	DeleteSelfServiceOffer(ctx context.Context, app string) (bool, error)
 	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
 	SourceFailures(ctx context.Context, machineID string) ([]store.SourceFailure, error)
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
@@ -211,6 +215,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
 	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))
 	mux.Handle("POST /painel/configuracao/agente/token/{id}/revogar", a.sameOrigin(a.adminAction(a.revokeTokenAction)))
+	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))
 	mux.Handle("POST /painel/configuracao/acesso/testar-oidc", a.sameOrigin(a.adminAction(a.testOIDCAction)))
 	mux.Handle("POST /painel/configuracao/acesso/usuarios", a.sameOrigin(a.adminAction(a.createLocalUserAction)))
