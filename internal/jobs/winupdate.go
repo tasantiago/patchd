@@ -169,3 +169,64 @@ func PolicySourceProblem(rep protocol.PatchScanReport) string {
 	}
 	return "a busca não traz a fonte da política (wua-default)"
 }
+
+// Campanha "atualizar o Windows" (Aula 16.4): a campanha leva KBs; cada máquina do anel
+// recebe os que corrigem alguma CVE aprovada dela e que a fonte da política mostra pendentes.
+
+var kbTarget = regexp.MustCompile(`^(?:KB)?([0-9]{4,8})$`)
+
+// NormalizeKB aceita "KB5127648", "kb5127648" ou "5127648" e devolve "KB5127648".
+func NormalizeKB(s string) (string, bool) {
+	m := kbTarget.FindStringSubmatch(strings.ToUpper(strings.TrimSpace(s)))
+	if m == nil {
+		return "", false
+	}
+	return "KB" + m[1], true
+}
+
+var kbInFixedIn = regexp.MustCompile(`KB([0-9]{4,8})`)
+
+// KBsInPending devolve, dos KBs pedidos ("KB5127648"), os que aparecem no FixedIn de alguma
+// pendência (já filtradas pela aprovação), na ordem pedida, só os dígitos.
+func KBsInPending(items []protocol.PendingItem, want []string) []string {
+	in := map[string]bool{}
+	for _, it := range items {
+		for _, m := range kbInFixedIn.FindAllStringSubmatch(it.FixedIn, -1) {
+			in[m[1]] = true
+		}
+	}
+	var out []string
+	for _, w := range want {
+		if kb, ok := NormalizeKB(w); ok && in[kb[2:]] && !slices.Contains(out, kb[2:]) {
+			out = append(out, kb[2:])
+		}
+	}
+	return out
+}
+
+// PolicyWinUpdates monta o job com os KBs que a fonte da política mostra pendentes na busca
+// atual. skip (sem job): a fonte falhou, nenhum KB está nela, ou só no catálogo offline.
+func PolicyWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdateParams, string) {
+	if PolicySourceProblem(rep) != "" {
+		return WinUpdateParams{}, "fonte da política falhando"
+	}
+	var use []string
+	offline := false
+	for _, kb := range kbs {
+		_, notFound, off := WinUpdatesForKBs(rep, []string{kb})
+		switch {
+		case len(off) > 0:
+			offline = true
+		case len(notFound) == 0:
+			use = append(use, kb)
+		}
+	}
+	if len(use) == 0 {
+		if offline {
+			return WinUpdateParams{}, "só no catálogo offline"
+		}
+		return WinUpdateParams{}, "KB fora da busca"
+	}
+	p, _, _ := WinUpdatesForKBs(rep, use)
+	return p, ""
+}

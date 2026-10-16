@@ -77,8 +77,11 @@ func TestAtualizacoesDoWindowsPeloPainel(t *testing.T) {
 	if !strings.Contains(b, `<td class="num">2 <span class="expl">1 explorada(s)</span></td>`) || !strings.Contains(b, ">Instalar KB5127648</button>") {
 		t.Error("aprovado: faltou a contagem ou o botão")
 	}
-	if strings.Contains(pagina(h, "GET", aba, sessaoTeste, nil).Body.String(), "/windows/instalar") {
-		t.Error("leitura não vê o botão")
+	if !strings.Contains(b, `href="/painel/campanhas?kb=KB5127648&amp;tipo=windows_update#nova">campanha por anel</a>`) {
+		t.Error("aprovado: faltou o link da campanha por anel (Aula 16.4)")
+	}
+	if b := pagina(h, "GET", aba, sessaoTeste, nil).Body.String(); strings.Contains(b, "/windows/instalar") || strings.Contains(b, "campanha por anel") {
+		t.Error("leitura não vê o botão nem o link da campanha")
 	}
 
 	// 3. O POST cria o job com o UpdateID da busca; um segundo pedido esbarra no aberto.

@@ -11,6 +11,7 @@ import (
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/window"
 )
 
@@ -185,5 +186,54 @@ func TestControlarCampanhaPeloPainel(t *testing.T) {
 	}
 	if l := pede("cancelar"); l != det+"?erro=estado" {
 		t.Errorf("cancelar de novo: %s", l)
+	}
+}
+
+// Aula 16.4: a campanha do Windows pelo painel leva KBs, e a conferência avisa do KB sem
+// nenhuma CVE aprovada.
+func TestCampanhaDoWindowsPeloPainel(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	_, _ = st.ApprovePatch(ctx, store.PatchApproval{Item: "CVE-2026-1", FixedIn: "26300.9711 (KB5127648)", ApprovedBy: "thyago", ApprovedAt: time.Now().UTC()})
+
+	if b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="windows_update"`) {
+		t.Error("faltou o tipo no formulário")
+	}
+	// Vindo do cartão da máquina: o KB já preenchido; KB fora do formato é ignorado.
+	b := pagina(h, "GET", "/painel/campanhas?tipo=windows_update&kb=kb5127648", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `value="windows_update" checked`) || !strings.Contains(b, `value="KB5127648" placeholder`) || !strings.Contains(b, `value="Windows KB5127648"`) {
+		t.Error("pré-preenchido")
+	}
+	if b := pagina(h, "GET", "/painel/campanhas?tipo=windows_update&kb=x%22", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="rescan" checked`) {
+		t.Error("KB ruim não preenche")
+	}
+	for nome, c := range map[string]struct {
+		f   url.Values
+		msg string
+	}{
+		"sem KB":  {formCampanha("tipo", "windows_update"), "Informe os KBs"},
+		"KB ruim": {formCampanha("tipo", "windows_update", "fontes", "KB51; x"), "KBs: como aparecem"},
+	} {
+		if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, c.f); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), c.msg) {
+			t.Errorf("%s: %d", nome, r.Code)
+		}
+	}
+	f := formCampanha("tipo", "windows_update", "fontes", "kb5127648, 5130001")
+	b = pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f).Body.String()
+	if !strings.Contains(b, "instalar atualizações do Windows · KBs: KB5127648, KB5130001") || !strings.Contains(b, "O KB5130001 não tem nenhuma CVE aprovada") ||
+		strings.Contains(b, "O KB5127648 não tem") || !strings.Contains(b, "O job não reinicia") {
+		t.Errorf("conferência:\n%s", b)
+	}
+	f.Set("confirmar", "1")
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); local(r) != "/painel/campanhas/1?criada=1" {
+		t.Fatalf("criar: %d %s", r.Code, local(r))
+	}
+	c, _, _ := st.Campaign(ctx, 1)
+	if c.Type != jobs.TypeWinUpdate || strings.Join(c.Sources, ",") != "KB5127648,KB5130001" {
+		t.Errorf("campanha: %+v", c)
+	}
+	if b := pagina(h, "GET", "/painel/campanhas/1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "<dt>KBs</dt><dd>KB5127648, KB5130001</dd>") {
+		t.Error("detalhe: faltou KBs")
 	}
 }

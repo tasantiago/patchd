@@ -152,6 +152,12 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 			f.Type, f.Program = jobs.TypeThirdParty, q.Get("programa")
 			f.Name = f.Program
 		}
+		// Vindo do cartão do Windows na máquina (Aula 16.4): o KB já preenchido.
+		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeWinUpdate {
+			if kb, ok := jobs.NormalizeKB(q.Get("kb")); ok {
+				f.Type, f.Sources, f.Name = jobs.TypeWinUpdate, kb, "Windows "+kb
+			}
+		}
 		var err error
 		if f.Rings, err = a.ringChoices(r, nil); err != nil {
 			a.internalError(w, r, "listar anéis", err)
@@ -225,8 +231,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		c.App, c.Version = parts[0], parts[1]
 	}
 	switch {
-	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && (f.Type != jobs.TypeThirdParty || a.tpManifest == nil):
-		return c, f, "Escolha o tipo: buscar atualizações, atualizar pacotes ou instalar programa de terceiros."
+	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && f.Type != jobs.TypeWinUpdate && (f.Type != jobs.TypeThirdParty || a.tpManifest == nil):
+		return c, f, "Escolha o tipo: buscar atualizações, atualizar pacotes, instalar atualizações do Windows ou instalar programa de terceiros."
 	case len(f.Chosen) == 0:
 		return c, f, "Marque ao menos um anel."
 	case !containsInt(observeHours, f.ObserveH):
@@ -245,8 +251,22 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 				c.Sources = append(c.Sources, s)
 			}
 		}
+	} else if f.Type == jobs.TypeWinUpdate {
+		// Aula 16.4: no Windows, o campo leva os KBs (KB5127648, ou só os dígitos).
+		for _, s := range strings.FieldsFunc(f.Sources, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\r' || r == '\t' }) {
+			kb, ok := jobs.NormalizeKB(s)
+			if !ok {
+				return c, f, "KBs: como aparecem em \"Corrigido em\" (ex.: KB5127648), separados por vírgula."
+			}
+			if !containsStr(c.Sources, kb) {
+				c.Sources = append(c.Sources, kb)
+			}
+		}
+		if len(c.Sources) == 0 {
+			return c, f, "Informe os KBs da campanha (ex.: KB5127648)."
+		}
 	} else if f.Sources != "" {
-		return c, f, "Só a campanha de atualizar pacotes leva fontes."
+		return c, f, "Só a campanha de atualizar pacotes leva fontes, e a do Windows, KBs."
 	}
 	if err := c.Validate(); err != nil {
 		return c, f, "Campanha inválida: " + err.Error() + "."
@@ -387,6 +407,19 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			for _, src := range c.Sources {
 				if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return ap.Item == src }) {
 					v.Warnings = append(v.Warnings, fmt.Sprintf("A fonte %s não tem nenhuma correção aprovada em Patch: hoje, nenhuma máquina receberia essa fonte.", src))
+				}
+			}
+		}
+		if c.Type == jobs.TypeWinUpdate {
+			v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que o anel for liberado, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações. O job não reinicia: o reinício é pedido à parte.")
+			approvals, err := a.store.PatchApprovals(r.Context())
+			if err != nil {
+				a.internalError(w, r, "listar aprovações", err)
+				return
+			}
+			for _, kb := range c.Sources {
+				if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return strings.Contains(ap.FixedIn, "("+kb+")") }) {
+					v.Warnings = append(v.Warnings, fmt.Sprintf("O %s não tem nenhuma CVE aprovada em Patch: hoje, nenhuma máquina o receberia.", kb))
 				}
 			}
 		}

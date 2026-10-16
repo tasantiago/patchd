@@ -994,7 +994,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if .Problem}}<p class="aviso erro">{{.Problem}}</p>{{end}}
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Atualização</th><th>Corrige até</th><th>CVEs aprovadas</th><th>Aguardando aprovação</th><th>Na busca desta máquina</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td><code>KB{{.KB}}</code></td><td>{{.FixedIn}}</td><td class="num">{{.Approved}}{{if .Exploit}} <span class="expl">{{.Exploit}} explorada(s)</span>{{end}}</td>
+<tbody>{{range .Rows}}<tr><td><code>KB{{.KB}}</code>{{if and $.Admin .Approved}} <a class="muted" href="{{.CampaignHref}}">campanha por anel</a>{{end}}</td><td>{{.FixedIn}}</td><td class="num">{{.Approved}}{{if .Exploit}} <span class="expl">{{.Exploit}} explorada(s)</span>{{end}}</td>
 <td class="num">{{if .Waiting}}<a href="{{.WaitingHref}}">{{.Waiting}}</a>{{else}}0{{end}}</td>
 <td><span class="estado {{.Class}}">{{.Label}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma correção do Windows pendente nesta máquina na avaliação de agora.</p>{{end}}
@@ -1077,10 +1077,11 @@ var pages = template.Must(template.New("").Parse(`
 <label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro">
 <span>Tipo</span><span><label><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}> buscar atualizações</label>
 <label><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}> atualizar pacotes (Linux)</label>
+<label><input type="radio" name="tipo" value="windows_update" {{if eq .Form.Type "windows_update"}}checked{{end}}> instalar atualizações do Windows (KBs)</label>
 {{if .Form.TPOn}}<label><input type="radio" name="tipo" value="thirdparty" {{if eq .Form.Type "thirdparty"}}checked{{end}}> instalar programa de terceiros (Windows)</label>{{end}}</span>
 {{if .Form.TPOn}}<label for="programa">Programa</label><span>{{if .Form.Programs}}<select id="programa" name="programa">{{range .Form.Programs}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <span class="muted">só no programa de terceiros: as versões aprovadas e guardadas</span>{{else}}<span class="muted">Nenhuma versão aprovada e guardada: aprove na página do programa, em Patch.</span>{{end}}</span>{{end}}
-<label for="fontes">Fontes</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="só no update: pacotes fonte das pendências, ex.: curl, bluez">
+<label for="fontes">Fontes ou KBs</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="update: pacotes fonte, ex.: curl, bluez · Windows: KBs, ex.: KB5127648">
 <span>Anéis</span><span>{{range .Form.Rings}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label><br>{{end}}</span>
 <label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <span>Quando</span><span><label><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}> com prazo de</label>
@@ -1094,7 +1095,7 @@ var pages = template.Must(template.New("").Parse(`
 <h1>Conferir a campanha</h1>
 <div class="card"><dl class="dados">
 <dt>Nome</dt><dd>{{.Form.Name}}</dd>
-<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · fontes: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}</dd>
+<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada anel concluído</dd>
 </dl></div>
@@ -1118,7 +1119,7 @@ var pages = template.Must(template.New("").Parse(`
 <h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
 <div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
-<dt>{{if eq .C.Type "thirdparty"}}Programa{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
+<dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.Observe}}</dd>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{.C.Detail}}{{else}}—{{end}}</dd>

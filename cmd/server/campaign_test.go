@@ -140,3 +140,38 @@ func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
 		t.Errorf("list:\n%s", o)
 	}
 }
+
+// Aula 16.4: a campanha do Windows pela linha de comando leva KBs normalizados.
+func TestCampanhaDoWindowsPelaLinhaDeComando(t *testing.T) {
+	ctx := context.Background()
+	mem := store.NewMemory()
+	roda := func(args ...string) (int, string, string) {
+		var o, e bytes.Buffer
+		code := campaignCommand(ctx, mem, nil, args, time.Now().UTC(), &o, &e)
+		return code, o.String(), e.String()
+	}
+	for _, c := range []struct {
+		args []string
+		msg  string
+	}{
+		{[]string{"create", "-type", "windows_update", "-rings", "0"}, "-kb vai com -type windows_update"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-kb", "5127648", "-rings", "0"}, "-kb vai com"},
+		{[]string{"create", "-type", "windows_update", "-kb", "5127648", "-sources", "curl", "-rings", "0"}, "sem -sources"},
+		{[]string{"create", "-type", "windows_update", "-kb", "KB51x", "-rings", "0"}, "fora do formato"},
+	} {
+		if code, _, e := roda(c.args...); code != exitConfig || !strings.Contains(e, c.msg) {
+			t.Errorf("%v: %d %s", c.args, code, e)
+		}
+	}
+	code, o, e := roda("create", "-type", "windows_update", "-kb", "kb5127648, 5127648,KB5130001", "-rings", "0,1", "-window")
+	if code != exitOK || strings.TrimSpace(o) != "1" {
+		t.Fatalf("create: %d %q %s", code, o, e)
+	}
+	c, _, _ := mem.Campaign(ctx, 1)
+	if c.Name != "Windows KB5127648, KB5130001" || strings.Join(c.Sources, ",") != "KB5127648,KB5130001" || !c.UseWindow {
+		t.Errorf("campanha: %+v", c)
+	}
+	if _, o, _ := roda("show", "-id", "1"); !strings.Contains(o, "tipo: windows_update (KBs: KB5127648, KB5130001)") {
+		t.Errorf("show:\n%s", o)
+	}
+}

@@ -2,6 +2,7 @@ package campaign_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -333,5 +334,74 @@ func TestCampanhaComAdiados(t *testing.T) {
 	}
 	if c := b.passo(id2, at); c.State != campaign.StatePaused || !strings.Contains(c.Detail, "adiado na tentativa 24 de 24") {
 		t.Errorf("esgotadas: %+v", c)
+	}
+}
+
+// Aula 16.4: a campanha do Windows leva KBs. Cada máquina recebe os que corrigem alguma CVE
+// aprovada dela e que a fonte da política mostra; quem não pode fica fora, com o motivo.
+func TestCampanhaDoWindows(t *testing.T) {
+	a := novoAmbiente(t)
+	ctx := context.Background()
+	const cu = "0b9b6f0c-1d2e-4f3a-9b8c-7d6e5f4a3b2c"
+	fix := "26300.9711 (KB5127648)"
+	pend := map[string][]protocol.PendingItem{
+		"p1": {{ID: "CVE-2026-1", FixedIn: fix}},
+		"a1": {{ID: "CVE-2026-1", FixedIn: fix}},
+		"a2": {{ID: "CVE-2026-1", FixedIn: fix}},
+		// b1 sem nenhuma CVE aprovada do KB
+	}
+	busca := func(def protocol.ScanResult) protocol.PatchScanReport {
+		return protocol.PatchScanReport{Scans: []protocol.ScanResult{def,
+			{Source: "wua-offline", Missing: []protocol.MissingUpdate{{ID: cu, KBs: []string{"5127648"}}}}}}
+	}
+	scans := map[string]protocol.PatchScanReport{
+		"p1": busca(protocol.ScanResult{Source: "wua-default", Missing: []protocol.MissingUpdate{{ID: cu, KBs: []string{"5127648"}}}}),
+		"a1": busca(protocol.ScanResult{Source: "wua-default", Error: "Search: HRESULT 0x80244007"}),
+		"a2": busca(protocol.ScanResult{Source: "wua-default", Missing: []protocol.MissingUpdate{}}),
+	}
+	a.e.Pending = func(_ context.Context, id string) ([]protocol.PendingItem, bool, error) { return pend[id], true, nil }
+	a.e.Scan = func(_ context.Context, id string) (protocol.PatchScanReport, bool, error) {
+		r, ok := scans[id]
+		return r, ok, nil
+	}
+	if err := (campaign.Campaign{Name: "x", Type: jobs.TypeWinUpdate, Sources: []string{"5127648"}, Rings: []int{0}, TTL: time.Hour}).Validate(); err == nil {
+		t.Error("KB fora do formato normalizado deveria recusar")
+	}
+	id := a.cria(campaign.Campaign{Name: "outubro", Type: jobs.TypeWinUpdate, Sources: []string{"KB5127648"}, Rings: []int{0, 1, 2},
+		TTL: 6 * time.Hour, CreatedBy: "thyago"})
+
+	c := a.passo(id, 0)
+	l, _ := a.st.CampaignJobs(ctx, id, 0)
+	if len(l) != 1 || l[0].MachineID != "p1" || c.Notes[0] != "anel 0: 1 job(s)" {
+		t.Fatalf("anel 0: %+v %v", l, c.Notes)
+	}
+	env, _ := a.st.DeliverJobs(ctx, "p1", a.agora)
+	j, err := jobs.Verify(a.e.Key.Public().(ed25519.PublicKey), env[0], "p1", a.agora, 0)
+	p, _ := jobs.ParseWinUpdateParams(j.Params)
+	if err != nil || j.Type != jobs.TypeWinUpdate || len(p.Updates) != 1 || p.Updates[0].ID != cu || p.Updates[0].KB != "5127648" {
+		t.Fatalf("job: %+v %+v %v", j, p, err)
+	}
+
+	// Outra instalação em andamento: adiado → nova tentativa depois do intervalo.
+	a.encerra(id, 0, jobs.StatePostponed)
+	a.passo(id, time.Minute)
+	if l, _ := a.st.CampaignJobs(ctx, id, 0); len(l) != 1 {
+		t.Fatalf("antes do intervalo, sem job novo: %d", len(l))
+	}
+	a.passo(id, campaign.RetryAfter+2*time.Minute)
+	l, _ = a.st.CampaignJobs(ctx, id, 0)
+	if len(l) != 2 {
+		t.Fatalf("nova tentativa: %d job(s)", len(l))
+	}
+	if ok, _ := a.st.FinishJob(ctx, l[1].ID, jobs.StateDone, "instalada(s), aguardando reinício", a.agora); !ok {
+		t.Fatal("encerrar")
+	}
+
+	// Anéis 1 e 2: ninguém pode receber; a campanha conclui com os motivos nas notas.
+	c = a.passo(id, campaign.RetryAfter+30*time.Hour)
+	if c.State != campaign.StateDone || len(c.Notes) != 3 ||
+		c.Notes[1] != "anel 1: 0 job(s); fora: 1 fonte da política falhando, 1 só no catálogo offline" ||
+		c.Notes[2] != "anel 2: 0 job(s); fora: 1 sem pendência aprovada" {
+		t.Errorf("fim: %s %q", c.State, c.Notes)
 	}
 }
