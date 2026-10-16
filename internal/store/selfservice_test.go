@@ -27,7 +27,10 @@ func testarAutoatendimento(t *testing.T, st contratoAutoatendimento) {
 	if err := st.SetSelfServiceOffer(ctx, SelfServiceOffer{AppID: "7zip", CanUpdate: true, UpdatedBy: "thyago"}); err != nil {
 		t.Fatal(err)
 	}
-	dn := "CN=GG-Software,OU=Grupos,DC=exemplo,DC=local"
+	dn := `EXEMPLO\GG-Software`
+	if err := st.SetSelfServiceOffer(ctx, SelfServiceOffer{AppID: "x", CanUpdate: true, Groups: []string{"CN=GG-X,DC=exemplo,DC=local"}}); err == nil {
+		t.Error("DN não é mais aceito (Aula 17.2)")
+	}
 	if err := st.SetSelfServiceOffer(ctx, SelfServiceOffer{AppID: "notepad-plus-plus", CanUpdate: true, CanInstall: true,
 		Groups: []string{"GG-TI", dn}, UpdatedBy: "thyago"}); err != nil {
 		t.Fatal(err)
