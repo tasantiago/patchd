@@ -9,6 +9,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/wincom"
+	"github.com/tasantiago/patchd/internal/wuerr"
 )
 
 // Instalação de atualizações do Windows pelo WUA (job windows_update, Aula 16.1). Aqui fica
@@ -86,26 +87,7 @@ var retryHResults = map[uint32]bool{
 	0x8024001E: true, // WU_E_SERVICE_STOP: o serviço está parando
 }
 
-// hresultNames: os códigos que mais aparecem, com o nome que a documentação da Microsoft usa.
-var hresultNames = map[uint32]string{
-	0x80240016: "WU_E_INSTALL_NOT_ALLOWED",
-	0x80244007: "WU_E_PT_SOAPCLIENT_SOAPFAULT",
-	0x80240017: "WU_E_NOT_APPLICABLE",
-	0x8024001E: "WU_E_SERVICE_STOP",
-	0x80240022: "WU_E_ALL_UPDATES_FAILED",
-	0x8024402C: "WU_E_PT_WINHTTP_NAME_NOT_RESOLVED",
-	0x80244022: "WU_E_PT_HTTP_STATUS_SERVICE_UNAVAIL",
-	0x80070070: "ERROR_DISK_FULL",
-	0x800F0922: "CBS_E_INSTALLERS_FAILED",
-}
-
-func hresultText(h int64) string {
-	code := uint32(h)
-	if n := hresultNames[code]; n != "" {
-		return fmt.Sprintf("0x%08X %s", code, n)
-	}
-	return fmt.Sprintf("0x%08X", code)
-}
+func hresultText(h int64) string { return wuerr.Text(uint32(h)) }
 
 // comFailure classifica a falha de uma chamada COM (Download, Install): um HRESULT de
 // "agora não" vira jobs.ErrRetry.

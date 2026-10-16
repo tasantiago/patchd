@@ -49,6 +49,7 @@ type memMachine struct {
 	inventory          *protocol.InventoryReport
 	inventoryChangedAt time.Time
 	scan               *protocol.PatchScanReport
+	sourceOK           map[string]time.Time // Aula 16.2: a última busca em que cada fonte respondeu
 	scanReceivedAt     time.Time
 	lastSeenAt         time.Time
 	agentVersion       string
@@ -128,6 +129,14 @@ func (m *Memory) SaveScan(ctx context.Context, id string, rep protocol.PatchScan
 	mm.lastSeenAt = now
 	mm.scan = &rep
 	mm.scanReceivedAt = now
+	for _, s := range rep.Scans {
+		if s.Missing != nil {
+			if mm.sourceOK == nil {
+				mm.sourceOK = map[string]time.Time{}
+			}
+			mm.sourceOK[s.Source] = rep.ScannedAt.UTC()
+		}
+	}
 	return nil
 }
 

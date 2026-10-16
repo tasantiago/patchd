@@ -115,11 +115,15 @@ func TestJobWindowsUpdatePorKB(t *testing.T) {
 	ctx := context.Background()
 	mem := store.NewMemory()
 	const cu = "0b9b6f0c-1d2e-4f3a-9b8c-7d6e5f4a3b2c"
-	for _, id := range []string{"60ef97e4-0001", "8bb71e2a-0003"} {
+	for _, id := range []string{"60ef97e4-0001", "8bb71e2a-0003", "9cc8a1b2-0004"} {
 		_, _ = mem.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: id})
 	}
 	_ = mem.SaveScan(ctx, "60ef97e4-0001", protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, ScannedAt: time.Now().UTC(),
 		Scans: []protocol.ScanResult{{Source: "wua-default", Missing: []protocol.MissingUpdate{{ID: cu, KBs: []string{"5127648"}, Source: "wua-default"}}}}})
+	// Aula 16.2: o WSUS recusa a busca dessa máquina; o KB está só no catálogo offline.
+	_ = mem.SaveScan(ctx, "9cc8a1b2-0004", protocol.PatchScanReport{SchemaVersion: protocol.PatchSchemaVersion, ScannedAt: time.Now().UTC(),
+		Scans: []protocol.ScanResult{{Source: "wua-default", Error: "busca no WUA: Search: HRESULT 0x80244007"},
+			{Source: "wua-offline", Missing: []protocol.MissingUpdate{{ID: cu, KBs: []string{"5127648"}, Source: "wua-offline"}}}}})
 	st := memoriaComPrefixo{mem}
 	agora := time.Now().UTC()
 	roda := func(args ...string) (int, string, string) {
@@ -146,6 +150,7 @@ func TestJobWindowsUpdatePorKB(t *testing.T) {
 		{[]string{"create", "-machine", "60ef", "-type", "rescan", "-kb", "5127648"}, exitConfig, "-kb vai com"},
 		{[]string{"create", "-machine", "60ef", "-type", "windows_update", "-kb", "5999999"}, exitRuntime, "nenhum job criado"},
 		{[]string{"create", "-machine", "8bb7", "-type", "windows_update", "-kb", "5127648"}, exitRuntime, "ainda não enviou busca"},
+		{[]string{"create", "-machine", "9cc8", "-type", "windows_update", "-kb", "5127648"}, exitRuntime, "falhou: busca no WUA: Search: HRESULT 0x80244007 (WU_E_PT_SOAPCLIENT_SOAPFAULT"},
 	} {
 		if code, _, e := roda(c.args...); code != c.code || !strings.Contains(e, c.msg) {
 			t.Errorf("%v: %d %s", c.args, code, e)

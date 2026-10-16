@@ -154,3 +154,18 @@ func StillMissing(p WinUpdateParams, rep protocol.PatchScanReport) (still []stri
 	}
 	return nil, "a busca não traz a fonte do Windows Update (wua-default)"
 }
+
+// PolicySourceProblem (Aula 16.2): por que a busca atual não serve para montar o job. A
+// fonte da política (wua-default) falhou, ou não veio: o agente procura nela, e falharia na
+// mesma busca. "" quando ela respondeu.
+func PolicySourceProblem(rep protocol.PatchScanReport) string {
+	for _, s := range rep.Scans {
+		if s.Source == sourceWUADefault {
+			if s.Missing == nil {
+				return "a busca na fonte da política (WSUS ou Microsoft) falhou: " + s.Error
+			}
+			return ""
+		}
+	}
+	return "a busca não traz a fonte da política (wua-default)"
+}

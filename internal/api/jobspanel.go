@@ -13,6 +13,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/window"
+	"github.com/tasantiago/patchd/internal/wuerr"
 )
 
 // Jobs no painel (Aula 8.2): a lista de jobs, os jobs de cada máquina e, para o perfil
@@ -89,7 +90,7 @@ func (a *api) jobRows(list []store.JobRow, names map[string]string, admin bool) 
 		rows = append(rows, jobRowView{ID: j.ID, MachineID: j.MachineID, Short: short(j.MachineID), Name: name,
 			Type: typeLabel(j.Type), State: j.State, StateLabel: stateLabel(j.State), Window: windowStart(j.NotBefore, now),
 			Created: at(&created), By: j.CreatedBy,
-			Delivered: at(j.DeliveredAt), Finished: at(j.FinishedAt), Detail: dash(j.Detail),
+			Delivered: at(j.DeliveredAt), Finished: at(j.FinishedAt), Detail: dash(wuerr.Annotate(j.Detail)),
 			CanCancel: admin && j.State == jobs.StatePending})
 	}
 	return rows
