@@ -18,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/wuerr"
 )
 
 const jobUsage = `uso: patchd-server job <comando> [opções]
@@ -509,6 +510,13 @@ func winUpdateParams(ctx context.Context, st jobStore, id, kbList string, stderr
 	}
 	if !found {
 		fmt.Fprintf(stderr, "patchd-server: a máquina %s ainda não enviou busca; nenhum job para ela\n", short(id))
+		return nil, true, exitOK
+	}
+	// Aula 16.2: com a fonte da política falhando, o job falharia na busca do agente (o job
+	// 40 do lab, 0x80244007): melhor não criar, e dizer por quê.
+	if problem := jobs.PolicySourceProblem(rep); problem != "" {
+		fmt.Fprintf(stderr, "máquina %s: %s (busca de %s UTC); nenhum job para ela: corrija a fonte e peça uma busca nova\n",
+			short(id), wuerr.Annotate(problem), rep.ScannedAt.UTC().Format("2006-01-02 15:04"))
 		return nil, true, exitOK
 	}
 	p, notFound, offlineOnly := jobs.WinUpdatesForKBs(rep, kbs)

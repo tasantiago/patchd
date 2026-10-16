@@ -35,6 +35,8 @@ type Store interface {
 	LatestInventory(ctx context.Context, machineID string) (protocol.InventoryReport, bool, error)
 	SaveScan(ctx context.Context, machineID string, rep protocol.PatchScanReport) error
 	LatestScan(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
+	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
+	SourceFailures(ctx context.Context, machineID string) ([]store.SourceFailure, error)
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 	// Enroll consome um uso do token e registra a máquina; token inválido devolve
 	// um erro que satisfaz errors.Is(err, identity.ErrEnrollmentRejected).

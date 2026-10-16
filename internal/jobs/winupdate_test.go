@@ -78,3 +78,17 @@ func TestStillMissing(t *testing.T) {
 		t.Errorf("busca que falhou não prova nada: %q", f)
 	}
 }
+
+func TestPolicySourceProblem(t *testing.T) {
+	rep := buscaWindows()
+	if p := PolicySourceProblem(rep); p != "" {
+		t.Errorf("respondeu: %q", p)
+	}
+	rep.Scans[0].Missing, rep.Scans[0].Error = nil, "Search: HRESULT 0x80244007"
+	if p := PolicySourceProblem(rep); p != "a busca na fonte da política (WSUS ou Microsoft) falhou: Search: HRESULT 0x80244007" {
+		t.Errorf("falhou: %q", p)
+	}
+	if p := PolicySourceProblem(protocol.PatchScanReport{}); p == "" {
+		t.Error("sem a fonte")
+	}
+}

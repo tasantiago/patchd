@@ -231,7 +231,8 @@ type machineView struct {
 	Channel                              string // canal do último check-in (Aula 9.2)
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
 	PublicURL                            string
-	Host                                 hostView // rede e discos (Aula 12.1)
+	Host                                 hostView      // rede e discos (Aula 12.1)
+	SourceAlerts                         []sourceAlert // fontes de busca falhando (Aula 16.2)
 	// Abas (Aula 12.3).
 	Tab           string
 	Tabs          []tabView
@@ -338,6 +339,10 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.hostView(r, id, &v); err != nil {
 		a.internalError(w, r, "ler rede e discos", err)
+		return
+	}
+	if v.SourceAlerts, err = a.machineSourceAlerts(r, id); err != nil {
+		a.internalError(w, r, "ler as fontes de busca", err)
 		return
 	}
 	v.Donuts = donuts(v.Host.Disks)
@@ -871,6 +876,7 @@ var pages = template.Must(template.New("").Parse(`
 <p><a href="/painel/inventario">← Inventário</a> · <a href="/painel/">Frota</a></p>
 <h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
 {{if .D.Reasons}}<ul class="motivos">{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{range .SourceAlerts}}<p class="aviso {{.Level}}" role="alert">{{.Text}}</p>{{end}}
 <nav class="abas" aria-label="abas do equipamento">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="cont">{{.Count}}</span>{{end}}</a>{{end}}</nav>
 
 {{if eq .Tab "resumo"}}

@@ -212,3 +212,25 @@ Cópias do banco (Aula 10.3): `patchd_backup_last_success_timestamp_seconds`,
 Prometheus: `deploy/prometheus/prometheus.exemplo.yml` (coleta com o token por arquivo) e
 `deploy/prometheus/alertas.yml` (regras). Confira com
 `promtool check config` e `promtool check rules` antes de recarregar.
+
+## Fonte de busca falhando (Aula 16.2)
+
+O painel avisa, na máquina e na Visão geral, quando a busca atual falhou numa fonte, com a
+última busca em que ela respondeu. A fonte da política (`wua-default`: WSUS ou Microsoft) é
+erro: sem ela, a máquina não recebe nada pelo Windows Update, e o job `windows_update` nem é
+criado (`job create` explica). O catálogo offline é atenção.
+
+Primeiro passo, na máquina (PowerShell como administrador): a mesma busca, fora do patchd.
+
+```powershell
+$q = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
+$q.Search("IsInstalled=0 and IsHidden=0").Updates.Count
+```
+
+Se falhar, o motivo está no WindowsUpdate.log (`Get-WindowsUpdateLog`); procure `SOAP` e
+`ErrorCode`. Caso do lab (outubro de 2026): `0x80244007` com
+`InvalidParameters: parameters.OtherCachedUpdateIDs` era o WSUS recusando a sincronização
+(o catálogo dele passou do limite que ele aceita do cliente); a correção foi no WSUS, não
+na máquina. Limpar a `SoftwareDistribution` da máquina não resolve esse caso: na primeira
+sincronização vem o `0x80244010` (idas e voltas demais) e, com o cache cheio de novo, o
+mesmo `0x80244007`.

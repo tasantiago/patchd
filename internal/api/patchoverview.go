@@ -313,6 +313,13 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: fmt.Sprintf("/painel/campanhas/%d", c.ID),
 			Text: fmt.Sprintf("Campanha %d (%s) pausada: %s", c.ID, c.Name, c.Detail)})
 	}
+	// Aula 16.2: fontes de busca falhando (o WSUS recusando a máquina, o apt sem rede).
+	failures, err := a.store.SourceFailures(ctx, "")
+	if err != nil {
+		a.internalError(w, r, "listar fontes de busca falhando", err)
+		return
+	}
+	v.Attention = append(v.Attention, a.overviewSourceAttention(failures, now)...)
 	if failed24 > 0 {
 		v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: "/painel/jobs",
 			Text: fmt.Sprintf("%d job(s) sem sucesso nas últimas 24 h", failed24)})
