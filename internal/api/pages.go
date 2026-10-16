@@ -231,8 +231,9 @@ type machineView struct {
 	Channel                              string // canal do último check-in (Aula 9.2)
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
 	PublicURL                            string
-	Host                                 hostView      // rede e discos (Aula 12.1)
-	SourceAlerts                         []sourceAlert // fontes de busca falhando (Aula 16.2)
+	Host                                 hostView       // rede e discos (Aula 12.1)
+	SourceAlerts                         []sourceAlert  // fontes de busca falhando (Aula 16.2)
+	WinUpdate                            *winUpdateCard // atualizações do Windows pelo patchd (Aula 16.3)
 	// Abas (Aula 12.3).
 	Tab           string
 	Tabs          []tabView
@@ -343,6 +344,10 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if v.SourceAlerts, err = a.machineSourceAlerts(r, id); err != nil {
 		a.internalError(w, r, "ler as fontes de busca", err)
+		return
+	}
+	if v.WinUpdate, err = a.winUpdateView(r.Context(), d, v.Admin); err != nil {
+		a.internalError(w, r, "montar as atualizações do Windows", err)
 		return
 	}
 	v.Donuts = donuts(v.Host.Disks)
@@ -985,6 +990,22 @@ var pages = template.Must(template.New("").Parse(`
 {{if .More}}<p class="muted">E mais {{.More}}: a lista completa está no CSV.</p>{{end}}
 {{else}}<p class="muted">Nenhuma pendência na última avaliação.</p>{{end}}
 </div>
+{{with .WinUpdate}}<div class="card"><div class="card-cab"><h2>Atualizações do Windows pelo patchd</h2><span class="muted">busca de {{.ScanAt}}</span></div>
+{{if .Problem}}<p class="aviso erro">{{.Problem}}</p>{{end}}
+{{if .Rows}}<div class="tabela"><table>
+<thead><tr><th>Atualização</th><th>Corrige até</th><th>CVEs aprovadas</th><th>Aguardando aprovação</th><th>Na busca desta máquina</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><code>KB{{.KB}}</code></td><td>{{.FixedIn}}</td><td class="num">{{.Approved}}{{if .Exploit}} <span class="expl">{{.Exploit}} explorada(s)</span>{{end}}</td>
+<td class="num">{{if .Waiting}}<a href="{{.WaitingHref}}">{{.Waiting}}</a>{{else}}0{{end}}</td>
+<td><span class="estado {{.Class}}">{{.Label}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma correção do Windows pendente nesta máquina na avaliação de agora.</p>{{end}}
+{{if .Open}}<p class="muted">Instalação em aberto: <a href="/painel/maquinas/{{$.D.MachineID}}?aba=tarefas">job {{.Open}}</a>.</p>{{end}}
+{{if .CanInstall}}<form class="lote" method="post" action="/painel/maquinas/{{$.D.MachineID}}/windows/instalar">
+<label><input type="radio" name="quando" value="agora" checked> agora</label>
+{{if $.Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
+<button type="submit">Instalar {{range $i, $k := .Installable}}{{if $i}}, {{end}}KB{{$k}}{{end}}</button>
+<span class="muted">Instala pelo Windows Update da própria máquina, da fonte da política (WSUS), só os KBs com CVE aprovada em Patch que a busca mostra pendentes. Não reinicia: o reinício é o bloco abaixo. O resultado vem da busca seguinte.</span>
+</form>{{end}}
+</div>{{end}}
 {{if or .ThirdParty .ThirdPartyCurrent}}<div class="card"><div class="card-cab"><h2>Programas de terceiros</h2><span class="muted">{{.ThirdPartyCurrent}} em dia</span></div>
 {{if .ThirdParty}}<div class="tabela"><table>
 <thead><tr><th>Programa</th><th>Como aparece no inventário</th><th>Instalada</th><th>Referência</th><th>Situação</th><th>Escopo</th></tr></thead>

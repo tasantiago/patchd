@@ -157,6 +157,14 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = "O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE); nada foi criado."
 	case get("erro") == "update-aberto" && n > 0:
 		b.Error = fmt.Sprintf("Já existe uma atualização pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
+	case get("erro") == "windows-aberto" && n > 0:
+		b.Error = fmt.Sprintf("Já existe uma instalação de atualizações do Windows pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
+	case get("erro") == "windows-fonte":
+		b.Error = "A última busca desta máquina falhou na fonte da política (WSUS ou Microsoft): o agente falharia na mesma busca. Corrija a fonte e peça uma busca nova; nada foi pedido."
+	case get("erro") == "windows-nada":
+		b.Error = "Nenhuma atualização do Windows aprovada aparece pendente na busca desta máquina; nada foi pedido."
+	case get("erro") == "windows-muitas":
+		b.Error = fmt.Sprintf("Atualizações demais para um job (até %d); veja o log do servidor. Nada foi pedido.", jobs.MaxWinUpdates)
 	case get("erro") == "https-aberto" && n > 0:
 		b.Error = fmt.Sprintf("Já existe uma troca para HTTPS pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
 	case get("erro") == "sem-url":

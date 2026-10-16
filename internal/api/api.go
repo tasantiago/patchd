@@ -201,6 +201,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/jobs/{id}/cancelar", a.sameOrigin(a.adminAction(a.cancelJobAction)))
 	mux.Handle("POST /painel/maquinas/{id}/atualizar", a.sameOrigin(a.adminAction(a.updateAction)))
 	mux.Handle("POST /painel/maquinas/{id}/reiniciar", a.sameOrigin(a.adminAction(a.rebootAction)))
+	mux.Handle("POST /painel/maquinas/{id}/windows/instalar", a.sameOrigin(a.adminAction(a.winUpdateAction))) // Aula 16.3
 	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
 	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
 	// Configuração (Aula 15.2): só admin, inclusive para ver.
