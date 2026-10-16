@@ -290,7 +290,7 @@ func (a *Agent) scheduleReboots(ctx context.Context, state *State, reboots []acc
 			reject("não dá para saber se há reinício pendente nesta máquina (" + strings.TrimSpace(st.Note) + ")")
 			continue
 		case !*st.Pending:
-			reject("nenhum reinício pendente nesta máquina; nada a fazer")
+			reject(jobs.RebootNothingPending)
 			continue
 		case st.LastBoot == nil:
 			reject("sem a hora do último boot, o agente não conseguiria conferir o reinício")

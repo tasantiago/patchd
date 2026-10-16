@@ -48,7 +48,7 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		"sem anel":          {formCampanha("anel", ""), "Marque ao menos um anel"},
 		"anel repetido":     {formCampanha("anel", "0|0"), "cada um uma vez"},
 		"anel 10":           {formCampanha("anel", "10"), "Anéis de 0 a 9"},
-		"tipo reboot":       {formCampanha("tipo", "reboot"), "Escolha o tipo"},
+		"tipo server_url":   {formCampanha("tipo", "server_url"), "Escolha o tipo"},
 		"update sem fontes": {formCampanha("tipo", "update"), "de 1 a 50 fontes"},
 		"fonte estranha":    {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
 		"rescan com fontes": {formCampanha("fontes", "curl"), "Só a campanha de atualizar"},
@@ -235,5 +235,38 @@ func TestCampanhaDoWindowsPeloPainel(t *testing.T) {
 	}
 	if b := pagina(h, "GET", "/painel/campanhas/1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "<dt>KBs</dt><dd>KB5127648, KB5130001</dd>") {
 		t.Error("detalhe: faltou KBs")
+	}
+}
+
+// Aula 16.5: a campanha de reinício pelo painel leva o aviso; a conferência explica quem
+// recebe e alerta quando não é na janela.
+func TestCampanhaDeReinicioPeloPainel(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	if b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="reboot"`) ||
+		!strings.Contains(b, `<option value="15" selected>15 min</option>`) {
+		t.Error("formulário: faltou o tipo ou o aviso")
+	}
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "reboot", "aviso", "7")); r.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(r.Body.String(), "aviso do reinício da lista") {
+		t.Errorf("aviso fora da lista: %d", r.Code)
+	}
+	f := formCampanha("tipo", "reboot", "aviso", "30", "nome", "reinício de outubro")
+	b := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f).Body.String()
+	if !strings.Contains(b, "reiniciar · onde houver reinício pendente, com aviso de 30 min") || !strings.Contains(b, "o job vira dispensado") ||
+		!strings.Contains(b, "Sem janela, cada máquina reinicia assim que receber o job") || !strings.Contains(b, `name="aviso" value="30"`) ||
+		strings.Contains(b, "<th>Hoje</th>") {
+		t.Errorf("conferência:\n%s", b)
+	}
+	f.Set("confirmar", "1")
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); local(r) != "/painel/campanhas/1?criada=1" {
+		t.Fatalf("criar: %d %s", r.Code, local(r))
+	}
+	if c, _, _ := st.Campaign(ctx, 1); c.Type != jobs.TypeReboot || c.RebootDelay != 30*time.Minute {
+		t.Errorf("campanha: %+v", c)
+	}
+	if b := pagina(h, "GET", "/painel/campanhas/1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "<dt>Reinício</dt><dd>onde houver reinício pendente, com aviso de 30 min</dd>") {
+		t.Error("detalhe")
 	}
 }

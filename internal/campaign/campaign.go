@@ -41,9 +41,10 @@ type Campaign struct {
 	ID          int64
 	Name        string
 	Type        string
-	Sources     []string // update: as fontes (pacotes fonte); windows_update (Aula 16.4): os KBs ("KB5127648")
-	App         string   // thirdparty (Aula 14.7): a regra do programa (libreoffice)
-	Version     string   // thirdparty: a versão aprovada que a campanha leva a todos os anéis
+	Sources     []string      // update: as fontes (pacotes fonte); windows_update (Aula 16.4): os KBs ("KB5127648")
+	App         string        // thirdparty (Aula 14.7): a regra do programa (libreoffice)
+	Version     string        // thirdparty: a versão aprovada que a campanha leva a todos os anéis
+	RebootDelay time.Duration // reboot (Aula 16.5): o aviso aos usuários antes do reinício
 	Rings       []int
 	UseWindow   bool
 	Observe     time.Duration
@@ -68,6 +69,9 @@ func (c Campaign) Target() string {
 	if c.Type == jobs.TypeThirdParty {
 		return c.App + " " + c.Version
 	}
+	if c.Type == jobs.TypeReboot {
+		return fmt.Sprintf("onde houver reinício pendente, com aviso de %d min", int(c.RebootDelay/time.Minute))
+	}
 	return strings.Join(c.Sources, ", ")
 }
 
@@ -78,8 +82,10 @@ func (c Campaign) Validate() error {
 		return errors.New("dê um nome à campanha (até 100 caracteres)")
 	case !jobs.KnownType(c.Type):
 		return fmt.Errorf("tipo de job desconhecido %q", c.Type)
-	case c.Type == jobs.TypeReboot:
-		return errors.New("campanha de reinício ainda não existe: use job create -type reboot ou o painel")
+	case c.Type == jobs.TypeReboot && (c.RebootDelay < jobs.MinRebootDelay || c.RebootDelay > jobs.MaxRebootDelay):
+		return fmt.Errorf("o aviso do reinício fica entre %v e %v", jobs.MinRebootDelay, jobs.MaxRebootDelay)
+	case c.Type != jobs.TypeReboot && c.RebootDelay != 0:
+		return errors.New("só a campanha de reinício leva aviso")
 	case c.Type == jobs.TypeServerURL:
 		return errors.New("campanha de troca de endereço ainda não existe: use job create -type server_url -ring N ou o painel")
 	case c.Type == jobs.TypeUpdate && (len(c.Sources) == 0 || len(c.Sources) > MaxSources):
@@ -370,6 +376,27 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 			return false, skip, nil
 		}
 		if req.Params, err = json.Marshal(p); err != nil {
+			return false, "", err
+		}
+	case jobs.TypeReboot:
+		// Aula 16.5: só quem a busca atual mostra com reinício pendente. O agente confere de
+		// novo na hora; se já não houver, o job volta dispensado, não falho.
+		if e.Scan == nil {
+			return false, "sem busca", nil
+		}
+		rep, ok, err := e.Scan(ctx, id)
+		if err != nil {
+			return false, "", err
+		}
+		switch {
+		case !ok:
+			return false, "sem busca", nil
+		case rep.Reboot == nil || rep.Reboot.Pending == nil:
+			return false, "reinício pendente desconhecido", nil
+		case !*rep.Reboot.Pending:
+			return false, "sem reinício pendente", nil
+		}
+		if req.Params, err = jobs.RebootParamsJSON(c.RebootDelay); err != nil {
 			return false, "", err
 		}
 	case jobs.TypeThirdParty:

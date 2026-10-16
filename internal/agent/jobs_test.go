@@ -281,10 +281,11 @@ func TestReinicioPorJob(t *testing.T) {
 		t.Fatalf("depois do boot: %+v\n%s", e, log.String())
 	}
 
-	// 3. Sem reinício pendente: nada a fazer, recusado sem tocar na máquina.
+	// 3. Sem reinício pendente: nada a fazer, sem tocar na máquina. Desde a Aula 16.5 o
+	// servidor registra como dispensado (não é falha; numa campanha, não pausa o anel).
 	j3 := criaJob(t, srv, priv, id, reboot(5))
 	a.CheckIn(ctx)
-	if e := estadoDoJob(srv, id, j3); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "nenhum reinício pendente") || len(agendados) != 1 {
+	if e := estadoDoJob(srv, id, j3); e.State != jobs.StateDismissed || !strings.Contains(e.Detail, "já não tinha reinício pendente") || len(agendados) != 1 {
 		t.Errorf("sem pendência: %+v", e)
 	}
 

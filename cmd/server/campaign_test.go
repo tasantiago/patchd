@@ -175,3 +175,30 @@ func TestCampanhaDoWindowsPelaLinhaDeComando(t *testing.T) {
 		t.Errorf("show:\n%s", o)
 	}
 }
+
+// Aula 16.5: a campanha de reinício pela linha de comando.
+func TestCampanhaDeReinicioPelaLinhaDeComando(t *testing.T) {
+	ctx := context.Background()
+	mem := store.NewMemory()
+	roda := func(args ...string) (int, string, string) {
+		var o, e bytes.Buffer
+		code := campaignCommand(ctx, mem, nil, args, time.Now().UTC(), &o, &e)
+		return code, o.String(), e.String()
+	}
+	if code, _, e := roda("create", "-name", "x", "-type", "rescan", "-delay", "15m", "-rings", "0"); code != exitConfig || !strings.Contains(e, "-delay vai só com -type reboot") {
+		t.Errorf("delay em rescan: %d %s", code, e)
+	}
+	if code, _, e := roda("create", "-type", "reboot", "-delay", "90m", "-rings", "0"); code != exitConfig || !strings.Contains(e, "aviso do reinício") {
+		t.Errorf("delay fora: %d %s", code, e)
+	}
+	if code, _, e := roda("create", "-type", "reboot", "-rings", "0,1", "-window"); code != exitOK {
+		t.Fatalf("create: %d %s", code, e)
+	}
+	c, _, _ := mem.Campaign(ctx, 1)
+	if c.Name != "Reinício" || c.RebootDelay != 15*time.Minute || !c.UseWindow {
+		t.Errorf("campanha: %+v", c)
+	}
+	if _, o, _ := roda("show", "-id", "1"); !strings.Contains(o, "tipo: reboot (onde houver reinício pendente, com aviso de 15 min)") {
+		t.Errorf("show:\n%s", o)
+	}
+}

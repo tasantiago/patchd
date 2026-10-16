@@ -1078,10 +1078,12 @@ var pages = template.Must(template.New("").Parse(`
 <span>Tipo</span><span><label><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}> buscar atualizações</label>
 <label><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}> atualizar pacotes (Linux)</label>
 <label><input type="radio" name="tipo" value="windows_update" {{if eq .Form.Type "windows_update"}}checked{{end}}> instalar atualizações do Windows (KBs)</label>
+<label><input type="radio" name="tipo" value="reboot" {{if eq .Form.Type "reboot"}}checked{{end}}> reiniciar onde houver reinício pendente</label>
 {{if .Form.TPOn}}<label><input type="radio" name="tipo" value="thirdparty" {{if eq .Form.Type "thirdparty"}}checked{{end}}> instalar programa de terceiros (Windows)</label>{{end}}</span>
 {{if .Form.TPOn}}<label for="programa">Programa</label><span>{{if .Form.Programs}}<select id="programa" name="programa">{{range .Form.Programs}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <span class="muted">só no programa de terceiros: as versões aprovadas e guardadas</span>{{else}}<span class="muted">Nenhuma versão aprovada e guardada: aprove na página do programa, em Patch.</span>{{end}}</span>{{end}}
 <label for="fontes">Fontes ou KBs</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="update: pacotes fonte, ex.: curl, bluez · Windows: KBs, ex.: KB5127648">
+<label for="aviso">Aviso do reinício</label><span><select id="aviso" name="aviso">{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Delay}}selected{{end}}>{{.}} min</option>{{end}}</select> <span class="muted">só no reiniciar: quanto tempo quem estiver conectado tem para salvar o trabalho</span></span>
 <span>Anéis</span><span>{{range .Form.Rings}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label><br>{{end}}</span>
 <label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <span>Quando</span><span><label><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}> com prazo de</label>
@@ -1095,7 +1097,7 @@ var pages = template.Must(template.New("").Parse(`
 <h1>Conferir a campanha</h1>
 <div class="card"><dl class="dados">
 <dt>Nome</dt><dd>{{.Form.Name}}</dd>
-<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}</dd>
+<dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}{{if .Extra}} · {{.Extra}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada anel concluído</dd>
 </dl></div>
@@ -1106,7 +1108,7 @@ var pages = template.Must(template.New("").Parse(`
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}">
-<input type="hidden" name="programa" value="{{.Form.Program}}">
+<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
@@ -1119,7 +1121,7 @@ var pages = template.Must(template.New("").Parse(`
 <h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
 <div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
-<dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
+<dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else if eq .C.Type "reboot"}}Reinício{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.Observe}}</dd>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{.C.Detail}}{{else}}—{{end}}</dd>
