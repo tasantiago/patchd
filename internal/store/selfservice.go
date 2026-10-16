@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 )
 
 // SelfServiceOffer (Aula 17.1): o que o admin liberou no autoatendimento para um programa.
@@ -15,7 +14,7 @@ type SelfServiceOffer struct {
 	AppID      string
 	CanUpdate  bool     // o usuário atualiza o que já está instalado
 	CanInstall bool     // o usuário instala do zero
-	Groups     []string // grupos do AD (sAMAccountName ou DN); vazio: qualquer usuário
+	Groups     []string // grupos do AD (sAMAccountName, com ou sem DOMINIO\); vazio: qualquer usuário
 	UpdatedBy  string
 	UpdatedAt  time.Time
 }
@@ -23,16 +22,11 @@ type SelfServiceOffer struct {
 // MaxOfferGroups: grupos por oferta.
 const MaxOfferGroups = 10
 
-var groupName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._$-]{0,63}$`)
+var groupName = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9.-]{0,14}\\)?[A-Za-z0-9][A-Za-z0-9 ._$-]{0,63}$`)
 
-// ValidGroup: sAMAccountName de grupo (até 64) ou DN (CN=...,DC=..., até 512, sem caractere
-// de controle).
-func ValidGroup(g string) bool {
-	if strings.Contains(strings.ToUpper(g), "DC=") && strings.Contains(g, "=") {
-		return len(g) <= 512 && strings.IndexFunc(g, unicode.IsControl) < 0
-	}
-	return groupName.MatchString(g)
-}
+// ValidGroup: o sAMAccountName do grupo, com ou sem o domínio NetBIOS (DOMINIO\GG-X). Desde
+// a Aula 17.2 o DN não é aceito: os grupos vêm do token do Windows, que traz DOMINIO\grupo.
+func ValidGroup(g string) bool { return groupName.MatchString(g) }
 
 // Validate confere a oferta.
 func (o SelfServiceOffer) Validate() error {
@@ -46,7 +40,7 @@ func (o SelfServiceOffer) Validate() error {
 	}
 	for _, g := range o.Groups {
 		if !ValidGroup(g) {
-			return errors.New("grupo fora do formato (sAMAccountName ou DN do grupo)")
+			return errors.New("grupo fora do formato (sAMAccountName do grupo, com ou sem DOMINIO\\)")
 		}
 	}
 	return nil

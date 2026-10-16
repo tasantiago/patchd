@@ -127,7 +127,7 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 		return err
 	}
 	sv.Ran = true
-	for _, it := range selfservice.Catalog(offers, selfservice.ListMember(splitGroups(groups)), selfservice.Machine{Software: inv.Software, Arch: arch},
+	for _, it := range selfservice.Catalog(offers, selfservice.TokenMember(splitGroups(groups)), selfservice.Machine{Software: inv.Software, Arch: arch},
 		*a.tpManifest, pkgs, approvals) {
 		sv.Items = append(sv.Items, ssItem{Item: it, Label: ssActionLabels[it.Action]})
 	}
@@ -225,6 +225,6 @@ func selfServiceFlash(q url.Values, b *pageBase) {
 	case q.Get("erro") == "programa":
 		b.Error = "Esse programa não tem \"install\" nas regras de terceiros; nada mudou."
 	case q.Get("erro") == "grupos":
-		b.Error = fmt.Sprintf("Grupos: até %d, cada um pelo sAMAccountName ou pelo DN (CN=...,DC=...), separados por vírgula. Nada mudou.", store.MaxOfferGroups)
+		b.Error = fmt.Sprintf("Grupos: até %d, cada um pelo sAMAccountName (GG-Exemplo ou DOMINIO\\GG-Exemplo), separados por vírgula. Nada mudou.", store.MaxOfferGroups)
 	}
 }

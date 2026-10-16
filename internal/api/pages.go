@@ -603,7 +603,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if eq .Tab "autoatendimento"}}{{with .SelfService}}
 {{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
 <div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
-<p class="muted">Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD (sAMAccountName ou DN, separados por vírgula); vazio: qualquer usuário da máquina. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Desmarcar os dois tira o programa da loja.</p>
+<p class="muted">Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD pelo sAMAccountName (GG-Exemplo ou DOMINIO\GG-Exemplo), separados por vírgula; vazio: qualquer usuário da máquina. O agente confere pelos grupos do token do Windows de quem pede, inclusive os aninhados. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Desmarcar os dois tira o programa da loja.</p>
 <div class="tabela"><table><thead><tr><th>Programa</th><th>Aprovada mais nova</th><th>Atualizar</th><th>Instalar</th><th>Grupos do AD</th><th></th><th>Última mudança</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Name}} <span class="muted"><code>{{.AppID}}</code></span></td><td><code>{{.Approved}}</code></td>
 <td><input form="ss-{{.AppID}}" type="checkbox" name="atualizar" value="1" aria-label="atualizar {{.Name}}" {{if .CanUpdate}}checked{{end}}></td>
