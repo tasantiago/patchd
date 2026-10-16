@@ -599,7 +599,30 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a></nav>
+{{if eq .Tab "autoatendimento"}}{{with .SelfService}}
+{{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
+<div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
+<p class="muted">Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD (sAMAccountName ou DN, separados por vírgula); vazio: qualquer usuário da máquina. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Desmarcar os dois tira o programa da loja.</p>
+<div class="tabela"><table><thead><tr><th>Programa</th><th>Aprovada mais nova</th><th>Atualizar</th><th>Instalar</th><th>Grupos do AD</th><th></th><th>Última mudança</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td>{{.Name}} <span class="muted"><code>{{.AppID}}</code></span></td><td><code>{{.Approved}}</code></td>
+<td><input form="ss-{{.AppID}}" type="checkbox" name="atualizar" value="1" aria-label="atualizar {{.Name}}" {{if .CanUpdate}}checked{{end}}></td>
+<td><input form="ss-{{.AppID}}" type="checkbox" name="instalar" value="1" aria-label="instalar {{.Name}}" {{if .CanInstall}}checked{{end}}></td>
+<td><input form="ss-{{.AppID}}" type="text" name="grupos" maxlength="2000" value="{{.Groups}}" placeholder="qualquer usuário" aria-label="grupos de {{.Name}}"></td>
+<td><form id="ss-{{.AppID}}" method="post" action="/painel/configuracao/autoatendimento"><input type="hidden" name="app" value="{{.AppID}}"><button class="sec" type="submit">Salvar</button></form></td>
+<td class="muted">{{if .Active}}{{.Updated}}{{else}}fora da loja{{end}}</td></tr>{{end}}</tbody></table></div></div>
+<div class="card"><div class="card-cab"><h2>Prévia da loja</h2></div>
+<p class="muted">O que um usuário destes grupos veria nesta máquina agora, com o último inventário dela. No app do usuário (Aula 17.4), os grupos vêm do AD.</p>
+<form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="autoatendimento">
+<select name="maquina" aria-label="máquina"><option value="">Máquina Windows…</option>{{range .Machines}}<option value="{{.ID}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="text" name="grupos" maxlength="2000" value="{{.Groups}}" placeholder="grupos do usuário, separados por vírgula" aria-label="grupos do usuário">
+<button type="submit">Ver a loja</button></form>
+{{if .Note}}<p class="aviso atencao">{{.Note}}</p>{{end}}
+{{if .Ran}}{{if .Items}}<div class="tabela"><table><thead><tr><th>Programa</th><th>Instalado</th><th>Ação</th><th>Versão</th><th>Observação</th></tr></thead>
+<tbody>{{range .Items}}<tr><td>{{.Name}}</td><td>{{if .Installed}}<code>{{.Installed}}</code>{{else}}—{{end}}</td><td>{{.Label}}</td><td>{{if .Target}}<code>{{.Target}}</code>{{else}}—{{end}}</td><td class="muted">{{.Reason}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">A loja está vazia para estes grupos nesta máquina.</p>{{end}}{{end}}
+</div>{{end}}
+{{end}}{{end}}
 {{if eq .Tab "auditoria"}}{{with .Audit}}
 <div class="card"><div class="card-cab"><h2>Trilha de auditoria</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
 <p class="muted">Logins, ações pelo painel e exportações, do mais novo para o mais antigo. Só se acrescenta: nada aqui se edita. O request_id liga cada evento à linha do log do servidor.</p>

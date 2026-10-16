@@ -72,24 +72,25 @@ type tokenRow struct {
 
 type settingsView struct {
 	pageBase
-	Tab       string
-	System    []settingRow
-	Version   string // a versão publicada do agente
-	Files     []agentFileRow
-	FilesNote string
-	CA        bool
-	CASHA     string
-	Tokens    []tokenRow
-	TTLs      []hourOption
-	MaxUses   int
-	MaxNote   int
-	Access    *accessView // aba Acesso (Aula 15.3)
-	Audit     *auditView  // aba Auditoria (Aula 15.14)
+	Tab         string
+	System      []settingRow
+	Version     string // a versão publicada do agente
+	Files       []agentFileRow
+	FilesNote   string
+	CA          bool
+	CASHA       string
+	Tokens      []tokenRow
+	TTLs        []hourOption
+	MaxUses     int
+	MaxNote     int
+	Access      *accessView      // aba Acesso (Aula 15.3)
+	Audit       *auditView       // aba Auditoria (Aula 15.14)
+	SelfService *selfServiceView // aba Autoatendimento (Aula 17.1)
 }
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
-	case "agente", "acesso", "auditoria":
+	case "agente", "acesso", "auditoria", "autoatendimento":
 		return tab
 	}
 	return "sistema"
@@ -117,6 +118,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		err = a.accessView(r, s, &v)
 	case "auditoria":
 		err = a.auditTab(r, &v)
+	case "autoatendimento":
+		selfServiceFlash(q, &v.pageBase)
+		err = a.selfServiceTab(r, &v)
 	}
 	if err != nil {
 		a.internalError(w, r, "montar a configuração", err)
