@@ -89,6 +89,13 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 
 // judge decide o estado final a partir do que o agente informou e do efeito conferido.
 func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (string, string) {
+	switch {
+	case res.Status == protocol.JobResultRejected && job.Type == jobs.TypeReboot && res.Detail == jobs.RebootNothingPending:
+		// Aula 16.5: a máquina já não tinha reinício pendente (reiniciou por conta própria,
+		// ou a busca da liberação estava velha). Nada a fazer não é falha: numa campanha, uma
+		// recusa pausaria o anel por uma máquina que está em dia.
+		return jobs.StateDismissed, "dispensado: a máquina já não tinha reinício pendente (o agente conferiu na hora)"
+	}
 	switch res.Status {
 	case protocol.JobResultRejected:
 		return jobs.StateRejected, "recusado pelo agente: " + res.Detail

@@ -117,6 +117,16 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	if l[0].State != "dispensado" || l[0].Detail != "adiado pelo agente: programa aberto; nova tentativa dispensada: em dia" {
 		t.Errorf("dispensado: %+v", l[0])
 	}
+
+	// Aula 16.5: a campanha de reinício guarda o aviso.
+	rid, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "reinício", Type: "reboot", Rings: []int{0}, UseWindow: true,
+		TTL: 6 * time.Hour, RebootDelay: 30 * time.Minute, CreatedBy: "thyago"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc, _, _ := st.Campaign(ctx, rid); rc.RebootDelay != 30*time.Minute {
+		t.Errorf("aviso do reinício: %v", rc.RebootDelay)
+	}
 }
 
 func TestCampanhasMemoria(t *testing.T) { testarCampanhas(t, NewMemory()) }

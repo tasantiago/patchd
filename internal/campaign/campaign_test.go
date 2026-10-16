@@ -405,3 +405,53 @@ func TestCampanhaDoWindows(t *testing.T) {
 		t.Errorf("fim: %s %q", c.State, c.Notes)
 	}
 }
+
+// Aula 16.5: a campanha de reinício só manda job a quem a busca mostra com reinício
+// pendente; o dispensado (o agente viu que já não havia) não pausa o anel.
+func TestCampanhaDeReinicio(t *testing.T) {
+	a := novoAmbiente(t)
+	ctx := context.Background()
+	sim, nao := true, false
+	scans := map[string]protocol.PatchScanReport{
+		"p1": {Reboot: &protocol.RebootStatus{Pending: &sim}},
+		"a1": {Reboot: &protocol.RebootStatus{Pending: &sim}},
+		"a2": {Reboot: &protocol.RebootStatus{Pending: &nao}},
+		"b1": {Reboot: &protocol.RebootStatus{}}, // não soube dizer
+	}
+	a.e.Scan = func(_ context.Context, id string) (protocol.PatchScanReport, bool, error) {
+		r, ok := scans[id]
+		return r, ok, nil
+	}
+	for _, d := range []time.Duration{0, time.Minute, 2 * time.Hour} {
+		if err := (campaign.Campaign{Name: "r", Type: jobs.TypeReboot, Rings: []int{0}, TTL: time.Hour, RebootDelay: d}).Validate(); err == nil {
+			t.Errorf("aviso %v deveria recusar", d)
+		}
+	}
+	if err := (campaign.Campaign{Name: "r", Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Hour, RebootDelay: 15 * time.Minute}).Validate(); err == nil {
+		t.Error("aviso só no reinício")
+	}
+	id := a.cria(campaign.Campaign{Name: "reinício", Type: jobs.TypeReboot, Rings: []int{0, 1, 2}, TTL: 6 * time.Hour,
+		RebootDelay: 30 * time.Minute, CreatedBy: "thyago"})
+
+	c := a.passo(id, 0)
+	if c.Notes[0] != "anel 0: 1 job(s)" || c.Target() != "onde houver reinício pendente, com aviso de 30 min" {
+		t.Fatalf("anel 0: %v %s", c.Notes, c.Target())
+	}
+	env, _ := a.st.DeliverJobs(ctx, "p1", a.agora)
+	j, err := jobs.Verify(a.e.Key.Public().(ed25519.PublicKey), env[0], "p1", a.agora, 0)
+	p, _ := jobs.ParseRebootParams(j.Params)
+	if err != nil || j.Type != jobs.TypeReboot || p.Delay() != 30*time.Minute {
+		t.Fatalf("job: %+v %v", j, err)
+	}
+	// O agente viu que já não havia reinício: dispensado; o anel conclui e o próximo libera.
+	a.encerra(id, 0, jobs.StateDismissed)
+	c = a.passo(id, 25*time.Hour)
+	if c.CurrentIdx != 1 || len(c.Notes) != 2 || c.Notes[1] != "anel 1: 1 job(s); fora: 1 sem reinício pendente" {
+		t.Fatalf("anel 1: idx %d %q %s", c.CurrentIdx, c.Notes, c.Detail)
+	}
+	a.encerra(id, 1, jobs.StateDone)
+	c = a.passo(id, 50*time.Hour)
+	if c.State != campaign.StateDone || c.Notes[2] != "anel 2: 0 job(s); fora: 1 reinício pendente desconhecido" {
+		t.Errorf("fim: %s %q", c.State, c.Notes)
+	}
+}

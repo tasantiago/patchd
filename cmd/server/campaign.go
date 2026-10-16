@@ -26,8 +26,8 @@ import (
 const campaignUsage = `uso: patchd-server campaign <comando> [opções]
 
 comandos:
-  create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update
-          [-sources fonte,fonte] [-app programa -version versão] [-kb KB5127648,...]
+  create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update|reboot
+          [-sources fonte,fonte] [-app programa -version versão] [-kb KB5127648,...] [-delay 15m]
           -rings 0,1 [-observe 24h] [-ttl 24h | -window].
           O servidor libera o primeiro anel no próximo minuto e cada anel seguinte sozinho,
           quando o anterior termina sem falha e a observação passa
@@ -51,6 +51,11 @@ windows_update (Aula 16.4): -kb são os KBs, como aparecem em "Corrigido em" (KB
 Cada máquina do anel recebe os que corrigem alguma CVE dela aprovada em Patch e que a busca
 dela mostra pendentes na fonte da política (WSUS); fonte falhando, KB só no catálogo offline
 ou fora da busca: fica sem job, com o motivo nas notas. O job não reinicia.
+
+reboot (Aula 16.5): reinicia, com aviso de -delay a quem estiver conectado, só as máquinas
+que a busca atual mostra com reinício pendente; as outras ficam fora, com o motivo. O agente
+confere de novo na hora: se já não houver reinício pendente, o job vira dispensado (não pausa
+a campanha). Use -window: sem janela, cada máquina reinicia assim que recebe o job.
 
 Jobs adiados (Aula 14.9; agente v0.14.4 ou mais novo): programa aberto ou outro instalador
 rodando não é falha. A campanha pede de novo à mesma máquina a cada 1 h, refazendo o plano
@@ -192,7 +197,8 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 	switch args[0] {
 	case "create":
 		name := fs.String("name", "", "nome da campanha")
-		typ := fs.String("type", "", "rescan, update, thirdparty ou windows_update")
+		typ := fs.String("type", "", "rescan, update, thirdparty, windows_update ou reboot")
+		delay := fs.Duration("delay", 0, "reboot: aviso aos usuários antes do reinício (2m a 60m; padrão 15m)")
 		sources := fs.String("sources", "", "update: pacotes fonte, separados por vírgula")
 		kbList := fs.String("kb", "", "windows_update: KBs, separados por vírgula (KB5127648)")
 		app := fs.String("app", "", "thirdparty: a regra do programa (libreoffice)")
@@ -234,6 +240,19 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 			}
 			if !slices.Contains(c.Sources, kb) {
 				c.Sources = append(c.Sources, kb)
+			}
+		}
+		if *delay != 0 && c.Type != jobs.TypeReboot {
+			fmt.Fprintln(stderr, "patchd-server: -delay vai só com -type reboot")
+			return exitConfig
+		}
+		if c.Type == jobs.TypeReboot {
+			c.RebootDelay = *delay
+			if c.RebootDelay == 0 {
+				c.RebootDelay = 15 * time.Minute
+			}
+			if c.Name == "" {
+				c.Name = "Reinício"
 			}
 		}
 		if c.Type == jobs.TypeWinUpdate && c.Name == "" {
@@ -344,6 +363,8 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 		fmt.Fprintf(stdout, " (programa: %s)", c.Target())
 	case c.Type == jobs.TypeWinUpdate:
 		fmt.Fprintf(stdout, " (KBs: %s)", strings.Join(c.Sources, ", "))
+	case c.Type == jobs.TypeReboot:
+		fmt.Fprintf(stdout, " (%s)", c.Target())
 	case len(c.Sources) > 0:
 		fmt.Fprintf(stdout, " (fontes: %s)", strings.Join(c.Sources, ", "))
 	}

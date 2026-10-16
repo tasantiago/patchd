@@ -14,15 +14,15 @@ import (
 // Campanhas (Aula 8.5).
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
-	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes`
+	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
 	var rings []int16
-	var observe, ttl int
+	var observe, ttl, delay int
 	var cur, launched, accepted int16
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
-		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes)
+		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay)
 	if err != nil {
 		return c, err
 	}
@@ -30,6 +30,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 		c.Rings = append(c.Rings, int(r))
 	}
 	c.Observe, c.TTL = time.Duration(observe)*time.Second, time.Duration(ttl)*time.Second
+	c.RebootDelay = time.Duration(delay) * time.Second
 	c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx = int(cur), int(launched), int(accepted)
 	c.RingDoneAt = utc(c.RingDoneAt)
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
@@ -47,10 +48,10 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 	}
 	var id int64
 	err := p.pool.QueryRow(ctx, `
-		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10) RETURNING id`,
+		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11) RETURNING id`,
 		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
-		c.App, c.Version).Scan(&id)
+		c.App, c.Version, int(c.RebootDelay/time.Second)).Scan(&id)
 	return id, err
 }
 

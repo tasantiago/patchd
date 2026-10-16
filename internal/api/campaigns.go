@@ -69,6 +69,8 @@ type campaignForm struct {
 	Observe, TTL              []hourOption
 	ObserveH, TTLH            int
 	Chosen                    []int // anéis marcados, em ordem
+	Delay                     int   // reboot (Aula 16.5): aviso em minutos
+	Delays                    []int
 }
 
 type campaignsView struct {
@@ -146,7 +148,7 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v := campaignsView{pageBase: a.base(r, "Campanhas", "campanhas")}
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
 	if v.CanNew {
-		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24}
+		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays}
 		// Vindo de "Campanha por anel" na página do programa (Aula 14.8): já preenchido.
 		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeThirdParty {
 			f.Type, f.Program = jobs.TypeThirdParty, q.Get("programa")
@@ -210,6 +212,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		Sources: strings.TrimSpace(r.PostFormValue("fontes")), When: r.PostFormValue("quando"), Program: r.PostFormValue("programa")}
 	f.ObserveH, _ = strconv.Atoi(r.PostFormValue("observacao"))
 	f.TTLH, _ = strconv.Atoi(r.PostFormValue("prazo"))
+	f.Delay, _ = strconv.Atoi(r.PostFormValue("aviso"))
+	f.Delays = rebootDelays
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
@@ -222,6 +226,9 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
 		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela"}
+	if f.Type == jobs.TypeReboot {
+		c.RebootDelay = time.Duration(f.Delay) * time.Minute
+	}
 	if f.Type == jobs.TypeThirdParty {
 		// O select manda "programa versão"; nos outros tipos ele vai junto e é ignorado.
 		parts := strings.Fields(f.Program)
@@ -231,8 +238,11 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		c.App, c.Version = parts[0], parts[1]
 	}
 	switch {
-	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && f.Type != jobs.TypeWinUpdate && (f.Type != jobs.TypeThirdParty || a.tpManifest == nil):
-		return c, f, "Escolha o tipo: buscar atualizações, atualizar pacotes, instalar atualizações do Windows ou instalar programa de terceiros."
+	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && f.Type != jobs.TypeWinUpdate && f.Type != jobs.TypeReboot &&
+		(f.Type != jobs.TypeThirdParty || a.tpManifest == nil):
+		return c, f, "Escolha o tipo: buscar atualizações, atualizar pacotes, instalar atualizações do Windows, reiniciar ou instalar programa de terceiros."
+	case f.Type == jobs.TypeReboot && !containsInt(rebootDelays, f.Delay):
+		return c, f, "Escolha o aviso do reinício da lista."
 	case len(f.Chosen) == 0:
 		return c, f, "Marque ao menos um anel."
 	case !containsInt(observeHours, f.ObserveH):
@@ -306,6 +316,7 @@ type campaignConfirmView struct {
 	Rings           []confirmRing
 	SourcesList     string
 	ProgramL        string
+	Extra           string // reboot (Aula 16.5): o alvo, sem a coluna de previsão
 	ObserveL        string
 	Warnings        []string
 	ChosenCSV       string
@@ -408,6 +419,13 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 				if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return ap.Item == src }) {
 					v.Warnings = append(v.Warnings, fmt.Sprintf("A fonte %s não tem nenhuma correção aprovada em Patch: hoje, nenhuma máquina receberia essa fonte.", src))
 				}
+			}
+		}
+		if c.Type == jobs.TypeReboot {
+			v.Extra = c.Target()
+			v.Warnings = append(v.Warnings, "No reinício, só recebe job quem a busca atual mostra com reinício pendente; o agente confere de novo na hora (sem pendência, o job vira dispensado). Quem estiver conectado vê o aviso na tela pelo prazo escolhido e pode salvar o trabalho; um administrador na máquina pode cancelar.")
+			if !c.UseWindow {
+				v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada anel\".")
 			}
 		}
 		if c.Type == jobs.TypeWinUpdate {
