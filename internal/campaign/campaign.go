@@ -41,7 +41,7 @@ type Campaign struct {
 	ID          int64
 	Name        string
 	Type        string
-	Sources     []string // update: as fontes (pacotes fonte) a atualizar
+	Sources     []string // update: as fontes (pacotes fonte); windows_update (Aula 16.4): os KBs ("KB5127648")
 	App         string   // thirdparty (Aula 14.7): a regra do programa (libreoffice)
 	Version     string   // thirdparty: a versão aprovada que a campanha leva a todos os anéis
 	Rings       []int
@@ -84,8 +84,10 @@ func (c Campaign) Validate() error {
 		return errors.New("campanha de troca de endereço ainda não existe: use job create -type server_url -ring N ou o painel")
 	case c.Type == jobs.TypeUpdate && (len(c.Sources) == 0 || len(c.Sources) > MaxSources):
 		return fmt.Errorf("a campanha de update leva de 1 a %d fontes", MaxSources)
-	case c.Type != jobs.TypeUpdate && len(c.Sources) > 0:
-		return errors.New("só a campanha de update leva fontes")
+	case c.Type == jobs.TypeWinUpdate && (len(c.Sources) == 0 || len(c.Sources) > jobs.MaxWinUpdates):
+		return fmt.Errorf("a campanha do Windows leva de 1 a %d KBs", jobs.MaxWinUpdates)
+	case c.Type != jobs.TypeUpdate && c.Type != jobs.TypeWinUpdate && len(c.Sources) > 0:
+		return errors.New("só a campanha de update leva fontes, e a do Windows, KBs")
 	case c.Type == jobs.TypeThirdParty && (c.App == "" || c.Version == "" || len(c.App) > 64 || len(c.Version) > 64):
 		return errors.New("a campanha de terceiros leva o programa e a versão aprovada (-app e -version)")
 	case c.Type != jobs.TypeThirdParty && (c.App != "" || c.Version != ""):
@@ -96,6 +98,13 @@ func (c Campaign) Validate() error {
 		return fmt.Errorf("observação fora de 0 a %v", MaxObserve)
 	case !c.UseWindow && (c.TTL < jobs.MinTTL || c.TTL > jobs.MaxTTL):
 		return fmt.Errorf("prazo dos jobs fora de %v a %v", jobs.MinTTL, jobs.MaxTTL)
+	}
+	if c.Type == jobs.TypeWinUpdate {
+		for _, kb := range c.Sources {
+			if n, ok := jobs.NormalizeKB(kb); !ok || n != kb {
+				return fmt.Errorf("KB %q fora do formato (KB5127648)", kb)
+			}
+		}
 	}
 	for i, r := range c.Rings {
 		if r < 0 || r > 9 || (i > 0 && r <= c.Rings[i-1]) {
@@ -151,6 +160,9 @@ type Engine struct {
 	Pending func(ctx context.Context, machineID string) ([]protocol.PendingItem, bool, error)
 	// Window devolve a próxima janela do anel da máquina; ok false: o anel não tem janela.
 	Window func(ctx context.Context, machineID string, now time.Time) (start, end time.Time, ok bool, err error)
+	// Scan devolve a busca atual da máquina (Aula 16.4, campanha do Windows): o job leva os
+	// UpdateIDs que ela mostra na fonte da política. nil: as máquinas ficam fora.
+	Scan func(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
 	// ThirdParty decide a campanha thirdparty; nil: elas pausam no primeiro anel.
 	ThirdParty ThirdPartyPlanner
 	Logger     *slog.Logger
@@ -327,6 +339,35 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 		p := jobs.ParamsFromPending(items, c.Sources)
 		if !found || len(p.Packages) == 0 {
 			return false, "sem pendência aprovada", nil
+		}
+		if req.Params, err = json.Marshal(p); err != nil {
+			return false, "", err
+		}
+	case jobs.TypeWinUpdate:
+		// Os KBs da campanha que corrigem alguma CVE aprovada desta máquina (Aula 13.2: a
+		// aprovação vale na hora em que o anel é liberado) e que a busca dela mostra na fonte
+		// da política (Aula 16.2: fonte falhando, nem tenta).
+		items, found, err := e.Pending(ctx, id)
+		if err != nil {
+			return false, "", err
+		}
+		kbs := jobs.KBsInPending(items, c.Sources)
+		if !found || len(kbs) == 0 {
+			return false, "sem pendência aprovada", nil
+		}
+		if e.Scan == nil {
+			return false, "sem busca", nil
+		}
+		rep, ok, err := e.Scan(ctx, id)
+		if err != nil {
+			return false, "", err
+		}
+		if !ok {
+			return false, "sem busca", nil
+		}
+		p, skip := jobs.PolicyWinUpdates(rep, kbs)
+		if skip != "" {
+			return false, skip, nil
 		}
 		if req.Params, err = json.Marshal(p); err != nil {
 			return false, "", err

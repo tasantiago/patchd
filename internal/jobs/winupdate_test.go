@@ -92,3 +92,34 @@ func TestPolicySourceProblem(t *testing.T) {
 		t.Error("sem a fonte")
 	}
 }
+
+func TestCampanhaDoWindowsHelpers(t *testing.T) {
+	for in, want := range map[string]string{"KB5127648": "KB5127648", "kb5127648": "KB5127648", " 5127648 ": "KB5127648"} {
+		if got, ok := NormalizeKB(in); !ok || got != want {
+			t.Errorf("%q: %q %v", in, got, ok)
+		}
+	}
+	for _, ruim := range []string{"", "KB", "KB12", "5127648; rm", "KB5127648x"} {
+		if _, ok := NormalizeKB(ruim); ok {
+			t.Errorf("%q deveria recusar", ruim)
+		}
+	}
+	items := []protocol.PendingItem{{ID: "CVE-1", FixedIn: "26300.9711 (KB5127648)"}, {ID: "CVE-2", FixedIn: "26300.9711 (KB5127648)"}}
+	if got := KBsInPending(items, []string{"KB5130001", "KB5127648", "5127648"}); strings.Join(got, ",") != "5127648" {
+		t.Errorf("KBs na pendência: %v", got)
+	}
+	rep := buscaWindows()
+	if p, skip := PolicyWinUpdates(rep, []string{"5127648"}); skip != "" || len(p.Updates) != 1 || p.Updates[0].ID != guidCU {
+		t.Errorf("pendente: %+v %q", p, skip)
+	}
+	if _, skip := PolicyWinUpdates(rep, []string{"5130001"}); skip != "só no catálogo offline" {
+		t.Errorf("offline: %q", skip)
+	}
+	if _, skip := PolicyWinUpdates(rep, []string{"5999999"}); skip != "KB fora da busca" {
+		t.Errorf("fora: %q", skip)
+	}
+	rep.Scans[0].Missing = nil
+	if _, skip := PolicyWinUpdates(rep, []string{"5127648"}); skip != "fonte da política falhando" {
+		t.Errorf("fonte: %q", skip)
+	}
+}

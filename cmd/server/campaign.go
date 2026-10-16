@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -25,8 +26,9 @@ import (
 const campaignUsage = `uso: patchd-server campaign <comando> [opções]
 
 comandos:
-  create  cria a campanha: -name "nome" -type rescan|update|thirdparty [-sources fonte,fonte]
-          [-app programa -version versão] -rings 0,1 [-observe 24h] [-ttl 24h | -window].
+  create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update
+          [-sources fonte,fonte] [-app programa -version versão] [-kb KB5127648,...]
+          -rings 0,1 [-observe 24h] [-ttl 24h | -window].
           O servidor libera o primeiro anel no próximo minuto e cada anel seguinte sozinho,
           quando o anterior termina sem falha e a observação passa
   list    lista as campanhas, da mais nova para a mais antiga [-n 20]
@@ -44,6 +46,11 @@ guardada (package list). Cada máquina do anel passa pelo package plan com os in
 dessa versão: só quem está em ATUALIZAR recebe job; em dia, duplicado, bundle e os outros
 ficam fora, com o motivo nas notas da campanha. A cada anel liberado o servidor confere de
 novo a aprovação e o arquivo no cache: revogada ou faltando, a campanha pausa.
+
+windows_update (Aula 16.4): -kb são os KBs, como aparecem em "Corrigido em" (KB5127648).
+Cada máquina do anel recebe os que corrigem alguma CVE dela aprovada em Patch e que a busca
+dela mostra pendentes na fonte da política (WSUS); fonte falhando, KB só no catálogo offline
+ou fora da busca: fica sem job, com o motivo nas notas. O job não reinicia.
 
 Jobs adiados (Aula 14.9; agente v0.14.4 ou mais novo): programa aberto ou outro instalador
 rodando não é falha. A campanha pede de novo à mesma máquina a cada 1 h, refazendo o plano
@@ -71,6 +78,7 @@ func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, tp campaign.T
 		Pending: func(ctx context.Context, id string) ([]protocol.PendingItem, bool, error) {
 			return approvedPending(ctx, cs.Detail, pg.PatchApprovals, id)
 		},
+		Scan: pg.LatestScan, // Aula 16.4: a campanha do Windows usa a busca atual da máquina
 		Window: func(ctx context.Context, id string, now time.Time) (time.Time, time.Time, bool, error) {
 			ring, ok, err := pg.MachineRing(ctx, id)
 			if err != nil || !ok {
@@ -184,8 +192,9 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 	switch args[0] {
 	case "create":
 		name := fs.String("name", "", "nome da campanha")
-		typ := fs.String("type", "", "rescan, update ou thirdparty")
+		typ := fs.String("type", "", "rescan, update, thirdparty ou windows_update")
 		sources := fs.String("sources", "", "update: pacotes fonte, separados por vírgula")
+		kbList := fs.String("kb", "", "windows_update: KBs, separados por vírgula (KB5127648)")
 		app := fs.String("app", "", "thirdparty: a regra do programa (libreoffice)")
 		ver := fs.String("version", "", "thirdparty: a versão aprovada e guardada")
 		rings := fs.String("rings", "", "anéis em ordem, separados por vírgula (ex.: 0,1)")
@@ -209,6 +218,26 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 			for _, s := range strings.Split(*sources, ",") {
 				c.Sources = append(c.Sources, strings.TrimSpace(s))
 			}
+		}
+		if (c.Type == jobs.TypeWinUpdate) != (*kbList != "") || (c.Type == jobs.TypeWinUpdate && *sources != "") {
+			fmt.Fprintln(stderr, "patchd-server: -kb vai com -type windows_update, e só com ele (sem -sources)")
+			return exitConfig
+		}
+		for _, k := range strings.Split(*kbList, ",") {
+			if k = strings.TrimSpace(k); k == "" {
+				continue
+			}
+			kb, ok := jobs.NormalizeKB(k)
+			if !ok {
+				fmt.Fprintf(stderr, "patchd-server: -kb: %q fora do formato (KB5127648)\n", k)
+				return exitConfig
+			}
+			if !slices.Contains(c.Sources, kb) {
+				c.Sources = append(c.Sources, kb)
+			}
+		}
+		if c.Type == jobs.TypeWinUpdate && c.Name == "" {
+			c.Name = "Windows " + strings.Join(c.Sources, ", ")
 		}
 		if err := c.Validate(); err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
@@ -313,6 +342,8 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 	switch {
 	case c.Type == jobs.TypeThirdParty:
 		fmt.Fprintf(stdout, " (programa: %s)", c.Target())
+	case c.Type == jobs.TypeWinUpdate:
+		fmt.Fprintf(stdout, " (KBs: %s)", strings.Join(c.Sources, ", "))
 	case len(c.Sources) > 0:
 		fmt.Fprintf(stdout, " (fontes: %s)", strings.Join(c.Sources, ", "))
 	}

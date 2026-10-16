@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -38,6 +39,7 @@ type winKBRow struct {
 	Approved, Waiting, Exploit int
 	State, Label, Class, Note  string
 	WaitingHref                string
+	CampaignHref               string // Aula 16.4: campanha por anel com este KB
 }
 
 type winUpdateCard struct {
@@ -64,7 +66,8 @@ func winPlan(items []protocol.PendingItem, approvals []store.PatchApproval, rep 
 			kb := m[1]
 			row := byKB[kb]
 			if row == nil {
-				row = &winKBRow{KB: kb, FixedIn: it.FixedIn, WaitingHref: (patchQuery{Status: "aguardando", Q: "KB" + kb}).href()}
+				row = &winKBRow{KB: kb, FixedIn: it.FixedIn, WaitingHref: (patchQuery{Status: "aguardando", Q: "KB" + kb}).href(),
+					CampaignHref: "/painel/campanhas?" + url.Values{"tipo": {jobs.TypeWinUpdate}, "kb": {"KB" + kb}}.Encode() + "#nova"}
 				byKB[kb] = row
 				order = append(order, kb)
 			}
