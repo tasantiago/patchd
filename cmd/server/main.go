@@ -115,6 +115,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if len(args) > 0 && args[0] == "selfservice" {
 		return runSelfService(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "notify" {
+		return runNotify(args[1:], look, stdout, stderr)
+	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {
@@ -268,6 +271,19 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if cfg.PublicURL != "" {
 		apiOpts = append(apiOpts, api.WithPublicURL(cfg.PublicURL))
 		logger.Info("URL pública anunciada nos jobs server_url (botão \"Passar para HTTPS\" no painel)", "public_url", cfg.PublicURL)
+	}
+	// Notificações por e-mail (Aula 18.5): configuração errada não deixa o servidor subir
+	// (melhor do que descobrir no dia em que o aviso não chegou).
+	mailer, err := newMailer(look)
+	if err != nil {
+		logger.Error("notificações por e-mail", "error", err)
+		return exitConfig
+	}
+	if mailer != nil {
+		apiOpts = append(apiOpts, api.WithNotifier(mailer))
+		logger.Info("notificações por e-mail ligadas: " + mailer.Describe())
+	} else {
+		logger.Info("notificações por e-mail desligadas (sem PATCHD_SMTP_ADDR)")
 	}
 	if p, ok := st.(pruner); ok {
 		logger.Info("retenção: " + describeRetention(cfg.Retention) + "; aplicada de hora em hora (patchd-server retention mostra antes)")

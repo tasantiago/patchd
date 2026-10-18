@@ -108,6 +108,9 @@ var auditActions = []struct{ Key, Label string }{
 	{"cli.retention.apply", "Retenção aplicada (terminal)"},
 	{"cli.repo-cache.prune", "Cache de repositórios limpo (terminal)"},
 	{"auditoria.retencao", "Eventos antigos da auditoria apagados"},
+	// Aula 18.5: notificações por e-mail.
+	{"notificacao.teste", "Notificação de teste enviada"},
+	{"cli.notify.test", "Notificação de teste enviada (terminal)"},
 }
 
 // AuditLabel: o rótulo da ação; a chave quando não há (ação de uma versão mais nova).

@@ -91,11 +91,21 @@ services:
       PATCHD_RETENTION_JOBS_DAYS: ${PATCHD_RETENTION_JOBS_DAYS:-400}
       PATCHD_METRICS_LISTEN_ADDR: ${PATCHD_METRICS_LISTEN_ADDR-:9090}
       PATCHD_METRICS_TOKEN_FILE: /run/secrets/metrics_token
+      # Notificações por e-mail (Aula 18.5; PATCHD_SMTP_ADDR vazio desliga). A senha, só com
+      # usuário, fica em deploy/secrets/smtp_password.
+      PATCHD_SMTP_ADDR: ${PATCHD_SMTP_ADDR:-}
+      PATCHD_SMTP_FROM: ${PATCHD_SMTP_FROM:-}
+      PATCHD_NOTIFY_TO: ${PATCHD_NOTIFY_TO:-}
+      PATCHD_SMTP_TLS: ${PATCHD_SMTP_TLS:-starttls}
+      PATCHD_SMTP_USER: ${PATCHD_SMTP_USER:-}
+      PATCHD_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+      PATCHD_SMTP_CA_FILE: ${PATCHD_SMTP_CA_FILE:-}
     secrets:
       - database_url
       - job_signing_key
       - oidc_client_secret
       - metrics_token
+      - smtp_password
     volumes:
       - ${PATCHD_TLS_DIR:-./tls}:/run/patchd/tls:ro
       - ${PATCHD_RELEASES_HOST_DIR:-../releases}:/var/lib/patchd/releases:ro
@@ -133,6 +143,8 @@ secrets:
     file: ./secrets/oidc_client_secret
   metrics_token:
     file: ./secrets/metrics_token
+  smtp_password:
+    file: ./secrets/smtp_password
 
 volumes:
   pgdata:
