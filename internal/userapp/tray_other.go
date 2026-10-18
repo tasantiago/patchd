@@ -22,6 +22,6 @@ func OpenURL(u string) {}
 // TrayOptions é o que o ícone precisa.
 type TrayOptions struct {
 	Tooltip string
-	Open    func()
+	Open    func(tab string)
 	Notices <-chan Notice
 }

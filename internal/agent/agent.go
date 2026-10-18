@@ -50,6 +50,9 @@ type Agent struct {
 	// usuários. Restart nil: o agente recusa esses jobs.
 	RebootStatus func(ctx context.Context) (protocol.RebootStatus, error)
 	Restart      func(ctx context.Context, jobID int64, delay time.Duration) error
+	// AbortRestart cancela o reinício agendado (Aula 17.6): com dois pedidos, vale o mais
+	// cedo. nil: o segundo pedido é recusado, como antes.
+	AbortRestart func(ctx context.Context) error
 	// SaveServerURL grava o endereço novo do servidor na credencial (job server_url, Aula
 	// 9.2). nil: o agente recusa esses jobs.
 	SaveServerURL func(url string) error

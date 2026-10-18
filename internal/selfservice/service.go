@@ -28,6 +28,7 @@ type Store interface {
 	HostState(ctx context.Context, id string) (store.HostState, bool, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
 	JobForMachine(ctx context.Context, machineID string, id int64) (store.JobRow, bool, error)
+	LatestScan(ctx context.Context, id string) (protocol.PatchScanReport, bool, error)
 }
 
 // Service atende a loja e os pedidos (Aula 17.2). A API do agente e a linha de comando usam
@@ -65,7 +66,10 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	if out.OpenJob, err = s.openJob(ctx, machineID); err != nil {
 		return out, err
 	}
-	out.Requests, err = s.requests(ctx, machineID, u.Account)
+	if out.Requests, err = s.requests(ctx, machineID, u.Account); err != nil {
+		return out, err
+	}
+	out.Reboot, err = s.rebootState(ctx, machineID)
 	return out, err
 }
 
@@ -93,7 +97,12 @@ func (s *Service) requests(ctx context.Context, machineID, account string) ([]pr
 		if len(out) == MaxRequests {
 			break
 		}
-		if j.Type != jobs.TypeThirdParty || !strings.EqualFold(j.CreatedBy, Author(account)) {
+		if (j.Type != jobs.TypeThirdParty && j.Type != jobs.TypeReboot) || !strings.EqualFold(j.CreatedBy, Author(account)) {
+			continue
+		}
+		if j.Type == jobs.TypeReboot { // Aula 17.6
+			out = append(out, protocol.SelfServiceJob{ID: j.ID, App: "reinicio", Name: RebootName, State: j.State,
+				CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, 200)})
 			continue
 		}
 		full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID)
@@ -191,6 +200,9 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 		return o, err
 	}
 	o.Seen = seen
+	if req.Action == protocol.SelfServiceReboot {
+		return s.reboot(ctx, machineID, req, o)
+	}
 	if req.Action != protocol.SelfServiceUpdate && req.Action != protocol.SelfServiceInstall {
 		return refuse("ação desconhecida", "Pedido inválido.")
 	}
@@ -301,4 +313,118 @@ func (s *Service) seen(ctx context.Context, machineID, account string) (bool, er
 		return false, err
 	}
 	return slices.ContainsFunc(h.State.Users, func(u protocol.LoggedUser) bool { return strings.EqualFold(u.Account, account) }), nil
+}
+
+// RebootName é como o reinício aparece em "Meus pedidos".
+const RebootName = "Reinício do computador"
+
+// rebootTTL: o prazo do job de reinício conta a partir da hora escolhida.
+const rebootTTL = time.Hour
+
+// isServer: em servidor, o reinício derruba a sessão de todos; quem decide é a TI.
+func isServer(os protocol.OSInfo) bool {
+	return strings.Contains(os.Name, "Server") || strings.HasPrefix(os.Edition, "Server")
+}
+
+// rebootState é o reinício da máquina para o app (Aula 17.6): o pendente da última busca (o
+// agente troca pelo de agora, que ele lê na hora) e o reinício já pedido, de qualquer autor.
+func (s *Service) rebootState(ctx context.Context, machineID string) (*protocol.SelfServiceRebootState, error) {
+	inv, found, err := s.Store.LatestInventory(ctx, machineID)
+	if err != nil || !found || inv.OS.ID != "windows" {
+		return nil, err
+	}
+	st := &protocol.SelfServiceRebootState{Allowed: !isServer(inv.OS)}
+	rep, ok, err := s.Store.LatestScan(ctx, machineID)
+	if err != nil {
+		return nil, err
+	}
+	if ok && rep.Reboot != nil {
+		st.Pending = rep.Reboot.Pending
+	}
+	list, err := s.Store.Jobs(ctx, machineID, openJobsScan)
+	if err != nil {
+		return nil, err
+	}
+	for _, j := range list {
+		if j.Type != jobs.TypeReboot || jobs.Final(j.State) || !j.NotAfter.After(s.Now()) {
+			continue
+		}
+		st.JobID = j.ID
+		full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID)
+		if err != nil {
+			return nil, err
+		}
+		var payload jobs.Job
+		if found && json.Unmarshal([]byte(full.Payload), &payload) == nil {
+			if p, err := jobs.ParseRebootParams(payload.Params); err == nil {
+				switch {
+				case p.At != nil:
+					at := *p.At
+					st.At = &at
+				case j.DeliveredAt != nil:
+					at := j.DeliveredAt.Add(p.Delay())
+					st.At = &at
+				}
+			}
+		}
+		break
+	}
+	return st, nil
+}
+
+// reboot atende o "reiniciar" (Aula 17.6): agora (o aviso mínimo) ou na hora escolhida, até
+// 12 h à frente. O servidor não exige o pendente da última busca (ela pode ter um dia): o
+// agente confere na hora e, sem nada pendente, o job volta dispensado.
+func (s *Service) reboot(ctx context.Context, machineID string, req protocol.SelfServiceRequest, o Outcome) (Outcome, error) {
+	refuse := func(why, msg string) (Outcome, error) {
+		o.Why = why
+		o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceRefused, Message: msg}
+		return o, nil
+	}
+	st, err := s.rebootState(ctx, machineID)
+	if err != nil {
+		return o, err
+	}
+	switch {
+	case st == nil:
+		return refuse("sem inventário do Windows", "Este computador não pode ser reiniciado por aqui.")
+	case !st.Allowed:
+		return refuse("servidor", "Em servidores, o reinício fica com a equipe de TI.")
+	case st.JobID > 0:
+		o.Why = fmt.Sprintf("reinício %d em aberto", st.JobID)
+		o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceWait, JobID: st.JobID,
+			Message: "Já há um reinício agendado para este computador."}
+		return o, nil
+	case req.App != "":
+		return refuse("reiniciar com programa", "Pedido inválido.")
+	}
+	now := s.Now()
+	params, err := jobs.RebootParamsJSON(jobs.MinRebootDelay)
+	ttl := rebootTTL
+	o.Version = "agora"
+	msg := "Pedido aceito: o computador reinicia em 2 minutos. Salve seu trabalho agora."
+	if req.RebootAt != nil {
+		d := req.RebootAt.Sub(now)
+		if d < jobs.MinRebootDelay-time.Minute || d > jobs.MaxScheduledReboot {
+			return refuse("hora fora do intervalo", "Escolha um horário entre daqui a 2 minutos e daqui a 12 horas.")
+		}
+		params, err = jobs.RebootAtParamsJSON(*req.RebootAt)
+		ttl += d
+		o.Version = req.RebootAt.UTC().Format(time.RFC3339)
+		msg = "Pedido aceito: o computador reinicia no horário escolhido. O Windows avisa antes; salve seu trabalho até lá."
+	}
+	if err != nil {
+		return o, err
+	}
+	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: machineID, Type: jobs.TypeReboot, TTL: ttl,
+		By: Author(req.Account), Params: params}, now)
+	if errors.Is(err, jobs.ErrMachineUnavailable) {
+		return refuse("máquina aposentada", "Esta máquina não está mais na frota.")
+	}
+	if err != nil {
+		return o, err
+	}
+	o.Job = &rec
+	o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceCreated, JobID: rec.ID, Message: msg}
+	return o, nil
 }

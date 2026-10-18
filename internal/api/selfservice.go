@@ -70,12 +70,21 @@ func (a *api) selfServiceRequest(w http.ResponseWriter, r *http.Request, id stri
 		a.logger.Info("autoatendimento: pedido atendido", "machine_id", id, "job_id", o.Job.ID, "app", req.App, "version", o.Version,
 			"acao", req.Action, "visto_conectado", o.Seen, "request_id", RequestID(r.Context()))
 		a.auditAs(r, req.Account, "autoatendimento", "autoatendimento.pedido", id,
-			fmt.Sprintf("job %d · %s %s · %s · visto conectado: %s", o.Job.ID, req.App, o.Version, req.Action, seen))
+			fmt.Sprintf("job %d · %s %s · %s · visto conectado: %s", o.Job.ID, selfServiceWhat(req), o.Version, req.Action, seen))
 	default:
 		a.logger.Warn("autoatendimento: pedido não atendido", "machine_id", id, "app", req.App, "acao", req.Action, "status", o.Response.Status,
 			"motivo", o.Why, "request_id", RequestID(r.Context()))
 		a.auditAs(r, req.Account, "autoatendimento", "autoatendimento.recusado", id,
-			fmt.Sprintf("%s · %s · %s: %s", req.App, req.Action, o.Response.Status, o.Why))
+			fmt.Sprintf("%s · %s · %s: %s", selfServiceWhat(req), req.Action, o.Response.Status, o.Why))
 	}
 	writeJSON(w, http.StatusOK, o.Response)
+}
+
+// selfServiceWhat é o objeto do pedido na auditoria: o programa, ou o computador no
+// reinício (Aula 17.6).
+func selfServiceWhat(req protocol.SelfServiceRequest) string {
+	if req.App == "" {
+		return "computador"
+	}
+	return req.App
 }

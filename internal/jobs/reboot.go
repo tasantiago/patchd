@@ -29,13 +29,40 @@ const ResultGrace = 2 * time.Hour
 // "nada a fazer", e o job vira dispensado (numa campanha, a máquina sai do anel resolvida).
 const RebootNothingPending = "nenhum reinício pendente nesta máquina; nada a fazer"
 
+// MaxScheduledReboot (Aula 17.6): o usuário escolhe a hora do reinício até 12 h à frente.
+const MaxScheduledReboot = 12 * time.Hour
+
+// RebootAlreadyScheduled (Aula 17.6): a máquina já tem um reinício agendado para antes da
+// hora deste job; ele atende os dois. O servidor lê o texto exato: o job vira dispensado.
+const RebootAlreadyScheduled = "já há um reinício agendado nesta máquina para antes desta hora; ele atende este pedido"
+
 // RebootParams são os parâmetros do job reboot.
 type RebootParams struct {
 	DelayMinutes int `json:"delay_minutes"`
+	// At (Aula 17.6): a hora escolhida pelo usuário. Com ela, o agente reinicia nessa hora
+	// (o aviso do Windows fica aberto até lá); DelayMinutes vale como o aviso mínimo, se a
+	// hora já tiver passado quando o job chegar. Agentes até a v0.17.2 recusam o campo.
+	At *time.Time `json:"at,omitempty"`
 }
 
 // Delay devolve o aviso como duração.
 func (p RebootParams) Delay() time.Duration { return time.Duration(p.DelayMinutes) * time.Minute }
+
+// DelayAt é a espera até o reinício, contada de now: até At (no mínimo o aviso, no máximo
+// MaxScheduledReboot) ou, sem At, o aviso.
+func (p RebootParams) DelayAt(now time.Time) time.Duration {
+	if p.At == nil {
+		return p.Delay()
+	}
+	d := p.At.Sub(now)
+	switch {
+	case d < p.Delay():
+		return p.Delay()
+	case d > MaxScheduledReboot:
+		return MaxScheduledReboot
+	}
+	return d.Round(time.Second)
+}
 
 // ParseRebootParams lê e confere os parâmetros.
 func ParseRebootParams(raw json.RawMessage) (RebootParams, error) {
@@ -49,6 +76,17 @@ func ParseRebootParams(raw json.RawMessage) (RebootParams, error) {
 		return p, fmt.Errorf("aviso do reinício fora de %v a %v", MinRebootDelay, MaxRebootDelay)
 	}
 	return p, nil
+}
+
+// RebootAtParamsJSON monta os parâmetros do reinício na hora escolhida (Aula 17.6).
+func RebootAtParamsJSON(at time.Time) (json.RawMessage, error) {
+	at = at.UTC().Truncate(time.Second)
+	p := RebootParams{DelayMinutes: int(MinRebootDelay / time.Minute), At: &at}
+	raw, _ := json.Marshal(p)
+	if _, err := ParseRebootParams(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 // RebootParamsJSON monta os parâmetros para um aviso.

@@ -266,10 +266,11 @@ func TestReinicioPorJob(t *testing.T) {
 	if st, _ := loadState(a.DataDir); st.PendingReboot == nil || st.PendingReboot.JobID != j1 {
 		t.Fatalf("estado: %+v", st)
 	}
-	// Um segundo pedido com o primeiro agendado: recusado.
+	// Um segundo pedido com o primeiro agendado para antes: atendido por ele, dispensado
+	// (Aula 17.6; antes, recusado).
 	j2 := criaJob(t, srv, priv, id, reboot(5))
 	a.CheckIn(ctx)
-	if e := estadoDoJob(srv, id, j2); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "já há um reinício agendado") {
+	if e := estadoDoJob(srv, id, j2); e.State != jobs.StateDismissed || !strings.Contains(e.Detail, "já havia um reinício agendado para antes") {
 		t.Errorf("segundo: %+v", e)
 	}
 

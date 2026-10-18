@@ -22,6 +22,7 @@ const (
 const (
 	SelfServiceUpdate  = "atualizar"
 	SelfServiceInstall = "instalar"
+	SelfServiceReboot  = "reiniciar" // Aula 17.6: reiniciar agora ou na hora escolhida
 )
 
 // Respostas do pedido.
@@ -73,6 +74,9 @@ type SelfServiceCatalog struct {
 	// Requests (Aula 17.5): os pedidos recentes deste usuário nesta máquina, o mais novo
 	// primeiro. Agentes até a v0.17.1 não repassam o campo ao app.
 	Requests []SelfServiceJob `json:"requests,omitempty"`
+	// Reboot (Aula 17.6): o reinício pendente e o já pedido. Agentes até a v0.17.2 não
+	// repassam o campo.
+	Reboot *SelfServiceRebootState `json:"reboot,omitempty"`
 }
 
 // SelfServiceJob é um pedido do usuário, como o app mostra em "Meus pedidos".
@@ -92,6 +96,30 @@ type SelfServiceRequest struct {
 	SelfServiceUser
 	App    string `json:"app"`
 	Action string `json:"action"`
+	// RebootAt (Aula 17.6): no "reiniciar", a hora escolhida; vazio: agora.
+	RebootAt *time.Time `json:"reboot_at,omitempty"`
+}
+
+// SelfServiceRebootState é o reinício da máquina como o app mostra (Aula 17.6).
+type SelfServiceRebootState struct {
+	Pending *bool      `json:"pending,omitempty"` // da última busca; nil: não se sabe
+	Allowed bool       `json:"allowed"`           // false: servidor (o reinício é com a TI)
+	JobID   int64      `json:"job_id,omitempty"`  // reinício já pedido (por qualquer um), em aberto
+	At      *time.Time `json:"at,omitempty"`      // a hora desse reinício, se conhecida
+}
+
+// NextClock é a próxima vez que o relógio marca hh:mm, a partir de now (no fuso de now):
+// hoje, se ainda não passou; senão, amanhã.
+func NextClock(hhmm string, now time.Time) (time.Time, error) {
+	t, err := time.Parse("15:04", hhmm)
+	if err != nil {
+		return time.Time{}, errors.New("use a hora no formato HH:MM, ex.: 18:00")
+	}
+	at := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+	if !at.After(now) {
+		at = at.AddDate(0, 0, 1)
+	}
+	return at, nil
 }
 
 // SelfServiceResponse é a resposta ao pedido.

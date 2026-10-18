@@ -23,3 +23,12 @@ func newRestart(run platform.Runner) func(ctx context.Context, jobID int64, dela
 		return err
 	}
 }
+
+// newAbortRestart cancela o reinício agendado (Aula 17.6): um reinício pedido para mais
+// cedo toma o lugar do que já estava marcado.
+func newAbortRestart(run platform.Runner) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		_, err := run.Run(ctx, shutdownPath, "-c")
+		return err
+	}
+}

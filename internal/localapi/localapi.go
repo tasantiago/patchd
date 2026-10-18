@@ -54,6 +54,8 @@ type Request struct {
 	Op     string `json:"op"`
 	App    string `json:"app,omitempty"`
 	Action string `json:"action,omitempty"`
+	// At (Aula 17.6): no "reiniciar", a hora escolhida; vazio: agora.
+	At *time.Time `json:"at,omitempty"`
 }
 
 // Response é a resposta do agente: uma linha de JSON, e a conexão termina.
@@ -178,6 +180,8 @@ const (
 	backendTimeout = time.Minute
 	writeTimeout   = 10 * time.Second
 	drainTimeout   = 2 * time.Second
+
+	rebootStatusTimeout = 20 * time.Second
 )
 
 // Server atende o canal. OnCreated é chamado quando um pedido vira job: o agente faz o
@@ -186,6 +190,9 @@ type Server struct {
 	Backend   Backend
 	Logger    *slog.Logger
 	OnCreated func()
+	// RebootStatus (Aula 17.6): o reinício pendente lido na hora; a loja do servidor traz o
+	// da última busca, que pode ter um dia. nil: fica o do servidor.
+	RebootStatus func(ctx context.Context) (protocol.RebootStatus, error)
 
 	now  func() time.Time
 	once sync.Once
@@ -275,6 +282,14 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 		if err != nil {
 			return s.backendError("loja", err)
 		}
+		if cat.Reboot != nil && s.RebootStatus != nil {
+			rctx, cancel := context.WithTimeout(ctx, rebootStatusTimeout)
+			st, err := s.RebootStatus(rctx)
+			cancel()
+			if err == nil && st.Pending != nil {
+				cat.Reboot.Pending = st.Pending
+			}
+		}
 		return Response{OK: true, Account: id.Account, Catalog: &cat}
 	case OpRequest:
 		if err := checkRequest(req); err != nil {
@@ -284,7 +299,7 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 			s.Logger.Warn("autoatendimento: limite de pedidos", "account", id.Account, "app", req.App)
 			return limited(wait)
 		}
-		res, err := s.Backend.SelfServiceRequest(ctx, protocol.SelfServiceRequest{SelfServiceUser: u, App: req.App, Action: req.Action})
+		res, err := s.Backend.SelfServiceRequest(ctx, protocol.SelfServiceRequest{SelfServiceUser: u, App: req.App, Action: req.Action, RebootAt: req.At})
 		if err != nil {
 			return s.backendError("pedido", err)
 		}
@@ -302,11 +317,21 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 var appID = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]{0,63}$`)
 
 func checkRequest(r Request) error {
+	switch r.Action {
+	case protocol.SelfServiceReboot: // Aula 17.6: o reinício é do computador, sem programa
+		if r.App != "" {
+			return errors.New("o reiniciar não leva programa")
+		}
+		return nil
+	case protocol.SelfServiceUpdate, protocol.SelfServiceInstall:
+		if r.At != nil {
+			return errors.New("hora só no reiniciar")
+		}
+	default:
+		return fmt.Errorf("ação inválida: use %s, %s ou %s", protocol.SelfServiceUpdate, protocol.SelfServiceInstall, protocol.SelfServiceReboot)
+	}
 	if !appID.MatchString(r.App) {
 		return errors.New("programa inválido")
-	}
-	if r.Action != protocol.SelfServiceUpdate && r.Action != protocol.SelfServiceInstall {
-		return fmt.Errorf("ação inválida: use %s ou %s", protocol.SelfServiceUpdate, protocol.SelfServiceInstall)
 	}
 	return nil
 }

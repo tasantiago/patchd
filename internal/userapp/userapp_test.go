@@ -2,6 +2,7 @@ package userapp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -300,5 +301,96 @@ func TestAvisoDePedidoConcluido(t *testing.T) {
 	}
 	if _, text := noticeText(Notice{Done: []string{doneText(protocol.SelfServiceJob{Name: "7-Zip", Version: "26.04", State: "adiado"})}}); !strings.Contains(text, "feche o programa") {
 		t.Errorf("adiado: %q", text)
+	}
+}
+
+// Aula 17.6: a aba Reinício — escolher a hora, acompanhar, e o aviso no ícone.
+func TestAbaReinicio(t *testing.T) {
+	sim, nao := true, false
+	loja := lojaDeTeste(0)
+	loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &sim, Allowed: true}
+	c := &canal{loja: loja, pedido: localapi.Response{OK: true, Result: &protocol.SelfServiceResponse{Status: "criado", JobID: 90, Message: "Pedido aceito: o computador reinicia no horário escolhido."}}}
+	a := appDeTeste(c) // 17/10 09:30 UTC
+	a.Loc = time.UTC
+
+	b := get(a, a.base()+"?aba=reinicio").Body.String()
+	for _, quer := range []string{`class="conta alerta"`, `value="agora" checked`, "Daqui a 1 hora (às 10:30)", "Na hora do almoço (12:00)",
+		"No fim do expediente (18:00)", "Daqui a 4 horas (às 13:30)", `name="action" value="reiniciar"`} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("aba reinício sem %q:\n%s", quer, b)
+		}
+	}
+	if strings.Index(b, "Na hora do almoço") > strings.Index(b, "Daqui a 4 horas") {
+		t.Error("as opções vão em ordem de hora")
+	}
+
+	// Pedido para as 18:00: vai a hora; volta para a própria aba.
+	as18 := time.Date(2026, 10, 17, 18, 0, 0, 0, time.UTC)
+	w := post(a, a.base()+"pedir", url.Values{"action": {"reiniciar"}, "quando": {fmt.Sprint(as18.Unix())}}, "http://127.0.0.1:5555")
+	if w.Header().Get("Location") != a.base()+"?aba=reinicio" || len(c.pedidos) != 1 || c.pedidos[0].At == nil || !c.pedidos[0].At.Equal(as18) || c.pedidos[0].App != "" {
+		t.Fatalf("pedido: %v %+v", w.Header(), c.pedidos)
+	}
+	post(a, a.base()+"pedir", url.Values{"action": {"reiniciar"}, "quando": {"agora"}}, "http://127.0.0.1:5555")
+	if c.pedidos[1].At != nil {
+		t.Error("agora vai sem hora")
+	}
+	// Hora fora da lista (amanhã, ou no passado): nem chega ao agente.
+	for _, q := range []string{fmt.Sprint(as18.Add(24 * time.Hour).Unix()), fmt.Sprint(as18.Add(-10 * time.Hour).Unix()), "x"} {
+		post(a, a.base()+"pedir", url.Values{"action": {"reiniciar"}, "quando": {q}}, "http://127.0.0.1:5555")
+	}
+	if len(c.pedidos) != 2 {
+		t.Errorf("horas inválidas chegaram ao agente: %+v", c.pedidos)
+	}
+
+	// Já agendado: mostra a hora, sem formulário nem alerta.
+	c.mu.Lock()
+	c.loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &sim, Allowed: true, JobID: 90, At: &as18}
+	c.mu.Unlock()
+	b = get(a, a.base()+"?aba=reinicio").Body.String()
+	if !strings.Contains(b, "Reinício agendado para as <b>18:00</b> (pedido nº 90)") || strings.Contains(b, "conta alerta") || strings.Contains(b, `name="quando"`) {
+		t.Errorf("agendado:\n%s", b)
+	}
+	// Sem pendência; em servidor; agente antigo (sem o campo): a aba some.
+	c.mu.Lock()
+	c.loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &nao, Allowed: true}
+	c.mu.Unlock()
+	if b := get(a, a.base()+"?aba=reinicio").Body.String(); !strings.Contains(b, "Nenhum reinício pendente") {
+		t.Errorf("sem pendência:\n%s", b)
+	}
+	c.mu.Lock()
+	c.loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &sim}
+	c.mu.Unlock()
+	if b := get(a, a.base()+"?aba=reinicio").Body.String(); !strings.Contains(b, "equipe de TI") || strings.Contains(b, `name="quando"`) {
+		t.Errorf("servidor:\n%s", b)
+	}
+	c.mu.Lock()
+	c.loja.Catalog.Reboot = nil
+	c.mu.Unlock()
+	if b := get(a, a.base()+"?aba=reinicio").Body.String(); strings.Contains(b, "Reinício") || !strings.Contains(b, "Atualizações para você") {
+		t.Errorf("sem o campo, sem a aba:\n%s", b)
+	}
+
+	// O aviso no ícone: pendente sem hora escolhida; o clique abre a aba Reinício.
+	n := Notice{Reboot: true}
+	if title, _ := noticeText(n); title != "Reinício pendente" || n.Tab() != "reinicio" {
+		t.Errorf("aviso: %q %q", title, n.Tab())
+	}
+	if (Notice{Done: []string{"x"}, Reboot: true}).Tab() != "pedidos" || a.TabURL("reinicio") != a.URL()+"?aba=reinicio" || a.TabURL("") != a.URL() {
+		t.Error("abas do aviso")
+	}
+}
+
+func TestAvisoDeReinicio(t *testing.T) {
+	sim := true
+	loja := lojaDeTeste(0)
+	loja.Catalog.Items = nil
+	loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &sim, Allowed: true}
+	a := appDeTeste(&canal{loja: loja})
+	out := make(chan Notice, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go a.Watch(ctx, time.Millisecond, time.Hour, out)
+	if n := <-out; !n.Reboot {
+		t.Fatalf("aviso: %+v", n)
 	}
 }

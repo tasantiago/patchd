@@ -74,9 +74,11 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			a.Logger.Info("job aceito: atualizar pacotes", "job_id", j.ID, "packages", strings.Join(p.Names(), ","))
 			acc.updates = append(acc.updates, acceptedUpdate{id: j.ID, pkgs: p.Packages})
 		case jobs.TypeReboot:
-			p, _ := jobs.ParseRebootParams(j.Params) // o Verify já conferiu
-			a.Logger.Info("job aceito: reiniciar com aviso", "job_id", j.ID, "delay", p.Delay().String())
-			acc.reboots = append(acc.reboots, acceptedReboot{id: j.ID, delay: p.Delay()})
+			// O Verify já conferiu. Com a hora escolhida pelo usuário (Aula 17.6), espera até ela.
+			p, _ := jobs.ParseRebootParams(j.Params)
+			delay := p.DelayAt(a.now())
+			a.Logger.Info("job aceito: reiniciar com aviso", "job_id", j.ID, "delay", delay.String())
+			acc.reboots = append(acc.reboots, acceptedReboot{id: j.ID, delay: delay})
 		case jobs.TypeThirdParty:
 			p, _ := jobs.ParseThirdPartyParams(j.Params) // o Verify já conferiu
 			if a.ThirdParty == nil {
@@ -277,9 +279,19 @@ func (a *Agent) scheduleReboots(ctx context.Context, state *State, reboots []acc
 			reject("este sistema não reinicia pelo patchd (Linux e Windows, por enquanto)")
 			continue
 		}
-		if state.PendingReboot != nil {
-			reject(fmt.Sprintf("já há um reinício agendado (job %d)", state.PendingReboot.JobID))
-			continue
+		// Já há um reinício agendado (Aula 17.6: o usuário escolhe a hora, e a TI pode pedir
+		// outro). Vale o mais cedo: o mais tarde fica atendido por ele e volta dispensado.
+		var replaced *PendingReboot
+		if pr := state.PendingReboot; pr != nil {
+			if !a.now().UTC().Add(r.delay).Before(pr.At) {
+				reject(jobs.RebootAlreadyScheduled)
+				continue
+			}
+			if a.AbortRestart == nil {
+				reject(fmt.Sprintf("já há um reinício agendado (job %d)", pr.JobID))
+				continue
+			}
+			replaced = pr
 		}
 		st, err := a.RebootStatus(ctx)
 		switch {
@@ -295,6 +307,16 @@ func (a *Agent) scheduleReboots(ctx context.Context, state *State, reboots []acc
 		case st.LastBoot == nil:
 			reject("sem a hora do último boot, o agente não conseguiria conferir o reinício")
 			continue
+		}
+		if replaced != nil {
+			if err := a.AbortRestart(ctx); err != nil {
+				a.Logger.Error("reinício anterior não cancelado; o novo fica de fora", "job_id", r.id, "anterior", replaced.JobID, "error", err)
+				a.queueJobResult(state, r.id, protocol.JobResultFailed, fmt.Sprintf("não foi possível trocar o reinício do job %d por este, mais cedo: %v", replaced.JobID, err))
+				continue
+			}
+			a.Logger.Info("reinício anterior cancelado: o novo é mais cedo", "job_id", r.id, "anterior", replaced.JobID)
+			a.queueJobResult(state, replaced.JobID, protocol.JobResultRejected, jobs.RebootAlreadyScheduled)
+			state.PendingReboot = nil
 		}
 		if err := a.Restart(ctx, r.id, r.delay); err != nil {
 			a.Logger.Error("reinício não agendado", "job_id", r.id, "error", err)
