@@ -265,3 +265,23 @@ o agente lê a conta e os grupos do token do Windows de quem abriu o pipe.
 Na máquina, na sessão do usuário (sem elevar): `patchd-agent selfservice whoami`,
 `selfservice catalog` e `selfservice request -app ID -action atualizar|instalar`. No log do
 agente (`C:\ProgramData\patchd\logs\agent.log`), procure por `autoatendimento`.
+
+## Central de software, o app do usuário (Aula 17.4)
+
+No Windows, o serviço do agente põe a Central de software para abrir no logon de todos os
+usuários: a chave `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, valor
+`patchd-central-de-software`, aponta para `C:\Program Files\patchd\patchd-app.exe app`. O
+`patchd-app.exe` é uma cópia do agente feita pelo serviço: com o app aberto nas sessões, o
+`patchd-agent.exe` continua livre para a atualização automática. A cópia é marcada como
+programa gráfico (um campo do cabeçalho do executável), para o logon não abrir uma janela de
+console. Cópia em uso é renomeada (`.old-...`) e sai quando ninguém mais a usa.
+
+- O app mostra o escudo perto do relógio. Clique abre a página no navegador padrão; o menu
+  (botão direito) tem "Fechar este ícone". Quando aparece atualização nova para o usuário,
+  vem um aviso do Windows (até 2 min depois do logon e a cada 4 h).
+- A página é servida só em `127.0.0.1`, numa porta do sistema, sob um caminho com um segredo
+  novo a cada sessão. Sem o segredo, nada responde; o Host e a origem dos formulários são
+  conferidos. A página não tem JavaScript; durante uma instalação, ela se atualiza sozinha.
+- Desligar (servidores, máquinas sem usuário): o serviço com `-user-app=false` (ou
+  `PATCHD_USER_APP=0`). No próximo início, o serviço tira a chave e a cópia.
+- `patchd-agent app -no-tray` serve a página sem ícone e mostra o endereço no terminal.

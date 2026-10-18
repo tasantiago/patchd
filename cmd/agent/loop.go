@@ -32,6 +32,8 @@ type loopOptions struct {
 	// repassadas ao install da versão nova para o serviço continuar com as mesmas opções.
 	AutoUpdate  bool
 	ServiceArgs []string
+	// UserApp (Aula 17.4): só como serviço do Windows; põe ou tira o app do usuário.
+	UserApp bool
 }
 
 // inContainer é a detecção de container; os testes a substituem.
@@ -198,8 +200,12 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		"server", cred.ServerURL,
 		"data_dir", opts.DataDir,
 	)
-	// Autoatendimento (Aula 17.3): o canal local do app do usuário, só no Windows.
+	// Autoatendimento (Aula 17.3): o canal local do app do usuário, só no Windows. Como
+	// serviço, o app do usuário (Aula 17.4) é posto (ou tirado) do logon de todos.
 	startSelfService(ctx, logger, ag)
+	if opts.AutoUpdate {
+		syncUserApp(logger, opts.UserApp)
+	}
 	if err := ag.Run(ctx); err != nil {
 		logger.Error("laço de check-in parou com erro", "error", err)
 		return exitRuntime

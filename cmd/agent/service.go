@@ -97,6 +97,7 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 		AllowContainer: allowContainer(look),
 		AutoUpdate:     asService,
 		ServiceArgs:    args,
+		UserApp:        cfg.UserApp,
 	}
 	if asService {
 		return runAsService(logger, func(ctx context.Context) int { return runLoop(ctx, logger, opts) })

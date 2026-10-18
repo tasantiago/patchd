@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -58,5 +59,25 @@ func TestSelfServiceLinhaDeComando(t *testing.T) {
 	}
 	if rc, _, _ := roda("apagar"); rc != exitConfig {
 		t.Errorf("comando desconhecido: %d", rc)
+	}
+}
+
+// Aula 17.4: o app do usuário vem ligado; PATCHD_USER_APP=0 ou -user-app=false o tiram.
+func TestConfigUserApp(t *testing.T) {
+	env := func(m map[string]string) func(string) (string, bool) {
+		return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
+	}
+	cfg, err := loadAgentConfig(nil, env(nil), io.Discard)
+	if err != nil || !cfg.UserApp {
+		t.Errorf("padrão: %v %v", cfg.UserApp, err)
+	}
+	if cfg, _ := loadAgentConfig(nil, env(map[string]string{"PATCHD_USER_APP": "0"}), io.Discard); cfg.UserApp {
+		t.Error("PATCHD_USER_APP=0")
+	}
+	if cfg, _ := loadAgentConfig([]string{"-user-app=false"}, env(nil), io.Discard); cfg.UserApp {
+		t.Error("-user-app=false")
+	}
+	if _, err := loadAgentConfig(nil, env(map[string]string{"PATCHD_USER_APP": "talvez"}), io.Discard); err == nil {
+		t.Error("valor inválido")
 	}
 }
