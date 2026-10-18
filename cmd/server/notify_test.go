@@ -3,14 +3,18 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/tasantiago/patchd/internal/alerts"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 func ambiente(m map[string]string) config.Lookup {
@@ -148,5 +152,26 @@ func TestRunNotify(t *testing.T) {
 	}
 	if len(tr.ev) != 2 || !strings.Contains(tr.ev[1].Detail, "falhou") {
 		t.Errorf("falha na trilha: %+v", tr.ev)
+	}
+}
+
+// Aula 18.6: a prévia pelo terminal e o tipo de aviso desconhecido.
+func TestNotifyPending(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	var out, errb bytes.Buffer
+	w := &alerts.Watcher{Store: st, Now: time.Now, PublicURL: "https://patchd.exemplo:8443"}
+	if code := printPending(ctx, w, &out, &errb); code != exitOK || !strings.Contains(out.String(), "nada novo") {
+		t.Errorf("vazio: %d %s", code, out.String())
+	}
+	_, _ = st.CreateSelfServiceRequest(ctx, store.SelfServiceRequest{MachineID: "x", Account: `EXEMPLO\fulano`, AppID: "7zip", Action: "instalar", Version: "24.08"})
+	out.Reset()
+	if code := printPending(ctx, w, &out, &errb); code != exitOK || !strings.HasPrefix(out.String(), "== [pedidos] [patchd] 1 pedido(s) aguardando a TI\n") ||
+		!strings.Contains(out.String(), "https://patchd.exemplo:8443/painel/autoatendimento") {
+		t.Errorf("prévia: %d %s", code, out.String())
+	}
+	errb.Reset()
+	if code := run([]string{"notify", "status"}, ambiente(map[string]string{"PATCHD_NOTIFY_EVENTS": "pedidos,tudo"}), &out, &errb); code != exitConfig || !strings.Contains(errb.String(), `"tudo" desconhecido`) {
+		t.Errorf("tipo desconhecido: %d %s", code, errb.String())
 	}
 }

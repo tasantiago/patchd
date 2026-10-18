@@ -13,6 +13,9 @@ import (
 // LockCampaigns é a chave da trava das campanhas.
 const LockCampaigns int64 = 0x7061_7463_6864_0001 // "patchd" + 1
 
+// LockNotify é a chave da trava das notificações por e-mail (Aula 18.6).
+const LockNotify int64 = 0x7061_7463_6864_0002
+
 // WithAdvisoryLock roda fn só se conseguir a trava key; devolve false se outra sessão
 // (outro servidor) está com ela.
 func (p *Postgres) WithAdvisoryLock(ctx context.Context, key int64, fn func(context.Context) error) (bool, error) {

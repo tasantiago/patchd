@@ -46,6 +46,8 @@ type Memory struct {
 
 	offers     map[string]SelfServiceOffer // autoatendimento (Aula 17.1), por programa
 	ssRequests []SelfServiceRequest        // pedidos que esperam a TI (Aula 18.3), ID = posição + 1
+
+	notified map[string]time.Time // avisos por e-mail mandados (Aula 18.6), pela chave
 }
 
 type memMachine struct {
