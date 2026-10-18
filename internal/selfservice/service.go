@@ -27,6 +27,7 @@ type Store interface {
 	LatestInventory(ctx context.Context, id string) (protocol.InventoryReport, bool, error)
 	HostState(ctx context.Context, id string) (store.HostState, bool, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
+	JobForMachine(ctx context.Context, machineID string, id int64) (store.JobRow, bool, error)
 }
 
 // Service atende a loja e os pedidos (Aula 17.2). A API do agente e a linha de comando usam
@@ -61,8 +62,67 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 		out.Items = append(out.Items, protocol.SelfServiceItem{App: it.AppID, Name: it.Name, Installed: it.Installed, Target: it.Target,
 			Action: it.Action, Reason: it.Reason})
 	}
-	out.OpenJob, err = s.openJob(ctx, machineID)
+	if out.OpenJob, err = s.openJob(ctx, machineID); err != nil {
+		return out, err
+	}
+	out.Requests, err = s.requests(ctx, machineID, u.Account)
 	return out, err
+}
+
+// MaxRequests: quantos pedidos do usuário a loja mostra.
+const MaxRequests = 10
+
+// Author é o autor dos jobs pedidos pelo usuário (o mesmo texto que aparece no painel).
+func Author(account string) string { return "autoatendimento: " + account }
+
+// requests são os pedidos recentes do usuário nesta máquina (Aula 17.5), entre os últimos
+// jobs dela. O nome e a versão vêm dos parâmetros assinados do job.
+func (s *Service) requests(ctx context.Context, machineID, account string) ([]protocol.SelfServiceJob, error) {
+	list, err := s.Store.Jobs(ctx, machineID, openJobsScan)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]string{}
+	if s.Manifest != nil {
+		for _, r := range s.Manifest.For("windows") {
+			names[r.ID] = r.Name
+		}
+	}
+	out := []protocol.SelfServiceJob{}
+	for _, j := range list {
+		if len(out) == MaxRequests {
+			break
+		}
+		if j.Type != jobs.TypeThirdParty || !strings.EqualFold(j.CreatedBy, Author(account)) {
+			continue
+		}
+		full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID)
+		if err != nil {
+			return nil, err
+		}
+		item := protocol.SelfServiceJob{ID: j.ID, State: j.State, CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, 200)}
+		var payload jobs.Job
+		if found && json.Unmarshal([]byte(full.Payload), &payload) == nil {
+			if p, err := jobs.ParseThirdPartyParams(payload.Params); err == nil {
+				item.App, item.Version = p.App, p.Version
+			}
+		}
+		item.Name = names[item.App]
+		if item.Name == "" {
+			item.Name = item.App
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// short corta o texto em n letras.
+func short(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func (s *Service) items(ctx context.Context, machineID string, u protocol.SelfServiceUser) ([]Item, error) {
@@ -165,7 +225,7 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 		return o, err
 	}
 	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: machineID, Type: jobs.TypeThirdParty, TTL: JobTTL,
-		By: "autoatendimento: " + req.Account, Params: raw}, s.Now())
+		By: Author(req.Account), Params: raw}, s.Now())
 	if errors.Is(err, jobs.ErrMachineUnavailable) {
 		return refuse("máquina aposentada", "Esta máquina não está mais na frota.")
 	}

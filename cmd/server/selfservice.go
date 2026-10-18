@@ -142,6 +142,9 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 		if cat.OpenJob > 0 {
 			fmt.Fprintf(stdout, "instalação em andamento na máquina: job %d\n", cat.OpenJob)
 		}
+		for _, r := range cat.Requests { // Aula 17.5: os pedidos deste usuário nesta máquina
+			fmt.Fprintf(stdout, "pedido: job %d · %s %s · %s\n", r.ID, r.App, r.Version, r.State)
+		}
 		return exitOK
 	}
 	o, err := svc.Request(ctx, id, protocol.SelfServiceRequest{SelfServiceUser: u, App: *app, Action: *action})
