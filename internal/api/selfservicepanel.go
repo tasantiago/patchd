@@ -24,6 +24,7 @@ import (
 type ssOfferRow struct {
 	AppID, Name, Approved string
 	CanUpdate, CanInstall bool
+	NeedsApproval         bool // Aula 18.3
 	Groups, Updated       string
 	Active                bool
 }
@@ -79,7 +80,7 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 		}
 		row := ssOfferRow{AppID: rule.ID, Name: rule.Name, Approved: newestApproved(approvals, rule.ID)}
 		if o, ok := byApp[rule.ID]; ok {
-			row.Active, row.CanUpdate, row.CanInstall = true, o.CanUpdate, o.CanInstall
+			row.Active, row.CanUpdate, row.CanInstall, row.NeedsApproval = true, o.CanUpdate, o.CanInstall, o.NeedsApproval
 			row.Groups = strings.Join(o.Groups, ", ")
 			row.Updated = a.stamp(o.UpdatedAt) + " · " + o.UpdatedBy
 		}
@@ -179,7 +180,7 @@ func (a *api) selfServiceOfferAction(w http.ResponseWriter, r *http.Request, s p
 		return
 	}
 	o := store.SelfServiceOffer{AppID: app, CanUpdate: r.PostFormValue("atualizar") == "1", CanInstall: r.PostFormValue("instalar") == "1",
-		Groups: splitGroups(r.PostFormValue("grupos")), UpdatedBy: s.Username}
+		NeedsApproval: r.PostFormValue("aprovacao") == "1", Groups: splitGroups(r.PostFormValue("grupos")), UpdatedBy: s.Username}
 	if !o.CanUpdate && !o.CanInstall {
 		removed, err := a.store.DeleteSelfServiceOffer(r.Context(), app)
 		if err != nil {
@@ -202,6 +203,9 @@ func (a *api) selfServiceOfferAction(w http.ResponseWriter, r *http.Request, s p
 		return
 	}
 	detail := fmt.Sprintf("atualizar %s · instalar %s · %d grupo(s)", yesNo(o.CanUpdate), yesNo(o.CanInstall), len(o.Groups))
+	if o.NeedsApproval {
+		detail += " · com aprovação da TI"
+	}
 	a.audit(r, s, "autoatendimento.oferta", app, detail)
 	a.logger.Info("autoatendimento: oferta gravada", "app", app, "atualizar", o.CanUpdate, "instalar", o.CanInstall, "grupos", len(o.Groups),
 		"username", s.Username, "request_id", RequestID(r.Context()))

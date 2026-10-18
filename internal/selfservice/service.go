@@ -29,6 +29,13 @@ type Store interface {
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
 	JobForMachine(ctx context.Context, machineID string, id int64) (store.JobRow, bool, error)
 	LatestScan(ctx context.Context, id string) (protocol.PatchScanReport, bool, error)
+	// Aula 18.3: os pedidos que esperam a TI.
+	CreateSelfServiceRequest(ctx context.Context, q store.SelfServiceRequest) (int64, error)
+	SelfServiceRequests(ctx context.Context, f store.RequestFilter) ([]store.SelfServiceRequest, error)
+	SelfServiceRequestByID(ctx context.Context, id int64) (store.SelfServiceRequest, bool, error)
+	DecideSelfServiceRequest(ctx context.Context, id int64, state, by, note string, jobID int64, at time.Time) error
+	ExpireSelfServiceRequests(ctx context.Context, before, now time.Time) (int64, error)
+	CancelJob(ctx context.Context, id int64, by string) (bool, error)
 }
 
 // Service atende a loja e os pedidos (Aula 17.2). A API do agente e a linha de comando usam
@@ -59,9 +66,20 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	if err != nil {
 		return out, err
 	}
+	waiting, err := s.userRequests(ctx, machineID, u.Account)
+	if err != nil {
+		return out, err
+	}
 	for _, it := range items {
-		out.Items = append(out.Items, protocol.SelfServiceItem{App: it.AppID, Name: it.Name, Installed: it.Installed, Target: it.Target,
-			Action: it.Action, Reason: it.Reason})
+		x := protocol.SelfServiceItem{App: it.AppID, Name: it.Name, Installed: it.Installed, Target: it.Target,
+			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval}
+		for _, q := range waiting {
+			if q.AppID == it.AppID && q.State == store.RequestWaiting {
+				x.Pending = q.ID
+				break
+			}
+		}
+		out.Items = append(out.Items, x)
 	}
 	if out.OpenJob, err = s.openJob(ctx, machineID); err != nil {
 		return out, err
@@ -122,7 +140,51 @@ func (s *Service) requests(ctx context.Context, machineID, account string) ([]pr
 		}
 		out = append(out, item)
 	}
+	// Aula 18.3: os pedidos que passaram (ou passam) pela TI e não viraram job. Os aprovados
+	// já aparecem pelo job.
+	qs, err := s.userRequests(ctx, machineID, account)
+	if err != nil {
+		return nil, err
+	}
+	for _, q := range qs {
+		if q.State == store.RequestApproved {
+			continue
+		}
+		item := protocol.SelfServiceJob{Request: q.ID, App: q.AppID, Name: names[q.AppID], Version: q.Version,
+			State: RequestStateLabels[q.State], CreatedAt: q.CreatedAt, FinishedAt: q.DecidedAt}
+		if item.Name == "" {
+			item.Name = q.AppID
+		}
+		if q.State == store.RequestRefused && q.Note != "" {
+			item.Detail = "motivo: " + short(q.Note, 200)
+		}
+		out = append(out, item)
+	}
+	slices.SortStableFunc(out, func(a, b protocol.SelfServiceJob) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	if len(out) > MaxRequests {
+		out = out[:MaxRequests]
+	}
 	return out, nil
+}
+
+// RequestStateLabels: o estado do pedido que espera a TI, como vai para o app. Texto legível
+// de propósito: o app das versões até a v0.17.4 mostra o estado como vem.
+var RequestStateLabels = map[string]string{
+	store.RequestWaiting: "aguardando aprovação",
+	store.RequestRefused: "recusado pela TI",
+	store.RequestExpired: "expirado sem aprovação",
+}
+
+// MaxNote: o motivo da recusa.
+const MaxNote = 200
+
+// userRequests: os pedidos do usuário na máquina que passaram pela TI, depois de expirar os
+// velhos.
+func (s *Service) userRequests(ctx context.Context, machineID, account string) ([]store.SelfServiceRequest, error) {
+	if _, err := s.Store.ExpireSelfServiceRequests(ctx, s.Now().Add(-store.RequestTTL), s.Now()); err != nil {
+		return nil, err
+	}
+	return s.Store.SelfServiceRequests(ctx, store.RequestFilter{MachineID: machineID, Account: account, Limit: MaxRequests})
 }
 
 // short corta o texto em n letras.
@@ -178,9 +240,11 @@ func (s *Service) openJob(ctx context.Context, machineID string) (int64, error) 
 type Outcome struct {
 	Response protocol.SelfServiceResponse
 	Job      *jobs.Record
-	Version  string
-	Seen     bool   // o usuário aparece entre os conectados da última coleta (15.6)
-	Why      string // recusado: o motivo para o log (a mensagem do usuário é mais curta)
+	// RequestID (Aula 18.3): o pedido guardado para a TI aprovar (0: não passou pela TI).
+	RequestID int64
+	Version   string
+	Seen      bool   // o usuário aparece entre os conectados da última coleta (15.6)
+	Why       string // recusado: o motivo para o log (a mensagem do usuário é mais curta)
 }
 
 // Request decide o pedido. A loja é refeita aqui: o usuário só leva o que ela mostra agora,
@@ -215,6 +279,9 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 		return refuse("fora da loja do usuário (ou outra ação)", "Este programa não está disponível para você nesta máquina agora.")
 	}
 	it := items[i]
+	if it.NeedsApproval {
+		return s.requestApproval(ctx, machineID, req, it, o)
+	}
 	open, err := s.openJob(ctx, machineID)
 	if err != nil {
 		return o, err
@@ -427,4 +494,132 @@ func (s *Service) reboot(ctx context.Context, machineID string, req protocol.Sel
 	o.Job = &rec
 	o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceCreated, JobID: rec.ID, Message: msg}
 	return o, nil
+}
+
+// requestApproval guarda o pedido para a TI (Aula 18.3): nada é instalado agora. Um segundo
+// pedido do mesmo programa, com o primeiro esperando, não cria outro.
+func (s *Service) requestApproval(ctx context.Context, machineID string, req protocol.SelfServiceRequest, it Item, o Outcome) (Outcome, error) {
+	qs, err := s.userRequests(ctx, machineID, req.Account)
+	if err != nil {
+		return o, err
+	}
+	for _, q := range qs {
+		if q.AppID == it.AppID && q.State == store.RequestWaiting {
+			o.Why = fmt.Sprintf("pedido %d já aguarda a TI", q.ID)
+			o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceWait, RequestID: q.ID,
+				Message: fmt.Sprintf("Seu pedido de %s já está com a TI (nº %d). Acompanhe em Meus pedidos.", it.Name, q.ID)}
+			return o, nil
+		}
+	}
+	id, err := s.Store.CreateSelfServiceRequest(ctx, store.SelfServiceRequest{MachineID: machineID, Account: req.Account,
+		Groups: req.Groups, AppID: it.AppID, Action: req.Action, Version: it.Target})
+	if err != nil {
+		return o, err
+	}
+	o.RequestID, o.Version = id, it.Target
+	o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceApproval, RequestID: id,
+		Message: fmt.Sprintf("Pedido enviado para a aprovação da TI (nº %d): %s %s. Assim que for aprovado, a instalação começa sozinha; acompanhe em Meus pedidos.",
+			id, it.Name, it.Target)}
+	return o, nil
+}
+
+// ErrNotFound: pedido inexistente.
+var ErrNotFound = errors.New("pedido não encontrado")
+
+// Approval é o que a decisão da TI produziu.
+type Approval struct {
+	Request store.SelfServiceRequest
+	Job     *jobs.Record
+	Name    string // o nome do programa
+}
+
+// Approve aprova o pedido (Aula 18.3): a loja é refeita com a conta e os grupos guardados no
+// pedido — o programa tem de continuar oferecido a esse usuário, com a mesma ação — e o job
+// sai como se o usuário tivesse pedido agora, com ele como autor. why: por que não deu (a
+// mensagem para quem aprova); o pedido continua aguardando, para ser recusado com o motivo.
+func (s *Service) Approve(ctx context.Context, id int64, by string) (Approval, string, error) {
+	var a Approval
+	if s.Key == nil {
+		return a, "", ErrOff
+	}
+	if _, err := s.Store.ExpireSelfServiceRequests(ctx, s.Now().Add(-store.RequestTTL), s.Now()); err != nil {
+		return a, "", err
+	}
+	q, found, err := s.Store.SelfServiceRequestByID(ctx, id)
+	switch {
+	case err != nil:
+		return a, "", err
+	case !found:
+		return a, "", ErrNotFound
+	case q.State != store.RequestWaiting:
+		return a, "o pedido já foi decidido ou expirou", nil
+	}
+	a.Request = q
+	items, err := s.items(ctx, q.MachineID, protocol.SelfServiceUser{Account: q.Account, Groups: q.Groups})
+	if err != nil {
+		return a, "", err
+	}
+	i := slices.IndexFunc(items, func(it Item) bool { return it.AppID == q.AppID })
+	if i < 0 || items[i].Action != q.Action {
+		return a, "o pedido não vale mais: o programa saiu da loja desse usuário, ou mudou na máquina (já instalado, já em dia). Recuse com o motivo.", nil
+	}
+	it := items[i]
+	a.Name = it.Name
+	if open, err := s.openJob(ctx, q.MachineID); err != nil {
+		return a, "", err
+	} else if open > 0 {
+		return a, fmt.Sprintf("há uma instalação em andamento nessa máquina (job %d); aprove quando ela terminar", open), nil
+	}
+	p, why, err := s.params(ctx, q.MachineID, it)
+	if err != nil {
+		return a, "", err
+	}
+	if why != "" {
+		return a, "o programa está indisponível agora: " + why, nil
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return a, "", err
+	}
+	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: q.MachineID, Type: jobs.TypeThirdParty, TTL: JobTTL,
+		By: Author(q.Account), Params: raw}, s.Now())
+	if errors.Is(err, jobs.ErrMachineUnavailable) {
+		return a, "a máquina não está mais na frota", nil
+	}
+	if err != nil {
+		return a, "", err
+	}
+	if err := s.Store.DecideSelfServiceRequest(ctx, id, store.RequestApproved, by, "", rec.ID, s.Now()); err != nil {
+		// Alguém decidiu no meio do caminho: o job não sai.
+		_, _ = s.Store.CancelJob(ctx, rec.ID, by)
+		if errors.Is(err, store.ErrRequestDecided) {
+			return a, "o pedido já foi decidido ou expirou", nil
+		}
+		return a, "", err
+	}
+	a.Job = &rec
+	return a, "", nil
+}
+
+// Refuse recusa o pedido, com o motivo (que o usuário vê em Meus pedidos).
+func (s *Service) Refuse(ctx context.Context, id int64, by, note string) (store.SelfServiceRequest, string, error) {
+	note = strings.TrimSpace(note)
+	if r := []rune(note); len(r) > MaxNote {
+		note = string(r[:MaxNote])
+	}
+	q, found, err := s.Store.SelfServiceRequestByID(ctx, id)
+	switch {
+	case err != nil:
+		return q, "", err
+	case !found:
+		return q, "", ErrNotFound
+	}
+	if err := s.Store.DecideSelfServiceRequest(ctx, id, store.RequestRefused, by, note, 0, s.Now()); err != nil {
+		if errors.Is(err, store.ErrRequestDecided) {
+			return q, "o pedido já foi decidido ou expirou", nil
+		}
+		return q, "", err
+	}
+	q.State, q.Note = store.RequestRefused, note
+	return q, "", nil
 }

@@ -44,7 +44,8 @@ type Memory struct {
 	audit    []AuditEvent // trilha de auditoria (Aula 15.13), na ordem de gravação
 	auditSeq int64
 
-	offers map[string]SelfServiceOffer // autoatendimento (Aula 17.1), por programa
+	offers     map[string]SelfServiceOffer // autoatendimento (Aula 17.1), por programa
+	ssRequests []SelfServiceRequest        // pedidos que esperam a TI (Aula 18.3), ID = posição + 1
 }
 
 type memMachine struct {

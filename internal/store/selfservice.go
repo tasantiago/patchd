@@ -15,8 +15,10 @@ type SelfServiceOffer struct {
 	CanUpdate  bool     // o usuário atualiza o que já está instalado
 	CanInstall bool     // o usuário instala do zero
 	Groups     []string // grupos do AD (sAMAccountName, com ou sem DOMINIO\); vazio: qualquer usuário
-	UpdatedBy  string
-	UpdatedAt  time.Time
+	// NeedsApproval (Aula 18.3): cada pedido espera a TI aprovar antes de virar job.
+	NeedsApproval bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
 }
 
 // MaxOfferGroups: grupos por oferta.
@@ -48,7 +50,7 @@ func (o SelfServiceOffer) Validate() error {
 
 // SelfServiceOffers lista as ofertas, por programa.
 func (p *Postgres) SelfServiceOffers(ctx context.Context) ([]SelfServiceOffer, error) {
-	rows, err := p.pool.Query(ctx, `SELECT app_id, can_update, can_install, groups, updated_by, updated_at
+	rows, err := p.pool.Query(ctx, `SELECT app_id, can_update, can_install, groups, needs_approval, updated_by, updated_at
 		FROM selfservice_offers ORDER BY app_id`)
 	if err != nil {
 		return nil, err
@@ -57,7 +59,7 @@ func (p *Postgres) SelfServiceOffers(ctx context.Context) ([]SelfServiceOffer, e
 	out := []SelfServiceOffer{}
 	for rows.Next() {
 		var o SelfServiceOffer
-		if err := rows.Scan(&o.AppID, &o.CanUpdate, &o.CanInstall, &o.Groups, &o.UpdatedBy, &o.UpdatedAt); err != nil {
+		if err := rows.Scan(&o.AppID, &o.CanUpdate, &o.CanInstall, &o.Groups, &o.NeedsApproval, &o.UpdatedBy, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
 		o.UpdatedAt = o.UpdatedAt.UTC()
@@ -78,10 +80,10 @@ func (p *Postgres) SetSelfServiceOffer(ctx context.Context, o SelfServiceOffer) 
 		o.Groups = []string{}
 	}
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO selfservice_offers (app_id, can_update, can_install, groups, updated_by, updated_at)
-		VALUES ($1, $2, $3, $4, $5, now())
-		ON CONFLICT (app_id) DO UPDATE SET can_update = $2, can_install = $3, groups = $4, updated_by = $5, updated_at = now()`,
-		o.AppID, o.CanUpdate, o.CanInstall, o.Groups, o.UpdatedBy)
+		INSERT INTO selfservice_offers (app_id, can_update, can_install, groups, needs_approval, updated_by, updated_at)
+		VALUES ($1, $2, $3, $4, $6, $5, now())
+		ON CONFLICT (app_id) DO UPDATE SET can_update = $2, can_install = $3, groups = $4, needs_approval = $6, updated_by = $5, updated_at = now()`,
+		o.AppID, o.CanUpdate, o.CanInstall, o.Groups, o.UpdatedBy, o.NeedsApproval)
 	return err
 }
 

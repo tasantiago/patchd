@@ -368,3 +368,21 @@ expediente; "não deram certo" repetidos num programa pedem olhar o instalador a
 - **`PATCHD_PANEL_TITLE`**: um par de aspas em volta do valor sai (o Compose passa o valor do
   `.env` como está escrito, aspas incluídas); de 1 a 40 letras (não bytes: acentos contam
   como uma). Fora disso, o log avisa e o painel fica com "patchd".
+
+## Autoatendimento com aprovação da TI (Aula 18.3)
+
+- Em Configuração › Autoatendimento, a caixa **Aprovação da TI** faz cada pedido daquele
+  programa esperar alguém aprovar. O pedido guarda a conta e os grupos do token no momento
+  em que foi feito, o programa, a ação e a versão que a loja oferecia.
+- A fila fica em Automação › Autoatendimento, "Aguardando a TI" (os dois perfis veem; só o
+  admin decide). **Aprovar** refaz a loja com a conta e os grupos guardados: se o programa
+  saiu da loja desse usuário, ou mudou na máquina (já instalado, já em dia), a aprovação não
+  passa e o pedido continua na fila para ser recusado com o motivo. Passando, o job sai como
+  se o usuário tivesse pedido agora, com ele como autor (o usuário acompanha em Meus
+  pedidos), e a decisão vai para a auditoria (`autoatendimento.aprovar`). **Recusar** leva
+  um motivo opcional (até 200 letras), que o usuário vê em Meus pedidos
+  (`autoatendimento.reprovar`).
+- Sem decisão em 7 dias, o pedido expira. Um segundo pedido do mesmo programa, com o
+  primeiro esperando, não cria outro.
+- O job aprovado chega à máquina no próximo check-in (até 1 hora); o app da 18.4 antecipa.
+- Na auditoria, o pedido guardado é `autoatendimento.solicitacao`.

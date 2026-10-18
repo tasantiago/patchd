@@ -182,7 +182,9 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 		return exitRuntime
 	}
 	e := store.AuditEvent{At: time.Now().UTC(), Username: u.Account, Source: "autoatendimento (linha de comando)", Target: id}
-	if o.Job != nil {
+	if o.RequestID > 0 && o.Response.Status == protocol.SelfServiceApproval { // Aula 18.3
+		e.Action, e.Detail = "autoatendimento.solicitacao", fmt.Sprintf("pedido %d · %s %s · %s · visto conectado: %s", o.RequestID, what, o.Version, *action, yesNoCLI(o.Seen))
+	} else if o.Job != nil {
 		e.Action, e.Detail = "autoatendimento.pedido", fmt.Sprintf("job %d · %s %s · %s · visto conectado: %s", o.Job.ID, what, o.Version, *action, yesNoCLI(o.Seen))
 	} else {
 		e.Action, e.Detail = "autoatendimento.recusado", fmt.Sprintf("%s · %s · %s: %s", what, *action, o.Response.Status, o.Why)
@@ -193,6 +195,10 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 	fmt.Fprintf(stdout, "%s: %s\n", o.Response.Status, o.Response.Message)
 	if o.Why != "" {
 		fmt.Fprintf(stderr, "motivo: %s\n", o.Why)
+	}
+	if o.Response.Status == protocol.SelfServiceApproval {
+		fmt.Fprintf(stderr, "pedido %d guardado: aguarda a aprovação em Automação › Autoatendimento\n", o.RequestID)
+		return exitOK
 	}
 	if o.Job == nil {
 		return exitRuntime
