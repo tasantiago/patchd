@@ -235,6 +235,16 @@ na máquina. Limpar a `SoftwareDistribution` da máquina não resolve esse caso:
 sincronização vem o `0x80244010` (idas e voltas demais) e, com o cache cheio de novo, o
 mesmo `0x80244007`.
 
+## Formulário da campanha (Aula 16.6)
+
+O formulário de Automação › Campanhas fica em coluna: o tipo em cartões com uma linha de
+explicação, e só os campos do tipo escolhido à vista (Programa no de terceiros; Fontes ou KBs
+no atualizar pacotes e no Windows; Aviso no reiniciar). Os anéis sem máquinas ficam em
+"Anéis sem máquinas", recolhidos. Tudo por CSS (`:has()`), sem JavaScript, dentro da CSP do
+painel; num navegador sem `:has()`, todos os campos aparecem, como antes. O servidor ignora
+os campos que não valem para o tipo, então nada muda na conferência. `?tipo=reboot` abre
+com o reinício escolhido.
+
 ## Autoatendimento: o canal local no Windows (Aula 17.3)
 
 O agente do Windows atende o app do usuário por um named pipe, `\\.\pipe\patchd-autoatendimento`,

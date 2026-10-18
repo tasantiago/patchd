@@ -1096,23 +1096,34 @@ var pages = template.Must(template.New("").Parse(`
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
-<form class="grade" method="post" action="/painel/campanhas/nova">
-<label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro">
-<span>Tipo</span><span><label><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}> buscar atualizações</label>
-<label><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}> atualizar pacotes (Linux)</label>
-<label><input type="radio" name="tipo" value="windows_update" {{if eq .Form.Type "windows_update"}}checked{{end}}> instalar atualizações do Windows (KBs)</label>
-<label><input type="radio" name="tipo" value="reboot" {{if eq .Form.Type "reboot"}}checked{{end}}> reiniciar onde houver reinício pendente</label>
-{{if .Form.TPOn}}<label><input type="radio" name="tipo" value="thirdparty" {{if eq .Form.Type "thirdparty"}}checked{{end}}> instalar programa de terceiros (Windows)</label>{{end}}</span>
-{{if .Form.TPOn}}<label for="programa">Programa</label><span>{{if .Form.Programs}}<select id="programa" name="programa">{{range .Form.Programs}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
-<span class="muted">só no programa de terceiros: as versões aprovadas e guardadas</span>{{else}}<span class="muted">Nenhuma versão aprovada e guardada: aprove na página do programa, em Patch.</span>{{end}}</span>{{end}}
-<label for="fontes">Fontes ou KBs</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="update: pacotes fonte, ex.: curl, bluez · Windows: KBs, ex.: KB5127648">
-<label for="aviso">Aviso do reinício</label><span><select id="aviso" name="aviso">{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Delay}}selected{{end}}>{{.}} min</option>{{end}}</select> <span class="muted">só no reiniciar: quanto tempo quem estiver conectado tem para salvar o trabalho</span></span>
-<span>Anéis</span><span>{{range .Form.Rings}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label><br>{{end}}</span>
-<label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
-<span>Quando</span><span><label><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}> com prazo de</label>
-<select name="prazo" aria-label="prazo">{{range .Form.TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
-<label><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}> na janela de cada anel</label></span>
-<span></span><span><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></span>
+<form class="campanha" method="post" action="/painel/campanhas/nova">
+<div class="campo"><label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro"></div>
+<fieldset class="campo tipos"><legend>Tipo</legend>
+<label class="opcao"><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}><span><b>Buscar atualizações</b><small>a máquina faz a busca agora; nada é instalado</small></span></label>
+<label class="opcao"><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}><span><b>Atualizar pacotes (Linux)</b><small>apt ou dnf, só os pacotes fonte indicados</small></span></label>
+<label class="opcao"><input type="radio" name="tipo" value="windows_update" {{if eq .Form.Type "windows_update"}}checked{{end}}><span><b>Instalar atualizações do Windows</b><small>os KBs indicados, pelo WSUS; nunca reinicia</small></span></label>
+<label class="opcao"><input type="radio" name="tipo" value="reboot" {{if eq .Form.Type "reboot"}}checked{{end}}><span><b>Reiniciar onde houver reinício pendente</b><small>com aviso a quem estiver conectado</small></span></label>
+{{if .Form.TPOn}}<label class="opcao"><input type="radio" name="tipo" value="thirdparty" {{if eq .Form.Type "thirdparty"}}checked{{end}}><span><b>Instalar programa de terceiros (Windows)</b><small>a versão aprovada e guardada em Patch</small></span></label>{{end}}
+</fieldset>
+{{if .Form.TPOn}}<div class="campo so-terceiros"><label for="programa">Programa</label>{{if .Form.Programs}}<select id="programa" name="programa">{{range .Form.Programs}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<small class="muted">as versões aprovadas e guardadas</small>{{else}}<small class="muted">Nenhuma versão aprovada e guardada: aprove na página do programa, em Patch.</small>{{end}}</div>{{end}}
+<div class="campo so-fontes"><label for="fontes">Fontes ou KBs</label><input id="fontes" name="fontes" type="text" maxlength="2000" value="{{.Form.Sources}}" placeholder="update: pacotes fonte, ex.: curl, bluez · Windows: KBs, ex.: KB5127648">
+<small class="muted">separados por vírgula</small></div>
+<div class="campo so-reinicio"><label for="aviso">Aviso do reinício</label><select id="aviso" name="aviso">{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Delay}}selected{{end}}>{{.}} min</option>{{end}}</select>
+<small class="muted">quanto tempo quem estiver conectado tem para salvar o trabalho</small></div>
+<fieldset class="campo aneis"><legend>Anéis <small class="muted">em ordem, do menor para o maior</small></legend>
+<div class="chips">{{range .Form.Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
+{{$vazios := 0}}{{range .Form.Rings}}{{if not (or .Machines .Checked)}}{{$vazios = 1}}{{end}}{{end}}
+{{if $vazios}}<details class="vazios"><summary>Anéis sem máquinas</summary><div class="chips">{{range .Form.Rings}}{{if not (or .Machines .Checked)}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}"> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div></details>{{end}}
+</fieldset>
+<div class="campo"><label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<small class="muted">depois de um anel terminar sem falha, quanto esperar antes do próximo</small></div>
+<fieldset class="campo quando"><legend>Quando</legend>
+<label class="opcao"><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}><span><b>Já, com prazo de</b>
+<select name="prazo" aria-label="prazo">{{range .Form.TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
+<label class="opcao"><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}><span><b>Na janela de cada anel</b><small>o job de cada máquina espera a janela do anel dela</small></span></label>
+</fieldset>
+<div class="acoes"><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></div>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
 
