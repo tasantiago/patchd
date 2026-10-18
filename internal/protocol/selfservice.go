@@ -30,6 +30,8 @@ const (
 	SelfServiceCreated = "criado"   // o job foi criado
 	SelfServiceRefused = "recusado" // não está disponível para este usuário nesta máquina (agora)
 	SelfServiceWait    = "aguarde"  // já há uma instalação em andamento na máquina
+	// SelfServiceApproval (Aula 18.3): o pedido foi guardado e espera a TI aprovar.
+	SelfServiceApproval = "aprovacao"
 )
 
 // SelfServiceUser: quem pediu, como o token do Windows diz.
@@ -64,6 +66,10 @@ type SelfServiceItem struct {
 	Target    string `json:"target,omitempty"`
 	Action    string `json:"action"` // atualizar, instalar, em_dia, instalado, indisponivel
 	Reason    string `json:"reason,omitempty"`
+	// Aula 18.3: o pedido passa pela TI (Approval); Pending é o pedido deste usuário que já
+	// espera a TI para este programa (0: nenhum).
+	Approval bool  `json:"approval,omitempty"`
+	Pending  int64 `json:"pending,omitempty"`
 }
 
 // SelfServiceCatalog é a loja do usuário na máquina.
@@ -82,6 +88,7 @@ type SelfServiceCatalog struct {
 // SelfServiceJob é um pedido do usuário, como o app mostra em "Meus pedidos".
 type SelfServiceJob struct {
 	ID         int64      `json:"id"`
+	Request    int64      `json:"request,omitempty"` // Aula 18.3: o pedido que esperou (ou espera) a TI; ID 0 se não virou job
 	App        string     `json:"app"`
 	Name       string     `json:"name"`
 	Version    string     `json:"version"`
@@ -124,7 +131,8 @@ func NextClock(hhmm string, now time.Time) (time.Time, error) {
 
 // SelfServiceResponse é a resposta ao pedido.
 type SelfServiceResponse struct {
-	Status  string `json:"status"`
-	JobID   int64  `json:"job_id,omitempty"`
-	Message string `json:"message"`
+	Status    string `json:"status"`
+	JobID     int64  `json:"job_id,omitempty"`
+	RequestID int64  `json:"request_id,omitempty"` // Aula 18.3: o pedido que espera a TI
+	Message   string `json:"message"`
 }

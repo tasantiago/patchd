@@ -39,6 +39,12 @@ type Store interface {
 	SelfServiceOffers(ctx context.Context) ([]store.SelfServiceOffer, error)
 	SetSelfServiceOffer(ctx context.Context, o store.SelfServiceOffer) error
 	DeleteSelfServiceOffer(ctx context.Context, app string) (bool, error)
+	// Pedidos que esperam a TI (Aula 18.3).
+	CreateSelfServiceRequest(ctx context.Context, q store.SelfServiceRequest) (int64, error)
+	SelfServiceRequests(ctx context.Context, f store.RequestFilter) ([]store.SelfServiceRequest, error)
+	SelfServiceRequestByID(ctx context.Context, id int64) (store.SelfServiceRequest, bool, error)
+	DecideSelfServiceRequest(ctx context.Context, id int64, state, by, note string, jobID int64, at time.Time) error
+	ExpireSelfServiceRequests(ctx context.Context, before, now time.Time) (int64, error)
 	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
 	SourceFailures(ctx context.Context, machineID string) ([]store.SourceFailure, error)
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
@@ -195,7 +201,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
-	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage)) // Aula 17.7
+	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage))                                          // Aula 17.7
+	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/aprovar", a.sameOrigin(a.adminAction(a.approveSelfServiceAction))) // Aula 18.3
+	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/recusar", a.sameOrigin(a.adminAction(a.refuseSelfServiceAction)))
 	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
 	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))

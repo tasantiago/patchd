@@ -66,6 +66,11 @@ func (a *api) selfServiceRequest(w http.ResponseWriter, r *http.Request, id stri
 		seen = "sim"
 	}
 	switch o.Response.Status {
+	case protocol.SelfServiceApproval: // Aula 18.3: guardado para a TI
+		a.logger.Info("autoatendimento: pedido aguardando a TI", "machine_id", id, "pedido", o.RequestID, "app", req.App, "acao", req.Action,
+			"request_id", RequestID(r.Context()))
+		a.auditAs(r, req.Account, "autoatendimento", "autoatendimento.solicitacao", id,
+			fmt.Sprintf("pedido %d · %s %s · %s · visto conectado: %s", o.RequestID, req.App, o.Version, req.Action, seen))
 	case protocol.SelfServiceCreated:
 		a.logger.Info("autoatendimento: pedido atendido", "machine_id", id, "job_id", o.Job.ID, "app", req.App, "version", o.Version,
 			"acao", req.Action, "visto_conectado", o.Seen, "request_id", RequestID(r.Context()))
