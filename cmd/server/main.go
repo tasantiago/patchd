@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/ad"
+	"github.com/tasantiago/patchd/internal/alerts"
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/campaign"
@@ -279,9 +280,20 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		logger.Error("notificações por e-mail", "error", err)
 		return exitConfig
 	}
+	kinds, err := notifyKinds(look)
+	if err != nil {
+		logger.Error("notificações por e-mail", "error", err)
+		return exitConfig
+	}
 	if mailer != nil {
-		apiOpts = append(apiOpts, api.WithNotifier(mailer))
+		apiOpts = append(apiOpts, api.WithNotifier(notifyDescriber{mailer, kinds}))
 		logger.Info("notificações por e-mail ligadas: " + mailer.Describe())
+		// Avisos automáticos (Aula 18.6): só com o PostgreSQL (as chaves mandadas ficam nele).
+		if pg, ok := st.(*store.Postgres); ok {
+			go notifyLoop(ctx, logger, pg, &alerts.Watcher{Store: pg, Mail: mailer, Kinds: kinds, PublicURL: cfg.PublicURL,
+				Logger: logger, Now: time.Now})
+			logger.Info("avisos por e-mail: "+strings.Join(kinds, ", ")+" (Aula 18.6)", "intervalo", notifyEvery.String())
+		}
 	} else {
 		logger.Info("notificações por e-mail desligadas (sem PATCHD_SMTP_ADDR)")
 	}

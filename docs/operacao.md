@@ -418,3 +418,22 @@ expediente; "não deram certo" repetidos num programa pedem olhar o instalador a
   problema está depois dele (filtro, regra de encaminhamento, lista).
 - As mensagens levam `Auto-Submitted: auto-generated`: respostas automáticas (férias) não
   voltam para o remetente.
+
+### Avisos automáticos (Aula 18.6)
+
+Com as notificações ligadas e o PostgreSQL, o servidor confere a cada 5 minutos e manda:
+
+| Aviso (`PATCHD_NOTIFY_EVENTS`) | Quando | Um e-mail por |
+|---|---|---|
+| `pedidos` | pedido do autoatendimento novo esperando a TI | passada (lista os novos e o total da fila) |
+| `campanhas` | o servidor pausou a campanha (job sem sucesso, sem janela, instalador fora) nos últimos 7 dias; a pausa feita pelo admin não avisa | campanha pausada |
+| `fontes` | a máquina passou a falhar na busca da fonte principal (`wua-default`, apt, dnf, softwareupdate); o catálogo offline não avisa | passada (lista as novas) |
+
+- Cada aviso tem uma chave guardada em `notifications_sent` (90 dias). A mesma situação não
+  avisa de novo: a fonte que continua falhando fica quieta; se voltar a responder e falhar
+  outra vez, é aviso novo. A campanha retomada e pausada de novo também.
+- SMTP fora do ar: nada é marcado, o log avisa uma vez ("a passada falhou") e os avisos saem
+  na primeira passada depois que o SMTP voltar.
+- Dois servidores no mesmo banco: a trava consultiva deixa um só fazer a passada.
+- `patchd-server notify pending` mostra os e-mails que a próxima passada mandaria, sem mandar
+  nem marcar. Para parar um tipo: tire-o de `PATCHD_NOTIFY_EVENTS` e suba o servidor de novo.
