@@ -37,7 +37,7 @@ var auditGroups = []struct{ Key, Label string }{
 	{"login.", "Logins"}, {"sessao.", "Sessões"}, {"patch.", "Aprovações do sistema"}, {"terceiros.", "Aprovações de terceiros"},
 	{"job.", "Jobs"}, {"campanha.", "Campanhas"}, {"maquina.", "Máquinas"}, {"janela.", "Janelas"},
 	{"usuario.", "Usuários locais"}, {"token.", "Tokens"}, {"exportar.", "Exportações"}, {"acesso.", "Acessos negados"},
-	{"autoatendimento.", "Autoatendimento"},
+	{"autoatendimento.", "Autoatendimento"}, {"cli.", "Linha de comando"}, {"auditoria.", "Retenção da auditoria"},
 }
 
 type auditQuery struct {

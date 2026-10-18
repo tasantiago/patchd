@@ -14,6 +14,9 @@ type Retention struct {
 	// Jobs: jobs encerrados há mais que isso, e campanhas encerradas que ficaram sem
 	// jobs, são apagados. Zero: guardar sempre (a política de auditoria decide).
 	Jobs time.Duration
+	// Audit (Aula 18.1): eventos da trilha de auditoria mais velhos que isso são apagados, e
+	// a própria limpeza entra na trilha. Zero: guardar sempre.
+	Audit time.Duration
 }
 
 // PruneResult conta as linhas apagadas (ou que seriam, na simulação) por tabela.
@@ -22,10 +25,11 @@ type PruneResult struct {
 	Scans       int64
 	Jobs        int64
 	Campaigns   int64
+	Audit       int64 // eventos da trilha de auditoria (Aula 18.1)
 }
 
-// Total soma as quatro.
-func (r PruneResult) Total() int64 { return r.Inventories + r.Scans + r.Jobs + r.Campaigns }
+// Total soma todas.
+func (r PruneResult) Total() int64 { return r.Inventories + r.Scans + r.Jobs + r.Campaigns + r.Audit }
 
 // Prune aplica a retenção numa transação só. Com dry, a transação é desfeita no fim: as
 // contagens são exatamente o que seria apagado, inclusive a ordem (jobs antes das
@@ -76,6 +80,23 @@ func (p *Postgres) Prune(ctx context.Context, r Retention, now time.Time, dry bo
 			  AND c.updated_at < $1
 			  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.campaign_id = c.id)`, jobs); err != nil {
 			return res, err
+		}
+	}
+	if r.Audit > 0 {
+		cut := now.Add(-r.Audit)
+		if err := exec(&res.Audit, "auditoria", `DELETE FROM audit_events WHERE at < $1`, cut); err != nil {
+			return res, err
+		}
+		// Apagar a trilha também é uma ação, e fica nela, na mesma transação: ou as duas
+		// coisas acontecem, ou nenhuma.
+		if res.Audit > 0 && !dry {
+			detail := fmt.Sprintf("%d evento(s) anteriores a %s apagados pela retenção de %d dias",
+				res.Audit, cut.UTC().Format("2006-01-02"), int(r.Audit.Hours()/24))
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO audit_events (at, username, source, action, detail) VALUES ($1, 'patchd-server', 'sistema', 'auditoria.retencao', $2)`,
+				now.UTC(), detail); err != nil {
+				return res, fmt.Errorf("retenção (registro na auditoria): %w", err)
+			}
 		}
 	}
 	if dry {

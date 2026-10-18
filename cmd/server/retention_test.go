@@ -80,6 +80,16 @@ func TestConfiguracaoDaRetencao(t *testing.T) {
 	if _, err := retentionConfig(lookMap(map[string]string{"PATCHD_RETENTION_HISTORY_DAYS": "90d"})); err == nil {
 		t.Error("90d aceito")
 	}
+	// Aula 18.1: a trilha de auditoria — 5 anos por padrão, 0 guarda sempre, menos de 1 ano não.
+	if r, _ := retentionConfig(lookMap(nil)); r.Audit != 1825*24*time.Hour || !strings.Contains(describeRetention(r), "auditoria: 1825 dias") {
+		t.Errorf("auditoria padrão: %+v", r)
+	}
+	if r, err := retentionConfig(lookMap(map[string]string{"PATCHD_RETENTION_AUDIT_DAYS": "0"})); err != nil || r.Audit != 0 || !strings.Contains(describeRetention(r), "auditoria guardada sempre") {
+		t.Errorf("auditoria sempre: %+v %v", r, err)
+	}
+	if _, err := retentionConfig(lookMap(map[string]string{"PATCHD_RETENTION_AUDIT_DAYS": "90"})); err == nil || !strings.Contains(err.Error(), "PATCHD_RETENTION_AUDIT_DAYS") {
+		t.Errorf("auditoria com 90 dias: %v", err)
+	}
 }
 
 func TestComandoRetention(t *testing.T) {

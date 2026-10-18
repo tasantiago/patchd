@@ -625,7 +625,7 @@ var pages = template.Must(template.New("").Parse(`
 {{end}}{{end}}
 {{if eq .Tab "auditoria"}}{{with .Audit}}
 <div class="card"><div class="card-cab"><h2>Trilha de auditoria</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
-<p class="muted">Logins, ações pelo painel e exportações, do mais novo para o mais antigo. Só se acrescenta: nada aqui se edita. O request_id liga cada evento à linha do log do servidor.</p>
+<p class="muted">Logins, ações pelo painel, pedidos do autoatendimento, comandos no terminal (origem "linha de comando") e exportações, do mais novo para o mais antigo. Só se acrescenta: nada aqui se edita; os eventos além do prazo da retenção saem, e a limpeza fica registrada aqui. O request_id liga cada evento à linha do log do servidor.</p>
 <form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="auditoria">
 <input type="search" name="usuario" value="{{.Q.User}}" maxlength="64" placeholder="Usuário (exato)" aria-label="usuário">
 <select name="acao" aria-label="ação"><option value="">Todas as ações</option><optgroup label="Grupos">{{range .Groups}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</optgroup><optgroup label="Ações">{{range .Actions}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</optgroup></select>
