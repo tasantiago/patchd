@@ -1,4 +1,4 @@
-//go:build !linux && !windows
+//go:build !linux && !windows && !darwin
 
 package hoststate
 
@@ -8,5 +8,5 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
-// loggedUsers: no macOS, ainda não (o utmpx tem outro formato). nil: não coletado.
+// loggedUsers: nos outros sistemas, não coletado (nil).
 func loggedUsers(ctx context.Context) ([]protocol.LoggedUser, error) { return nil, nil }

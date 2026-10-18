@@ -107,7 +107,7 @@ func TestInstall(t *testing.T) {
 	}
 	// Assinantes medidos nos labs da 14.4 e da 14.5 (Get-AuthenticodeSignature e o log do
 	// agente). O 7-Zip não é assinado: exigir assinatura impediria a atualização. O Firefox
-	// ESR fica sem até ser medido.
+	// ESR, medido na Aula 18.2: o mesmo assinante do Firefox.
 	signers := map[string]string{}
 	for _, a := range m.For("windows") {
 		if a.Install != nil && a.Install.Signer != "" {
@@ -115,7 +115,7 @@ func TestInstall(t *testing.T) {
 		}
 	}
 	wantSigners := map[string]string{
-		"google-chrome": "Google LLC", "notepad-plus-plus": "NOTEPAD++", "mozilla-firefox": "Mozilla Corporation",
+		"google-chrome": "Google LLC", "notepad-plus-plus": "NOTEPAD++", "mozilla-firefox": "Mozilla Corporation", "mozilla-firefox-esr": "Mozilla Corporation",
 		"vscode": "Microsoft Corporation", "powershell-7": "Microsoft Corporation", "libreoffice": "The Document Foundation",
 	}
 	if !maps.Equal(signers, wantSigners) {

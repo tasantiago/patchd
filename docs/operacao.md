@@ -354,3 +354,17 @@ expediente; "não deram certo" repetidos num programa pedem olhar o instalador a
   sistema; ponha no `.env` o nome que você usa no painel); senão, o usuário do sistema.
 - Painel: Configuração › Auditoria, grupos "Linha de comando" e "Retenção da auditoria";
   terminal: `patchd-server audit -action cli.`.
+
+## Arremates da Aula 18.2
+
+- **Usuários conectados no macOS**: o agente lê o `who` (o leitor oficial do utmpx do
+  macOS), marca como ativo no console só o dono do `/dev/console` (com a troca rápida de
+  usuários, os outros aparecem desconectados; na tela de login, que é do root, todos os
+  consoles contam como ativos) e pega o nome completo pelo `id -F`. Exige o agente v0.17.4
+  no Mac. Para conferir: `sudo patchd-agent -state` mostra a lista em `users`.
+- **Firefox ESR**: o instalador tem de ser assinado pela Mozilla Corporation, como o do
+  Firefox (medido no lab da 18.2 com `Get-AuthenticodeSignature`). Um instalador com outro
+  assinante é recusado pelo agente.
+- **`PATCHD_PANEL_TITLE`**: um par de aspas em volta do valor sai (o Compose passa o valor do
+  `.env` como está escrito, aspas incluídas); de 1 a 40 letras (não bytes: acentos contam
+  como uma). Fora disso, o log avisa e o painel fica com "patchd".
