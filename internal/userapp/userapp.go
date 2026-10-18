@@ -48,9 +48,10 @@ type App struct {
 	mu    sync.Mutex
 	flash *flash
 
-	kickOnce sync.Once
-	kick     chan struct{}
-	fast     time.Duration // FastCheck; os testes encurtam
+	kickOnce      sync.Once
+	kick          chan struct{}
+	fast          time.Duration // FastCheck; os testes encurtam
+	approvalEvery time.Duration // ApprovalCheck; os testes encurtam
 }
 
 type flash struct {
@@ -221,11 +222,14 @@ func rebootOptions(now time.Time) []rebootOption {
 // Item é um programa como a página mostra.
 type Item struct {
 	App, Name, Installed, Target, Reason string
+	Approval                             bool  // Aula 18.4: o pedido passa pela TI
+	Pending                              int64 // o pedido deste usuário que já espera a TI
 }
 
 // reqView é um pedido em "Meus pedidos".
 type reqView struct {
 	ID                   int64
+	Request              int64 // Aula 18.4: o pedido à TI (ID 0: não virou job)
 	Name, Version, When  string
 	Label, Class, Detail string
 }
@@ -265,7 +269,8 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		d.Busy = resp.Catalog.OpenJob
 		refresh = d.Busy > 0
 		for _, it := range resp.Catalog.Items {
-			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason}
+			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
+				Approval: it.Approval, Pending: it.Pending}
 			switch it.Action {
 			case protocol.SelfServiceUpdate:
 				d.Updates = append(d.Updates, x)
@@ -283,10 +288,10 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		for _, j := range resp.Catalog.Requests {
-			v := reqView{ID: j.ID, Name: j.Name, Version: j.Version, When: j.CreatedAt.In(a.loc()).Format("02/01 15:04")}
+			v := reqView{ID: j.ID, Request: j.Request, Name: j.Name, Version: j.Version, When: j.CreatedAt.In(a.loc()).Format("02/01 15:04")}
 			v.Label, v.Class = stateLabel(j.State)
 			switch j.State {
-			case "concluido", "pendente", "entregue":
+			case "concluido", "pendente", "entregue", "aguardando aprovação":
 			case "adiado": // o programa estava aberto: o pedido não fica na fila sozinho
 				v.Detail = "Feche o programa e peça de novo. (" + j.Detail + ")"
 			default:
@@ -334,6 +339,12 @@ func stateLabel(s string) (label, class string) {
 	switch s {
 	case "pendente":
 		return "Na fila", "andamento"
+	case "aguardando aprovação": // Aula 18.4: os pedidos que passam pela TI
+		return "Com a TI", "atencao"
+	case "recusado pela TI":
+		return "Recusado pela TI", "erro"
+	case "expirado sem aprovação":
+		return "Expirou sem resposta da TI", "neutro"
 	case "entregue":
 		return "Instalando", "andamento"
 	case "concluido":
@@ -399,6 +410,10 @@ func (a *App) request(w http.ResponseWriter, r *http.Request) {
 		f = flash{"erro", "Não foi possível falar com o patchd neste computador: " + err.Error()}
 	case !resp.OK:
 		f = flash{"erro", userError(resp)}
+	case resp.Result.Status == protocol.SelfServiceApproval: // Aula 18.4: guardado para a TI
+		f = flash{"sucesso", resp.Result.Message}
+		back = tabRequests
+		a.kickWatch()
 	case resp.Result.Status == protocol.SelfServiceCreated:
 		f = flash{"sucesso", resp.Result.Message}
 		if back != tabReboot {
@@ -482,6 +497,8 @@ func (n Notice) Tab() string {
 // que o usuário acabou de pedir.
 func noticeText(n Notice) (title, text string) {
 	switch {
+	case len(n.Done) == 1 && (strings.Contains(n.Done[0], "pela TI") || strings.Contains(n.Done[0], "da TI")):
+		return "Resposta da TI", n.Done[0] + "."
 	case len(n.Done) == 1:
 		return "Pedido concluído", n.Done[0] + "."
 	case len(n.Done) > 1:
@@ -504,6 +521,10 @@ func noticeText(n Notice) (title, text string) {
 // "terminou" chegar logo.
 const FastCheck = 30 * time.Second
 
+// ApprovalCheck (Aula 18.4): com pedido esperando a TI, a conferência é a cada 5 minutos —
+// a decisão leva horas; não precisa de 30 s.
+const ApprovalCheck = 5 * time.Minute
+
 // doneText é como o fim do pedido aparece no balão.
 func doneText(j protocol.SelfServiceJob) string {
 	what := strings.TrimSpace(j.Name + " " + j.Version)
@@ -514,6 +535,13 @@ func doneText(j protocol.SelfServiceJob) string {
 		return what + ": adiado (feche o programa e peça de novo)"
 	case "dispensado":
 		return what + ": não foi necessário"
+	case "recusado pela TI": // Aula 18.4
+		if j.Detail != "" {
+			return what + ": recusado pela TI (" + strings.TrimPrefix(j.Detail, "motivo: ") + ")"
+		}
+		return what + ": recusado pela TI"
+	case "expirado sem aprovação":
+		return what + ": expirou sem resposta da TI"
 	default:
 		return what + ": não deu certo (veja em Meus pedidos)"
 	}
@@ -531,7 +559,12 @@ func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- 
 	wait := first
 	var last []string
 	open := map[int64]bool{} // pedidos em andamento na última conferência
-	var rebootSaid time.Time // último aviso de reinício pendente (repete a cada every)
+	approval := a.approvalEvery
+	if approval == 0 {
+		approval = ApprovalCheck
+	}
+	waiting := map[int64]protocol.SelfServiceJob{} // Aula 18.4: pedidos com a TI na última conferência
+	var rebootSaid time.Time                       // último aviso de reinício pendente (repete a cada every)
 	for {
 		select {
 		case <-ctx.Done():
@@ -567,9 +600,32 @@ func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- 
 			}
 		}
 		open = now
+		// Aula 18.4: o pedido que estava com a TI e saiu da fila. Se ele ainda aparece, foi
+		// recusado ou expirou; se sumiu, virou job (aprovado) — o job entra no "open" acima.
+		waitNow := map[int64]protocol.SelfServiceJob{}
+		for _, j := range resp.Catalog.Requests {
+			if j.ID == 0 && j.Request > 0 && j.State == "aguardando aprovação" {
+				waitNow[j.Request] = j
+			}
+		}
+		for id, prev := range waiting {
+			if _, still := waitNow[id]; still {
+				continue
+			}
+			i := slices.IndexFunc(resp.Catalog.Requests, func(j protocol.SelfServiceJob) bool { return j.ID == 0 && j.Request == id })
+			if i >= 0 {
+				n.Done = append(n.Done, doneText(resp.Catalog.Requests[i]))
+			} else {
+				n.Done = append(n.Done, strings.TrimSpace(prev.Name+" "+prev.Version)+": aprovado pela TI; a instalação começa em instantes")
+			}
+		}
+		waiting = waitNow
 		if rb := resp.Catalog.Reboot; rb != nil && rb.Allowed && rb.Pending != nil && *rb.Pending && rb.JobID == 0 &&
 			time.Since(rebootSaid) >= every-time.Minute {
 			n.Reboot, rebootSaid = true, time.Now()
+		}
+		if len(waitNow) > 0 && wait > approval {
+			wait = approval
 		}
 		if len(now) > 0 || resp.Catalog.OpenJob > 0 {
 			wait = fast
@@ -611,21 +667,22 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{end}}
 </main><footer>Consultado às {{.Checked}} · <a href="{{.Base}}?aba={{.Tab}}">atualizar a página</a></footer></body></html>
 {{define "atualizacoes"}}<section><h1>Atualizações para você</h1>
-{{if .Updates}}<ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}} → <b>{{.Target}}</b></span></div>
-<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
-<button type="submit"{{if $.Busy}} disabled{{end}}>Atualizar</button></form></li>{{end}}</ul>
+{{if .Updates}}<ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}} → <b>{{.Target}}</b>{{if .Approval}} · com aprovação da TI{{end}}</span></div>
+{{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
+<button type="submit"{{if $.Busy}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Atualizar{{end}}</button></form>{{end}}</li>{{end}}</ul>
 <p class="nota">Feche o programa antes de atualizar. A instalação roda em segundo plano e leva poucos minutos.</p>
 {{else}}<p class="vazio">Nenhuma atualização disponível para você neste computador.</p>{{end}}
 </section>
 {{if .Current}}<section><h2>Em dia</h2><ul class="lista">{{range .Current}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">✓ em dia</span></li>{{end}}</ul></section>{{end}}
 {{end}}
 {{define "loja"}}{{with .Confirm}}<section class="confirma"><h1>Instalar {{.Name}}?</h1>
-<p>A versão <b>{{.Target}}</b> será instalada neste computador, em segundo plano, aprovada pela equipe de TI. Leva poucos minutos; você pode continuar trabalhando.</p>
+{{if .Approval}}<p>O pedido da versão <b>{{.Target}}</b> vai para a aprovação da equipe de TI. Aprovado, a instalação começa sozinha, em segundo plano; você acompanha em Meus pedidos.</p>
+{{else}}<p>A versão <b>{{.Target}}</b> será instalada neste computador, em segundo plano, aprovada pela equipe de TI. Leva poucos minutos; você pode continuar trabalhando.</p>{{end}}
 <div class="botoes"><form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="instalar">
-<button type="submit"{{if $.Busy}} disabled{{end}}>Instalar agora</button></form><a class="sec" href="{{$.Base}}?aba=loja">Cancelar</a></div></section>{{end}}
+<button type="submit"{{if and $.Busy (not .Approval)}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Instalar agora{{end}}</button></form><a class="sec" href="{{$.Base}}?aba=loja">Cancelar</a></div></section>{{end}}
 <section><h1>Programas para instalar</h1>
-{{if .Install}}<ul class="lista">{{range .Install}}<li><div><strong>{{.Name}}</strong><span class="ver">versão {{.Target}}</span></div>
-<a class="btn" href="{{$.Base}}?aba=loja&amp;confirmar={{.App}}">Instalar</a></li>{{end}}</ul>
+{{if .Install}}<ul class="lista">{{range .Install}}<li><div><strong>{{.Name}}</strong><span class="ver">versão {{.Target}}{{if .Approval}} · com aprovação da TI{{end}}</span></div>
+{{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else}}<a class="btn" href="{{$.Base}}?aba=loja&amp;confirmar={{.App}}">{{if .Approval}}Pedir à TI{{else}}Instalar{{end}}</a>{{end}}</li>{{end}}</ul>
 {{else}}<p class="vazio">Nenhum programa novo disponível para você neste computador.</p>{{end}}
 </section>
 {{if .Installed}}<section><h2>Já instalados</h2><ul class="lista">{{range .Installed}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">instalado</span></li>{{end}}</ul></section>{{end}}
@@ -643,7 +700,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{else}}<p class="vazio">O patchd ainda não sabe se este computador precisa reiniciar.</p>{{end}}
 </section>{{end}}{{end}}
 {{define "pedidos"}}<section><h1>Meus pedidos neste computador</h1>
-{{if .Requests}}<ul class="lista">{{range .Requests}}<li><div><strong>{{.Name}} {{.Version}}</strong><span class="ver">pedido nº {{.ID}} · {{.When}}</span>{{if .Detail}}<span class="det">{{.Detail}}</span>{{end}}</div>
+{{if .Requests}}<ul class="lista">{{range .Requests}}<li><div><strong>{{.Name}} {{.Version}}</strong><span class="ver">{{if .ID}}pedido nº {{.ID}}{{else}}pedido à TI nº {{.Request}}{{end}} · {{.When}}</span>{{if .Detail}}<span class="det">{{.Detail}}</span>{{end}}</div>
 <span class="selo {{.Class}}">{{.Label}}</span></li>{{end}}</ul>
 {{else}}<p class="vazio">Você ainda não fez pedidos neste computador.</p>{{end}}
 </section>

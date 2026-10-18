@@ -75,6 +75,7 @@ type backend struct {
 	err    error
 	delay  time.Duration
 	reboot *protocol.SelfServiceRebootState
+	loja   *protocol.SelfServiceCatalog // Aula 18.4: a loja inteira, quando o teste precisa
 }
 
 func (b *backend) SelfServiceCatalog(ctx context.Context, u protocol.SelfServiceUser) (protocol.SelfServiceCatalog, error) {
@@ -83,6 +84,9 @@ func (b *backend) SelfServiceCatalog(ctx context.Context, u protocol.SelfService
 	b.user = u
 	b.mu.Unlock()
 	cat := protocol.SelfServiceCatalog{Items: []protocol.SelfServiceItem{{App: "7zip", Action: "em_dia"}}}
+	if b.loja != nil {
+		cat = *b.loja
+	}
 	if b.reboot != nil {
 		rb := *b.reboot
 		cat.Reboot = &rb
@@ -363,3 +367,20 @@ func (s spy) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceReque
 }
 
 func backendFunc(see func(protocol.SelfServiceRequest), b *backend) Backend { return spy{b, see} }
+
+// Aula 18.4: a loja com um job do usuário ainda não entregue (a TI aprovou) acorda o agente.
+func TestLojaComJobPendenteAcorda(t *testing.T) {
+	b := &backend{}
+	s, acordou, agora := servidor(b)
+	b.loja = &protocol.SelfServiceCatalog{Requests: []protocol.SelfServiceJob{{ID: 90, State: "pendente", CreatedAt: *agora}}}
+	s.Serve(context.Background(), Identity{Account: `EXEMPLO\ana`}, Request{Op: OpCatalog})
+	if acordou.Load() != 1 {
+		t.Errorf("job pendente: acordou %d", acordou.Load())
+	}
+	b.loja.Requests = []protocol.SelfServiceJob{{ID: 90, State: "entregue", CreatedAt: *agora}, {Request: 3, State: "aguardando aprovação", CreatedAt: *agora},
+		{ID: 80, State: "pendente", CreatedAt: agora.Add(-48 * time.Hour)}}
+	s.Serve(context.Background(), Identity{Account: `EXEMPLO\ana`}, Request{Op: OpCatalog})
+	if acordou.Load() != 1 {
+		t.Errorf("entregue, aguardando a TI ou velho não acordam: %d", acordou.Load())
+	}
+}
