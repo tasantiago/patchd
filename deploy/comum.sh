@@ -8,6 +8,12 @@
 
 COMPOSE="${PATCHD_COMPOSE_FILE:-deploy/compose.yaml}"
 
+# Aula 18.5: o compose monta deploy/secrets/smtp_password mesmo com as notificações
+# desligadas; o arquivo nasce vazio (preencha só se o SMTP pedir login).
+if [ -d deploy/secrets ] && [ ! -e deploy/secrets/smtp_password ]; then
+  ( umask 077; : > deploy/secrets/smtp_password )
+fi
+
 # sem_patchd CMD...: roda CMD sem nenhuma PATCHD_* do ambiente.
 sem_patchd() {
   local tirar=() v

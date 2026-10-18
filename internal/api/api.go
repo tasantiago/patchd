@@ -152,6 +152,7 @@ type api struct {
 	system     *SystemInfo          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
 	agentCA    []byte               // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
 	adInfo     *ADInfo              // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
+	notifier   *notifierState       // e-mail para a equipe (Aula 18.5); nil: desligado
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -227,6 +228,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
 	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))
 	mux.Handle("POST /painel/configuracao/agente/token/{id}/revogar", a.sameOrigin(a.adminAction(a.revokeTokenAction)))
+	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))
 	mux.Handle("POST /painel/configuracao/acesso/testar-oidc", a.sameOrigin(a.adminAction(a.testOIDCAction)))

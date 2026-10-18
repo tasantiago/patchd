@@ -398,3 +398,23 @@ expediente; "não deram certo" repetidos num programa pedem olhar o instalador a
 - Quando a loja mostra um job do usuário ainda não entregue (a TI acabou de aprovar), o
   agente faz o check-in na hora: a instalação começa minutos depois da aprovação, sem
   esperar a próxima hora. Exige o agente v0.17.5.
+
+## Notificações por e-mail (Aula 18.5)
+
+- Configuração no `.env` (os valores do ambiente real ficam só lá):
+  `PATCHD_SMTP_ADDR` (host:porta; vazio desliga), `PATCHD_SMTP_FROM`, `PATCHD_NOTIFY_TO`
+  (vírgula entre os endereços), `PATCHD_SMTP_TLS` (`starttls`, o padrão; `tls` para a porta
+  465; `none` só para um relay interno que não oferece TLS), `PATCHD_SMTP_USER` e a senha por
+  `PATCHD_SMTP_PASSWORD_FILE` (no compose, `deploy/secrets/smtp_password`), e
+  `PATCHD_SMTP_CA_FILE` quando o SMTP usa a CA interna.
+- Com `starttls`, o servidor que não oferece STARTTLS é recusado: a mensagem não sai em
+  texto claro por engano. Usuário e senha com `none` é erro de configuração.
+- Configuração errada (endereço sem porta, destinatário inválido, usuário sem senha, CA
+  ilegível) não deixa o servidor subir; o log da partida resume a configuração, sem a senha.
+- Teste: Configuração › Sistema › **Mandar e-mail de teste** (só admin; um a cada 30 s;
+  entra na auditoria como `notificacao.teste`, com o resultado) ou, no terminal,
+  `patchd-server notify status` e `patchd-server notify test` (`cli.notify.test`).
+- "Aceita pelo SMTP" quer dizer que o servidor de e-mail recebeu; se não chegar à caixa, o
+  problema está depois dele (filtro, regra de encaminhamento, lista).
+- As mensagens levam `Auto-Submitted: auto-generated`: respostas automáticas (férias) não
+  voltam para o remetente.

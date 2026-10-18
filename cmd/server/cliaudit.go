@@ -30,6 +30,7 @@ var cliAudited = map[string][]string{
 	"user":     {"create", "password", "delete"},
 	"package":  {"fetch", "install", "approve", "revoke"},
 	"release":  {"publish", "withdraw"},
+	"notify":   {"test"}, // Aula 18.5: uma mensagem sai para a lista
 }
 
 // cliSource é a origem dos eventos da linha de comando.

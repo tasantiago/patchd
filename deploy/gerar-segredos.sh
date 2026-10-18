@@ -50,6 +50,13 @@ if [ ! -e "$DIR/oidc_client_secret" ]; then
   echo "RHBK: $DIR/oidc_client_secret criado vazio (preencha se for ligar o RHBK)."
 fi
 
+# 2a. Senha do SMTP (Aula 18.5): como o do RHBK, existe vazio até ser preenchido; só é lida
+# com PATCHD_SMTP_USER definido.
+if [ ! -e "$DIR/smtp_password" ]; then
+  ( umask 077; : > "$DIR/smtp_password" )
+  echo "SMTP: $DIR/smtp_password criado vazio (preencha se o SMTP pedir login)."
+fi
+
 # 2b. Token das métricas (Aula 10.2): gerado aqui, nunca escolhido. O mesmo valor vai
 # para o Prometheus (credentials_file); trocar = gerar outro e atualizar os dois lados.
 if [ -s "$DIR/metrics_token" ]; then
@@ -124,6 +131,12 @@ if [ -s "$DEPLOY/.env" ]; then
       echo "RHBK: ligado no .env, mas $DIR/oidc_client_secret está vazio (o segredo do cliente no RHBK, aba Credentials)."
       acl deploy/secrets/oidc_client_secret
     fi
+  fi
+  # SMTP com login pede a senha preenchida.
+  if grep -qE '^PATCHD_SMTP_USER=.+' "$DEPLOY/.env" && [ ! -s "$DIR/smtp_password" ]; then
+    falta=1
+    echo "SMTP: PATCHD_SMTP_USER no .env, mas $DIR/smtp_password está vazio."
+    acl deploy/secrets/smtp_password
   fi
 else
   falta=1

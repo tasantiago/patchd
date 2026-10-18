@@ -86,6 +86,7 @@ type settingsView struct {
 	Access      *accessView      // aba Acesso (Aula 15.3)
 	Audit       *auditView       // aba Auditoria (Aula 15.14)
 	SelfService *selfServiceView // aba Autoatendimento (Aula 17.1)
+	NotifyOn    bool             // aba Sistema: notificações ligadas, com o botão de teste (Aula 18.5)
 }
 
 func (a *api) settingsTabs(tab string) string {
@@ -110,6 +111,8 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	var err error
 	switch v.Tab {
 	case "sistema":
+		notifyFlash(q, &v.pageBase)
+		v.NotifyOn = a.notifier != nil
 		v.System, err = a.systemRows(r)
 	case "agente":
 		err = a.agentView(r, &v)
@@ -162,6 +165,8 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 	} else {
 		add("URL pública", a.publicURL, "")
 	}
+	nv, nl := a.notifyRow()
+	add("Notificações", nv, nl)
 	if a.jobKey != nil {
 		add("Jobs", "ligados · chave "+jobs.KeyID(a.jobKey.Public().(ed25519.PublicKey)), "")
 	} else {
