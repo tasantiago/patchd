@@ -198,6 +198,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		"server", cred.ServerURL,
 		"data_dir", opts.DataDir,
 	)
+	// Autoatendimento (Aula 17.3): o canal local do app do usuário, só no Windows.
+	startSelfService(ctx, logger, ag)
 	if err := ag.Run(ctx); err != nil {
 		logger.Error("laço de check-in parou com erro", "error", err)
 		return exitRuntime

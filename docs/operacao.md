@@ -234,3 +234,34 @@ Se falhar, o motivo está no WindowsUpdate.log (`Get-WindowsUpdateLog`); procure
 na máquina. Limpar a `SoftwareDistribution` da máquina não resolve esse caso: na primeira
 sincronização vem o `0x80244010` (idas e voltas demais) e, com o cache cheio de novo, o
 mesmo `0x80244007`.
+
+## Autoatendimento: o canal local no Windows (Aula 17.3)
+
+O agente do Windows atende o app do usuário por um named pipe, `\\.\pipe\patchd-autoatendimento`,
+e fala com o servidor com a credencial da máquina. Quem pede não é algo que o app informa:
+o agente lê a conta e os grupos do token do Windows de quem abriu o pipe.
+
+- Quem pode abrir: usuários com sessão interativa (console ou área de trabalho remota). O
+  pipe recusa conexões de outra máquina (`PIPE_REJECT_REMOTE_CLIENTS` e um ACE negando
+  LOGON DE REDE). Um processo de serviço, ou uma tarefa agendada sem sessão, é recusado
+  mesmo como administrador. O usuário pode abrir o canal, mas não pode criar uma instância
+  dele: sem `FILE_CREATE_PIPE_INSTANCE`, ninguém se passa pelo agente.
+- Se outro processo já tiver um pipe com esse nome quando o agente sobe, o agente não
+  atende. O log mostra `autoatendimento: canal local fechado` com o motivo.
+- O app só lê o token com nível de identificação: o agente sabe quem é o usuário, mas não
+  age como ele. O app confere se o dono do pipe é o SYSTEM ou o grupo Administradores antes
+  de mandar o pedido.
+- Grupos que contam: os ligados no token, inclusive os aninhados, que o controlador de
+  domínio resolveu no logon. Ficam de fora os "só para negar" (o Administradores de quem
+  está com o UAC). Quem entrou num grupo novo precisa sair e entrar de novo na sessão. O
+  nome do grupo é resolvido pelo controlador, ou pelo cache do Windows; sem resposta, o
+  grupo fica de fora da loja daquela vez.
+- Limites, por usuário: 5 pedidos (atualizar, instalar) e 60 consultas (loja) a cada 10
+  minutos. A máquina inteira atende 4 pedidos ao mesmo tempo; além disso, a resposta é
+  "ocupado".
+- Pedido aceito (job criado): o agente faz o check-in na hora, sem esperar a próxima hora,
+  com no mínimo 30 s entre um check-in e outro. O job chega e a instalação começa.
+
+Na máquina, na sessão do usuário (sem elevar): `patchd-agent selfservice whoami`,
+`selfservice catalog` e `selfservice request -app ID -action atualizar|instalar`. No log do
+agente (`C:\ProgramData\patchd\logs\agent.log`), procure por `autoatendimento`.

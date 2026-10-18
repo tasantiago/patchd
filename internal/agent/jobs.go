@@ -360,5 +360,7 @@ func (a *Agent) moveServer(ctx context.Context, state *State) {
 		return
 	}
 	a.Logger.Info("endereço do servidor trocado", "job_id", m.JobID, "from", a.Client.BaseURL, "to", m.URL)
+	a.clientMu.Lock() // o canal do autoatendimento (Aula 17.3) lê o endereço de outra goroutine
 	a.Client.BaseURL = m.URL
+	a.clientMu.Unlock()
 }
