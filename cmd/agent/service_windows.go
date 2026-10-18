@@ -215,6 +215,11 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 	}
 	waitServiceGone(m, 30*time.Second)
 
+	// O app do usuário (Aula 17.4) sai do logon; a cópia em uso sai no próximo reinício.
+	if err := removeUserApp(); err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: aviso: app do usuário: %v\n", err)
+	}
+
 	// O processo pode levar um instante para soltar o executável.
 	bin := installedBinary()
 	for i := 0; i < 20; i++ {

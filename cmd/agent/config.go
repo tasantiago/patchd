@@ -29,6 +29,9 @@ type agentConfig struct {
 	Inventory       bool // coleta o inventário, imprime em JSON e sai
 	Scan            bool // busca atualizações e histórico, imprime em JSON e sai
 	State           bool // coleta rede e discos (Aula 12.1), imprime em JSON e sai
+	// UserApp: no Windows, o serviço põe o app do usuário (Aula 17.4) para abrir no logon de
+	// todos. false: tira (servidores, máquinas sem usuário).
+	UserApp bool
 }
 
 // loadAgentConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -38,6 +41,7 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 
 	// Duração vinda do ambiente: o erro só vale se a flag não for informada.
 	envInterval, errInterval := config.Duration(look, "PATCHD_CHECKIN_INTERVAL", time.Hour)
+	envUserApp, errUserApp := config.Bool(look, "PATCHD_USER_APP", true)
 
 	fs := flag.NewFlagSet("patchd-agent", flag.ContinueOnError)
 	fs.SetOutput(usage)
@@ -58,6 +62,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		"arquivo com o token de enrollment, usado por enroll e install (env PATCHD_ENROLL_TOKEN_FILE)")
 	fs.StringVar(&cfg.CAFile, "ca-file", config.String(look, "PATCHD_CA_FILE", ""),
 		"certificado da CA do servidor, em PEM; com ele, o agente confia só nessa CA (env PATCHD_CA_FILE)")
+	fs.BoolVar(&cfg.UserApp, "user-app", envUserApp,
+		"Windows: abre a Central de software (app do usuário) no logon; -user-app=false tira (env PATCHD_USER_APP)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")
@@ -93,6 +99,9 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	}
 	if errInterval != nil && !given["checkin-interval"] {
 		problems = append(problems, errInterval)
+	}
+	if errUserApp != nil && !given["user-app"] {
+		problems = append(problems, errUserApp)
 	}
 	if cfg.CheckinInterval < time.Minute {
 		problems = append(problems, fmt.Errorf("-checkin-interval/PATCHD_CHECKIN_INTERVAL: mínimo de 1m (recebido %s)", cfg.CheckinInterval))

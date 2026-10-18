@@ -48,7 +48,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 
 	// Subcomandos: "identity", "enroll [opções]", "install [opções]",
 	// "service install|uninstall|run [opções]", "verify-cab [arquivo]",
-	// "repo-cache show|apply|remove" e "selfservice whoami|catalog|request" (Aula 17.3).
+	// "repo-cache show|apply|remove", "selfservice whoami|catalog|request" (Aula 17.3) e
+	// "app" (Aula 17.4).
 	if len(args) > 0 {
 		switch args[0] {
 		case "identity":
@@ -65,6 +66,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return runRepoCache(args[1:], stdout, stderr)
 		case "selfservice":
 			return runSelfService(args[1:], stdout, stderr)
+		case "app":
+			return runApp(args[1:], stdout, stderr)
 		}
 	}
 
