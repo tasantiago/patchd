@@ -27,7 +27,10 @@ const (
 	defaultHistoryDays = 90
 	// 400 dias de jobs: um ano inteiro de "quem mandou reiniciar o quê", e mais um mês.
 	defaultJobsDays = 400
-	pruneEvery      = time.Hour
+	// Aula 18.1: 5 anos de trilha de auditoria. A tabela cresce devagar (logins e ações, não
+	// máquinas); o prazo é decisão da instituição e muda por PATCHD_RETENTION_AUDIT_DAYS.
+	defaultAuditDays = 1825
+	pruneEvery       = time.Hour
 )
 
 // retentionConfig lê os dois cortes. Histórico: 30 a 3650 dias. Jobs: 0 (guardar sempre)
@@ -57,7 +60,12 @@ func retentionConfig(look config.Lookup) (store.Retention, error) {
 	if err != nil {
 		return store.Retention{}, err
 	}
-	return store.Retention{History: time.Duration(h) * 24 * time.Hour, Jobs: time.Duration(j) * 24 * time.Hour}, nil
+	a, err := days("PATCHD_RETENTION_AUDIT_DAYS", defaultAuditDays, 365, true)
+	if err != nil {
+		return store.Retention{}, err
+	}
+	return store.Retention{History: time.Duration(h) * 24 * time.Hour, Jobs: time.Duration(j) * 24 * time.Hour,
+		Audit: time.Duration(a) * 24 * time.Hour}, nil
 }
 
 // describeRetention: "histórico 90 dias; jobs 400 dias" (ou "jobs guardados sempre").
@@ -66,7 +74,11 @@ func describeRetention(r store.Retention) string {
 	if r.Jobs > 0 {
 		jobs = fmt.Sprintf("jobs e campanhas encerrados: %d dias", int(r.Jobs.Hours()/24))
 	}
-	return fmt.Sprintf("inventários e buscas: %d dias (o atual de cada máquina fica sempre); %s", int(r.History.Hours()/24), jobs)
+	audit := "auditoria guardada sempre"
+	if r.Audit > 0 {
+		audit = fmt.Sprintf("auditoria: %d dias", int(r.Audit.Hours()/24))
+	}
+	return fmt.Sprintf("inventários e buscas: %d dias (o atual de cada máquina fica sempre); %s; %s", int(r.History.Hours()/24), jobs, audit)
 }
 
 // pruner é o armazenamento que aplica a retenção (o PostgreSQL; a memória guarda só o
@@ -87,7 +99,8 @@ func retentionLoop(ctx context.Context, logger *slog.Logger, p pruner, r store.R
 			logger.Error("retenção falhou", "error", err)
 		case res.Total() > 0:
 			logger.Info("retenção: linhas antigas apagadas",
-				"inventarios", res.Inventories, "buscas", res.Scans, "jobs", res.Jobs, "campanhas", res.Campaigns)
+				"inventarios", res.Inventories, "buscas", res.Scans, "jobs", res.Jobs, "campanhas", res.Campaigns, "auditoria", res.Audit)
+			deleted.Add(float64(res.Audit), "auditoria")
 			deleted.Add(float64(res.Inventories), "inventarios")
 			deleted.Add(float64(res.Scans), "buscas")
 			deleted.Add(float64(res.Jobs), "jobs")
@@ -109,6 +122,7 @@ para ver antes (ou aplicar já, depois de mudar os cortes).
 
   PATCHD_RETENTION_HISTORY_DAYS  inventários e buscas além do atual (padrão 90; 30 a 3650)
   PATCHD_RETENTION_JOBS_DAYS     jobs e campanhas encerrados (padrão 400; 0 = guardar sempre)
+  PATCHD_RETENTION_AUDIT_DAYS    trilha de auditoria (padrão 1825; 0 = guardar sempre; 365 a 3650)
 `
 
 // retentionStore é o que o comando usa do banco.
@@ -175,7 +189,7 @@ func retentionCommand(ctx context.Context, st retentionStore, r store.Retention,
 	for _, l := range []struct {
 		name string
 		n    int64
-	}{{"inventarios", res.Inventories}, {"buscas", res.Scans}, {"jobs", res.Jobs}, {"campanhas", res.Campaigns}} {
+	}{{"inventarios", res.Inventories}, {"buscas", res.Scans}, {"jobs", res.Jobs}, {"campanhas", res.Campaigns}, {"auditoria", res.Audit}} {
 		fmt.Fprintf(w, "  %s\t%d\n", l.name, l.n)
 	}
 	_ = w.Flush()

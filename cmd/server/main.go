@@ -43,8 +43,14 @@ func main() {
 
 // run concentra a lógica do servidor. Argumentos, ambiente e saídas chegam como
 // parâmetros para que a função possa ser testada sem criar um processo.
-func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
+func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int) {
 	info := buildinfo.Get()
+
+	// Aula 18.1: subcomando que muda alguma coisa entra na trilha de auditoria, com o
+	// resultado, depois de rodar.
+	if action := cliAction(args); action != "" {
+		defer func() { auditCLI(action, args, look, code, stderr) }()
+	}
 
 	// Subcomandos de administração: "patchd-server token create|list|revoke",
 	// "patchd-server release current|publish|withdraw", "patchd-server catalog sync|list|builds|usn|fedora|apple|kev"

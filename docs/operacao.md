@@ -335,3 +335,22 @@ programa e a versão dos parâmetros assinados, e como terminaram (em andamento,
 adiados, não deram certo), os programas mais pedidos e as recusas recentes (da auditoria).
 Os indicadores filtram a tabela. Muitos "adiados" de um programa pedem uma campanha fora do
 expediente; "não deram certo" repetidos num programa pedem olhar o instalador aprovado.
+
+## Auditoria: retenção e linha de comando (Aula 18.1)
+
+- **Retenção da trilha**: `PATCHD_RETENTION_AUDIT_DAYS` (padrão 1825 dias, 5 anos; `0` guarda
+  sempre; de 365 a 3650). A limpeza é a mesma de hora em hora da Aula 10.5, e
+  `patchd-server retention` mostra antes quantos eventos sairiam. Quando apaga, a própria
+  limpeza entra na trilha (`auditoria.retencao`, usuário `patchd-server`, origem `sistema`),
+  na mesma transação: não existe trilha apagada sem o registro de que foi apagada. O prazo é
+  decisão da instituição: confira com a norma interna de guarda de registros antes de mudar.
+- **Linha de comando**: os subcomandos que mudam alguma coisa (job create/cancel/keygen,
+  campaign create/pause/resume/cancel, ring set/window, machine retire/restore, token
+  create/revoke, user create/password/delete, package fetch/install/approve/revoke, release
+  publish/withdraw, retention -apply, repo-cache prune) viram `cli.COMANDO.SUBCOMANDO`, com
+  origem "linha de comando", as opções (valores de opções com senha, token ou chave no nome
+  saem como `***`) e o resultado. Consultas e erros de uso não entram.
+- **Quem rodou**: `PATCHD_OPERATOR`, se definido (no container todos são o mesmo usuário do
+  sistema; ponha no `.env` o nome que você usa no painel); senão, o usuário do sistema.
+- Painel: Configuração › Auditoria, grupos "Linha de comando" e "Retenção da auditoria";
+  terminal: `patchd-server audit -action cli.`.
