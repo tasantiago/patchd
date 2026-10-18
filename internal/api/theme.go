@@ -106,4 +106,27 @@ td form{margin:0}form.inline{display:inline;margin-left:.6rem}.dias label{margin
 th.col-lote,td.col-lote{width:1%;text-align:center}div.acao{display:flex}div.acao input{flex:1 1 20rem}
 form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}
 form.grade input[type=text]{width:100%}
+/* Formulário da campanha (Aula 16.6): campos em coluna; o que não vale para o tipo
+escolhido some, por :has(), sem JavaScript. Navegador sem :has() mostra tudo, como antes. */
+form.campanha{display:flex;flex-direction:column;gap:1.1rem;max-width:46rem}
+form.campanha .campo{display:flex;flex-direction:column;gap:.3rem;margin:0;padding:0;border:0}
+form.campanha .campo>label:not(.opcao):not(.anel),form.campanha legend{font-weight:600;font-size:.88rem;padding:0;margin-bottom:.2rem}
+form.campanha legend small{font-weight:400}
+form.campanha small{font-size:.8rem}
+form.campanha .opcao{display:flex;align-items:flex-start;gap:.6rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer;background:#fff;margin-bottom:.35rem}
+form.campanha .opcao span{display:flex;flex-direction:column;gap:.1rem}
+form.campanha .opcao small{color:var(--muted)}
+form.campanha .opcao input{margin-top:.25rem}
+form.campanha .opcao:has(input:checked){border-color:var(--azul);background:#eef5fd}
+form.campanha .quando .opcao span{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.5rem}
+form.campanha .quando .opcao:last-child span{flex-direction:column;align-items:flex-start;gap:.1rem}
+form.campanha .chips{display:flex;flex-wrap:wrap;gap:.4rem}
+form.campanha .anel{display:inline-flex;align-items:center;gap:.4rem;padding:.35rem .7rem;border:1px solid var(--borda);border-radius:999px;cursor:pointer;background:#fff}
+form.campanha .anel:has(input:checked){border-color:var(--azul);background:#eef5fd}
+form.campanha details.vazios{margin-top:.5rem}form.campanha details.vazios summary{cursor:pointer;color:var(--muted);font-size:.84rem;margin-bottom:.4rem}
+form.campanha:has(input[name=tipo]:checked:not([value=thirdparty])) .so-terceiros,
+form.campanha:has(input[name=tipo]:checked:not([value=update]):not([value=windows_update])) .so-fontes,
+form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio{display:none}
+form.campanha:has(input[value=janela]:checked) select[name=prazo]{opacity:.45}
+form.campanha .acoes{display:flex;align-items:center;gap:.75rem}
 `

@@ -51,7 +51,6 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		"tipo server_url":   {formCampanha("tipo", "server_url"), "Escolha o tipo"},
 		"update sem fontes": {formCampanha("tipo", "update"), "de 1 a 50 fontes"},
 		"fonte estranha":    {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
-		"rescan com fontes": {formCampanha("fontes", "curl"), "Só a campanha de atualizar"},
 		"observação fora":   {formCampanha("observacao", "5"), "observação da lista"},
 		"prazo fora":        {formCampanha("prazo", "2"), "prazo da lista"},
 		"sem nome":          {formCampanha("nome", "   "), "dê um nome"},

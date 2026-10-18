@@ -160,6 +160,10 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 				f.Type, f.Sources, f.Name = jobs.TypeWinUpdate, kb, "Windows "+kb
 			}
 		}
+		// Aula 16.6: ?tipo=reboot já abre com o reinício escolhido.
+		if r.URL.Query().Get("tipo") == jobs.TypeReboot {
+			f.Type, f.Name = jobs.TypeReboot, "Reinício pendente"
+		}
 		var err error
 		if f.Rings, err = a.ringChoices(r, nil); err != nil {
 			a.internalError(w, r, "listar anéis", err)
@@ -275,9 +279,9 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		if len(c.Sources) == 0 {
 			return c, f, "Informe os KBs da campanha (ex.: KB5127648)."
 		}
-	} else if f.Sources != "" {
-		return c, f, "Só a campanha de atualizar pacotes leva fontes, e a do Windows, KBs."
 	}
+	// Nos outros tipos, o campo de fontes está escondido (Aula 16.6): o que ficou nele de
+	// antes de trocar o tipo é ignorado, como o programa e o aviso.
 	if err := c.Validate(); err != nil {
 		return c, f, "Campanha inválida: " + err.Error() + "."
 	}
