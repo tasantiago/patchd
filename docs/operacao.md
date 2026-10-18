@@ -437,3 +437,23 @@ Com as notificações ligadas e o PostgreSQL, o servidor confere a cada 5 minuto
 - Dois servidores no mesmo banco: a trava consultiva deixa um só fazer a passada.
 - `patchd-server notify pending` mostra os e-mails que a próxima passada mandaria, sem mandar
   nem marcar. Para parar um tipo: tire-o de `PATCHD_NOTIFY_EVENTS` e suba o servidor de novo.
+
+## A fila da TI pelo terminal (Aula 18.7)
+
+O mesmo que Automação › Autoatendimento faz, sem o painel (no compose:
+`./deploy/compose.sh exec server /patchd-server selfservice ...`):
+
+```
+patchd-server selfservice requests            # os que aguardam a TI
+patchd-server selfservice requests -all       # também os decididos (os 50 mais novos)
+patchd-server selfservice approve -id 12
+patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
+```
+
+- A aprovação refaz a loja com a conta e os grupos guardados, como no painel; não passando,
+  o motivo sai no terminal e o pedido continua na fila.
+- A decisão entra na trilha com a mesma ação do painel (`autoatendimento.aprovar` ou
+  `.reprovar`), a origem "linha de comando" e quem rodou (`PATCHD_OPERATOR` ou o usuário do
+  sistema). O e-mail da 18.6 lembra o comando.
+- O `selfservice catalog` mostra o pedido que espera como "pedido à TI nº N" (antes saía
+  "job 0").

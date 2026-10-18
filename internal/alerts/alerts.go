@@ -209,7 +209,7 @@ func (w *Watcher) requests(ctx context.Context) ([]message, error) {
 		}
 	}
 	b.WriteString(more(len(idx)))
-	b.WriteString("\n\nSem decisão em 7 dias, o pedido expira. Aprovar e recusar: Automação › Autoatendimento.")
+	b.WriteString("\n\nSem decisão em 7 dias, o pedido expira. Aprovar e recusar: Automação › Autoatendimento, ou no terminal (patchd-server selfservice requests).")
 	b.WriteString(w.link("/painel/autoatendimento"))
 	return []message{{kind: KindRequests, subject: fmt.Sprintf("%d pedido(s) aguardando a TI", len(idx)), body: b.String(), keys: mk}}, nil
 }
