@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,6 +40,17 @@ const (
 
 func main() {
 	os.Exit(run(os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr))
+}
+
+// panelTitle limpa o nome do painel: espaços nas pontas e um par de aspas em volta
+// ("patchd TJRO" ou 'patchd TJRO'). ok=false: vazio ou com mais de 40 caracteres.
+func panelTitle(v string) (string, bool) {
+	t := strings.TrimSpace(v)
+	if len(t) >= 2 && (t[0] == '"' || t[0] == '\'') && t[len(t)-1] == t[0] {
+		t = strings.TrimSpace(t[1 : len(t)-1])
+	}
+	n := len([]rune(t))
+	return t, n > 0 && n <= 40
 }
 
 // run concentra a lógica do servidor. Argumentos, ambiente e saídas chegam como
@@ -184,7 +196,14 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 
 	var apiOpts []api.Option
 	if t, _ := look("PATCHD_PANEL_TITLE"); t != "" {
-		apiOpts = append(apiOpts, api.WithBrand(t)) // nome no topo do painel (Aula 11.3)
+		// Nome no topo do painel (Aula 11.3). Aula 18.2: aspas que vieram do .env (o Compose
+		// passa o valor como está escrito) saem; um nome comprido demais é avisado, não
+		// ignorado em silêncio.
+		if title, ok := panelTitle(t); ok {
+			apiOpts = append(apiOpts, api.WithBrand(title))
+		} else {
+			logger.Warn("PATCHD_PANEL_TITLE ignorado: use de 1 a 40 caracteres; o painel fica com \"patchd\"", "caracteres", len([]rune(title)))
+		}
 	}
 	if tz, _ := look("PATCHD_TIMEZONE"); tz != "" {
 		apiOpts = append(apiOpts, api.WithTimezone(tz)) // sugerido no formulário da janela (Aula 11.1)

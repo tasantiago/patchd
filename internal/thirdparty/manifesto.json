@@ -12,7 +12,7 @@
     {"id": "mozilla-firefox-esr", "os": "windows", "name": "Mozilla Firefox ESR", "category": "feed",
      "publisher": "^Mozilla", "match": "^Mozilla Firefox ESR( \\(|$)",
      "source": {"type": "firefox", "id": "FIREFOX_ESR"},
-     "install": {"winget": "Mozilla.Firefox.ESR.pt-BR", "processes": ["firefox.exe"]},
+     "install": {"winget": "Mozilla.Firefox.ESR.pt-BR", "signer": "Mozilla Corporation", "processes": ["firefox.exe"]},
      "note": "compara com a ESR mais nova; uma máquina numa linha ESR anterior aparece desatualizada"},
     {"id": "mozilla-maintenance", "os": "windows", "name": "Mozilla Maintenance Service", "category": "ignore",
      "publisher": "^Mozilla", "match": "^Mozilla Maintenance Service$",

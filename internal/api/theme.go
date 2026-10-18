@@ -9,7 +9,7 @@ package api
 // WithBrand define o nome no topo do painel e na tela de login (PATCHD_PANEL_TITLE).
 func WithBrand(name string) Option {
 	return func(a *api) {
-		if name != "" && len(name) <= 40 {
+		if n := len([]rune(name)); n > 0 && n <= 40 { // letras, não bytes: "Justiça" tem 7 (Aula 18.2)
 			a.brand = name
 		}
 	}
