@@ -386,3 +386,15 @@ expediente; "não deram certo" repetidos num programa pedem olhar o instalador a
   primeiro esperando, não cria outro.
 - O job aprovado chega à máquina no próximo check-in (até 1 hora); o app da 18.4 antecipa.
 - Na auditoria, o pedido guardado é `autoatendimento.solicitacao`.
+
+### A aprovação da TI no app (Aula 18.4)
+
+- Na Central de software, o programa com aprovação mostra "com aprovação da TI" e o botão
+  **Pedir à TI**; com um pedido esperando, o selo "Com a TI (pedido nº N)" no lugar do botão.
+  Em Meus pedidos, o pedido à TI aparece como "Com a TI", "Recusado pela TI" (com o motivo)
+  ou "Expirou sem resposta da TI"; aprovado, ele vira o job e segue como os outros.
+- Com pedido esperando, o app confere a cada 5 minutos e avisa no ícone quando a TI decide
+  ("Resposta da TI").
+- Quando a loja mostra um job do usuário ainda não entregue (a TI acabou de aprovar), o
+  agente faz o check-in na hora: a instalação começa minutos depois da aprovação, sem
+  esperar a próxima hora. Exige o agente v0.17.5.

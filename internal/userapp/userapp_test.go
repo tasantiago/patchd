@@ -394,3 +394,74 @@ func TestAvisoDeReinicio(t *testing.T) {
 		t.Fatalf("aviso: %+v", n)
 	}
 }
+
+// Aula 18.4: o que passa pela TI — o botão, o pedido esperando e a resposta no ícone.
+func TestPedidosComAprovacaoDaTI(t *testing.T) {
+	loja := lojaDeTeste(0)
+	loja.Catalog.Items[0].Approval = true                                   // 7-Zip: atualizar com aprovação
+	loja.Catalog.Items[2].Approval, loja.Catalog.Items[2].Pending = true, 3 // VS Code: já com a TI
+	loja.Catalog.Items[2].Target = "1.105.1"
+	loja.Catalog.Requests = []protocol.SelfServiceJob{
+		{Request: 3, App: "vscode", Name: "Visual Studio Code", Version: "1.105.1", State: "aguardando aprovação", CreatedAt: time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)},
+		{Request: 2, App: "7zip", Name: "7-Zip", Version: "26.04", State: "recusado pela TI", Detail: "motivo: use a versão da imagem", CreatedAt: time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)},
+	}
+	c := &canal{loja: loja, pedido: localapi.Response{OK: true, Result: &protocol.SelfServiceResponse{Status: "aprovacao", RequestID: 4, Message: "Pedido enviado para a aprovação da TI (nº 4)."}}}
+	a := appDeTeste(c)
+	a.Loc = time.UTC
+
+	b := get(a, a.base()).Body.String()
+	if !strings.Contains(b, "com aprovação da TI") || !strings.Contains(b, ">Pedir à TI</button>") {
+		t.Errorf("atualizar com aprovação:\n%s", b)
+	}
+	b = get(a, a.base()+"?aba=loja").Body.String()
+	if !strings.Contains(b, "Com a TI (pedido nº 3)") || strings.Contains(b, "confirmar=vscode") {
+		t.Errorf("loja com o pedido esperando:\n%s", b)
+	}
+	b = get(a, a.base()+"?aba=pedidos").Body.String()
+	for _, quer := range []string{"pedido à TI nº 3", ">Com a TI<", ">Recusado pela TI<", "motivo: use a versão da imagem"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("meus pedidos sem %q", quer)
+		}
+	}
+	w := post(a, a.base()+"pedir", url.Values{"app": {"7zip"}, "action": {"atualizar"}}, "http://127.0.0.1:5555")
+	if w.Header().Get("Location") != a.base()+"?aba=pedidos" {
+		t.Errorf("pedido à TI vai para Meus pedidos: %v", w.Header())
+	}
+	if b := get(a, a.base()+"?aba=pedidos").Body.String(); !strings.Contains(b, `class="aviso sucesso"`) {
+		t.Error("aviso do pedido à TI")
+	}
+}
+
+func TestAvisoDaDecisaoDaTI(t *testing.T) {
+	loja := lojaDeTeste(0)
+	loja.Catalog.Items = nil
+	espera := func(id int64, nome string) protocol.SelfServiceJob {
+		return protocol.SelfServiceJob{Request: id, Name: nome, Version: "1.0", State: "aguardando aprovação"}
+	}
+	loja.Catalog.Requests = []protocol.SelfServiceJob{espera(3, "Visual Studio Code"), espera(4, "LibreOffice")}
+	c := &canal{loja: loja}
+	a := appDeTeste(c)
+	a.approvalEvery = 10 * time.Millisecond
+	out := make(chan Notice, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go a.Watch(ctx, time.Millisecond, time.Hour, out)
+	time.Sleep(30 * time.Millisecond)
+	c.mu.Lock() // o 3 foi recusado; o 4 virou job (aprovado)
+	c.loja.Catalog.Requests = []protocol.SelfServiceJob{{Request: 3, Name: "Visual Studio Code", Version: "1.0", State: "recusado pela TI", Detail: "motivo: fora do setor"},
+		{ID: 90, Name: "LibreOffice", Version: "1.0", State: "pendente"}}
+	c.mu.Unlock()
+	select {
+	case n := <-out:
+		title, text := noticeText(n)
+		if title != "Pedidos concluídos" || !strings.Contains(text, "Visual Studio Code 1.0: recusado pela TI (fora do setor)") ||
+			!strings.Contains(text, "LibreOffice 1.0: aprovado pela TI") {
+			t.Errorf("aviso: %q %q", title, text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a decisão da TI não virou aviso")
+	}
+	if title, _ := noticeText(Notice{Done: []string{"7-Zip 26.04: recusado pela TI"}}); title != "Resposta da TI" {
+		t.Errorf("título de uma decisão: %q", title)
+	}
+}

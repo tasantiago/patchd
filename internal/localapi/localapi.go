@@ -184,8 +184,9 @@ const (
 	rebootStatusTimeout = 20 * time.Second
 )
 
-// Server atende o canal. OnCreated é chamado quando um pedido vira job: o agente faz o
-// check-in na hora em vez de esperar a próxima hora.
+// Server atende o canal. OnCreated é chamado quando um pedido vira job (ou, desde a 18.4,
+// quando a loja mostra um job do usuário ainda não entregue, como o de um pedido que a TI
+// acabou de aprovar): o agente faz o check-in na hora em vez de esperar a próxima hora.
 type Server struct {
 	Backend   Backend
 	Logger    *slog.Logger
@@ -282,6 +283,11 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 		if err != nil {
 			return s.backendError("loja", err)
 		}
+		// Aula 18.4: um job deste usuário que ainda não chegou à máquina (a TI aprovou o pedido
+		// agora há pouco): o check-in vem já, em vez de na próxima hora.
+		if s.OnCreated != nil && undelivered(cat, s.now()) {
+			s.OnCreated()
+		}
 		if cat.Reboot != nil && s.RebootStatus != nil {
 			rctx, cancel := context.WithTimeout(ctx, rebootStatusTimeout)
 			st, err := s.RebootStatus(rctx)
@@ -312,6 +318,16 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 	default:
 		return fail(CodeInvalid, fmt.Sprintf("operação desconhecida %q", req.Op))
 	}
+}
+
+// undelivered: há job do usuário pendente (criado, não entregue), de até um dia atrás.
+func undelivered(cat protocol.SelfServiceCatalog, now time.Time) bool {
+	for _, j := range cat.Requests {
+		if j.ID > 0 && j.State == "pendente" && now.Sub(j.CreatedAt) < 24*time.Hour {
+			return true
+		}
+	}
+	return false
 }
 
 var appID = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]{0,63}$`)
