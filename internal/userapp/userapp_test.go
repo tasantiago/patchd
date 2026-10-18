@@ -94,7 +94,7 @@ func TestPaginaAtualizacoes(t *testing.T) {
 	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") || strings.Contains(csp, "script") {
 		t.Errorf("CSP sem script: %q", csp)
 	}
-	if w.Header().Get("Referrer-Policy") != "no-referrer" || w.Header().Get("Refresh") != "" {
+	if w.Header().Get("Referrer-Policy") != "same-origin" || w.Header().Get("Refresh") != "" {
 		t.Errorf("cabeçalhos: %v", w.Header())
 	}
 

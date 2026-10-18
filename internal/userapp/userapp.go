@@ -103,7 +103,10 @@ func (a *App) Handler() http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer") // o segredo está no caminho
+		// O segredo está no caminho: same-origin só manda o Referer para a própria página. Aula
+		// 17.5b: com no-referrer, o navegador manda "Origin: null" nos formulários (é a regra do
+		// Fetch para essa política), e todo pedido feito pela página era recusado como de fora.
+		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cache-Control", "no-store")
 		// Host: só o endereço em que o app escuta (contra DNS rebinding: um site que aponta
 		// o próprio nome para 127.0.0.1 manda outro Host).
