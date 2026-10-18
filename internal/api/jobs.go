@@ -26,6 +26,8 @@ type JobStore interface {
 	ExpireJobs(ctx context.Context, now time.Time) (int64, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
+	// SelfServiceJobs: os pedidos do autoatendimento, para o painel (Aula 17.7).
+	SelfServiceJobs(ctx context.Context, since time.Time, limit int) ([]store.JobRow, error)
 }
 
 // jobResult recebe o resultado de um job da máquina autenticada. O que o agente diz não
