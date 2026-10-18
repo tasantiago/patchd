@@ -111,6 +111,18 @@ func TestAutoatendimentoPeloAgente(t *testing.T) {
 	if c := loja(`EXEMPLO\GG-Exemplo`); c.OpenJob != r.JobID {
 		t.Errorf("loja com job em aberto: %+v", c)
 	}
+	// Aula 17.5: "Meus pedidos" — o pedido aparece para quem pediu, com o nome e a versão
+	// dos parâmetros assinados; outro usuário da mesma máquina não vê.
+	if c := loja(`EXEMPLO\GG-Exemplo`); len(c.Requests) != 1 || c.Requests[0].ID != r.JobID || c.Requests[0].App != "7zip" ||
+		c.Requests[0].Version != "26.04" || c.Requests[0].State != "pendente" || c.Requests[0].Name == "7zip" {
+		t.Errorf("meus pedidos: %+v", c.Requests)
+	}
+	body, _ := json.Marshal(protocol.SelfServiceUser{Account: `EXEMPLO\outra`, Groups: []string{`EXEMPLO\GG-Exemplo`}})
+	var outra protocol.SelfServiceCatalog
+	_ = json.Unmarshal(envia(h, "POST", protocol.SelfServiceCatalogPath, maq.Credential, body).Body.Bytes(), &outra)
+	if len(outra.Requests) != 0 || outra.OpenJob != r.JobID {
+		t.Errorf("outra pessoa vê o job em andamento, mas não os pedidos da ana: %+v", outra)
+	}
 	ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "autoatendimento."})
 	if len(ev) != 3 || ev[1].Action != "autoatendimento.pedido" || ev[1].Username != `EXEMPLO\ana` || ev[1].Source != "autoatendimento" ||
 		!strings.Contains(ev[1].Detail, "7zip 26.04 · atualizar · visto conectado: sim") || ev[0].Action != "autoatendimento.recusado" {

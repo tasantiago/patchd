@@ -61,6 +61,9 @@ func TestAutoatendimentoPelaLinhaDeComando(t *testing.T) {
 	if code != exitRuntime || !strings.HasPrefix(o, "aguarde:") {
 		t.Errorf("em aberto: %d %q", code, o)
 	}
+	if _, o, _ := roda("catalog", "-machine", "60ef", "-user", `EXEMPLO\ana`, "-groups", `EXEMPLO\GG-Exemplo`); !strings.Contains(o, "pedido: job 1 · 7zip 26.04 · pendente") {
+		t.Errorf("os pedidos do usuário (Aula 17.5):\n%s", o)
+	}
 	ev, _ := mem.AuditEvents(ctx, store.AuditFilter{Action: "autoatendimento."})
 	if len(ev) != 2 || ev[1].Action != "autoatendimento.pedido" || ev[1].Source != "autoatendimento (linha de comando)" || ev[1].Username != `EXEMPLO\ana` ||
 		!strings.Contains(ev[1].Detail, "visto conectado: não") || ev[0].Action != "autoatendimento.recusado" {

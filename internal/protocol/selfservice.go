@@ -70,6 +70,21 @@ type SelfServiceCatalog struct {
 	Items       []SelfServiceItem `json:"items"`
 	GeneratedAt time.Time         `json:"generated_at"`
 	OpenJob     int64             `json:"open_job,omitempty"` // instalação em andamento na máquina
+	// Requests (Aula 17.5): os pedidos recentes deste usuário nesta máquina, o mais novo
+	// primeiro. Agentes até a v0.17.1 não repassam o campo ao app.
+	Requests []SelfServiceJob `json:"requests,omitempty"`
+}
+
+// SelfServiceJob é um pedido do usuário, como o app mostra em "Meus pedidos".
+type SelfServiceJob struct {
+	ID         int64      `json:"id"`
+	App        string     `json:"app"`
+	Name       string     `json:"name"`
+	Version    string     `json:"version"`
+	State      string     `json:"state"`            // o estado do job (pendente, entregue, concluido, falhou, adiado...)
+	Detail     string     `json:"detail,omitempty"` // o que o agente informou (curto)
+	CreatedAt  time.Time  `json:"created_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 // SelfServiceRequest é o pedido do usuário.

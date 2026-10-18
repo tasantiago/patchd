@@ -285,3 +285,17 @@ console. Cópia em uso é renomeada (`.old-...`) e sai quando ninguém mais a us
 - Desligar (servidores, máquinas sem usuário): o serviço com `-user-app=false` (ou
   `PATCHD_USER_APP=0`). No próximo início, o serviço tira a chave e a cópia.
 - `patchd-agent app -no-tray` serve a página sem ícone e mostra o endereço no terminal.
+
+### Loja e Meus pedidos (Aula 17.5)
+
+- **Loja**: o que a oferta deixa o usuário instalar do zero, com uma confirmação antes do
+  pedido; o que já está instalado; e o que está oferecido, mas indisponível agora (o motivo é
+  o mesmo da prévia em Configuração › Autoatendimento).
+- **Meus pedidos**: os 10 pedidos mais recentes do usuário naquela máquina (o servidor filtra
+  pelo autor `autoatendimento: DOMINIO\usuario`), com a situação do job. Outro usuário da
+  mesma máquina não vê os pedidos de quem não é ele. "Adiado" é o programa aberto na hora da
+  instalação: o pedido não volta sozinho para a fila; o usuário fecha o programa e pede de
+  novo.
+- Depois de um pedido aceito, o app confere a cada 30 s até o job terminar e avisa no ícone
+  ("pronto", "adiado" ou "não deu certo").
+- Agentes até a v0.17.1 não repassam os pedidos ao app (o campo é novo no protocolo).

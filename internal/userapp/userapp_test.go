@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -33,7 +34,13 @@ func (c *canal) call(_ context.Context, r localapi.Request) (localapi.Response, 
 		c.pedidos = append(c.pedidos, r)
 		return c.pedido, nil
 	}
-	return c.loja, nil
+	resp := c.loja // cópia: o teste muda a loja enquanto o app lê
+	if resp.Catalog != nil {
+		cat := *resp.Catalog
+		cat.Items, cat.Requests = slices.Clone(cat.Items), slices.Clone(cat.Requests)
+		resp.Catalog = &cat
+	}
+	return resp, nil
 }
 
 func lojaDeTeste(openJob int64) localapi.Response {
@@ -134,7 +141,7 @@ func TestSegredoHostOrigem(t *testing.T) {
 
 	// O formulário da própria página: pede, redireciona, e o aviso aparece uma vez.
 	w := post(a, a.base()+"pedir", form, "http://127.0.0.1:5555")
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != a.base() || len(c.pedidos) != 1 || c.pedidos[0].App != "7zip" || c.pedidos[0].Action != "atualizar" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != a.base()+"?aba=pedidos" || len(c.pedidos) != 1 || c.pedidos[0].App != "7zip" || c.pedidos[0].Action != "atualizar" {
 		t.Fatalf("pedido: %d %v %+v", w.Code, w.Header(), c.pedidos)
 	}
 	if b := get(a, a.base()).Body.String(); !strings.Contains(b, `class="aviso sucesso"`) || !strings.Contains(b, "Pedido aceito") {
@@ -200,5 +207,98 @@ func TestServeSoLocal(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Error(err)
+	}
+}
+
+// Aula 17.5: a Loja (instalar, com confirmação) e Meus pedidos.
+func TestLojaEMeusPedidos(t *testing.T) {
+	loja := lojaDeTeste(0)
+	fim := time.Date(2026, 10, 17, 12, 5, 0, 0, time.UTC)
+	loja.Catalog.Items = append(loja.Catalog.Items,
+		protocol.SelfServiceItem{App: "powershell-7", Name: "PowerShell 7", Installed: "7.5.3", Action: "instalado"},
+		protocol.SelfServiceItem{App: "google-chrome", Name: "Google Chrome", Action: "indisponivel", Reason: "sem instalador aprovado para esta máquina"})
+	loja.Catalog.Items[2].Target = "1.105.1"
+	loja.Catalog.Requests = []protocol.SelfServiceJob{
+		{ID: 60, App: "vscode", Name: "Visual Studio Code", Version: "1.105.1", State: "entregue", CreatedAt: fim},
+		{ID: 58, App: "7zip", Name: "7-Zip", Version: "26.04", State: "adiado", Detail: "7zFM.exe em uso", CreatedAt: fim.Add(-time.Hour), FinishedAt: &fim},
+		{ID: 55, App: "7zip", Name: "7-Zip", Version: "26.04", State: "concluido", Detail: "instalado; código 0", CreatedAt: fim.Add(-2 * time.Hour)},
+	}
+	c := &canal{loja: loja, pedido: localapi.Response{OK: true, Result: &protocol.SelfServiceResponse{Status: "criado", JobID: 61, Message: "Pedido aceito: instalação de Visual Studio Code 1.105.1."}}}
+	a := appDeTeste(c)
+	a.Loc = time.UTC
+
+	w := get(a, a.base()+"?aba=loja")
+	b := w.Body.String()
+	if !strings.Contains(b, "Visual Studio Code") || !strings.Contains(b, "confirmar=vscode") || strings.Contains(b, `value="instalar"`) ||
+		!strings.Contains(b, "PowerShell 7") || !strings.Contains(b, "sem instalador aprovado") || strings.Contains(b, "26.01 → <b>26.04</b>") {
+		t.Fatalf("loja: o botão leva à confirmação, não pede direto:\n%s", b)
+	}
+	if !strings.Contains(b, `class="conta">1</span>`) {
+		t.Error("a aba Atualizações mostra quantas há")
+	}
+	b = get(a, a.base()+"?aba=loja&confirmar=vscode").Body.String()
+	if !strings.Contains(b, "Instalar Visual Studio Code?") || !strings.Contains(b, `name="action" value="instalar"`) {
+		t.Fatalf("confirmação:\n%s", b)
+	}
+	if b := get(a, a.base()+"?aba=loja&confirmar=7zip").Body.String(); strings.Contains(b, "Instalar 7-Zip?") {
+		t.Error("só se confirma o que a loja oferece para instalar")
+	}
+	w = post(a, a.base()+"pedir", url.Values{"app": {"vscode"}, "action": {"instalar"}}, "http://127.0.0.1:5555")
+	if w.Header().Get("Location") != a.base()+"?aba=pedidos" || c.pedidos[0].Action != "instalar" {
+		t.Fatalf("instalar: %v %+v", w.Header(), c.pedidos)
+	}
+	// Recusado: volta para a Loja, com o aviso.
+	c.pedido = localapi.Response{OK: true, Result: &protocol.SelfServiceResponse{Status: "aguarde", Message: "Já há uma instalação em andamento."}}
+	if w := post(a, a.base()+"pedir", url.Values{"app": {"vscode"}, "action": {"instalar"}}, "http://127.0.0.1:5555"); w.Header().Get("Location") != a.base()+"?aba=loja" {
+		t.Errorf("aguarde volta para a loja: %v", w.Header())
+	}
+
+	w = get(a, a.base()+"?aba=pedidos")
+	b = w.Body.String()
+	for _, quer := range []string{"pedido nº 60 · 17/10 12:05", "Instalando", "Adiado", "7zFM.exe em uso", "Concluído"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("meus pedidos sem %q:\n%s", quer, b)
+		}
+	}
+	if strings.Contains(b, "código 0") {
+		t.Error("o detalhe do concluído não precisa aparecer")
+	}
+	if w.Header().Get("Refresh") != "15" {
+		t.Error("com pedido instalando, a página se atualiza sozinha")
+	}
+}
+
+// Aula 17.5: o pedido aceito antecipa a conferência, e o fim dele vira aviso no ícone.
+func TestAvisoDePedidoConcluido(t *testing.T) {
+	loja := lojaDeTeste(0)
+	loja.Catalog.Items = loja.Catalog.Items[1:] // sem atualização: o único aviso é o do pedido
+	c := &canal{loja: loja, pedido: localapi.Response{OK: true, Result: &protocol.SelfServiceResponse{Status: "criado", JobID: 70, Message: "ok"}}}
+	a := appDeTeste(c)
+	a.fast = 10 * time.Millisecond
+	out := make(chan Notice, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go a.Watch(ctx, time.Hour, time.Hour, out) // sem o pedido, só daqui a uma hora
+
+	setReq := func(state string) {
+		c.mu.Lock()
+		c.loja.Catalog.Requests = []protocol.SelfServiceJob{{ID: 70, Name: "Visual Studio Code", Version: "1.105.1", State: state}}
+		c.mu.Unlock()
+	}
+	setReq("pendente")
+	post(a, a.base()+"pedir", url.Values{"app": {"vscode"}, "action": {"instalar"}}, "http://127.0.0.1:5555")
+	time.Sleep(30 * time.Millisecond) // conferências rápidas enquanto o pedido está na fila
+	setReq("concluido")
+	select {
+	case n := <-out:
+		title, text := noticeText(n)
+		if title != "Pedido concluído" || text != "Visual Studio Code 1.105.1: pronto." {
+			t.Errorf("aviso: %q %q", title, text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("o fim do pedido não virou aviso")
+	}
+	if _, text := noticeText(Notice{Done: []string{doneText(protocol.SelfServiceJob{Name: "7-Zip", Version: "26.04", State: "adiado"})}}); !strings.Contains(text, "feche o programa") {
+		t.Errorf("adiado: %q", text)
 	}
 }
