@@ -127,8 +127,8 @@ type notifyIconData struct {
 // TrayOptions é o que o ícone precisa.
 type TrayOptions struct {
 	Tooltip string
-	Open    func()        // abre a página
-	Notices <-chan Notice // avisos para o balão
+	Open    func(tab string) // abre a página ("": a aba padrão)
+	Notices <-chan Notice    // avisos para o balão
 }
 
 // tray guarda o estado do ícone; a janela é uma só por processo.
@@ -139,6 +139,7 @@ type tray struct {
 	taskbarCreated uint32
 	mu             sync.Mutex
 	pending        *Notice
+	balloonTab     string // a aba do último aviso: o clique no balão abre ela
 }
 
 var current *tray
@@ -246,8 +247,10 @@ func wndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	switch uint32(message) {
 	case wmTray:
 		switch uint32(lparam) & 0xffff {
-		case wmLButtonUp, ninBalloonUserClick:
-			t.opts.Open()
+		case wmLButtonUp:
+			t.opts.Open("")
+		case ninBalloonUserClick:
+			t.opts.Open(t.balloonTab)
 		case wmRButtonUp, wmContextMenu:
 			t.menu()
 		}
@@ -258,7 +261,7 @@ func wndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	case wmCommand:
 		switch wparam & 0xffff {
 		case cmdOpen:
-			t.opts.Open()
+			t.opts.Open("")
 		case cmdQuit:
 			procPostMessageW.Call(hwnd, wmClose, 0, 0)
 		}
@@ -315,6 +318,7 @@ func (t *tray) balloon() {
 	if text == "" {
 		return
 	}
+	t.balloonTab = n.Tab()
 	t.nid.Flags = nifInfo
 	copyUTF16(t.nid.InfoTitle[:], title)
 	copyUTF16(t.nid.Info[:], text)

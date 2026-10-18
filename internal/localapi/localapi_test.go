@@ -67,13 +67,14 @@ func TestIdentityFrom(t *testing.T) {
 
 // backend falso: conta as chamadas e responde o combinado.
 type backend struct {
-	mu    sync.Mutex
-	cat   atomic.Int32
-	req   atomic.Int32
-	user  protocol.SelfServiceUser
-	resp  protocol.SelfServiceResponse
-	err   error
-	delay time.Duration
+	mu     sync.Mutex
+	cat    atomic.Int32
+	req    atomic.Int32
+	user   protocol.SelfServiceUser
+	resp   protocol.SelfServiceResponse
+	err    error
+	delay  time.Duration
+	reboot *protocol.SelfServiceRebootState
 }
 
 func (b *backend) SelfServiceCatalog(ctx context.Context, u protocol.SelfServiceUser) (protocol.SelfServiceCatalog, error) {
@@ -81,7 +82,12 @@ func (b *backend) SelfServiceCatalog(ctx context.Context, u protocol.SelfService
 	b.mu.Lock()
 	b.user = u
 	b.mu.Unlock()
-	return protocol.SelfServiceCatalog{Items: []protocol.SelfServiceItem{{App: "7zip", Action: "em_dia"}}}, b.err
+	cat := protocol.SelfServiceCatalog{Items: []protocol.SelfServiceItem{{App: "7zip", Action: "em_dia"}}}
+	if b.reboot != nil {
+		rb := *b.reboot
+		cat.Reboot = &rb
+	}
+	return cat, b.err
 }
 
 func (b *backend) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error) {
@@ -308,3 +314,52 @@ func TestExchange(t *testing.T) {
 		t.Fatalf("%+v %v", r, err)
 	}
 }
+
+// Aula 17.6: o reinício pelo canal — sem programa, com a hora, e o pendente lido na hora.
+func TestServeReinicio(t *testing.T) {
+	sim, nao := true, false
+	b := &backend{resp: protocol.SelfServiceResponse{Status: protocol.SelfServiceCreated, JobID: 80}}
+	s, acordou, _ := servidor(b)
+	id := Identity{Account: `EXEMPLO\teste`}
+	ctx := context.Background()
+	as18 := time.Date(2026, 10, 17, 22, 0, 0, 0, time.UTC)
+	for _, ruim := range []Request{{Op: OpRequest, App: "7zip", Action: "reiniciar"}, {Op: OpRequest, App: "7zip", Action: "atualizar", At: &as18}} {
+		if r := s.Serve(ctx, id, ruim); r.Code != CodeInvalid {
+			t.Errorf("%+v: %+v", ruim, r)
+		}
+	}
+	var got protocol.SelfServiceRequest
+	s.Backend = backendFunc(func(r protocol.SelfServiceRequest) { got = r }, b)
+	if r := s.Serve(ctx, id, Request{Op: OpRequest, Action: "reiniciar", At: &as18}); !r.OK || r.Result.JobID != 80 || acordou.Load() != 1 {
+		t.Fatalf("reiniciar: %+v", r)
+	}
+	if got.Action != "reiniciar" || got.RebootAt == nil || !got.RebootAt.Equal(as18) || got.App != "" {
+		t.Errorf("o servidor recebe a hora: %+v", got)
+	}
+
+	// A loja do servidor diz "pendente" (busca de ontem); o agente lê agora e corrige.
+	b.reboot = &protocol.SelfServiceRebootState{Pending: &sim, Allowed: true}
+	s.Backend = b
+	s.RebootStatus = func(context.Context) (protocol.RebootStatus, error) { return protocol.RebootStatus{Pending: &nao}, nil }
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); r.Catalog.Reboot == nil || *r.Catalog.Reboot.Pending {
+		t.Errorf("pendente de agora: %+v", r.Catalog.Reboot)
+	}
+	// Sem resposta do agente (nil): fica o do servidor.
+	s.RebootStatus = func(context.Context) (protocol.RebootStatus, error) { return protocol.RebootStatus{}, nil }
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); !*r.Catalog.Reboot.Pending {
+		t.Errorf("sem leitura, o do servidor: %+v", r.Catalog.Reboot)
+	}
+}
+
+// spy embrulha o backend e guarda o pedido recebido.
+type spy struct {
+	*backend
+	see func(protocol.SelfServiceRequest)
+}
+
+func (s spy) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error) {
+	s.see(r)
+	return s.backend.SelfServiceRequest(ctx, r)
+}
+
+func backendFunc(see func(protocol.SelfServiceRequest), b *backend) Backend { return spy{b, see} }

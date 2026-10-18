@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -78,6 +79,14 @@ func (a *App) Listen() (net.Listener, error) {
 func (a *App) URL() string { return "http://" + a.Addr + a.base() }
 
 func (a *App) base() string { return "/s/" + a.Token + "/" }
+
+// TabURL é o endereço de uma aba ("": a padrão).
+func (a *App) TabURL(tab string) string {
+	if tab == "" {
+		return a.URL()
+	}
+	return a.URL() + "?aba=" + tab
+}
 
 // Serve atende até o contexto acabar.
 func (a *App) Serve(ctx context.Context, ln net.Listener) error {
@@ -151,12 +160,62 @@ const (
 	tabUpdates  = "atualizacoes"
 	tabStore    = "loja"
 	tabRequests = "pedidos"
+	tabReboot   = "reinicio" // Aula 17.6
 )
 
 type tab struct {
 	ID, Label string
-	Count     int // um número ao lado do rótulo (atualizações disponíveis); 0: nada
+	Count     int  // um número ao lado do rótulo (atualizações disponíveis); 0: nada
+	Alert     bool // um "!" ao lado do rótulo (reinício pendente sem hora escolhida)
 	Active    bool
+}
+
+// rebootView é a aba Reinício (Aula 17.6).
+type rebootView struct {
+	Allowed bool
+	Known   bool // a máquina sabe dizer se há reinício pendente
+	Pending bool
+	JobID   int64
+	At      string // "18:00"; vazio: em breve (hora ainda não conhecida)
+	Options []rebootOption
+}
+
+type rebootOption struct {
+	Value, Label string
+	First        bool
+}
+
+// rebootOptions são as horas que o usuário pode escolher: agora, daqui a 1, 2 e 4 horas, e o
+// almoço e o fim do expediente de hoje, se ainda não passaram (até 12 h à frente).
+func rebootOptions(now time.Time) []rebootOption {
+	type cand struct {
+		at    time.Time
+		label string
+	}
+	var cs []cand
+	for _, h := range []int{1, 2, 4} {
+		at := now.Add(time.Duration(h) * time.Hour)
+		label := fmt.Sprintf("Daqui a %d hora", h)
+		if h > 1 {
+			label += "s"
+		}
+		cs = append(cs, cand{at, label + " (às " + at.Format("15:04") + ")"})
+	}
+	for _, c := range []struct {
+		h     int
+		label string
+	}{{12, "Na hora do almoço (12:00)"}, {18, "No fim do expediente (18:00)"}} {
+		at := time.Date(now.Year(), now.Month(), now.Day(), c.h, 0, 0, 0, now.Location())
+		if d := at.Sub(now); d >= 15*time.Minute && d <= 12*time.Hour {
+			cs = append(cs, cand{at, c.label})
+		}
+	}
+	slices.SortFunc(cs, func(a, b cand) int { return a.at.Compare(b.at) })
+	out := []rebootOption{{Value: "agora", Label: "Agora (com 2 minutos para salvar o trabalho)", First: true}}
+	for _, c := range cs {
+		out = append(out, rebootOption{Value: fmt.Sprint(c.at.Unix()), Label: c.label})
+	}
+	return out
 }
 
 // Item é um programa como a página mostra.
@@ -179,6 +238,7 @@ type pageData struct {
 	Install, Installed, Unavailable           []Item
 	Confirm                                   *Item
 	Requests                                  []reqView
+	Reboot                                    *rebootView
 	Busy                                      int64
 }
 
@@ -186,7 +246,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	d := pageData{Title: Title, Base: a.base(), Checked: a.now().Format("02/01 15:04"), Tab: r.URL.Query().Get("aba")}
-	if d.Tab != tabStore && d.Tab != tabRequests {
+	if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot {
 		d.Tab = tabUpdates
 	}
 	a.mu.Lock()
@@ -237,11 +297,26 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 			}
 			d.Requests = append(d.Requests, v)
 		}
+		if rb := resp.Catalog.Reboot; rb != nil {
+			v := &rebootView{Allowed: rb.Allowed, Known: rb.Pending != nil, Pending: rb.Pending != nil && *rb.Pending, JobID: rb.JobID}
+			if rb.At != nil {
+				v.At = rb.At.In(a.loc()).Format("15:04")
+			}
+			if v.Allowed && v.Pending && v.JobID == 0 {
+				v.Options = rebootOptions(a.now().In(a.loc()))
+			}
+			d.Reboot = v
+		}
 	}
 	d.Tabs = []tab{
 		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
 		{ID: tabStore, Label: "Loja"},
 		{ID: tabRequests, Label: "Meus pedidos"},
+	}
+	if d.Reboot != nil { // agentes até a v0.17.2 não trazem o reinício
+		d.Tabs = append(d.Tabs, tab{ID: tabReboot, Label: "Reinício", Alert: d.Reboot.Options != nil})
+	} else if d.Tab == tabReboot && d.Error == "" {
+		d.Tab = tabUpdates
 	}
 	for i := range d.Tabs {
 		d.Tabs[i].Active = d.Tabs[i].ID == d.Tab
@@ -273,6 +348,8 @@ func stateLabel(s string) (label, class string) {
 		return "Cancelado pelo suporte", "neutro"
 	case "expirado":
 		return "Expirou (o computador ficou desligado)", "neutro"
+	case "dispensado":
+		return "Não foi necessário", "neutro"
 	default:
 		return s, "neutro"
 	}
@@ -302,8 +379,18 @@ func (a *App) request(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	req := localapi.Request{Op: localapi.OpRequest, App: r.PostForm.Get("app"), Action: r.PostForm.Get("action")}
 	back := tabUpdates
-	if req.Action == protocol.SelfServiceInstall {
+	switch req.Action {
+	case protocol.SelfServiceInstall:
 		back = tabStore
+	case protocol.SelfServiceReboot:
+		back = tabReboot
+		at, ok := a.rebootAt(r.PostForm.Get("quando"))
+		if !ok {
+			a.setFlash(flash{"erro", "Escolha uma das horas da lista."})
+			http.Redirect(w, r, a.base()+"?aba="+back, http.StatusSeeOther)
+			return
+		}
+		req.At = at
 	}
 	resp, err := a.Call(ctx, req)
 	var f flash
@@ -314,16 +401,39 @@ func (a *App) request(w http.ResponseWriter, r *http.Request) {
 		f = flash{"erro", userError(resp)}
 	case resp.Result.Status == protocol.SelfServiceCreated:
 		f = flash{"sucesso", resp.Result.Message}
-		back = tabRequests // o pedido aceito é acompanhado em Meus pedidos
-		a.kickWatch()      // e o aviso de "terminou" vem do ícone
+		if back != tabReboot {
+			back = tabRequests // o pedido aceito é acompanhado em Meus pedidos
+		}
+		a.kickWatch() // e o aviso de "terminou" vem do ícone
 	default:
 		f = flash{"atencao", resp.Result.Message}
 	}
+	a.setFlash(f)
+	// Recarregar a página não repete o pedido (POST, depois GET).
+	http.Redirect(w, r, a.base()+"?aba="+back, http.StatusSeeOther)
+}
+
+func (a *App) setFlash(f flash) {
 	a.mu.Lock()
 	a.flash = &f
 	a.mu.Unlock()
-	// Recarregar a página não repete o pedido (POST, depois GET).
-	http.Redirect(w, r, a.base()+"?aba="+back, http.StatusSeeOther)
+}
+
+// rebootAt lê a hora escolhida: "agora" (nil) ou um instante da lista (segundos Unix), entre
+// 1 minuto e 12 horas à frente. O servidor confere de novo.
+func (a *App) rebootAt(v string) (*time.Time, bool) {
+	if v == "agora" {
+		return nil, true
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return nil, false
+	}
+	at := time.Unix(n, 0).UTC()
+	if d := at.Sub(a.now()); d < time.Minute || d > 12*time.Hour {
+		return nil, false
+	}
+	return &at, true
 }
 
 // userError traduz o erro do canal para quem está na frente do computador.
@@ -354,6 +464,18 @@ func sentence(s string) string {
 type Notice struct {
 	Updates []string // nomes dos programas com atualização para o usuário
 	Done    []string // pedidos que terminaram (17.5): "7-Zip 26.04: instalado"
+	Reboot  bool     // reinício pendente sem hora escolhida (17.6)
+}
+
+// Tab é a aba que o clique no aviso abre.
+func (n Notice) Tab() string {
+	switch {
+	case len(n.Done) > 0:
+		return tabRequests
+	case n.Reboot:
+		return tabReboot
+	}
+	return tabUpdates
 }
 
 // noticeText é o título e o texto do balão. O fim de um pedido vem antes: é a resposta ao
@@ -364,6 +486,8 @@ func noticeText(n Notice) (title, text string) {
 		return "Pedido concluído", n.Done[0] + "."
 	case len(n.Done) > 1:
 		return "Pedidos concluídos", strings.Join(n.Done, "; ") + "."
+	case n.Reboot:
+		return "Reinício pendente", "Para concluir as atualizações, este computador precisa reiniciar. Clique para escolher a hora."
 	}
 	switch len(n.Updates) {
 	case 0:
@@ -388,6 +512,8 @@ func doneText(j protocol.SelfServiceJob) string {
 		return what + ": pronto"
 	case "adiado":
 		return what + ": adiado (feche o programa e peça de novo)"
+	case "dispensado":
+		return what + ": não foi necessário"
 	default:
 		return what + ": não deu certo (veja em Meus pedidos)"
 	}
@@ -395,7 +521,8 @@ func doneText(j protocol.SelfServiceJob) string {
 
 // Watch confere a loja depois de first e a cada every (FastCheck com pedido em andamento,
 // ou logo depois de um pedido aceito) e avisa: atualização nova para o usuário (a mesma
-// lista não é repetida) e pedido que terminou.
+// lista não é repetida), pedido que terminou e reinício pendente sem hora escolhida (a cada
+// every, enquanto durar).
 func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- Notice) {
 	fast := a.fast
 	if fast == 0 {
@@ -404,6 +531,7 @@ func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- 
 	wait := first
 	var last []string
 	open := map[int64]bool{} // pedidos em andamento na última conferência
+	var rebootSaid time.Time // último aviso de reinício pendente (repete a cada every)
 	for {
 		select {
 		case <-ctx.Done():
@@ -439,10 +567,14 @@ func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- 
 			}
 		}
 		open = now
+		if rb := resp.Catalog.Reboot; rb != nil && rb.Allowed && rb.Pending != nil && *rb.Pending && rb.JobID == 0 &&
+			time.Since(rebootSaid) >= every-time.Minute {
+			n.Reboot, rebootSaid = true, time.Now()
+		}
 		if len(now) > 0 || resp.Catalog.OpenJob > 0 {
 			wait = fast
 		}
-		if len(n.Updates) > 0 || len(n.Done) > 0 {
+		if len(n.Updates) > 0 || len(n.Done) > 0 || n.Reboot {
 			select {
 			case out <- n:
 			default: // o ícone ainda não leu o anterior
@@ -470,12 +602,12 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}}</title><style>` + css + `</style></head><body>
 <header><span class="marca">` + shield + `{{.Title}}</span>{{if .Account}}<span class="quem">{{.Account}}</span>{{end}}</header>
-<nav class="abas" aria-label="seções">{{range .Tabs}}<a href="{{$.Base}}?aba={{.ID}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="conta">{{.Count}}</span>{{end}}</a>{{end}}</nav>
+<nav class="abas" aria-label="seções">{{range .Tabs}}<a href="{{$.Base}}?aba={{.ID}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="conta">{{.Count}}</span>{{end}}{{if .Alert}} <span class="conta alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}</nav>
 <main>
 {{with .Flash}}<p class="aviso {{.Kind}}" role="status">{{.Text}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{else}}
 {{if .Busy}}<p class="aviso andamento" role="status"><span class="gira" aria-hidden="true"></span>Há uma instalação em andamento neste computador (pedido nº {{.Busy}}). Esta página se atualiza sozinha.</p>{{end}}
-{{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else}}{{template "pedidos" .}}{{end}}
+{{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else}}{{template "pedidos" .}}{{end}}
 {{end}}
 </main><footer>Consultado às {{.Checked}} · <a href="{{.Base}}?aba={{.Tab}}">atualizar a página</a></footer></body></html>
 {{define "atualizacoes"}}<section><h1>Atualizações para você</h1>
@@ -499,6 +631,17 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{if .Installed}}<section><h2>Já instalados</h2><ul class="lista">{{range .Installed}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">instalado</span></li>{{end}}</ul></section>{{end}}
 {{if .Unavailable}}<section><h2>Indisponíveis agora</h2><ul class="lista">{{range .Unavailable}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Reason}}</span></div><span class="selo neutro">indisponível</span></li>{{end}}</ul></section>{{end}}
 {{end}}
+{{define "reinicio"}}{{with .Reboot}}<section><h1>Reinício do computador</h1>
+{{if not .Allowed}}<p class="vazio">Neste computador (um servidor), o reinício é feito pela equipe de TI.</p>
+{{else if .JobID}}<p class="aviso agendado">{{if .At}}Reinício agendado para as <b>{{.At}}</b>{{else}}Reinício a caminho{{end}} (pedido nº {{.JobID}}). Salve seu trabalho antes; o Windows avisa na hora.</p>
+{{else if .Options}}<p>Atualizações instaladas neste computador só terminam de valer depois de reiniciar. Escolha a melhor hora para você:</p>
+<form method="post" action="{{$.Base}}pedir" class="horas"><input type="hidden" name="action" value="reiniciar">
+<fieldset><legend>Quando reiniciar</legend>{{range .Options}}<label><input type="radio" name="quando" value="{{.Value}}"{{if .First}} checked{{end}}> {{.Label}}</label>{{end}}</fieldset>
+<button type="submit">Agendar o reinício</button></form>
+<p class="nota">Na hora marcada, o Windows mostra um aviso e reinicia. Se houver outro reinício marcado para mais cedo (pela equipe de TI, por exemplo), vale o mais cedo.</p>
+{{else if .Known}}<p class="vazio">✓ Nenhum reinício pendente neste computador.</p>
+{{else}}<p class="vazio">O patchd ainda não sabe se este computador precisa reiniciar.</p>{{end}}
+</section>{{end}}{{end}}
 {{define "pedidos"}}<section><h1>Meus pedidos neste computador</h1>
 {{if .Requests}}<ul class="lista">{{range .Requests}}<li><div><strong>{{.Name}} {{.Version}}</strong><span class="ver">pedido nº {{.ID}} · {{.When}}</span>{{if .Detail}}<span class="det">{{.Detail}}</span>{{end}}</div>
 <span class="selo {{.Class}}">{{.Label}}</span></li>{{end}}</ul>
@@ -538,6 +681,12 @@ a.btn{display:inline-block;padding:.45rem 1.1rem;border:1px solid var(--azul);bo
 a.btn:hover{background:#eef5fd}
 section.confirma{border-color:#9cc3ec;background:#f7fbff}.confirma p{margin:.25rem 0 1rem}
 .botoes{display:flex;align-items:center;gap:1rem}a.sec{color:var(--muted)}
+.conta.alerta{background:var(--laranja)}
+.aviso.agendado{background:#eef5fd;border-color:#c3dbf5;color:#0b3f73}
+form.horas fieldset{border:0;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:.35rem}
+form.horas legend{font-weight:600;margin-bottom:.35rem}
+form.horas label{display:flex;align-items:center;gap:.55rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer}
+form.horas label:has(input:checked){border-color:var(--azul);background:#eef5fd}
 .vazio,.nota{color:var(--muted);margin:.25rem 0 0}.nota{font-size:.85rem;margin-top:.75rem}
 .aviso{padding:.75rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}
 .aviso.sucesso{background:#eaf7ee;border-color:#bfe5c9;color:#14532d}.aviso.atencao{background:#fff6e0;border-color:#f6d68b;color:#7a4b00}

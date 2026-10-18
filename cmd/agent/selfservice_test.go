@@ -57,6 +57,14 @@ func TestSelfServiceLinhaDeComando(t *testing.T) {
 	if rc, _, errs := roda("catalog"); rc != exitRuntime || !strings.Contains(errs, "pedidos demais (limite)") {
 		t.Errorf("erro do canal: %d %q", rc, errs)
 	}
+	// Aula 17.6: reiniciar, sem programa, com a hora.
+	resp = localapi.Response{OK: true, Result: &protocol.SelfServiceResponse{Status: "criado", JobID: 90, Message: "Pedido aceito"}}
+	if rc, _, _ := roda("request", "-action", "reiniciar", "-at", "18:00"); rc != 0 || got.Action != "reiniciar" || got.App != "" || got.At == nil || got.At.Format("15:04") != "18:00" {
+		t.Errorf("reiniciar: %d %+v", rc, got)
+	}
+	if rc, _, _ := roda("request", "-action", "reiniciar", "-at", "6 da tarde"); rc != exitConfig {
+		t.Errorf("hora inválida: %d", rc)
+	}
 	if rc, _, _ := roda("apagar"); rc != exitConfig {
 		t.Errorf("comando desconhecido: %d", rc)
 	}

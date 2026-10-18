@@ -24,7 +24,8 @@ conferir a loja e o pedido antes de existir o app do usuário (17.3 e 17.4).
 
 comandos:
   catalog  a loja do usuário na máquina: -machine ID -user DOMINIO\usuario [-groups DOMINIO\G1,DOMINIO\G2]
-  request  o pedido: as mesmas opções, mais -app PROGRAMA -action atualizar|instalar.
+  request  o pedido: as mesmas opções, mais -app PROGRAMA -action atualizar|instalar,
+           ou -action reiniciar [-at HH:MM] (Aula 17.6: o reinício, agora ou na hora).
            Atendido, cria o job thirdparty de verdade (autor "autoatendimento: usuario");
            o pedido e a recusa entram na auditoria com a origem "autoatendimento (linha de comando)"
 
@@ -101,9 +102,19 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 	user := fs.String("user", "", `conta do usuário: DOMINIO\usuario`)
 	groups := fs.String("groups", "", `grupos do token, separados por vírgula: DOMINIO\G1,DOMINIO\G2`)
 	app := fs.String("app", "", "request: o programa (7zip)")
-	action := fs.String("action", "", "request: atualizar ou instalar")
+	action := fs.String("action", "", "request: atualizar, instalar ou reiniciar")
+	at := fs.String("at", "", "request -action reiniciar: a hora, HH:MM (vazio: agora)")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 		return exitConfig
+	}
+	var rebootAt *time.Time
+	if *at != "" {
+		t, err := protocol.NextClock(*at, time.Now())
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: -at: %v\n", err)
+			return exitConfig
+		}
+		rebootAt = &t
 	}
 	u := protocol.SelfServiceUser{Account: strings.TrimSpace(*user), Groups: []string{}}
 	for _, g := range strings.Split(*groups, ",") {
@@ -118,8 +129,8 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 	case u.Check() != nil:
 		fmt.Fprintf(stderr, "patchd-server: -user/-groups: %v\n", u.Check())
 		return exitConfig
-	case args[0] == "request" && (*app == "" || *action == ""):
-		fmt.Fprintln(stderr, "patchd-server: o request leva -app e -action")
+	case args[0] == "request" && (*action == "" || *app == "" && *action != protocol.SelfServiceReboot):
+		fmt.Fprintln(stderr, "patchd-server: o request leva -app e -action (o reiniciar, só -action e, se quiser, -at)")
 		return exitConfig
 	}
 	id, code := resolveActive(ctx, st, *prefix, stderr)
@@ -145,18 +156,36 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 		for _, r := range cat.Requests { // Aula 17.5: os pedidos deste usuário nesta máquina
 			fmt.Fprintf(stdout, "pedido: job %d · %s %s · %s\n", r.ID, r.App, r.Version, r.State)
 		}
+		if rb := cat.Reboot; rb != nil { // Aula 17.6
+			pend := "desconhecido"
+			if rb.Pending != nil {
+				pend = yesNoCLI(*rb.Pending)
+			}
+			fmt.Fprintf(stdout, "reinício: pendente na última busca: %s · pelo usuário: %s", pend, yesNoCLI(rb.Allowed))
+			if rb.JobID > 0 {
+				fmt.Fprintf(stdout, " · já pedido: job %d", rb.JobID)
+				if rb.At != nil {
+					fmt.Fprintf(stdout, " às %s", rb.At.Local().Format("15:04"))
+				}
+			}
+			fmt.Fprintln(stdout)
+		}
 		return exitOK
 	}
-	o, err := svc.Request(ctx, id, protocol.SelfServiceRequest{SelfServiceUser: u, App: *app, Action: *action})
+	o, err := svc.Request(ctx, id, protocol.SelfServiceRequest{SelfServiceUser: u, App: *app, Action: *action, RebootAt: rebootAt})
+	what := *app
+	if what == "" {
+		what = "computador"
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
 	e := store.AuditEvent{At: time.Now().UTC(), Username: u.Account, Source: "autoatendimento (linha de comando)", Target: id}
 	if o.Job != nil {
-		e.Action, e.Detail = "autoatendimento.pedido", fmt.Sprintf("job %d · %s %s · %s · visto conectado: %s", o.Job.ID, *app, o.Version, *action, yesNoCLI(o.Seen))
+		e.Action, e.Detail = "autoatendimento.pedido", fmt.Sprintf("job %d · %s %s · %s · visto conectado: %s", o.Job.ID, what, o.Version, *action, yesNoCLI(o.Seen))
 	} else {
-		e.Action, e.Detail = "autoatendimento.recusado", fmt.Sprintf("%s · %s · %s: %s", *app, *action, o.Response.Status, o.Why)
+		e.Action, e.Detail = "autoatendimento.recusado", fmt.Sprintf("%s · %s · %s: %s", what, *action, o.Response.Status, o.Why)
 	}
 	if err := st.RecordAudit(ctx, e); err != nil {
 		fmt.Fprintf(stderr, "patchd-server: auditoria não gravada: %v\n", err)

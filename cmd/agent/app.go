@@ -67,7 +67,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 	}
 	notices := make(chan userapp.Notice, 1)
 	go app.Watch(ctx, appFirstCheck, appCheckEvery, notices)
-	err = userapp.RunTray(ctx, userapp.TrayOptions{Tooltip: userapp.Title, Open: func() { userapp.OpenURL(app.URL()) }, Notices: notices})
+	err = userapp.RunTray(ctx, userapp.TrayOptions{Tooltip: userapp.Title, Open: func(tab string) { userapp.OpenURL(app.TabURL(tab)) }, Notices: notices})
 	cancel()
 	<-served
 	if err != nil {

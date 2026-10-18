@@ -14,3 +14,6 @@ import (
 func newRestart(platform.Runner) func(ctx context.Context, jobID int64, delay time.Duration) error {
 	return nil
 }
+
+// newAbortRestart: sem reinício pelo patchd, nada a cancelar.
+func newAbortRestart(platform.Runner) func(ctx context.Context) error { return nil }

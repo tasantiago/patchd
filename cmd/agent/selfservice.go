@@ -23,7 +23,7 @@ func startSelfService(ctx context.Context, logger *slog.Logger, ag *agent.Agent)
 	if runtime.GOOS != "windows" {
 		return
 	}
-	srv := &localapi.Server{Backend: ag, Logger: logger, OnCreated: ag.Wake}
+	srv := &localapi.Server{Backend: ag, Logger: logger, OnCreated: ag.Wake, RebootStatus: ag.RebootStatus}
 	go func() {
 		logger.Info("autoatendimento: canal local aberto", "pipe", localapi.PipeName)
 		if err := localapi.Listen(ctx, func(c localapi.Conn) { srv.HandleConn(ctx, c) }); err != nil {
@@ -42,6 +42,7 @@ comandos:
   catalog                                a sua loja nesta máquina
   request -app ID -action atualizar|instalar
                                          pede ao servidor; aceito, o agente faz o check-in na hora
+  request -action reiniciar [-at HH:MM]  reinicia agora (com 2 min de aviso) ou na hora escolhida
 `
 
 // localCall é o canal local; os testes o substituem.
@@ -56,7 +57,8 @@ func runSelfService(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	groups := fs.Bool("groups", false, "whoami: lista os grupos")
 	app := fs.String("app", "", "request: o programa, como na loja (ex.: 7zip)")
-	action := fs.String("action", "", "request: atualizar ou instalar")
+	action := fs.String("action", "", "request: atualizar, instalar ou reiniciar")
+	at := fs.String("at", "", "request -action reiniciar: a hora, HH:MM (vazio: agora)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitConfig
 	}
@@ -67,11 +69,19 @@ func runSelfService(args []string, stdout, stderr io.Writer) int {
 	case "catalog":
 		req.Op = localapi.OpCatalog
 	case "request":
-		if *app == "" || *action == "" {
-			fmt.Fprintln(stderr, "patchd-agent: o request leva -app e -action")
+		if *action == "" || *app == "" && *action != protocol.SelfServiceReboot {
+			fmt.Fprintln(stderr, "patchd-agent: o request leva -app e -action (o reiniciar, só -action e, se quiser, -at)")
 			return exitConfig
 		}
 		req = localapi.Request{Op: localapi.OpRequest, App: *app, Action: *action}
+		if *at != "" {
+			t, err := protocol.NextClock(*at, time.Now())
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-agent: -at: %v\n", err)
+				return exitConfig
+			}
+			req.At = &t
+		}
 	default:
 		fmt.Fprintf(stderr, "patchd-agent: comando desconhecido %q\n\n%s", args[0], selfServiceUsage)
 		return exitConfig
@@ -116,6 +126,21 @@ func runSelfService(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%d programa(s) na loja\n", len(r.Catalog.Items))
 		if r.Catalog.OpenJob > 0 {
 			fmt.Fprintf(stdout, "instalação em andamento nesta máquina: job %d\n", r.Catalog.OpenJob)
+		}
+		for _, j := range r.Catalog.Requests { // Aula 17.5
+			fmt.Fprintf(stdout, "pedido: job %d · %s %s · %s\n", j.ID, j.Name, j.Version, j.State)
+		}
+		if rb := r.Catalog.Reboot; rb != nil { // Aula 17.6
+			switch {
+			case rb.JobID > 0 && rb.At != nil:
+				fmt.Fprintf(stdout, "reinício agendado: job %d, às %s\n", rb.JobID, rb.At.Local().Format("15:04"))
+			case rb.JobID > 0:
+				fmt.Fprintf(stdout, "reinício pedido: job %d\n", rb.JobID)
+			case rb.Pending != nil && *rb.Pending:
+				fmt.Fprintln(stdout, "reinício pendente: escolha a hora com request -action reiniciar [-at HH:MM]")
+			case rb.Pending != nil:
+				fmt.Fprintln(stdout, "reinício pendente: não")
+			}
 		}
 	case localapi.OpRequest:
 		fmt.Fprintf(stdout, "%s: %s\n", r.Result.Status, r.Result.Message)

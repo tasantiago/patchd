@@ -32,7 +32,20 @@ func newRestart(run platform.Runner) func(ctx context.Context, jobID int64, dela
 		secs := int(delay / time.Second)
 		min := int(delay / time.Minute)
 		msg := fmt.Sprintf("patchd (job %d): este computador vai reiniciar em %d minuto(s) para concluir atualizações de segurança. Salve seu trabalho.", jobID, min)
+		if delay > time.Hour { // hora escolhida pelo usuário (Aula 17.6): o aviso diz a hora
+			msg = fmt.Sprintf("patchd (job %d): este computador vai reiniciar às %s para concluir atualizações de segurança, como você escolheu. Salve seu trabalho antes.",
+				jobID, time.Now().Add(delay).Format("15:04"))
+		}
 		_, err := run.Run(ctx, shutdownExe(), "/r", "/t", fmt.Sprint(secs), "/d", "p:2:17", "/c", msg)
+		return err
+	}
+}
+
+// newAbortRestart cancela o reinício agendado (Aula 17.6): um reinício pedido para mais
+// cedo toma o lugar do que já estava marcado. shutdown /a só cancela o que está no prazo.
+func newAbortRestart(run platform.Runner) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		_, err := run.Run(ctx, shutdownExe(), "/a")
 		return err
 	}
 }

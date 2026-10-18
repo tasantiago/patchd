@@ -299,3 +299,20 @@ console. Cópia em uso é renomeada (`.old-...`) e sai quando ninguém mais a us
 - Depois de um pedido aceito, o app confere a cada 30 s até o job terminar e avisa no ícone
   ("pronto", "adiado" ou "não deu certo").
 - Agentes até a v0.17.1 não repassam os pedidos ao app (o campo é novo no protocolo).
+
+### Reinício na hora do usuário (Aula 17.6)
+
+- A aba **Reinício** aparece com o reinício pendente lido na hora pelo agente (a loja do
+  servidor traz o da última busca, que pode ter um dia). O usuário escolhe: agora (2 min de
+  aviso), daqui a 1, 2 ou 4 horas, ou 12:00 e 18:00 de hoje, até 12 h à frente.
+- O pedido vira um job `reboot` com a hora (`at`), autor `autoatendimento: DOMINIO\usuario`,
+  na auditoria como os outros pedidos. O agente agenda o `shutdown /r` para aquela hora; o
+  Windows mostra o aviso. Sem reinício pendente na hora em que o job chega, ele volta
+  dispensado, como na 16.5.
+- Dois reinícios na mesma máquina (o do usuário e o de uma campanha, por exemplo): vale o
+  mais cedo. O agente cancela o mais tarde, se for o caso, e o job dele volta dispensado
+  ("já havia um reinício agendado para antes"), sem pausar o anel da campanha.
+- Em servidor (Windows Server), o app mostra que o reinício é com a TI, e o servidor recusa
+  o pedido.
+- O ícone lembra do reinício pendente sem hora escolhida a cada 4 h; o clique abre a aba.
+- O pedido com hora exige o agente v0.17.3: os anteriores recusam o campo `at`.

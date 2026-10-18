@@ -188,6 +188,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	// Job reboot (Aula 8.6): o estado de reinício vem do mesmo scanner da busca.
 	if restart := newRestart(platform.ExecRunner{}); restart != nil {
 		ag.Restart = restart
+		ag.AbortRestart = newAbortRestart(platform.ExecRunner{}) // Aula 17.6
 		ag.RebootStatus = scanner.Reboot
 	}
 
