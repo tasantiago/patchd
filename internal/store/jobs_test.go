@@ -24,6 +24,7 @@ type contratoJobs interface {
 	JobStateCounts(ctx context.Context) (map[string]int, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
 	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
+	SelfServiceJobs(ctx context.Context, since time.Time, limit int) ([]JobRow, error)
 }
 
 func testarJobs(t *testing.T, st contratoJobs) {
@@ -143,6 +144,30 @@ func testarJobs(t *testing.T, st contratoJobs) {
 	n, err := st.JobStateCounts(ctx)
 	if err != nil || len(n) != 3 || n["concluido"] != 1 || n["expirado"] != 3 || n["cancelado"] != 1 {
 		t.Errorf("contagem por estado: %v %v", n, err)
+	}
+
+	// Aula 17.7: os jobs do autoatendimento, pelo autor, com o payload.
+	pedido := func(by string) int64 {
+		t.Helper()
+		id, _ := st.NextJobID(ctx)
+		env := protocol.SignedJob{Payload: `{"id":` + itoa(id) + `,"type":"thirdparty"}`, Signature: "sig"}
+		if err := st.CreateJob(ctx, NewJob{ID: id, MachineID: "maq-a", Type: "thirdparty", Signed: env, CreatedBy: by, NotAfter: agora.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	p1 := pedido(`autoatendimento: EXEMPLO\ana`)
+	pedido("thyago")
+	p2 := pedido(`autoatendimento: EXEMPLO\bia`)
+	l, err := st.SelfServiceJobs(ctx, agora.Add(-time.Hour), 10)
+	if err != nil || len(l) != 2 || l[0].ID != p2 || l[1].ID != p1 || l[0].Payload == "" || l[1].CreatedBy != `autoatendimento: EXEMPLO\ana` {
+		t.Errorf("autoatendimento: %+v %v", l, err)
+	}
+	if l, _ := st.SelfServiceJobs(ctx, agora.Add(-time.Hour), 1); len(l) != 1 || l[0].ID != p2 {
+		t.Errorf("limite: %+v", l)
+	}
+	if l, _ := st.SelfServiceJobs(ctx, agora.Add(time.Hour), 10); len(l) != 0 {
+		t.Errorf("desde depois: %+v", l)
 	}
 }
 

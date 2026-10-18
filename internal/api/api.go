@@ -195,6 +195,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
+	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage)) // Aula 17.7
 	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
 	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))

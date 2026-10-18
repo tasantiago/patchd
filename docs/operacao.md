@@ -316,3 +316,12 @@ console. Cópia em uso é renomeada (`.old-...`) e sai quando ninguém mais a us
   o pedido.
 - O ícone lembra do reinício pendente sem hora escolhida a cada 4 h; o clique abre a aba.
 - O pedido com hora exige o agente v0.17.3: os anteriores recusam o campo `at`.
+
+### O autoatendimento no painel (Aula 17.7)
+
+Automação › Autoatendimento mostra, para os dois perfis, o que os usuários pediram nos
+últimos 7, 30 ou 90 dias: os pedidos que viraram job (autor `autoatendimento: ...`), com o
+programa e a versão dos parâmetros assinados, e como terminaram (em andamento, concluídos,
+adiados, não deram certo), os programas mais pedidos e as recusas recentes (da auditoria).
+Os indicadores filtram a tabela. Muitos "adiados" de um programa pedem uma campanha fora do
+expediente; "não deram certo" repetidos num programa pedem olhar o instalador aprovado.

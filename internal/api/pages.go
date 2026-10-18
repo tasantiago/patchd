@@ -595,7 +595,7 @@ var pages = template.Must(template.New("").Parse(`
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
 
 {{/* Automação (Aula 15.11): campanhas, jobs e anéis numa entrada só do menu, em abas. */}}
-{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/aneis"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Anéis e janelas</a></nav>{{end}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/aneis"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Anéis e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a></nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
@@ -603,7 +603,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if eq .Tab "autoatendimento"}}{{with .SelfService}}
 {{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
 <div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
-<p class="muted">Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD pelo sAMAccountName (GG-Exemplo ou DOMINIO\GG-Exemplo), separados por vírgula; vazio: qualquer usuário da máquina. O agente confere pelos grupos do token do Windows de quem pede, inclusive os aninhados. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Desmarcar os dois tira o programa da loja.</p>
+<p class="muted">Os pedidos feitos e as recusas ficam em <a href="/painel/autoatendimento">Automação › Autoatendimento</a>. Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD pelo sAMAccountName (GG-Exemplo ou DOMINIO\GG-Exemplo), separados por vírgula; vazio: qualquer usuário da máquina. O agente confere pelos grupos do token do Windows de quem pede, inclusive os aninhados. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Desmarcar os dois tira o programa da loja.</p>
 <div class="tabela"><table><thead><tr><th>Programa</th><th>Aprovada mais nova</th><th>Atualizar</th><th>Instalar</th><th>Grupos do AD</th><th></th><th>Última mudança</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Name}} <span class="muted"><code>{{.AppID}}</code></span></td><td><code>{{.Approved}}</code></td>
 <td><input form="ss-{{.AppID}}" type="checkbox" name="atualizar" value="1" aria-label="atualizar {{.Name}}" {{if .CanUpdate}}checked{{end}}></td>
