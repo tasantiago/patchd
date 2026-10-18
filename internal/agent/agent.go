@@ -6,6 +6,8 @@ import (
 	"errors"
 	"log/slog"
 	"math/rand/v2"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -60,6 +62,14 @@ type Agent struct {
 	// "rejeitado"; com jobs.ErrRetry, "adiado". Nunca reinicia.
 	WinUpdate func(ctx context.Context, jobID int64, updates []jobs.WinUpdate) (string, error)
 
+	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
+	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
+	wakeOnce sync.Once
+	wake     chan struct{}
+	// clientMu protege o endereço do Client, que o job server_url troca, das chamadas do
+	// autoatendimento, que vêm de outra goroutine.
+	clientMu sync.RWMutex
+
 	// Injetáveis nos testes.
 	now   func() time.Time
 	sleep func(context.Context, time.Duration) error
@@ -100,6 +110,47 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// MinWakeGap: o check-in antecipado nunca vem antes disso depois do anterior. Um job criado
+// pelo pedido chega no próximo check-in; dois pedidos seguidos não viram uma rajada.
+const MinWakeGap = 30 * time.Second
+
+func (a *Agent) wakeChan() chan struct{} {
+	a.wakeOnce.Do(func() { a.wake = make(chan struct{}, 1) })
+	return a.wake
+}
+
+// Wake pede o próximo check-in agora (Aula 17.3). Não bloqueia; pode ser chamado de
+// qualquer goroutine, antes ou durante o Run. Se um check-in estiver em andamento, o
+// seguinte vem logo depois dele (respeitando o MinWakeGap).
+func (a *Agent) Wake() {
+	select {
+	case a.wakeChan() <- struct{}{}:
+	default:
+	}
+}
+
+// waitTurn espera d, ou menos se o Wake for chamado. woke diz se foi antecipado.
+func (a *Agent) waitTurn(ctx context.Context, d time.Duration) (woke bool, err error) {
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var w atomic.Bool
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-a.wakeChan():
+			w.Store(true)
+			cancel()
+		case <-done:
+		}
+	}()
+	_ = a.sleep(wctx, d)
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	return w.Load(), nil
+}
+
 // Run executa o laço até o contexto acabar. Encerramento pedido não é erro.
 func (a *Agent) Run(ctx context.Context) error {
 	a.defaults()
@@ -108,11 +159,22 @@ func (a *Agent) Run(ctx context.Context) error {
 		"interval", a.Interval.String(), "scan_every", a.ScanEvery.String())
 
 	failures := 0
+	var last time.Time
 	for {
-		if err := a.sleep(ctx, wait); err != nil {
+		woke, err := a.waitTurn(ctx, wait)
+		if err != nil {
 			return nil
 		}
+		if woke {
+			if gap := MinWakeGap - a.now().Sub(last); !last.IsZero() && gap > 0 {
+				if err := a.sleep(ctx, gap); err != nil {
+					return nil
+				}
+			}
+			a.Logger.Info("check-in antecipado: pedido do autoatendimento")
+		}
 		out := a.CheckIn(ctx)
+		last = a.now()
 		if ctx.Err() != nil {
 			return nil
 		}

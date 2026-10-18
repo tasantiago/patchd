@@ -47,6 +47,9 @@ func (e *RejectedError) Error() string {
 type TransientError struct {
 	Err       error
 	RequestID string
+	// Code é o código de erro do servidor, quando ele mandou um (ex.: "selfservice_off"
+	// no 503 do autoatendimento, Aula 17.3).
+	Code string
 }
 
 func (e *TransientError) Error() string {
@@ -124,7 +127,9 @@ func (c *Client) post(ctx context.Context, path string, v, out any) (string, err
 	case resp.StatusCode == http.StatusUnauthorized:
 		return requestID, ErrUnauthorized
 	case resp.StatusCode >= 500, resp.StatusCode == http.StatusRequestTimeout, resp.StatusCode == http.StatusTooManyRequests:
-		return requestID, &TransientError{Err: fmt.Errorf("o servidor respondeu %d", resp.StatusCode), RequestID: requestID}
+		var e protocol.ErrorResponse
+		_ = json.Unmarshal(data, &e)
+		return requestID, &TransientError{Err: fmt.Errorf("o servidor respondeu %d", resp.StatusCode), RequestID: requestID, Code: e.Error.Code}
 	default:
 		var e protocol.ErrorResponse
 		_ = json.Unmarshal(data, &e)
@@ -161,6 +166,21 @@ func (c *Client) SendInventory(ctx context.Context, rep protocol.InventoryReport
 func (c *Client) SendScan(ctx context.Context, rep protocol.PatchScanReport) (protocol.SubmitResponse, error) {
 	var out protocol.SubmitResponse
 	_, err := c.post(ctx, "/api/v1/agent/scan", rep, &out)
+	return out, err
+}
+
+// SelfServiceCatalog pede a loja do usuário nesta máquina (Aula 17.3). Quem é o usuário
+// vem do token de quem abriu o canal local; o servidor confere a máquina pela credencial.
+func (c *Client) SelfServiceCatalog(ctx context.Context, u protocol.SelfServiceUser) (protocol.SelfServiceCatalog, error) {
+	var out protocol.SelfServiceCatalog
+	_, err := c.post(ctx, protocol.SelfServiceCatalogPath, u, &out)
+	return out, err
+}
+
+// SelfServiceRequest manda o pedido do usuário; o servidor refaz a loja e decide.
+func (c *Client) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error) {
+	var out protocol.SelfServiceResponse
+	_, err := c.post(ctx, protocol.SelfServiceRequestPath, r, &out)
 	return out, err
 }
 
