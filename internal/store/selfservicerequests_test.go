@@ -70,6 +70,10 @@ func testarPedidos(t *testing.T, st contratoPedidos) {
 	if _, ok, _ := st.SelfServiceRequestByID(ctx, 999); ok {
 		t.Error("pedido inexistente")
 	}
+	// Aula 18.7: todos, de qualquer máquina, do mais novo para o mais antigo.
+	if l, _ := st.SelfServiceRequests(ctx, RequestFilter{All: true}); len(l) < 2 || l[0].ID < l[len(l)-1].ID {
+		t.Errorf("todos: %+v", l)
+	}
 	// Expira o que ainda aguarda (o da maq-b).
 	if n, err := st.ExpireSelfServiceRequests(ctx, agora.Add(time.Hour), agora); err != nil || n != 1 {
 		t.Errorf("expirar: %d %v", n, err)

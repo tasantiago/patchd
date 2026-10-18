@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -29,6 +30,13 @@ comandos:
            Atendido, cria o job thirdparty de verdade (autor "autoatendimento: usuario");
            o pedido e a recusa entram na auditoria com a origem "autoatendimento (linha de comando)"
 
+A fila da TI (Aula 18.7), o mesmo que Automação › Autoatendimento faz no painel:
+  requests  os pedidos aguardando a TI (-all: também os decididos, os 50 mais novos)
+  approve   aprova: -id N (refaz a loja com a conta e os grupos guardados; passando, cria o job)
+  refuse    recusa: -id N [-note "motivo que o usuário vê"]
+           a decisão entra na auditoria (autoatendimento.aprovar ou .reprovar) com a origem
+           "linha de comando" e quem rodou (PATCHD_OPERATOR ou o usuário do sistema)
+
 Os grupos são os do token do Windows do usuário (whoami /groups na máquina mostra os
 mesmos). A chave de jobs vem de PATCHD_JOB_SIGNING_KEY_FILE; os instaladores, de
 PATCHD_CONTENT_DIR/pacotes; as regras, de PATCHD_THIRDPARTY_MANIFEST (vazio: as embutidas).
@@ -41,7 +49,7 @@ type selfServiceCLIStore interface {
 }
 
 func runSelfService(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "catalog" && args[0] != "request") {
+	if len(args) == 0 || !slices.Contains([]string{"catalog", "request", "requests", "approve", "refuse"}, args[0]) {
 		fmt.Fprint(stderr, selfServiceUsage)
 		return exitConfig
 	}
@@ -69,7 +77,7 @@ func runSelfService(args []string, look config.Lookup, stdout, stderr io.Writer)
 	if dir != "" {
 		svc.PackagesDir = packagesDir(dir)
 	}
-	if args[0] == "request" {
+	if args[0] == "request" || args[0] == "approve" {
 		if svc.Key, err = jobSigningKey(look); err == nil && svc.Key == nil {
 			err = errNoJobKey
 		}
@@ -92,6 +100,9 @@ func runSelfService(args []string, look config.Lookup, stdout, stderr io.Writer)
 	}
 	pg := store.NewPostgres(pool)
 	svc.Store = pg
+	if args[0] == "requests" || args[0] == "approve" || args[0] == "refuse" {
+		return selfServiceQueue(ctx, pg, svc, args, operator(look), stdout, stderr)
+	}
 	return selfServiceCommand(ctx, pg, svc, args, stdout, stderr)
 }
 
@@ -154,7 +165,7 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 			fmt.Fprintf(stdout, "instalação em andamento na máquina: job %d\n", cat.OpenJob)
 		}
 		for _, r := range cat.Requests { // Aula 17.5: os pedidos deste usuário nesta máquina
-			fmt.Fprintf(stdout, "pedido: job %d · %s %s · %s\n", r.ID, r.App, r.Version, r.State)
+			fmt.Fprintf(stdout, "pedido: %s · %s %s · %s\n", requestRef(r), r.App, r.Version, r.State)
 		}
 		if rb := cat.Reboot; rb != nil { // Aula 17.6
 			pend := "desconhecido"

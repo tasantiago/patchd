@@ -46,6 +46,7 @@ var ErrRequestDecided = errors.New("o pedido já foi decidido ou expirou")
 // Account, os daquele usuário naquela máquina.
 type RequestFilter struct {
 	Waiting   bool
+	All       bool // Aula 18.7: todos os pedidos, de qualquer máquina (sem Waiting)
 	MachineID string
 	Account   string
 	Limit     int
@@ -83,9 +84,12 @@ func (p *Postgres) SelfServiceRequests(ctx context.Context, f RequestFilter) ([]
 	}
 	q := `SELECT ` + requestCols + ` FROM selfservice_requests WHERE `
 	var args []any
-	if f.Waiting {
+	switch {
+	case f.Waiting:
 		q += `state = 'aguardando'`
-	} else {
+	case f.All:
+		q += `true`
+	default:
 		q += `machine_id = $1 AND lower(account) = lower($2)`
 		args = append(args, f.MachineID, f.Account)
 	}
@@ -162,7 +166,8 @@ func (m *Memory) SelfServiceRequests(ctx context.Context, f RequestFilter) ([]Se
 	var out []SelfServiceRequest
 	for i := len(m.ssRequests) - 1; i >= 0 && len(out) < f.Limit; i-- {
 		q := m.ssRequests[i]
-		if (f.Waiting && q.State == RequestWaiting) || (!f.Waiting && q.MachineID == f.MachineID && strings.EqualFold(q.Account, f.Account)) {
+		if (f.Waiting && q.State == RequestWaiting) || (!f.Waiting && f.All) ||
+			(!f.Waiting && !f.All && q.MachineID == f.MachineID && strings.EqualFold(q.Account, f.Account)) {
 			out = append(out, q)
 		}
 	}
