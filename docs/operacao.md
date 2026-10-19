@@ -535,4 +535,18 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   `patchd-server settings reset PARAMETRO|-all` (a saída de emergência, na auditoria como
   `cli.settings.reset`). `patchd-server retention` usa os prazos da tela.
 - Ficam sempre no ambiente: banco, portas, TLS, chaves e segredos, pastas, a URL pública e os
-  endereços do AD e do RHBK. Notificações (19.3) e grupos de acesso (19.4) vêm a seguir.
+  endereços do AD e do RHBK. Grupos de acesso: Aula 19.4.
+
+### Notificações pela tela (Aula 19.3)
+
+- O cartão Notificações muda servidor SMTP (vazio desliga), segurança (STARTTLS, TLS direto
+  ou sem TLS), usuário, remetente, destinatários e os avisos (caixas: pedidos, campanhas,
+  fontes). Ficam no ambiente: a senha (`PATCHD_SMTP_PASSWORD_FILE`, o segredo `smtp_password`)
+  e a CA (`PATCHD_SMTP_CA_FILE`).
+- O conjunto é conferido antes de gravar, como na partida: com usuário, o arquivo da senha
+  tem de ter a senha; sem TLS, nada de usuário; ao menos um destinatário. Mudança só em
+  outro cartão não confere o SMTP.
+- Vale na hora: o servidor remonta o envio quando a configuração muda (também a senha
+  trocada no arquivo), sem reiniciar. O laço dos avisos roda sempre e pula a passada enquanto
+  estiverem desligadas. "Mandar e-mail de teste" também fica no cartão (usa o que está
+  gravado). `patchd-server notify status|test|pending` usam o mesmo que o servidor.

@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/alerts"
@@ -21,7 +24,8 @@ import (
 
 const notifyUsage = `uso: patchd-server notify <comando>
 
-Notificações por e-mail (Aula 18.5). A configuração vem do ambiente (.env):
+Notificações por e-mail (Aula 18.5). A configuração vem do ambiente (.env) e, desde a Aula
+19.3, de Configuração › Parâmetros, que vale por cima do .env (exceto a senha e a CA):
   PATCHD_SMTP_ADDR        host:porta do SMTP (vazio: notificações desligadas)
   PATCHD_SMTP_FROM        o remetente, ex.: patchd <patchd@exemplo>
   PATCHD_NOTIFY_TO        os destinatários, separados por vírgula
@@ -101,6 +105,9 @@ func runNotify(args []string, look config.Lookup, stdout, stderr io.Writer) int 
 		fmt.Fprint(stderr, notifyUsage)
 		return exitConfig
 	}
+	// Aula 19.3: com banco, o que vale é a tela por cima do .env (o mesmo que o servidor usa).
+	look, done := screenFromDB(look)
+	defer done()
 	m, err := newMailer(look)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: notificações: %v\n", err)
@@ -149,36 +156,113 @@ func notifyKinds(look config.Lookup) ([]string, error) {
 	return alerts.ParseKinds(v)
 }
 
-// notifyDescriber: o resumo da aba Sistema, com os avisos ligados.
-type notifyDescriber struct {
-	*notify.Mailer
+// liveNotifier (Aula 19.3): as notificações como valem agora, com a tela por cima do .env. O
+// Mailer é remontado quando a configuração muda (endereço, TLS, usuário, remetente, lista,
+// avisos, a senha do arquivo ou a CA). Serve ao painel (api.Notifier) e ao laço dos avisos.
+type liveNotifier struct {
+	look config.Lookup
+
+	mu    sync.Mutex
+	key   string
+	m     *notify.Mailer
 	kinds []string
+	err   error
 }
 
-func (d notifyDescriber) Describe() string {
-	return d.Mailer.Describe() + " · avisos: " + strings.Join(d.kinds, ", ")
+func newLiveNotifier(look config.Lookup) *liveNotifier { return &liveNotifier{look: look} }
+
+// current: o Mailer (nil: desligadas ou configuração com erro), os avisos e o erro.
+func (l *liveNotifier) current() (*notify.Mailer, []string, error) {
+	c, on, cerr := notifyConfig(l.look)
+	kinds, kerr := notifyKinds(l.look)
+	sum := sha256.Sum256([]byte(c.User + "\x00" + c.Password))
+	key := fmt.Sprintf("%t|%v|%s|%s|%s|%s|%x|%t|%v|%v", on, cerr, c.Addr, c.TLS, c.From, strings.Join(c.To, ","), sum[:8],
+		c.RootCAs != nil, kinds, kerr)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if key == l.key {
+		return l.m, l.kinds, l.err
+	}
+	l.key, l.m, l.kinds, l.err = key, nil, kinds, errors.Join(cerr, kerr)
+	if l.err == nil && on {
+		l.m, l.err = notify.New(c)
+	}
+	return l.m, l.kinds, l.err
+}
+
+// Enabled: há para onde mandar.
+func (l *liveNotifier) Enabled() bool {
+	m, _, err := l.current()
+	return m != nil && err == nil
+}
+
+// Describe: o resumo da aba Sistema, com os avisos ligados.
+func (l *liveNotifier) Describe() string {
+	m, kinds, err := l.current()
+	switch {
+	case err != nil:
+		return "com erro na configuração: " + err.Error()
+	case m == nil:
+		return "desligadas"
+	}
+	return m.Describe() + " · avisos: " + strings.Join(kinds, ", ")
+}
+
+// Send manda pela configuração de agora.
+func (l *liveNotifier) Send(ctx context.Context, subject, body string) error {
+	m, _, err := l.current()
+	switch {
+	case err != nil:
+		return err
+	case m == nil:
+		return errors.New("as notificações estão desligadas")
+	}
+	return m.Send(ctx, subject, body)
 }
 
 // notifyLoop faz uma passada a cada notifyEvery, com a trava (dois servidores no mesmo banco
-// não mandam o mesmo aviso duas vezes). Erro igual ao anterior não se repete no log.
-func notifyLoop(ctx context.Context, logger *slog.Logger, lock campaignLocker, w *alerts.Watcher) {
+// não mandam o mesmo aviso duas vezes). Erro igual ao anterior não se repete no log. Aula
+// 19.3: a configuração é lida a cada passada (muda pela tela); desligadas, a passada pula.
+func notifyLoop(ctx context.Context, logger *slog.Logger, lock campaignLocker, live *liveNotifier, w *alerts.Watcher) {
 	t := time.NewTicker(notifyEvery)
 	defer t.Stop()
-	last := ""
+	last, state := "", ""
 	for {
-		ok, err := lock.WithAdvisoryLock(ctx, store.LockNotify, func(ctx context.Context) error {
-			_, err := w.Step(ctx)
-			return err
-		})
+		m, kinds, cerr := live.current()
+		now := "ligadas"
 		switch {
-		case err != nil && ctx.Err() == nil:
-			if err.Error() != last {
-				logger.Warn("notificações: a passada falhou; os avisos não mandados saem na próxima", "error", err)
+		case cerr != nil:
+			now = "erro: " + cerr.Error()
+		case m == nil:
+			now = "desligadas"
+		}
+		if now != state {
+			switch {
+			case cerr != nil:
+				logger.Warn("avisos por e-mail parados: a configuração das notificações tem erro", "error", cerr)
+			case m == nil && state != "":
+				logger.Info("avisos por e-mail desligados (sem servidor SMTP)")
+			case m != nil && state != "":
+				logger.Info("avisos por e-mail: configuração nova: "+m.Describe(), "avisos", strings.Join(kinds, ", "))
 			}
-			last = err.Error()
-		case err == nil && ok && last != "":
-			logger.Info("notificações: a passada voltou a funcionar")
-			last = ""
+			state = now
+		}
+		if m != nil && cerr == nil {
+			w.Mail, w.Kinds = m, kinds
+			ok, err := lock.WithAdvisoryLock(ctx, store.LockNotify, func(ctx context.Context) error {
+				_, err := w.Step(ctx)
+				return err
+			})
+			switch {
+			case err != nil && ctx.Err() == nil:
+				if err.Error() != last {
+					logger.Warn("notificações: a passada falhou; os avisos não mandados saem na próxima", "error", err)
+				}
+				last = err.Error()
+			case err == nil && ok && last != "":
+				logger.Info("notificações: a passada voltou a funcionar")
+				last = ""
+			}
 		}
 		select {
 		case <-ctx.Done():

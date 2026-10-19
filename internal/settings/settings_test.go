@@ -126,7 +126,7 @@ func TestTelaVenceEnvEhOPadrao(t *testing.T) {
 	}
 
 	// Conferência do conjunto: recusa e não grava.
-	s.CheckAll = func(look Lookup) error {
+	s.CheckAll = func(look Lookup, changed []string) error {
 		if v, _ := look("PATCHD_PANEL_TITLE"); v == "Proibido" {
 			return errors.New("combinação inválida")
 		}

@@ -109,6 +109,12 @@ func (a *api) paramsView(typed map[string]string, problems map[string]string) []
 			switch f.Kind {
 			case settings.Number:
 				v.Kind = "number"
+			case settings.Multi: // Aula 19.3: caixas; o valor é a lista separada por vírgula
+				v.Kind = "multi"
+				on := strings.Split(v.Value, ",")
+				for _, o := range f.Options {
+					v.Options = append(v.Options, paramOption{Value: o.Value, Label: o.Label, Selected: slices.Contains(on, o.Value)})
+				}
 			case settings.Select:
 				v.Kind = "select"
 				found := false
@@ -179,7 +185,11 @@ func (a *api) paramsAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 			continue
 		}
 		for _, f := range g.Fields {
-			if f.LockedWhy == "" && r.PostForm.Has(f.Key) {
+			switch {
+			case f.LockedWhy != "" || !r.PostForm.Has(f.Key):
+			case f.Kind == settings.Multi: // o campo escondido vazio vem sempre; as caixas, as marcadas
+				values[f.Key] = strings.Join(slices.DeleteFunc(slices.Clone(r.PostForm[f.Key]), func(x string) bool { return x == "" }), ",")
+			default:
 				values[f.Key] = r.PostForm.Get(f.Key)
 			}
 		}
@@ -258,7 +268,7 @@ func (a *api) paramsResetAction(w http.ResponseWriter, r *http.Request, s panel.
 // paramsChanged: o e-mail para a equipe, sem segurar a resposta (o SMTP pode demorar).
 func (a *api) paramsChanged(s panel.Session, lines []string) {
 	a.chromeStale()
-	if a.notifier == nil {
+	if !a.notifyOn() {
 		return
 	}
 	n := a.notifier.n
@@ -281,7 +291,7 @@ func (a *api) renderParams(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "parametros"}
 	v.Sub = v.Tab
 	v.Error = msg
-	v.NotifyOn = a.notifier != nil
+	v.NotifyOn = a.notifyOn()
 	v.Params = a.paramsView(typed, problems)
 	a.render(w, r, http.StatusUnprocessableEntity, "configuracao", v)
 }
