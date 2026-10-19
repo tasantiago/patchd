@@ -30,6 +30,7 @@ const (
 	Text Kind = iota
 	Number
 	Select
+	Multi // Aula 19.3: várias escolhas (caixas), gravadas separadas por vírgula
 )
 
 // Option é uma escolha de um Select.
@@ -81,8 +82,9 @@ type Service struct {
 	env    Lookup
 	st     Store
 	logger *slog.Logger
-	// CheckAll confere o conjunto (parâmetros que dependem uns dos outros) antes de gravar.
-	CheckAll func(look Lookup) error
+	// CheckAll confere o conjunto (parâmetros que dependem uns dos outros) antes de gravar;
+	// changed são as chaves que mudam (Aula 19.3: o SMTP só é conferido quando é ele que muda).
+	CheckAll func(look Lookup, changed []string) error
 
 	mu   sync.RWMutex
 	rows map[string]store.Setting // só as válidas
@@ -332,7 +334,11 @@ func (s *Service) Apply(ctx context.Context, values map[string]string, by string
 			}
 			return s.Lookup(key)
 		}
-		if err := s.CheckAll(look); err != nil {
+		changed := make([]string, 0, len(cand))
+		for _, r := range rows {
+			changed = append(changed, r.Key)
+		}
+		if err := s.CheckAll(look, changed); err != nil {
 			return nil, &RejectedError{err}
 		}
 	}
@@ -373,7 +379,7 @@ func (s *Service) Reset(ctx context.Context, key, by string) (Change, bool, erro
 			}
 			return s.Lookup(k)
 		}
-		if err := s.CheckAll(look); err != nil {
+		if err := s.CheckAll(look, []string{key}); err != nil {
 			return Change{}, false, &RejectedError{fmt.Errorf("o .env não combina com o resto da tela: %w", err)}
 		}
 	}

@@ -122,7 +122,7 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	case "sistema":
 		notifyFlash(q, &v.pageBase)
 		logoFlash(q, &v.pageBase)
-		v.NotifyOn = a.notifier != nil
+		v.NotifyOn = a.notifyOn()
 		if v.System, err = a.systemRows(r); err == nil {
 			v.Appearance, err = a.logoCard(r.Context())
 		}
@@ -138,7 +138,8 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		err = a.selfServiceTab(r, &v)
 	case "parametros":
 		a.paramsFlash(q, &v.pageBase)
-		v.NotifyOn = a.notifier != nil
+		notifyFlash(q, &v.pageBase) // o botão de teste do cartão Notificações volta aqui
+		v.NotifyOn = a.notifyOn()
 		v.Params = a.paramsView(nil, nil)
 	}
 	if err != nil {

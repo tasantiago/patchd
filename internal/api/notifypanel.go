@@ -39,25 +39,55 @@ func WithNotifier(n Notifier) Option {
 	}
 }
 
+// switchable (Aula 19.3): um Notifier que liga e desliga sem reiniciar (a configuração muda
+// pela tela).
+type switchable interface{ Enabled() bool }
+
+// notifyOn: as notificações estão ligadas agora.
+func (a *api) notifyOn() bool {
+	if a.notifier == nil {
+		return false
+	}
+	if sw, ok := a.notifier.n.(switchable); ok {
+		return sw.Enabled()
+	}
+	return true
+}
+
 // notifyRow: a linha da aba Sistema.
 func (a *api) notifyRow() (value, level string) {
-	if a.notifier == nil {
-		return "desligadas (sem PATCHD_SMTP_ADDR): pedidos esperando a TI e campanhas pausadas só aparecem no painel", "atencao"
+	if !a.notifyOn() {
+		if a.notifier != nil {
+			if d := a.notifier.n.Describe(); strings.HasPrefix(d, "com erro") {
+				return d, "erro"
+			}
+		}
+		return "desligadas (sem PATCHD_SMTP_ADDR): pedidos esperando a TI e campanhas pausadas só aparecem no painel; ligue em Configuração › Parâmetros", "atencao"
 	}
 	return "ligadas · " + a.notifier.n.Describe(), ""
 }
 
+// notifyBack: para onde o botão de teste volta (a aba Sistema ou a Parâmetros, Aula 19.3).
+func notifyBack(r *http.Request, q string) string {
+	if r.PostFormValue("volta") == "parametros" {
+		return "/painel/configuracao?aba=parametros&" + q
+	}
+	return "/painel/configuracao?" + q
+}
+
 // notifyTestAction: POST /painel/configuracao/notificacoes/teste, só admin.
 func (a *api) notifyTestAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
-	if a.notifier == nil {
-		http.Redirect(w, r, "/painel/configuracao?erro=notificacao-desligada", http.StatusSeeOther)
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	_ = r.ParseForm()
+	if !a.notifyOn() {
+		http.Redirect(w, r, notifyBack(r, "erro=notificacao-desligada"), http.StatusSeeOther)
 		return
 	}
 	ns := a.notifier
 	ns.mu.Lock()
 	if wait := notifyTestGap - a.now().Sub(ns.last); !ns.last.IsZero() && wait > 0 {
 		ns.mu.Unlock()
-		http.Redirect(w, r, "/painel/configuracao?erro=notificacao-espera", http.StatusSeeOther)
+		http.Redirect(w, r, notifyBack(r, "erro=notificacao-espera"), http.StatusSeeOther)
 		return
 	}
 	ns.last = a.now()
@@ -80,11 +110,16 @@ func (a *api) notifyTestAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	a.audit(r, s, "notificacao.teste", "e-mail", result)
 	if err == nil {
-		http.Redirect(w, r, "/painel/configuracao?notificacao=enviada", http.StatusSeeOther)
+		http.Redirect(w, r, notifyBack(r, "notificacao=enviada"), http.StatusSeeOther)
+		return
+	}
+	msg := "O teste falhou: " + shortError(err.Error(), 300) + ". O detalhe também está no log do servidor."
+	if r.PostFormValue("volta") == "parametros" && a.params != nil {
+		a.renderParams(w, r, s, nil, nil, msg)
 		return
 	}
 	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "sistema", NotifyOn: true}
-	v.Error = "O teste falhou: " + shortError(err.Error(), 300) + ". O detalhe também está no log do servidor."
+	v.Error = msg
 	if v.System, err = a.systemRows(r); err == nil {
 		v.Appearance, err = a.logoCard(r.Context())
 	}
@@ -104,7 +139,7 @@ func notifyFlash(q url.Values, v *pageBase) {
 	case q.Get("erro") == "notificacao-espera":
 		v.Error = "Espere 30 segundos entre um teste e outro."
 	case q.Get("erro") == "notificacao-desligada":
-		v.Error = "As notificações estão desligadas: defina PATCHD_SMTP_ADDR e o resto no .env e suba o servidor de novo."
+		v.Error = "As notificações estão desligadas: preencha o servidor SMTP em Configuração › Parâmetros (ou PATCHD_SMTP_ADDR no .env)."
 	}
 }
 

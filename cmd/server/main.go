@@ -294,29 +294,31 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		apiOpts = append(apiOpts, api.WithPublicURL(cfg.PublicURL))
 		logger.Info("URL pública anunciada nos jobs server_url (botão \"Passar para HTTPS\" no painel)", "public_url", cfg.PublicURL)
 	}
-	// Notificações por e-mail (Aula 18.5): configuração errada não deixa o servidor subir
-	// (melhor do que descobrir no dia em que o aviso não chegou).
-	mailer, err := newMailer(look)
-	if err != nil {
+	// Notificações por e-mail (Aula 18.5): configuração errada no .env não deixa o servidor
+	// subir (melhor do que descobrir no dia em que o aviso não chegou). Aula 19.3: o que vale é
+	// a tela por cima do .env, lido a cada uso; a tela confere o conjunto antes de gravar.
+	if _, err := newMailer(look); err != nil {
 		logger.Error("notificações por e-mail", "error", err)
 		return exitConfig
 	}
-	kinds, err := notifyKinds(look)
-	if err != nil {
+	if _, err := notifyKinds(look); err != nil {
 		logger.Error("notificações por e-mail", "error", err)
 		return exitConfig
 	}
-	if mailer != nil {
-		apiOpts = append(apiOpts, api.WithNotifier(notifyDescriber{mailer, kinds}))
-		logger.Info("notificações por e-mail ligadas: " + mailer.Describe())
-		// Avisos automáticos (Aula 18.6): só com o PostgreSQL (as chaves mandadas ficam nele).
-		if pg, ok := st.(*store.Postgres); ok {
-			go notifyLoop(ctx, logger, pg, &alerts.Watcher{Store: pg, Mail: mailer, Kinds: kinds, PublicURL: cfg.PublicURL,
-				Logger: logger, Now: time.Now})
-			logger.Info("avisos por e-mail: "+strings.Join(kinds, ", ")+" (Aula 18.6)", "intervalo", notifyEvery.String())
-		}
-	} else {
-		logger.Info("notificações por e-mail desligadas (sem PATCHD_SMTP_ADDR)")
+	live := newLiveNotifier(params.Lookup)
+	apiOpts = append(apiOpts, api.WithNotifier(live))
+	switch m, kinds, err := live.current(); {
+	case err != nil:
+		logger.Warn("notificações por e-mail paradas: a configuração da tela não fecha; corrija em Configuração › Parâmetros", "error", err)
+	case m != nil:
+		logger.Info("notificações por e-mail ligadas: "+m.Describe(), "avisos", strings.Join(kinds, ", "))
+	default:
+		logger.Info("notificações por e-mail desligadas (sem servidor SMTP no .env nem em Configuração › Parâmetros)")
+	}
+	// Avisos automáticos (Aula 18.6): só com o PostgreSQL (as chaves mandadas ficam nele). O
+	// laço roda sempre e pula a passada enquanto as notificações estiverem desligadas.
+	if pg, ok := st.(*store.Postgres); ok {
+		go notifyLoop(ctx, logger, pg, live, &alerts.Watcher{Store: pg, PublicURL: cfg.PublicURL, Logger: logger, Now: time.Now})
 	}
 	retention := liveRetention(params, cfg.Retention)
 	if p, ok := st.(pruner); ok {

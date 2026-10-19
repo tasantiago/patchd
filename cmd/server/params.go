@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/mail"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/alerts"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/notify"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/settings"
@@ -100,6 +105,82 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v
 			}},
+		// Aula 19.3: as notificações por e-mail. A senha continua em arquivo; o conjunto é
+		// conferido (notifyCheck) antes de gravar.
+		{Key: "PATCHD_SMTP_ADDR", Group: "Notificações", Label: "Servidor SMTP",
+			Help:   "host:porta do SMTP da instituição, ex.: smtp.exemplo:587. Vazio: notificações desligadas.",
+			Effect: notifyEffect, Check: checkSMTPAddr, Show: func(v string) string {
+				if v == "" {
+					return "(vazio: desligadas)"
+				}
+				return v
+			}},
+		{Key: "PATCHD_SMTP_TLS", Group: "Notificações", Label: "Segurança da conexão", Kind: settings.Select, Default: notify.TLSStart,
+			Options: smtpTLSChoices, Help: "STARTTLS (porta 587) é o padrão e é exigido; TLS direto para a porta 465; sem TLS só para relay interno, e sem usuário.",
+			Effect: notifyEffect, Check: func(v string) (string, error) {
+				v = strings.ToLower(strings.TrimSpace(v))
+				if v != notify.TLSStart && v != notify.TLSWrap && v != notify.TLSNone {
+					return "", errors.New("use starttls, tls ou none")
+				}
+				return v, nil
+			}, Show: showChoice(smtpTLSChoices)},
+		{Key: "PATCHD_SMTP_USER", Group: "Notificações", Label: "Usuário do SMTP",
+			Help:   "Se o SMTP exigir login. A senha não vem para a tela: fica no arquivo PATCHD_SMTP_PASSWORD_FILE (o segredo smtp_password do compose).",
+			Effect: notifyEffect, Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if len(v) > 200 || strings.ContainsFunc(v, func(r rune) bool { return r <= ' ' }) {
+					return "", errors.New("usuário inválido (sem espaços, até 200 caracteres)")
+				}
+				return v, nil
+			}},
+		{Key: "PATCHD_SMTP_FROM", Group: "Notificações", Label: "Remetente",
+			Help: "Quem aparece como remetente, ex.: patchd <patchd@exemplo>.", Effect: notifyEffect,
+			Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v == "" {
+					return "", nil
+				}
+				if _, err := mail.ParseAddress(v); err != nil {
+					return "", errors.New("endereço inválido; use nome <endereço> ou só o endereço")
+				}
+				return v, nil
+			}},
+		{Key: "PATCHD_NOTIFY_TO", Group: "Notificações", Label: "Destinatários",
+			Help: "A lista da equipe, separada por vírgula (de preferência uma lista de distribuição).", Effect: notifyEffect,
+			Check: func(v string) (string, error) {
+				var out []string
+				for _, t := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' }) {
+					if t = strings.TrimSpace(t); t == "" {
+						continue
+					}
+					if _, err := mail.ParseAddress(t); err != nil {
+						return "", fmt.Errorf("%q não é um endereço válido", t)
+					}
+					out = append(out, t)
+				}
+				if len(out) > 50 {
+					return "", errors.New("no máximo 50 destinatários: use uma lista de distribuição")
+				}
+				return strings.Join(out, ", "), nil
+			}},
+		{Key: "PATCHD_NOTIFY_EVENTS", Group: "Notificações", Label: "Avisos", Kind: settings.Multi, Options: notifyKindChoices,
+			Default: strings.Join(alerts.Kinds, ","), Help: "O que gera e-mail automático (a cada 5 minutos, sem repetir o mesmo aviso).",
+			Effect: notifyEffect, Check: func(v string) (string, error) {
+				if strings.TrimSpace(v) == "" {
+					return "", errors.New("marque ao menos um aviso (para desligar tudo, apague o servidor SMTP)")
+				}
+				k, err := alerts.ParseKinds(v)
+				if err != nil {
+					return "", errors.New(strings.TrimPrefix(err.Error(), "PATCHD_NOTIFY_EVENTS: "))
+				}
+				return strings.Join(k, ","), nil
+			}, Show: func(v string) string {
+				var l []string
+				for _, k := range strings.Split(v, ",") {
+					l = append(l, showChoice(notifyKindChoices)(k))
+				}
+				return strings.Join(l, ", ")
+			}},
 		{Key: "PATCHD_REPO_CACHE_URL", Group: "Cache de repositórios", Label: "URL anunciada aos agentes Linux",
 			Help:   "Como as máquinas alcançam o cache, ex.: http://patchd.exemplo:8080. Vazio: o cache funciona, mas não é anunciado no check-in.",
 			Effect: "no próximo check-in de cada máquina",
@@ -123,9 +204,64 @@ func settingDefs(look config.Lookup) []settings.Def {
 	}
 }
 
+// notifyEffect: quando a mudança nas notificações vale.
+const notifyEffect = "na hora: o próximo e-mail já sai com a configuração nova"
+
+var smtpTLSChoices = []settings.Option{
+	{Value: notify.TLSStart, Label: "STARTTLS (porta 587)"}, {Value: notify.TLSWrap, Label: "TLS direto (porta 465)"},
+	{Value: notify.TLSNone, Label: "sem TLS (relay interno, sem usuário)"},
+}
+
+var notifyKindChoices = []settings.Option{
+	{Value: alerts.KindRequests, Label: "pedidos esperando a TI"}, {Value: alerts.KindCampaigns, Label: "campanhas pausadas"},
+	{Value: alerts.KindSources, Label: "fontes de busca falhando"},
+}
+
+func showChoice(opts []settings.Option) func(string) string {
+	return func(v string) string {
+		for _, o := range opts {
+			if o.Value == v {
+				return o.Label
+			}
+		}
+		return v
+	}
+}
+
+// checkSMTPAddr: host:porta (vazio desliga).
+func checkSMTPAddr(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", nil
+	}
+	host, port, err := net.SplitHostPort(v)
+	n, perr := strconv.Atoi(port)
+	if err != nil || host == "" || perr != nil || n < 1 || n > 65535 || strings.ContainsAny(host, " /") {
+		return "", errors.New("use host:porta, ex.: smtp.exemplo:587")
+	}
+	return v, nil
+}
+
+// notifyCheck (Aula 19.3): com alguma das variáveis das notificações mudando, o conjunto tem de
+// montar um Mailer (o mesmo que a partida monta). Assim não dá para gravar um SMTP com
+// usuário e sem o arquivo da senha, ou TLS desligado com senha.
+func notifyCheck(look settings.Lookup, changed []string) error {
+	if !slices.ContainsFunc(changed, func(k string) bool {
+		return strings.HasPrefix(k, "PATCHD_SMTP_") || strings.HasPrefix(k, "PATCHD_NOTIFY_")
+	}) {
+		return nil
+	}
+	if _, err := newMailer(look); err != nil {
+		return fmt.Errorf("as notificações não fecham: %w", err)
+	}
+	_, err := notifyKinds(look)
+	return err
+}
+
 // newSettings monta o serviço e lê a tabela.
 func newSettings(ctx context.Context, look config.Lookup, st settings.Store, logger *slog.Logger) (*settings.Service, error) {
 	s := settings.New(settingDefs(look), look, st, logger)
+	s.CheckAll = notifyCheck
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return s, s.Refresh(ctx)
@@ -194,6 +330,22 @@ func liveSystem(s *settings.Service, database bool, retention func() store.Reten
 		}
 		return catalog, describeRetention(retention())
 	}
+}
+
+// screenFromDB: o ambiente com os parâmetros da tela por cima, para os comandos de terminal
+// (notify). Sem banco, ou sem conseguir ler, o ambiente puro. done fecha a conexão.
+func screenFromDB(look config.Lookup) (config.Lookup, func()) {
+	cfg, err := loadServerConfig(nil, look, io.Discard)
+	if err != nil || cfg.DatabaseURL == "" {
+		return look, func() {}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	pool, err := store.Connect(ctx, cfg.DatabaseURL, 5*time.Second)
+	if err != nil {
+		return look, func() {}
+	}
+	return screenLookup(ctx, look, store.NewPostgres(pool)), pool.Close
 }
 
 // screenLookup: para os comandos de terminal que dependem de parâmetros da tela (retention),

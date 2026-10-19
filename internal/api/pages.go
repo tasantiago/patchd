@@ -572,17 +572,18 @@ var pages = template.Must(template.New("").Parse(`
 .param .info{grid-column:2;font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:.15rem}.param .origem b{color:var(--texto);font-weight:500}
 .fonte{display:inline-block;padding:0 .45rem;border-radius:999px;font-size:.72rem;font-weight:600;margin-right:.3rem}.fonte.tela{background:#eef0fd;color:var(--destaque)}.fonte.env{background:#eef1f4;color:#4b5563}.fonte.padrao{background:#f6f7f9;color:var(--muted)}
 .param.problema{background:#fdf6f6}.param .erro-campo{color:var(--vermelho);font-size:.85rem}.param button.link{background:none;border:0;color:var(--azul);padding:0;font-size:.82rem;text-decoration:underline}
-.param-salvar{display:flex;gap:.7rem;align-items:center;margin-top:.6rem}@media (max-width:700px){.param{grid-template-columns:1fr}.param .info{grid-column:1}}</style>
+.param-salvar{display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;margin-top:.6rem}.param label.caixa{font-weight:400;display:inline-flex;gap:.35rem;align-items:center;margin-right:.8rem}@media (max-width:700px){.param{grid-template-columns:1fr}.param .info{grid-column:1}}</style>
 {{range .Params}}<div class="card"><div class="card-cab"><h2>{{.Name}}</h2></div>
 <form method="post" action="/painel/configuracao/parametros"><input type="hidden" name="grupo" value="{{.Name}}">
 {{range .Fields}}<div class="param{{if .Problem}} problema{{end}}"><label for="p-{{.Key}}">{{.Label}}</label>
-<div class="campo">{{if eq .Kind "select"}}<select id="p-{{.Key}}" name="{{.Key}}"{{if .Locked}} disabled{{end}}>{{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<div class="campo">{{if eq .Kind "multi"}}<input type="hidden" name="{{.Key}}" value="">{{$k := .Key}}{{$l := .Locked}}{{range .Options}}<label class="caixa"><input type="checkbox" name="{{$k}}" value="{{.Value}}"{{if .Selected}} checked{{end}}{{if $l}} disabled{{end}}> {{.Label}}</label>{{end}}
+{{else if eq .Kind "select"}}<select id="p-{{.Key}}" name="{{.Key}}"{{if .Locked}} disabled{{end}}>{{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 {{else}}<input id="p-{{.Key}}" name="{{.Key}}" type="{{.Kind}}" value="{{.Value}}" maxlength="500"{{if .Locked}} disabled{{end}}>{{end}}{{if .Unit}}<span class="muted">{{.Unit}}</span>{{end}}</div>
 <div class="info">{{if .Problem}}<span class="erro-campo" role="alert">{{.Problem}}</span>{{end}}{{if .Locked}}<span>{{.Locked}}</span>{{end}}
 <span class="origem"><span class="fonte {{if eq .Source "tela"}}tela{{else if eq .Source ".env"}}env{{else}}padrao{{end}}">{{.Source}}</span>vale <b>{{.Show}}</b>{{if .Who}} · gravado por {{.Who}}{{end}}</span>
 {{if .CanReset}}<span>Sem a tela: {{.EnvShow}} ({{.EnvSource}}) · <button class="link" type="submit" formaction="/painel/configuracao/parametros/restaurar" name="parametro" value="{{.Key}}">restaurar o padrão</button></span>{{end}}
 {{if or .Help .Effect}}<span>{{.Help}}{{if .Effect}} Vale {{.Effect}}.{{end}}</span>{{end}}</div></div>
-{{end}}<div class="param-salvar"><button type="submit">Salvar {{.Name}}</button><span class="muted">grava só o que mudou neste cartão</span></div></form></div>
+{{end}}<div class="param-salvar"><button type="submit">Salvar {{.Name}}</button>{{if and (eq .Name "Notificações") $.NotifyOn}}<button class="sec" type="submit" formaction="/painel/configuracao/notificacoes/teste" name="volta" value="parametros">Mandar e-mail de teste</button>{{end}}<span class="muted">grava só o que mudou neste cartão{{if eq .Name "Notificações"}}; o teste usa o que já está gravado{{end}}</span></div></form></div>
 {{end}}{{end}}
 
 {{define "frota"}}{{template "topo" .}}
