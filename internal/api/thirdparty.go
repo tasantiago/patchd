@@ -151,6 +151,7 @@ type tpView struct {
 func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	v := tpView{pageBase: a.base(r, "Patch · Terceiros", "patch"), All: q.Get("todos") == "1"}
+	v.Sub = "terceiros"
 	if a.compliance == nil {
 		v.Unavailable = "Os programas de terceiros exigem o PostgreSQL com o catálogo."
 		a.render(w, r, http.StatusOK, "patch-terceiros", v)
@@ -255,6 +256,7 @@ type tpProgramView struct {
 func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {
 	app := r.URL.Query().Get("app")
 	v := tpProgramView{pageBase: a.base(r, "Programa", "patch")}
+	v.Sub = "terceiros"
 	v.Flash, v.Error = tpApprovalFlash(r.URL.Query())
 	if app == "" || a.compliance == nil {
 		a.render(w, r, http.StatusNotFound, "patch-nao-encontrado", v.pageBase)

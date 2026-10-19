@@ -35,20 +35,32 @@ type pageBase struct {
 	Title   string
 	Session panel.Session
 	Admin   bool
-	Nav     string // frota, jobs ou aposentadas
+	Nav     string // o item do menu: frota, inventario, patch, campanhas, jobs, aneis, autoatendimento...
+	Sub     string // Aula 19.1: o subitem (geral, so, terceiros em Patch; auditoria em Configuração)
 	Flash   string // mensagem de sucesso (de uma lista fixa)
 	Error   string // mensagem de erro (de uma lista fixa)
+	// Aula 19.1: o resto do layout.
+	Logo          string    // endereço do logotipo; vazio: o ícone padrão
+	Badges        navCounts // os números do menu
+	ServerVersion string
+	AgentVersion  string // a versão publicada do agente
 }
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
 	s, _ := SessionFrom(r.Context())
-	return a.baseFor(s, title, nav)
+	return a.baseFor(r.Context(), s, title, nav)
 }
 
 // baseFor: a base de uma página montada por uma ação de admin (a sessão vem do
 // adminAction, não do contexto).
-func (a *api) baseFor(s panel.Session, title, nav string) pageBase {
-	return pageBase{Brand: a.brand, Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav}
+func (a *api) baseFor(ctx context.Context, s panel.Session, title, nav string) pageBase {
+	b := pageBase{Brand: a.brand, Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav,
+		ServerVersion: a.serverVersion, Logo: a.logoURL(ctx)}
+	if b.ServerVersion == "" && a.system != nil {
+		b.ServerVersion = a.system.Version
+	}
+	b.Badges, b.AgentVersion = a.chromeFor(ctx)
+	return b
 }
 
 func (a *api) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
@@ -444,7 +456,7 @@ func (a *api) adminAction(next func(http.ResponseWriter, *http.Request, panel.Se
 			a.logger.Warn("ação de admin recusada", "username", s.Username, "role", s.Role, "path", r.URL.Path,
 				"request_id", RequestID(r.Context()))
 			a.audit(r, s, "acesso.negado", r.URL.Path, "perfil "+s.Role)
-			b := pageBase{Title: "Sem permissão", Session: s, Nav: "frota"}
+			b := a.baseFor(r.Context(), s, "Sem permissão", "frota")
 			a.render(w, r, http.StatusForbidden, "proibido", b)
 			return
 		}
@@ -512,23 +524,45 @@ var pages = template.Must(template.New("").Parse(`
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}} · {{.Brand}}</title>` + faviconLink + `
 <style>` + themeCSS + `</style></head><body>
-<header class="topo"><a class="marca" href="/painel/">` + shieldSVG + `<span>{{.Brand}}</span></a>
+<input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
+<aside class="lado" aria-label="menu lateral">
+<a class="marca" href="/painel/" title="{{.Brand}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}<span class="rot">{{.Brand}}</span></a>
+<div class="usuario" title="{{.Session.Greeting}} · {{.RoleLabel}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot"><strong>{{.Session.Greeting}}</strong><small>{{.RoleLabel}} · {{.Session.SourceLabel}}</small></span></div>
 <nav aria-label="principal">
-<a href="/painel/" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}><span class="ic">🖥️</span>Frota</a>
-<a href="/painel/inventario" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}><span class="ic">🗂️</span>Inventário</a>
-<a href="/painel/patch?aba=geral" {{if eq .Nav "patch"}}class="ativo" aria-current="page"{{end}}><span class="ic">🩹</span>Patch</a>
-<a href="/painel/campanhas" {{if or (eq .Nav "campanhas") (eq .Nav "jobs") (eq .Nav "aneis")}}class="ativo" aria-current="page"{{end}}><span class="ic">🚀</span>Automação</a>
-<a href="/painel/aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}><span class="ic">📦</span>Aposentadas</a>
-{{if .Admin}}<a href="/painel/configuracao" {{if eq .Nav "configuracao"}}class="ativo" aria-current="page"{{end}}><span class="ic">⚙️</span>Configuração</a>{{end}}
-<form method="post" action="/painel/sair"><button type="submit" title="Sair"><span class="ic">🔓</span>Sair</button></form>
-</nav>
-<span class="quem" title="{{.Session.Greeting}}"><span class="ola">Olá, {{.Session.Greeting}}</span><span>{{.Session.Username}} · {{.Session.SourceLabel}} · {{.Session.Role}}</span></span>
-</header><main>
+<p class="grupo"><span class="rot">Navegação</span></p>
+<a href="/painel/" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + icFrota + `<span class="rot">Frota</span></a>
+<a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + icInventario + `<span class="rot">Inventário</span></a>
+<a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + icAposentadas + `<span class="rot">Aposentadas</span></a>
+<p class="grupo"><span class="rot">Patch</span></p>
+<a href="/painel/patch?aba=geral" title="Patch › Visão geral" {{if and (eq .Nav "patch") (eq .Sub "geral")}}class="ativo" aria-current="page"{{end}}>` + icGeral + `<span class="rot">Visão geral</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}</a>
+<a href="/painel/patch" title="Patch › Sistema operacional" {{if and (eq .Nav "patch") (ne .Sub "geral") (ne .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + icSistema + `<span class="rot">Sistema</span></a>
+<a href="/painel/patch?aba=terceiros" title="Patch › Programas de terceiros" {{if and (eq .Nav "patch") (eq .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + icTerceiros + `<span class="rot">Terceiros</span></a>
+<p class="grupo"><span class="rot">Automação</span></p>
+<a href="/painel/campanhas" title="Campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}>` + icCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
+<a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + icJobs + `<span class="rot">Jobs</span></a>
+<a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + icAneis + `<span class="rot">Anéis</span></a>
+<a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + icLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
+{{if .Admin}}<p class="grupo"><span class="rot">Administração</span></p>
+<a href="/painel/configuracao" title="Configuração" {{if and (eq .Nav "configuracao") (ne .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + icConfig + `<span class="rot">Configuração</span></a>
+<a href="/painel/configuracao?aba=auditoria" title="Auditoria" {{if and (eq .Nav "configuracao") (eq .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + icAuditoria + `<span class="rot">Auditoria</span></a>
+{{end}}
+</nav></aside>
+<label for="menu" class="veu" aria-hidden="true"></label>
+<div class="area">
+<header class="barra-topo">
+<label for="menu" class="hamb" title="Recolher ou abrir o menu">` + icMenu + `<span class="sr">menu</span></label>
+<span class="trilha">{{with .Section}}<span class="secao">{{.}}</span><span class="sep" aria-hidden="true">›</span>{{end}}<span class="titulo">{{.Title}}</span></span>
+<span class="selos">{{if .ServerVersion}}<span class="selo" title="versão do servidor">Servidor <b>{{.ServerVersion}}</b></span>{{end}}{{if .AgentVersion}}<span class="selo" title="versão do agente publicada para as máquinas">Agente <b>{{.AgentVersion}}</b></span>{{end}}</span>
+<details class="conta"><summary title="{{.Session.Username}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="nome">{{.Session.Greeting}}</span>` + icAbaixo + `</summary>
+<div class="conta-menu"><p><strong>{{.Session.Greeting}}</strong><span>{{.Session.Username}} · {{.Session.SourceLabel}} · {{.Session.Role}}</span></p>
+<form method="post" action="/painel/sair"><button type="submit" class="sair">` + icSair + `Sair</button></form></div></details>
+</header>
+<main>
 {{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
 {{end}}
 
-{{define "fim"}}</main></body></html>{{end}}
+{{define "fim"}}</main></div></body></html>{{end}}
 
 {{define "frota"}}{{template "topo" .}}
 <h1>Frota</h1>
@@ -651,7 +685,13 @@ var pages = template.Must(template.New("").Parse(`
 {{end}}{{end}}
 {{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: a configuração fica no ambiente (.env) e nos arquivos de segredo</span></div>
 <dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
-{{if .NotifyOn}}<form class="lote" method="post" action="/painel/configuracao/notificacoes/teste"><button class="sec" type="submit">Mandar e-mail de teste</button> <span class="muted">uma mensagem para a lista de PATCHD_NOTIFY_TO; fica na auditoria</span></form>{{end}}</div>{{end}}
+{{if .NotifyOn}}<form class="lote" method="post" action="/painel/configuracao/notificacoes/teste"><button class="sec" type="submit">Mandar e-mail de teste</button> <span class="muted">uma mensagem para a lista de PATCHD_NOTIFY_TO; fica na auditoria</span></form>{{end}}</div>
+{{with .Appearance}}<div class="card"><div class="card-cab"><h2>Aparência</h2><span class="muted">o logotipo do menu lateral e da tela de login</span></div>
+<div class="logo-linha"><div class="logo-previa">{{if .URL}}<img src="{{.URL}}" alt="logotipo atual">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}</div>
+<div class="logo-acoes">{{if .URL}}<p>{{.Type}} · {{.KB}} KB · enviado por {{.UpdatedBy}} em {{.UpdatedAt}}</p>{{else}}<p class="muted">Sem logotipo: o painel usa o ícone padrão.</p>{{end}}
+<form class="acao" method="post" enctype="multipart/form-data" action="/painel/configuracao/aparencia/logo"><input type="hidden" name="op" value="enviar"><input type="file" name="arquivo" accept="image/png,image/jpeg" required aria-label="arquivo do logotipo"><button type="submit">{{if .URL}}Trocar{{else}}Enviar{{end}}</button></form>
+{{if .URL}}<form class="acao" method="post" enctype="multipart/form-data" action="/painel/configuracao/aparencia/logo"><input type="hidden" name="op" value="remover"><button class="perigo" type="submit">Remover o logotipo</button></form>{{end}}
+<p class="muted nota">PNG ou JPEG, até {{.MaxKB}} KB e {{.MaxSide}}×{{.MaxSide}} pixels. Quadrado (ou quase) e com fundo transparente fica melhor sobre o azul da barra. O servidor confere o conteúdo, não o nome do arquivo, e a troca fica na auditoria.</p></div></div></div>{{end}}{{end}}
 {{if eq .Tab "agente"}}<div class="card"><div class="card-cab"><h2>Executáveis{{if .Version}} da versão {{.Version}}{{end}}</h2><span class="muted">a versão publicada, a mesma que os agentes recebem na atualização</span></div>
 {{if .Files}}<div class="tabela"><table><thead><tr><th>Sistema</th><th>Arquitetura</th><th>Arquivo</th><th>Tamanho</th><th>SHA-256</th></tr></thead>
 <tbody>{{range .Files}}<tr><td>{{.OS}}</td><td>{{.Arch}}</td><td><a href="{{.Href}}"><code>{{.Name}}</code></a></td><td class="num">{{.Size}}</td><td><code>{{.SHA}}…</code></td></tr>{{end}}</tbody></table></div>

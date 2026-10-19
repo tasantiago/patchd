@@ -75,7 +75,7 @@ func TestLoginPeloRHBK(t *testing.T) {
 		t.Fatalf("sessão: %+v %v %v", s, found, err)
 	}
 	if b := pagina(h, "GET", "/painel/", sessao.Value, nil).Body.String(); !strings.Contains(b, "fulano.lab · RHBK") ||
-		!strings.Contains(b, `<span class="ola">Olá, Nome de Fulano.Lab</span>`) {
+		!strings.Contains(b, `<strong>Nome de Fulano.Lab</strong>`) {
 		t.Errorf("painel com a sessão do RHBK:\n%s", b)
 	}
 

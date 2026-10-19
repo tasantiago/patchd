@@ -474,3 +474,25 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   página aberta no navegador para de responder: abra de novo pelo ícone). Se a cópia sumir
   (agente removido, `-user-app=false`), a Central fecha. Vale a partir da release do agente
   com a Aula 18.8; a Central aberta antes dela ainda precisa de um último logon.
+
+## Layout do tribunal e logotipo (Aula 19.1)
+
+- O painel segue o padrão das aplicações do tribunal: barra lateral azul-marinho com o
+  logotipo, o usuário (nome, perfil e origem; sem foto) e os grupos NAVEGAÇÃO, PATCH,
+  AUTOMAÇÃO e ADMINISTRAÇÃO (este só para admin). A barra superior traz o botão de recolher,
+  a trilha (grupo › página), as versões do servidor e do agente publicado e o menu da conta,
+  com o Sair.
+- Contadores no menu: pedidos do autoatendimento esperando a TI (Autoatendimento), campanhas
+  pausadas (Campanhas) e máquinas com a fonte de busca falhando, sem o catálogo offline
+  (Visão geral). A conta é refeita a cada 20 s, e na hora depois de decidir um pedido ou
+  mexer numa campanha.
+- Sem JavaScript: o recolher é um checkbox. Na tela larga, recolhe para só os ícones; em tela
+  estreita (até 960 px), a barra vira gaveta, que fecha tocando fora. O estado não é guardado
+  entre páginas.
+- Logotipo: Configuração › Sistema › Aparência. PNG ou JPEG, até 256 KB e 1024×1024 pixels,
+  conferido pelo conteúdo (assinatura e decodificação completa), nunca pelo nome; fica no
+  banco (`panel_assets`, migração 37) e vale para todos os servidores no mesmo banco (os
+  outros veem a troca em até 1 minuto). Aparece no menu e na tela de login, servido em
+  `/painel/logo` com `nosniff`, CSP `sandbox` e cache pela versão do arquivo. Trocar e remover
+  vão para a auditoria (`aparencia.logo`, `aparencia.logo_remover`). Sem logotipo, o ícone
+  padrão. O patchd não traz o logotipo de nenhuma instituição: quem instala envia o seu.

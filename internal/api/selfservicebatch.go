@@ -176,7 +176,7 @@ func (a *api) selfServiceBatchAction(w http.ResponseWriter, r *http.Request, s p
 // problema em cada linha: nada foi gravado.
 func (a *api) renderSelfServiceBatch(w http.ResponseWriter, r *http.Request, s panel.Session, desired map[string]store.SelfServiceOffer,
 	selected map[string]bool, problems map[string]string, problem string) {
-	v := settingsView{pageBase: a.baseFor(s, "Configuração", "configuracao"), Tab: "autoatendimento",
+	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "autoatendimento",
 		MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: hourOptions(tokenTTLs, 24)}
 	if err := a.selfServiceTab(r, &v); err != nil {
 		a.internalError(w, r, "montar a configuração", err)

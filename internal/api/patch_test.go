@@ -16,7 +16,7 @@ func TestPatchPendentesEAprovacao(t *testing.T) {
 		`<span class="kpi-rot">Itens pendentes</span><span class="kpi-val">1</span><span class="kpi-sub">em 1 sistemas</span>`,
 		`<span class="kpi-rot">Aguardando aprovação</span><span class="kpi-val v-laranja">1</span>`,
 		`<a href="/painel/patch/item?fix=8.18.0-1ubuntu2.10&amp;id=curl"><code>curl</code></a>`, "USN-9002-1",
-		`<span class="estado reboot_pendente">aguardando</span>`, `<span class="ic">🩹</span>Patch`,
+		`<span class="estado reboot_pendente">aguardando</span>`, `title="Patch › Sistema operacional" class="ativo"`,
 	} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("lista: faltou %q", tr)

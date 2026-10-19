@@ -81,12 +81,12 @@ func TestLoginPeloAD(t *testing.T) {
 		if r := comCookie(h, "GET", "/painel/", c); !strings.Contains(r.Body.String(), strings.ToLower(usuario)+" · AD") {
 			t.Errorf("%s: painel %s", usuario, r.Body)
 		}
-		// O "Olá" usa o displayName; sem ele, o usuário (Aula 15.5).
-		ola := map[string]string{"fulano": "Olá, Fulano de Tal", "Ciclano": "Olá, ciclano"}[usuario]
+		// O nome usa o displayName; sem ele, o usuário (Aula 15.5; no bloco do usuário desde a 19.1).
+		ola := map[string]string{"fulano": "Fulano de Tal", "Ciclano": "ciclano"}[usuario]
 		if s.DisplayName != map[string]string{"fulano": "Fulano de Tal"}[usuario] {
 			t.Errorf("%s: nome na sessão %q", usuario, s.DisplayName)
 		}
-		if b := comCookie(h, "GET", "/painel/", c).Body.String(); !strings.Contains(b, `<span class="ola">`+ola+`</span>`) {
+		if b := comCookie(h, "GET", "/painel/", c).Body.String(); !strings.Contains(b, `<strong>`+ola+`</strong>`) {
 			t.Errorf("%s: faltou %q", usuario, ola)
 		}
 	}

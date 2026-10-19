@@ -112,6 +112,10 @@ type Store interface {
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	JobCounts(ctx context.Context, since time.Time) ([]store.JobCount, error)
 	JobsFinishedSince(ctx context.Context, states []string, since time.Time) (int, error)
+	// Logotipo do painel (Aula 19.1).
+	PanelAsset(ctx context.Context, name string) (store.PanelAsset, bool, error)
+	SetPanelAsset(ctx context.Context, a store.PanelAsset) error
+	DeletePanelAsset(ctx context.Context, name string) (bool, error)
 }
 
 // maxClockSkew é a diferença de relógio a partir da qual o servidor registra um aviso.
@@ -153,6 +157,7 @@ type api struct {
 	agentCA    []byte               // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
 	adInfo     *ADInfo              // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
 	notifier   *notifierState       // e-mail para a equipe (Aula 18.5); nil: desligado
+	chrome     chromeCache          // contadores do menu e logotipo (Aula 19.1)
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -178,6 +183,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST "+protocol.SelfServiceRequestPath, a.machineAuth(a.selfServiceRequest))
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/favicon.svg", favicon)
+	mux.HandleFunc("GET /painel/logo", a.logoFile) // Aula 19.1: sem sessão, a tela de login também mostra
 	mux.HandleFunc("GET /painel/entrar", a.loginForm)
 	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))
 	mux.Handle("POST /painel/sair", a.sameOrigin(a.logout))
@@ -202,13 +208,13 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
-	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage))                                          // Aula 17.7
-	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/aprovar", a.sameOrigin(a.adminAction(a.approveSelfServiceAction))) // Aula 18.3
-	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/recusar", a.sameOrigin(a.adminAction(a.refuseSelfServiceAction)))
+	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage))                                                        // Aula 17.7
+	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/aprovar", a.sameOrigin(a.adminAction(a.staleAfter(a.approveSelfServiceAction)))) // Aula 18.3
+	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/recusar", a.sameOrigin(a.adminAction(a.staleAfter(a.refuseSelfServiceAction))))
 	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
 	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))
-	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.campaignChangeAction)))
+	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.staleAfter(a.campaignChangeAction))))
 	mux.Handle("GET /painel/aneis", a.panelPage(a.ringsPage))
 	mux.Handle("POST /painel/aneis/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
 	mux.Handle("POST /painel/aneis/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
@@ -228,6 +234,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
 	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))
 	mux.Handle("POST /painel/configuracao/agente/token/{id}/revogar", a.sameOrigin(a.adminAction(a.revokeTokenAction)))
+	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction))) // Aula 19.1
 	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))

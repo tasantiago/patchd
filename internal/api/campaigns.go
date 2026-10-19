@@ -361,7 +361,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		}
 	}
 	if problem != "" || r.PostFormValue("corrigir") == "1" {
-		v := campaignsView{pageBase: a.baseFor(s, "Campanhas", "campanhas"), CanNew: true}
+		v := campaignsView{pageBase: a.baseFor(r.Context(), s, "Campanhas", "campanhas"), CanNew: true}
 		v.Error = problem
 		status := http.StatusUnprocessableEntity
 		if problem == "" {
@@ -378,7 +378,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		return
 	}
 	if r.PostFormValue("confirmar") != "1" {
-		v := campaignConfirmView{pageBase: a.baseFor(s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
+		v := campaignConfirmView{pageBase: a.baseFor(r.Context(), s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
 			SourcesList: strings.Join(c.Sources, ", "), ObserveL: hoursLabel(f.ObserveH)}
 		var preview map[int]string
 		if c.Type == jobs.TypeThirdParty {

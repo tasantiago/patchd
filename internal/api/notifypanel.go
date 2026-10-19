@@ -83,12 +83,16 @@ func (a *api) notifyTestAction(w http.ResponseWriter, r *http.Request, s panel.S
 		http.Redirect(w, r, "/painel/configuracao?notificacao=enviada", http.StatusSeeOther)
 		return
 	}
-	v := settingsView{pageBase: a.baseFor(s, "Configuração", "configuracao"), Tab: "sistema", NotifyOn: true}
+	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "sistema", NotifyOn: true}
 	v.Error = "O teste falhou: " + shortError(err.Error(), 300) + ". O detalhe também está no log do servidor."
-	if v.System, err = a.systemRows(r); err != nil {
+	if v.System, err = a.systemRows(r); err == nil {
+		v.Appearance, err = a.logoCard(r.Context())
+	}
+	if err != nil {
 		a.internalError(w, r, "montar a configuração", err)
 		return
 	}
+	v.Sub = v.Tab
 	a.render(w, r, http.StatusBadGateway, "configuracao", v)
 }
 

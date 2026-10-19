@@ -112,6 +112,9 @@ var auditActions = []struct{ Key, Label string }{
 	// Aula 18.5: notificações por e-mail.
 	{"notificacao.teste", "Notificação de teste enviada"},
 	{"cli.notify.test", "Notificação de teste enviada (terminal)"},
+	// Aula 19.1: aparência do painel.
+	{"aparencia.logo", "Logotipo do painel trocado"},
+	{"aparencia.logo_remover", "Logotipo do painel removido"},
 }
 
 // AuditLabel: o rótulo da ação; a chave quando não há (ação de uma versão mais nova).
