@@ -38,7 +38,7 @@ func TestRetentionLoopRodaNaPartidaEParaNoEncerramento(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	fim := make(chan struct{})
 	go func() {
-		retentionLoop(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), p, r, apagados)
+		retentionLoop(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), p, func() store.Retention { return r }, apagados)
 		close(fim)
 	}()
 	select {

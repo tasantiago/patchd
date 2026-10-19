@@ -28,6 +28,7 @@ import (
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/repocache"
+	"github.com/tasantiago/patchd/internal/settings"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
@@ -116,6 +117,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if len(args) > 0 && args[0] == "selfservice" {
 		return runSelfService(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "settings" {
+		return runSettings(args[1:], look, stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "notify" {
 		return runNotify(args[1:], look, stdout, stderr)
 	}
@@ -198,7 +202,21 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	defer closeStore()
 
+	// Parâmetros pela tela (Aula 19.2): a tabela por cima do .env. Uma linha inválida fica de
+	// fora (aviso no log) e o .env vale.
+	ps, ok := st.(settings.Store)
+	if !ok {
+		logger.Error("parâmetros da tela: o armazenamento não guarda parâmetros")
+		return exitRuntime
+	}
+	params, err := newSettings(ctx, look, ps, logger)
+	if err != nil {
+		logger.Error("parâmetros da tela", "error", err)
+		return exitRuntime
+	}
+	go params.Loop(ctx, settingsRefresh)
 	var apiOpts []api.Option
+	apiOpts = append(apiOpts, api.WithSettings(params))
 	if t, _ := look("PATCHD_PANEL_TITLE"); t != "" {
 		// Nome no topo do painel (Aula 11.3). Aula 18.2: aspas que vieram do .env (o Compose
 		// passa o valor como está escrito) saem; um nome comprido demais é avisado, não
@@ -211,6 +229,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	if tz, _ := look("PATCHD_TIMEZONE"); tz != "" {
 		apiOpts = append(apiOpts, api.WithTimezone(tz)) // sugerido no formulário da janela (Aula 11.1)
+	}
+	if n := countScreen(params); n > 0 {
+		logger.Info("parâmetros da tela valendo no lugar do .env (Configuração › Parâmetros; patchd-server settings list)", "quantos", n)
 	}
 	// Métricas (Aula 10.2): registradas só com a porta configurada.
 	var reg *metrics.Registry
@@ -297,21 +318,17 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	} else {
 		logger.Info("notificações por e-mail desligadas (sem PATCHD_SMTP_ADDR)")
 	}
+	retention := liveRetention(params, cfg.Retention)
 	if p, ok := st.(pruner); ok {
-		logger.Info("retenção: " + describeRetention(cfg.Retention) + "; aplicada de hora em hora (patchd-server retention mostra antes)")
-		go retentionLoop(ctx, logger, p, cfg.Retention, retDeleted)
+		logger.Info("retenção: " + describeRetention(retention()) + "; aplicada de hora em hora (patchd-server retention mostra antes)")
+		go retentionLoop(ctx, logger, p, retention, retDeleted)
 	}
-	switch pg, ok := st.(*store.Postgres); {
-	case !ok:
-		// Sem banco não há catálogo.
-	case cfg.CatalogInterval == 0:
-		logger.Info("sincronização do catálogo desligada (PATCHD_CATALOG_INTERVAL=0): use patchd-server catalog sync")
-	default:
+	if pg, ok := st.(*store.Postgres); ok { // sem banco não há catálogo
 		srcs := newCatalogSources(look)
 		if srcs.ContentDirErr != nil {
 			logger.Error("o wsusscn2.cab fica fora do agendamento", "error", srcs.ContentDirErr)
 		}
-		go catalogLoop(ctx, logger, pg, srcs, cfg.CatalogInterval, firstCatalogRun())
+		go catalogLoop(ctx, logger, pg, srcs, liveCatalogInterval(params), firstCatalogRun(), params.Changed())
 	}
 
 	// Campanhas (Aula 8.5): o servidor libera os anéis sozinho; precisa da chave de jobs.
@@ -362,7 +379,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		logReleases(logger, release.Dir(cfg.ReleasesDir), info.Version)
 	}
 	// Configuração › Sistema e › Agente (Aula 15.2).
-	apiOpts = append(apiOpts, api.WithSystemInfo(systemInfo(info, cfg, st, certs)))
+	si := systemInfo(info, cfg, st, certs)
+	si.Live = liveSystem(params, si.Database, retention) // Aula 19.2: o que a tela muda aparece na hora
+	apiOpts = append(apiOpts, api.WithSystemInfo(si))
 	if path, _ := look("PATCHD_AGENT_CA_FILE"); path != "" {
 		pem, n, err := loadAgentCA(path)
 		if err != nil {
@@ -386,12 +405,13 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			return exitConfig
 		}
 		go pruneRepoCacheLoop(ctx, logger, c, limits)
-		if cfg.RepoCacheURL != "" {
-			ann := cfg.RepoCacheAnnouncement()
-			apiOpts = append(apiOpts, api.WithRepoCache(ann.URL, ann.AptHosts))
-			logger.Info("cache de repositórios anunciado aos agentes Linux no check-in", "url", ann.URL)
+		// Aula 19.2: a URL anunciada muda pela tela; o anúncio é montado a cada check-in.
+		ann := liveRepoCache(params, cfg.RepoCacheHosts)
+		apiOpts = append(apiOpts, api.WithRepoCacheLive(ann))
+		if a := ann(); a != nil {
+			logger.Info("cache de repositórios anunciado aos agentes Linux no check-in", "url", a.URL)
 		} else {
-			logger.Info("cache de repositórios sem anúncio: defina PATCHD_REPO_CACHE_URL para os agentes Linux se configurarem")
+			logger.Info("cache de repositórios sem anúncio: defina a URL em Configuração › Parâmetros (ou PATCHD_REPO_CACHE_URL) para os agentes Linux se configurarem")
 		}
 		logger.Info("cache de repositórios ligado (apt: proxy HTTP nesta porta; Fedora: /repo/fedora/; contagens: /repo/stats)",
 			"dir", cfg.RepoCacheDir, "hosts", cfg.RepoCacheHosts)

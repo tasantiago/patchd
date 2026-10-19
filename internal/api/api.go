@@ -141,23 +141,25 @@ type api struct {
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 
-	directory  Directory            // nil: só usuários locais
-	compliance ComplianceSource     // nil: sem estado de compliance (armazenamento em memória)
-	tpManifest *thirdparty.Manifest // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
-	jobKey     ed25519.PrivateKey   // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
-	publicURL  string               // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
-	timezone   string               // fuso sugerido na janela dos anéis (Aula 11.1)
-	brand      string               // nome no topo do painel (Aula 11.3)
-	oidc       *oidc.Provider       // login pelo RHBK (Aula 9.4); nil: desligado
-	oidcLogins oidcPending          // logins pelo RHBK em andamento (state → nonce e PKCE)
-	metrics    *Metrics             // contadores da Aula 10.2; nil: desligados
-	limiter    loginLimiter         // falhas de login por usuário+IP e por IP
-	hashSlots  chan struct{}        // conferências de senha simultâneas
-	system     *SystemInfo          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
-	agentCA    []byte               // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
-	adInfo     *ADInfo              // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
-	notifier   *notifierState       // e-mail para a equipe (Aula 18.5); nil: desligado
-	chrome     chromeCache          // contadores do menu e logotipo (Aula 19.1)
+	directory   Directory                  // nil: só usuários locais
+	compliance  ComplianceSource           // nil: sem estado de compliance (armazenamento em memória)
+	tpManifest  *thirdparty.Manifest       // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
+	jobKey      ed25519.PrivateKey         // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
+	publicURL   string                     // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
+	timezone    string                     // fuso sugerido na janela dos anéis (Aula 11.1)
+	brand       string                     // nome no topo do painel (Aula 11.3)
+	oidc        *oidc.Provider             // login pelo RHBK (Aula 9.4); nil: desligado
+	oidcLogins  oidcPending                // logins pelo RHBK em andamento (state → nonce e PKCE)
+	metrics     *Metrics                   // contadores da Aula 10.2; nil: desligados
+	limiter     loginLimiter               // falhas de login por usuário+IP e por IP
+	hashSlots   chan struct{}              // conferências de senha simultâneas
+	system      *SystemInfo                // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
+	agentCA     []byte                     // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
+	adInfo      *ADInfo                    // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
+	notifier    *notifierState             // e-mail para a equipe (Aula 18.5); nil: desligado
+	chrome      chromeCache                // contadores do menu e logotipo (Aula 19.1)
+	params      Settings                   // parâmetros pela tela (Aula 19.2); nil: só o .env
+	repoCacheFn func() *protocol.RepoCache // anúncio do cache calculado a cada check-in (Aula 19.2)
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -235,7 +237,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/configuracao/agente/ca.crt", a.adminAction(a.agentCAFile))
 	mux.Handle("POST /painel/configuracao/agente/token", a.sameOrigin(a.adminAction(a.createTokenAction)))
 	mux.Handle("POST /painel/configuracao/agente/token/{id}/revogar", a.sameOrigin(a.adminAction(a.revokeTokenAction)))
-	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction))) // Aula 19.1
+	mux.Handle("POST /painel/configuracao/parametros", a.sameOrigin(a.adminAction(a.paramsAction)))                // Aula 19.2
+	mux.Handle("POST /painel/configuracao/parametros/restaurar", a.sameOrigin(a.adminAction(a.paramsResetAction))) // Aula 19.2
+	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction)))              // Aula 19.1
 	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))

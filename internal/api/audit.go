@@ -115,6 +115,10 @@ var auditActions = []struct{ Key, Label string }{
 	// Aula 19.1: aparência do painel.
 	{"aparencia.logo", "Logotipo do painel trocado"},
 	{"aparencia.logo_remover", "Logotipo do painel removido"},
+	// Aula 19.2: parâmetros pela tela.
+	{"parametro.alterar", "Parâmetro alterado pela tela"},
+	{"parametro.restaurar", "Parâmetro restaurado para o .env"},
+	{"cli.settings.reset", "Parâmetro restaurado para o .env (terminal)"},
 }
 
 // AuditLabel: o rótulo da ação; a chave quando não há (ação de uma versão mais nova).

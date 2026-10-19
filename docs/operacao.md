@@ -516,3 +516,23 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   Cada pedido é do usuário, pelo canal local, com a loja refeita pelo servidor. "Cancelar o
   restante" tira da fila o que ainda não foi pedido. A fila vive enquanto a Central estiver
   aberta; fechar a Central ou sair da sessão para a fila (o que já foi pedido continua).
+
+## Parâmetros pela tela (Aula 19.2)
+
+- Configuração › Parâmetros (só admin) muda, sem reiniciar o servidor: nome do painel e fuso
+  horário (na hora), os três prazos da retenção (na próxima passada, em até 1 hora: quem
+  encurtou por engano tem tempo de voltar atrás), o intervalo da sincronização do catálogo
+  (recalculado na hora; "desligada" para o agendamento sem parar o servidor) e a URL do cache
+  de repositórios (no próximo check-in; travada sem `PATCHD_REPO_CACHE_DIR`).
+- A tela vence: o valor gravado (tabela `settings`, migração 38) vale no lugar do .env. O
+  .env é o valor inicial e o que volta no **restaurar o padrão**. Cada valor é conferido com
+  a mesma regra da partida; um cartão grava tudo ou nada.
+- Auditoria: `parametro.alterar` (antes → depois) e `parametro.restaurar`; com as notificações
+  ligadas, um e-mail "Parâmetros alterados" para a lista.
+- Vários servidores no mesmo banco: cada um relê a tabela a cada 30 segundos. Uma linha
+  inválida (mexida à mão, de outra versão) é ignorada com aviso no log, e o .env vale.
+- Terminal: `patchd-server settings list` (o que vale, de onde vem e o do .env) e
+  `patchd-server settings reset PARAMETRO|-all` (a saída de emergência, na auditoria como
+  `cli.settings.reset`). `patchd-server retention` usa os prazos da tela.
+- Ficam sempre no ambiente: banco, portas, TLS, chaves e segredos, pastas, a URL pública e os
+  endereços do AD e do RHBK. Notificações (19.3) e grupos de acesso (19.4) vêm a seguir.

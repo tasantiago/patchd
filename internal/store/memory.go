@@ -50,6 +50,8 @@ type Memory struct {
 	notified map[string]time.Time // avisos por e-mail mandados (Aula 18.6), pela chave
 
 	assets map[string]PanelAsset // arquivos do painel (Aula 19.1): o logotipo
+
+	settings map[string]Setting // parâmetros mudados pela tela (Aula 19.2)
 }
 
 type memMachine struct {

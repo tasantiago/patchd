@@ -45,6 +45,7 @@ type pageBase struct {
 	Badges        navCounts // os números do menu
 	ServerVersion string
 	AgentVersion  string // a versão publicada do agente
+	ParamsOn      bool   // Aula 19.2: a aba Parâmetros existe (servidor com o serviço de parâmetros)
 }
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
@@ -55,8 +56,8 @@ func (a *api) base(r *http.Request, title, nav string) pageBase {
 // baseFor: a base de uma página montada por uma ação de admin (a sessão vem do
 // adminAction, não do contexto).
 func (a *api) baseFor(ctx context.Context, s panel.Session, title, nav string) pageBase {
-	b := pageBase{Brand: a.brand, Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav,
-		ServerVersion: a.serverVersion, Logo: a.logoURL(ctx)}
+	b := pageBase{Brand: a.brandName(), Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav,
+		ServerVersion: a.serverVersion, Logo: a.logoURL(ctx), ParamsOn: a.params != nil}
 	if b.ServerVersion == "" && a.system != nil {
 		b.ServerVersion = a.system.Version
 	}
@@ -565,6 +566,25 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "fim"}}</main></div></body></html>{{end}}
 
+{{define "parametros"}}<p class="muted">A tela vence: o valor gravado aqui vale no lugar do .env, em todos os servidores do mesmo banco (os outros percebem em até 30 segundos). "Restaurar o padrão" apaga o valor da tela e o .env volta a valer. Cada mudança vai para a auditoria com o antes e o depois{{if .NotifyOn}} e, por e-mail, para a equipe{{end}}. Banco, portas, TLS, chaves e segredos continuam no ambiente.</p>
+<style>.param{display:grid;grid-template-columns:minmax(12rem,16rem) minmax(0,1fr);gap:.4rem 1.2rem;padding:.9rem 0;border-top:1px solid var(--borda)}.param:first-of-type{border-top:0;padding-top:.2rem}
+.param label{font-weight:600}.param .campo{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}.param .campo input[type=text]{flex:1 1 18rem;max-width:32rem}.param .campo input[type=number]{width:8rem}
+.param .info{grid-column:2;font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:.15rem}.param .origem b{color:var(--texto);font-weight:500}
+.fonte{display:inline-block;padding:0 .45rem;border-radius:999px;font-size:.72rem;font-weight:600;margin-right:.3rem}.fonte.tela{background:#eef0fd;color:var(--destaque)}.fonte.env{background:#eef1f4;color:#4b5563}.fonte.padrao{background:#f6f7f9;color:var(--muted)}
+.param.problema{background:#fdf6f6}.param .erro-campo{color:var(--vermelho);font-size:.85rem}.param button.link{background:none;border:0;color:var(--azul);padding:0;font-size:.82rem;text-decoration:underline}
+.param-salvar{display:flex;gap:.7rem;align-items:center;margin-top:.6rem}@media (max-width:700px){.param{grid-template-columns:1fr}.param .info{grid-column:1}}</style>
+{{range .Params}}<div class="card"><div class="card-cab"><h2>{{.Name}}</h2></div>
+<form method="post" action="/painel/configuracao/parametros"><input type="hidden" name="grupo" value="{{.Name}}">
+{{range .Fields}}<div class="param{{if .Problem}} problema{{end}}"><label for="p-{{.Key}}">{{.Label}}</label>
+<div class="campo">{{if eq .Kind "select"}}<select id="p-{{.Key}}" name="{{.Key}}"{{if .Locked}} disabled{{end}}>{{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+{{else}}<input id="p-{{.Key}}" name="{{.Key}}" type="{{.Kind}}" value="{{.Value}}" maxlength="500"{{if .Locked}} disabled{{end}}>{{end}}{{if .Unit}}<span class="muted">{{.Unit}}</span>{{end}}</div>
+<div class="info">{{if .Problem}}<span class="erro-campo" role="alert">{{.Problem}}</span>{{end}}{{if .Locked}}<span>{{.Locked}}</span>{{end}}
+<span class="origem"><span class="fonte {{if eq .Source "tela"}}tela{{else if eq .Source ".env"}}env{{else}}padrao{{end}}">{{.Source}}</span>vale <b>{{.Show}}</b>{{if .Who}} · gravado por {{.Who}}{{end}}</span>
+{{if .CanReset}}<span>Sem a tela: {{.EnvShow}} ({{.EnvSource}}) · <button class="link" type="submit" formaction="/painel/configuracao/parametros/restaurar" name="parametro" value="{{.Key}}">restaurar o padrão</button></span>{{end}}
+{{if or .Help .Effect}}<span>{{.Help}}{{if .Effect}} Vale {{.Effect}}.{{end}}</span>{{end}}</div></div>
+{{end}}<div class="param-salvar"><button type="submit">Salvar {{.Name}}</button><span class="muted">grava só o que mudou neste cartão</span></div></form></div>
+{{end}}{{end}}
+
 {{define "frota"}}{{template "topo" .}}
 <h1>Frota</h1>
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
@@ -634,7 +654,7 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a><a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a></nav>
 {{if eq .Tab "autoatendimento"}}{{with .SelfService}}
 {{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
 <div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
@@ -684,7 +704,8 @@ var pages = template.Must(template.New("").Parse(`
 <nav class="paginas" aria-label="páginas">{{if .First}}<a href="{{.First}}">« mais novos</a>{{end}}{{if .Next}}<a href="{{.Next}}">mais antigos ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhum evento com esse filtro.</p>{{end}}</div>
 {{end}}{{end}}
-{{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: a configuração fica no ambiente (.env) e nos arquivos de segredo</span></div>
+{{if eq .Tab "parametros"}}{{template "parametros" .}}{{end}}
+{{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: o que muda pela tela fica em Parâmetros; o resto, no ambiente (.env) e nos arquivos de segredo</span></div>
 <dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
 {{if .NotifyOn}}<form class="lote" method="post" action="/painel/configuracao/notificacoes/teste"><button class="sec" type="submit">Mandar e-mail de teste</button> <span class="muted">uma mensagem para a lista de PATCHD_NOTIFY_TO; fica na auditoria</span></form>{{end}}</div>
 {{with .Appearance}}<div class="card"><div class="card-cab"><h2>Aparência</h2><span class="muted">o logotipo do menu lateral e da tela de login</span></div>

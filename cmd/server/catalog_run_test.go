@@ -158,7 +158,7 @@ func TestCatalogLoop(t *testing.T) {
 	feito := make(chan struct{})
 	go func() {
 		catalogLoopWith(ctx, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), banco, fontesDeTeste(t),
-			syncOptions{Sources: map[string]bool{"kev": true}, Trigger: "agendada"}, 20*time.Millisecond, time.Millisecond)
+			syncOptions{Sources: map[string]bool{"kev": true}, Trigger: "agendada"}, func() time.Duration { return 20 * time.Millisecond }, time.Millisecond, nil)
 		close(feito)
 	}()
 	limite := time.After(5 * time.Second)
