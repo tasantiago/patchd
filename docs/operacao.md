@@ -550,3 +550,21 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   trocada no arquivo), sem reiniciar. O laço dos avisos roda sempre e pula a passada enquanto
   estiverem desligadas. "Mandar e-mail de teste" também fica no cartão (usa o que está
   gravado). `patchd-server notify status|test|pending` usam o mesmo que o servidor.
+
+### Grupos de acesso pela tela (Aula 19.4)
+
+- Cartão Acesso: grupos admin do AD além do garantido, grupos de leitura do AD, papéis admin
+  do RHBK além do garantido e papéis de leitura do RHBK (sAMAccountName ou o valor do claim,
+  separados por vírgula). Travados com o AD ou o RHBK desligados.
+- O garantido fica no .env e é sempre admin: `PATCHD_LDAP_ADMIN_GROUP` e
+  `PATCHD_OIDC_ADMIN_ROLE`. A tela não tira; assim sempre existe um caminho de admin (e a
+  conta local de contingência, para o AD fora do ar).
+- Conferências: um grupo não pode estar nas duas listas; o AD não pode ficar sem grupo
+  nenhum; no máximo 20 por lista. Um grupo da tela que o AD não acha fica de fora (o login
+  segue, com aviso no teste de Acesso); o do .env que não existe torna o AD indisponível,
+  como antes.
+- Vale no próximo login. Tirar um grupo (ou papel), inclusive pelo "restaurar o padrão",
+  encerra as sessões abertas por aquela origem, menos a de quem mudou: quem saiu da lista
+  não fica com o perfil até a sessão vencer. Na auditoria: `parametro.sessoes`.
+- O teste do AD (Configuração › Acesso) mostra por qual grupo o usuário entrou e os grupos
+  da tela que o AD não achou; `patchd-server ad check` mostra só as quantidades.

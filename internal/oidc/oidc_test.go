@@ -208,3 +208,27 @@ func TestConfiguracao(t *testing.T) {
 		t.Errorf("RolesAt: %v", got)
 	}
 }
+
+// Aula 19.4: os papéis da tela, lidos a cada login; o garantido sempre na lista de admin.
+func TestPapeisDaTela(t *testing.T) {
+	admin, read := []string{"patchd-admin", "/ti/infra"}, []string{"/gabinetes"}
+	p := &Provider{cfg: Config{AdminRole: "patchd-admin", Roles: func() ([]string, []string) { return admin, read }}}
+	claims := func(roles ...string) map[string]any {
+		r := make([]any, len(roles))
+		for i, x := range roles {
+			r[i] = x
+		}
+		return map[string]any{"sub": "1", "preferred_username": "fulano", "groups": r}
+	}
+	p.cfg.RolesClaim = "groups"
+	for want, roles := range map[string][]string{"admin": {"/ti/infra"}, "leitura": {"/gabinetes"}, "admin ": {"patchd-admin", "/gabinetes"}} {
+		id, err := p.identity(claims(roles...))
+		if err != nil || id.Role != strings.TrimSpace(want) {
+			t.Errorf("%v: %q %v", roles, id.Role, err)
+		}
+	}
+	read = nil
+	if _, err := p.identity(claims("/gabinetes")); err == nil {
+		t.Error("tirado da lista: sem perfil")
+	}
+}

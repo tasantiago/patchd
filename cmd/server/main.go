@@ -243,6 +243,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	// Login pelo AD (Aula 7.3): a configuração já foi validada em loadServerConfig.
 	adCfg, adOn, _ := adConfig(look)
+	adCfg.Groups = adGroups(look, params.Value) // Aula 19.4: os grupos da tela, lidos a cada login
 	if adOn {
 		dir, err := ad.New(adCfg)
 		if err != nil {
@@ -252,7 +253,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		apiOpts = append(apiOpts, api.WithDirectory(dir), api.WithADInfo(adInfo(adCfg, dir)))
 		// Sem o servidor, o domínio e os grupos: esses valores ficam no .env.
 		logger.Info("login pelo AD ligado (LDAPS, bind como o próprio usuário)",
-			"grupo_admin", adCfg.AdminGroup != "", "grupo_leitura", adCfg.ReadGroup != "", "base_explicita", adCfg.BaseDN != "")
+			"grupos_admin", len(must(adCfg.GroupLists())), "grupos_leitura", len(second(adCfg.GroupLists())), "base_explicita", adCfg.BaseDN != "")
 	} else {
 		logger.Info("login pelo AD desligado (sem PATCHD_LDAP_HOST): o painel aceita só usuários locais")
 	}
@@ -263,6 +264,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		return exitConfig
 	}
 	if oidcOn {
+		oidcCfg.Roles = oidcRoles(look, params.Value) // Aula 19.4
 		prov, err := oidc.New(oidcCfg, nil)
 		if err != nil {
 			logger.Error("login pelo RHBK", "error", err)
@@ -271,7 +273,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		apiOpts = append(apiOpts, api.WithOIDC(prov))
 		logger.Info("login pelo RHBK ligado (código de autorização com PKCE; perfil pelo claim de grupos)",
 			"issuer", oidcCfg.Issuer, "client_id", oidcCfg.ClientID, "claim", oidcCfg.RolesClaim,
-			"grupo_leitura", oidcCfg.ReadRole != "", "retorno", oidcCfg.RedirectURL)
+			"papeis_admin", len(must(oidcCfg.Roles())), "papeis_leitura", len(second(oidcCfg.Roles())), "retorno", oidcCfg.RedirectURL)
 		go checkOIDC(ctx, logger, prov)
 	}
 	checkPanelUsers(ctx, logger, st, adOn)

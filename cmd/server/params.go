@@ -17,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/alerts"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/notify"
+	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/settings"
@@ -181,6 +182,20 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return strings.Join(l, ", ")
 			}},
+		// Aula 19.4: os grupos de acesso. O grupo admin do .env (PATCHD_LDAP_ADMIN_GROUP,
+		// PATCHD_OIDC_ADMIN_ROLE) é o garantido: não aparece como campo e é sempre admin.
+		{Key: "PATCHD_LDAP_ADMIN_GROUPS", Group: "Acesso", Label: "Grupos admin do AD, além do garantido",
+			Help:   adGuaranteed(look) + " Outros grupos com o perfil admin: o sAMAccountName, separados por vírgula. Tirar um grupo encerra as sessões abertas pelo AD (a sua continua).",
+			Effect: "no próximo login", Check: checkGroups, Show: showList("(nenhum além do garantido)"), Locked: adOff(look), Sessions: panel.SourceAD},
+		{Key: "PATCHD_LDAP_READ_GROUP", Group: "Acesso", Label: "Grupos de leitura do AD",
+			Help:   "Perfil leitura: veem tudo, não mudam nada. O sAMAccountName, separados por vírgula. Vazio: só os admins entram pelo AD. Tirar um grupo encerra as sessões abertas pelo AD (a sua continua).",
+			Effect: "no próximo login", Check: checkGroups, Show: showList("(nenhum: só admins entram pelo AD)"), Locked: adOff(look), Sessions: panel.SourceAD},
+		{Key: "PATCHD_OIDC_ADMIN_ROLES", Group: "Acesso", Label: "Papéis admin do RHBK, além do garantido",
+			Help:   oidcGuaranteed(look) + " Outros grupos ou papéis (como vêm no claim) com o perfil admin, separados por vírgula. Tirar um encerra as sessões abertas pelo RHBK (a sua continua).",
+			Effect: "no próximo login", Check: checkRoles, Show: showList("(nenhum além do garantido)"), Locked: oidcOff(look), Sessions: panel.SourceOIDC},
+		{Key: "PATCHD_OIDC_READ_ROLE", Group: "Acesso", Label: "Papéis de leitura do RHBK", Default: "patchd-leitura",
+			Help:   "Grupos ou papéis (como vêm no claim) com o perfil leitura, separados por vírgula. Vazio: só os admins entram pelo RHBK.",
+			Effect: "no próximo login", Check: checkRoles, Show: showList("(nenhum: só admins entram pelo RHBK)"), Locked: oidcOff(look), Sessions: panel.SourceOIDC},
 		{Key: "PATCHD_REPO_CACHE_URL", Group: "Cache de repositórios", Label: "URL anunciada aos agentes Linux",
 			Help:   "Como as máquinas alcançam o cache, ex.: http://patchd.exemplo:8080. Vazio: o cache funciona, mas não é anunciado no check-in.",
 			Effect: "no próximo check-in de cada máquina",
@@ -258,10 +273,199 @@ func notifyCheck(look settings.Lookup, changed []string) error {
 	return err
 }
 
+// Grupos de acesso (Aula 19.4).
+
+// maxGroups: o máximo de grupos (ou papéis) em cada lista da tela.
+const maxGroups = 20
+
+// groupList: a lista (separada por vírgula). Um DN (só faz sentido vindo do .env, como era até
+// a 19.3) vale inteiro, como uma entrada só: DN tem vírgula.
+func groupList(v string) []string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	if strings.Contains(v, "=") {
+		return []string{v}
+	}
+	var out []string
+	for _, g := range strings.Split(v, ",") {
+		if g = strings.TrimSpace(g); g != "" && !slices.ContainsFunc(out, func(x string) bool { return strings.EqualFold(x, g) }) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// samForbidden: o que o AD não aceita num sAMAccountName (e a vírgula, que separa a lista).
+const samForbidden = "\"/[]:;|=+*?<>@,"
+
+// checkGroups: sAMAccountName separados por vírgula ("DOMINIO\nome" vira "nome": o painel
+// procura pelo sAMAccountName). Um DN sozinho também vale (era o formato do .env).
+func checkGroups(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if strings.Contains(v, "=") {
+		if !strings.Contains(strings.ToUpper(v), "DC=") || strings.ContainsAny(v, "\r\n") {
+			return "", errors.New("um DN tem de ser completo (CN=...,DC=...); para vários grupos, use o sAMAccountName")
+		}
+		return v, nil
+	}
+	var out []string
+	for _, g := range groupList(v) {
+		if i := strings.LastIndexByte(g, '\\'); i >= 0 {
+			g = strings.TrimSpace(g[i+1:])
+		}
+		if g == "" || len(g) > 256 || strings.ContainsAny(g, samForbidden) || strings.ContainsFunc(g, func(r rune) bool { return r < ' ' }) {
+			return "", fmt.Errorf("%q não é um nome de grupo válido (use o sAMAccountName)", g)
+		}
+		if !slices.ContainsFunc(out, func(x string) bool { return strings.EqualFold(x, g) }) {
+			out = append(out, g)
+		}
+	}
+	if len(out) > maxGroups {
+		return "", fmt.Errorf("no máximo %d grupos", maxGroups)
+	}
+	return strings.Join(out, ", "), nil
+}
+
+// checkRoles: os valores do claim do RHBK, separados por vírgula.
+func checkRoles(v string) (string, error) {
+	list := groupList(strings.ReplaceAll(v, "=", "")) // papel não tem "="; tirar evita o caso DN
+	if strings.Contains(v, "=") {
+		return "", errors.New("papel com \"=\": use o valor como vem no claim")
+	}
+	for i, r := range list {
+		r = strings.TrimPrefix(r, "/") // o RHBK manda o grupo com a barra; o patchd compara sem
+		list[i] = r
+		if r == "" || len(r) > 200 || strings.ContainsFunc(r, func(c rune) bool { return c < ' ' }) {
+			return "", fmt.Errorf("%q não é um papel válido", r)
+		}
+	}
+	if len(list) > maxGroups {
+		return "", fmt.Errorf("no máximo %d papéis", maxGroups)
+	}
+	return strings.Join(list, ", "), nil
+}
+
+func showList(empty string) func(string) string {
+	return func(v string) string {
+		if v == "" {
+			return empty
+		}
+		return v
+	}
+}
+
+func adOff(look config.Lookup) func() string {
+	return func() string {
+		if config.String(look, "PATCHD_LDAP_HOST", "") == "" {
+			return "o login pelo AD está desligado (sem PATCHD_LDAP_HOST no .env)"
+		}
+		return ""
+	}
+}
+
+func oidcOff(look config.Lookup) func() string {
+	return func() string {
+		if config.String(look, "PATCHD_OIDC_ISSUER", "") == "" {
+			return "o login pelo RHBK está desligado (sem PATCHD_OIDC_ISSUER no .env)"
+		}
+		return ""
+	}
+}
+
+func adGuaranteed(look config.Lookup) string {
+	if g := config.String(look, "PATCHD_LDAP_ADMIN_GROUP", ""); g != "" {
+		return "O grupo garantido, " + g + " (PATCHD_LDAP_ADMIN_GROUP, no .env), é sempre admin e não sai pela tela."
+	}
+	return "Sem grupo garantido no .env (PATCHD_LDAP_ADMIN_GROUP): defina um para nunca ficar sem admin pelo AD."
+}
+
+func oidcGuaranteed(look config.Lookup) string {
+	return "O papel garantido, " + config.String(look, "PATCHD_OIDC_ADMIN_ROLE", "patchd-admin") +
+		" (PATCHD_OIDC_ADMIN_ROLE, no .env), é sempre admin e não sai pela tela."
+}
+
+// adGroups: os grupos de cada perfil que valem agora; o garantido primeiro.
+func adGroups(look config.Lookup, value func(string) string) func() (admin, read []string) {
+	return func() (admin, read []string) {
+		if g := config.String(look, "PATCHD_LDAP_ADMIN_GROUP", ""); g != "" {
+			admin = append(admin, g)
+		}
+		for _, g := range groupList(value("PATCHD_LDAP_ADMIN_GROUPS")) {
+			if !slices.ContainsFunc(admin, func(x string) bool { return strings.EqualFold(x, g) }) {
+				admin = append(admin, g)
+			}
+		}
+		for _, g := range groupList(value("PATCHD_LDAP_READ_GROUP")) {
+			if !slices.ContainsFunc(admin, func(x string) bool { return strings.EqualFold(x, g) }) {
+				read = append(read, g)
+			}
+		}
+		return admin, read
+	}
+}
+
+// oidcRoles: os papéis de cada perfil que valem agora; o garantido primeiro.
+func oidcRoles(look config.Lookup, value func(string) string) func() (admin, read []string) {
+	return func() (admin, read []string) {
+		admin = []string{config.String(look, "PATCHD_OIDC_ADMIN_ROLE", "patchd-admin")}
+		for _, r := range groupList(value("PATCHD_OIDC_ADMIN_ROLES")) {
+			if !slices.Contains(admin, r) {
+				admin = append(admin, r)
+			}
+		}
+		for _, r := range groupList(value("PATCHD_OIDC_READ_ROLE")) {
+			if !slices.Contains(admin, r) {
+				read = append(read, r)
+			}
+		}
+		return admin, read
+	}
+}
+
+// must e second: as duas listas, para contar no log.
+func must(a, _ []string) []string   { return a }
+func second(_, b []string) []string { return b }
+
+// accessCheck (Aula 19.4): um grupo não pode estar nas duas listas (admin vence, e a tela
+// ficaria enganosa), e o AD não pode ficar sem grupo nenhum.
+func accessCheck(look settings.Lookup, changed []string) error {
+	if !slices.ContainsFunc(changed, func(k string) bool {
+		return strings.HasPrefix(k, "PATCHD_LDAP_") || strings.HasPrefix(k, "PATCHD_OIDC_")
+	}) {
+		return nil
+	}
+	val := func(k string) string { v, _ := look(k); return v }
+	var problems []error
+	both := func(admin, read []string, what string) {
+		for _, r := range read {
+			if slices.ContainsFunc(admin, func(a string) bool { return strings.EqualFold(a, r) }) {
+				problems = append(problems, fmt.Errorf("%s %q está nas duas listas (admin e leitura): deixe em uma só", what, r))
+			}
+		}
+	}
+	if adOff(look)() == "" {
+		admin, _ := adGroups(look, val)()
+		read := groupList(val("PATCHD_LDAP_READ_GROUP"))
+		both(admin, read, "o grupo")
+		if len(admin) == 0 && len(read) == 0 {
+			problems = append(problems, errors.New("o login pelo AD ficaria sem grupo nenhum"))
+		}
+	}
+	if oidcOff(look)() == "" {
+		admin, _ := oidcRoles(look, val)()
+		both(admin, groupList(val("PATCHD_OIDC_READ_ROLE")), "o papel")
+	}
+	return errors.Join(problems...)
+}
+
 // newSettings monta o serviço e lê a tabela.
 func newSettings(ctx context.Context, look config.Lookup, st settings.Store, logger *slog.Logger) (*settings.Service, error) {
 	s := settings.New(settingDefs(look), look, st, logger)
-	s.CheckAll = notifyCheck
+	s.CheckAll = func(look settings.Lookup, changed []string) error {
+		return errors.Join(notifyCheck(look, changed), accessCheck(look, changed))
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return s, s.Refresh(ctx)

@@ -118,6 +118,7 @@ var auditActions = []struct{ Key, Label string }{
 	// Aula 19.2: parâmetros pela tela.
 	{"parametro.alterar", "Parâmetro alterado pela tela"},
 	{"parametro.restaurar", "Parâmetro restaurado para o .env"},
+	{"parametro.sessoes", "Sessões encerradas: grupo de acesso tirado da lista"},
 	{"cli.settings.reset", "Parâmetro restaurado para o .env (terminal)"},
 }
 

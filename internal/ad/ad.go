@@ -36,6 +36,11 @@ type Config struct {
 	ReadGroup  string // grupo do perfil leitura: sAMAccountName ou DN
 	Timeout    time.Duration
 	RootCAs    *x509.CertPool // nil: as CAs do sistema (no container, inclui a corporativa)
+	// Groups (Aula 19.4): os grupos de cada perfil, lidos a cada login (mudam pela tela).
+	// nil: AdminGroup e ReadGroup. Os do .env (AdminGroup, ReadGroup) entram pela lista como
+	// os outros; a diferença é que um grupo do .env que não existe torna o AD indisponível
+	// (configuração errada), e um da tela que não existe só fica de fora (com aviso).
+	Groups func() (admin, read []string)
 }
 
 var domainPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,62}\.)+[A-Za-z0-9-]{1,63}$`)
@@ -111,8 +116,26 @@ func New(cfg Config) (*Directory, error) {
 type Report struct {
 	TLSVersion string
 	Name       string // displayName da conta, já limpo (Aula 15.5); vazio se o AD não tem
-	Admin      bool   // membro do grupo admin (direto ou aninhado)
-	Read       bool   // membro do grupo leitura
+	Admin      bool   // membro de um grupo admin (direto ou aninhado)
+	Read       bool   // membro de um grupo leitura
+	// Aula 19.4: por qual grupo (o primeiro da lista em que ele está) e os grupos da tela que
+	// o AD não achou (ficaram de fora).
+	AdminVia, ReadVia string
+	Missing           []string
+}
+
+// GroupLists: as listas de agora.
+func (c Config) GroupLists() (admin, read []string) {
+	if c.Groups != nil {
+		return c.Groups()
+	}
+	if c.AdminGroup != "" {
+		admin = []string{c.AdminGroup}
+	}
+	if c.ReadGroup != "" {
+		read = []string{c.ReadGroup}
+	}
+	return admin, read
 }
 
 // Role é o perfil do painel: admin vence leitura; nenhum dos dois, vazio.
@@ -186,14 +209,33 @@ func (d *Directory) Check(ctx context.Context, user, password string) (Report, e
 	if err != nil {
 		return rep, &UnavailableError{Reason: "busca do usuário: " + err.Error()}
 	}
-	if rep.Admin, err = d.memberOf(c, base, userDN, d.cfg.AdminGroup); err != nil {
-		return rep, &UnavailableError{Reason: "grupo admin (PATCHD_LDAP_ADMIN_GROUP): " + err.Error()}
+	admins, reads := d.cfg.GroupLists()
+	check := func(list []string, label, env string) (string, error) {
+		for _, g := range list {
+			ok, err := d.memberOf(c, base, userDN, g)
+			switch {
+			case errors.Is(err, errGroupNotFound) && !strings.EqualFold(g, env):
+				rep.Missing = append(rep.Missing, g) // da tela: fica de fora, o login segue
+			case err != nil:
+				return "", &UnavailableError{Reason: label + ": " + err.Error()}
+			case ok:
+				return g, nil
+			}
+		}
+		return "", nil
 	}
-	if rep.Read, err = d.memberOf(c, base, userDN, d.cfg.ReadGroup); err != nil {
-		return rep, &UnavailableError{Reason: "grupo leitura (PATCHD_LDAP_READ_GROUP): " + err.Error()}
+	if rep.AdminVia, err = check(admins, "grupo admin (PATCHD_LDAP_ADMIN_GROUP)", d.cfg.AdminGroup); err != nil {
+		return rep, err
 	}
+	if rep.ReadVia, err = check(reads, "grupo leitura (PATCHD_LDAP_READ_GROUP)", d.cfg.ReadGroup); err != nil {
+		return rep, err
+	}
+	rep.Admin, rep.Read = rep.AdminVia != "", rep.ReadVia != ""
 	return rep, nil
 }
+
+// errGroupNotFound: o grupo não existe na base de busca.
+var errGroupNotFound = errors.New("grupo não encontrado (confira o nome do grupo e a base de busca)")
 
 // errNotFound: a busca não achou a entrada.
 var errNotFound = errors.New("não encontrado")
@@ -228,7 +270,7 @@ func (d *Directory) memberOf(c *ldap.Conn, base, userDN, group string) (bool, er
 	if !strings.Contains(group, "=") {
 		dn, err := d.findOne(c, base, ldap.And(ldap.Equal("objectClass", "group"), ldap.Equal("sAMAccountName", group)))
 		if errors.Is(err, errNotFound) {
-			return false, errors.New("grupo não encontrado (confira o nome do grupo e a base de busca)")
+			return false, errGroupNotFound
 		}
 		if err != nil {
 			return false, err

@@ -54,6 +54,10 @@ type Def struct {
 	Locked func() string
 	// Show: como o valor aparece na tela e na auditoria (nil: como está).
 	Show func(v string) string
+	// Sessions (Aula 19.4): a origem das sessões (panel.SourceAD, panel.SourceOIDC) que caem
+	// quando um item sai desta lista: quem entrou pelo grupo tirado não fica com o perfil até
+	// a sessão vencer. Vazio: nenhuma.
+	Sessions string
 }
 
 // Source diz de onde vem o valor que vale.

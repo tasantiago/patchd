@@ -122,8 +122,13 @@ func adCheck(ctx context.Context, dir *ad.Directory, cfg ad.Config, user, pw str
 	} else {
 		fmt.Fprintln(stdout, "nome de exibição (displayName): vazio (o painel mostra o usuário)")
 	}
-	fmt.Fprintf(stdout, "grupo admin (PATCHD_LDAP_ADMIN_GROUP): %s\n", grupo(cfg.AdminGroup != "", rep.Admin))
-	fmt.Fprintf(stdout, "grupo leitura (PATCHD_LDAP_READ_GROUP): %s\n", grupo(cfg.ReadGroup != "", rep.Read))
+	admins, reads := cfg.GroupLists()
+	fmt.Fprintf(stdout, "grupos admin (%d): %s\n", len(admins), grupo(len(admins) > 0, rep.Admin))
+	fmt.Fprintf(stdout, "grupos leitura (%d): %s\n", len(reads), grupo(len(reads) > 0, rep.Read))
+	// Aula 19.4: só a quantidade; os nomes ficam no painel (a saída pode ir para um chamado).
+	if len(rep.Missing) > 0 {
+		fmt.Fprintf(stdout, "grupos da tela que o AD não achou: %d (confira em Configuração › Parâmetros › Acesso)\n", len(rep.Missing))
+	}
 	if role := rep.Role(); role != "" {
 		fmt.Fprintf(stdout, "perfil no painel: %s\n", role)
 		return exitOK
@@ -144,8 +149,8 @@ func adInfo(cfg ad.Config, dir *ad.Directory) api.ADInfo {
 			{Name: "PATCHD_LDAP_HOST", Set: cfg.Host != ""},
 			{Name: "PATCHD_LDAP_DOMAIN", Set: cfg.Domain != ""},
 			{Name: "PATCHD_LDAP_BASE_DN", Set: cfg.BaseDN != "", Note: baseNote},
-			{Name: "PATCHD_LDAP_ADMIN_GROUP", Set: cfg.AdminGroup != ""},
-			{Name: "PATCHD_LDAP_READ_GROUP", Set: cfg.ReadGroup != ""},
+			{Name: "PATCHD_LDAP_ADMIN_GROUP", Set: cfg.AdminGroup != "", Note: "o grupo garantido; outros grupos admin em Parâmetros › Acesso"},
+			{Name: "PATCHD_LDAP_READ_GROUP", Set: cfg.ReadGroup != "", Note: "o padrão; a tela vence (Parâmetros › Acesso)"},
 		},
 		Check: func(ctx context.Context, user, pw string) (api.ADCheckResult, error) {
 			return adCheckResult(cfg, func() (ad.Report, error) { return dir.Check(ctx, user, pw) })
@@ -156,7 +161,8 @@ func adInfo(cfg ad.Config, dir *ad.Directory) api.ADInfo {
 // adCheckResult traduz o relatório do ad.Check para a tela.
 func adCheckResult(cfg ad.Config, check func() (ad.Report, error)) (api.ADCheckResult, error) {
 	rep, err := check()
-	res := api.ADCheckResult{TLSVersion: rep.TLSVersion, Name: rep.Name, AdminSet: cfg.AdminGroup != "", ReadSet: cfg.ReadGroup != ""}
+	admins, reads := cfg.GroupLists()
+	res := api.ADCheckResult{TLSVersion: rep.TLSVersion, Name: rep.Name, AdminSet: len(admins) > 0, ReadSet: len(reads) > 0}
 	var ue *ad.UnavailableError
 	switch {
 	case errors.As(err, &ue):
@@ -169,5 +175,6 @@ func adCheckResult(cfg ad.Config, check func() (ad.Report, error)) (api.ADCheckR
 		return res, err
 	}
 	res.Admin, res.Read, res.Role = rep.Admin, rep.Read, rep.Role()
+	res.AdminVia, res.ReadVia, res.Missing = rep.AdminVia, rep.ReadVia, rep.Missing
 	return res, nil
 }

@@ -572,7 +572,7 @@ var pages = template.Must(template.New("").Parse(`
 .param .info{grid-column:2;font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:.15rem}.param .origem b{color:var(--texto);font-weight:500}
 .fonte{display:inline-block;padding:0 .45rem;border-radius:999px;font-size:.72rem;font-weight:600;margin-right:.3rem}.fonte.tela{background:#eef0fd;color:var(--destaque)}.fonte.env{background:#eef1f4;color:#4b5563}.fonte.padrao{background:#f6f7f9;color:var(--muted)}
 .param.problema{background:#fdf6f6}.param .erro-campo{color:var(--vermelho);font-size:.85rem}.param button.link{background:none;border:0;color:var(--azul);padding:0;font-size:.82rem;text-decoration:underline}
-.param-salvar{display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;margin-top:.6rem}.param label.caixa{font-weight:400;display:inline-flex;gap:.35rem;align-items:center;margin-right:.8rem}@media (max-width:700px){.param{grid-template-columns:1fr}.param .info{grid-column:1}}</style>
+.param input:disabled,.param select:disabled{background:#f3f4f6;color:var(--muted);cursor:not-allowed}.param-salvar{display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;margin-top:.6rem}.param label.caixa{font-weight:400;display:inline-flex;gap:.35rem;align-items:center;margin-right:.8rem}@media (max-width:700px){.param{grid-template-columns:1fr}.param .info{grid-column:1}}</style>
 {{range .Params}}<div class="card"><div class="card-cab"><h2>{{.Name}}</h2></div>
 <form method="post" action="/painel/configuracao/parametros"><input type="hidden" name="grupo" value="{{.Name}}">
 {{range .Fields}}<div class="param{{if .Problem}} problema{{end}}"><label for="p-{{.Key}}">{{.Label}}</label>

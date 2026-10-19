@@ -126,7 +126,8 @@ func TestTestesDeLogin(t *testing.T) {
 		if pw != "certa" {
 			return api.ADCheckResult{TLSVersion: "TLS 1.3", BadPassword: true}, nil
 		}
-		return api.ADCheckResult{TLSVersion: "TLS 1.3", Name: "Fulano de Tal", AdminSet: true, ReadSet: true, Admin: true, Role: panel.RoleAdmin}, nil
+		return api.ADCheckResult{TLSVersion: "TLS 1.3", Name: "Fulano de Tal", AdminSet: true, ReadSet: true, Admin: true, Role: panel.RoleAdmin,
+			AdminVia: "GG-Patchd-Admin", Missing: []string{"GG-Digitado-Errado"}}, nil
 	}
 	h, _, log := ambientePaginas(t, api.WithOIDC(prov), api.WithADInfo(api.ADInfo{Check: check,
 		Vars: []api.ADVar{{Name: "PATCHD_LDAP_HOST", Set: true}, {Name: "PATCHD_LDAP_BASE_DN", Note: "a base é derivada do domínio"}}}))
@@ -143,7 +144,8 @@ func TestTestesDeLogin(t *testing.T) {
 	}
 	b = testa("fulano", "certa")
 	for _, tr := range []string{"Resultado para fulano", "<dt>Conexão LDAPS</dt><dd>ok (TLS 1.3)</dd>", "<dt>Senha</dt><dd>conferida pelo AD</dd>",
-		"<dt>Grupo admin (PATCHD_LDAP_ADMIN_GROUP)</dt><dd>membro</dd>", `<dt>Grupo leitura (PATCHD_LDAP_READ_GROUP)</dt><dd class="nivel-atencao">não membro</dd>`,
+		"<dt>Grupos admin</dt><dd>membro, por GG-Patchd-Admin</dd>", `<dt>Grupos leitura</dt><dd class="nivel-atencao">não membro</dd>`,
+		`<dt>Grupos da tela que o AD não achou</dt><dd class="nivel-atencao">GG-Digitado-Errado (ficam de fora`,
 		"<dt>Perfil no painel</dt><dd>admin</dd>", "<dt>Nome de exibição</dt><dd>Fulano de Tal</dd>"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("ok: faltou %q", tr)

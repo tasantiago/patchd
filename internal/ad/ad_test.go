@@ -176,3 +176,38 @@ func TestMotivosDoAD(t *testing.T) {
 		}
 	}
 }
+
+// Aula 19.4: as listas da tela. O garantido vem primeiro; um grupo a mais dá o perfil; um
+// grupo da tela que não existe fica de fora (o login segue); o do .env que não existe torna o
+// AD indisponível, como antes.
+func TestGruposDaTela(t *testing.T) {
+	s := servidor(t)
+	ctx := context.Background()
+	admin, read := []string{"admins.patchd"}, []string{"grupo.digitado.errado", "consulta.patchd"}
+	d := diretorio(t, s, func(c *Config) {
+		c.ReadGroup = ""
+		c.Groups = func() ([]string, []string) { return admin, read }
+	})
+	rep, err := d.Check(ctx, "ciclano", "senha-do-ciclano")
+	if err != nil || rep.Role() != panel.RoleRead || rep.ReadVia != "consulta.patchd" || strings.Join(rep.Missing, ",") != "grupo.digitado.errado" {
+		t.Fatalf("leitura pela tela: %+v %v", rep, err)
+	}
+	// Ciclano passa a admin por um grupo a mais (a lista é lida a cada login).
+	admin = []string{"admins.patchd", "consulta.patchd"}
+	read = nil
+	if rep, err := d.Check(ctx, "ciclano", "senha-do-ciclano"); err != nil || rep.Role() != panel.RoleAdmin || rep.AdminVia != "consulta.patchd" {
+		t.Errorf("admin pela tela: %+v %v", rep, err)
+	}
+	if rep, _ := d.Check(ctx, "fulano", "senha-do-fulano"); rep.AdminVia != "admins.patchd" {
+		t.Errorf("o garantido primeiro: %+v", rep)
+	}
+	// O do .env que não existe: indisponível (configuração errada).
+	d2 := diretorio(t, s, func(c *Config) {
+		c.AdminGroup = "nao.existe"
+		c.Groups = func() ([]string, []string) { return []string{"nao.existe"}, nil }
+	})
+	var ue *UnavailableError
+	if _, err := d2.Check(ctx, "fulano", "senha-do-fulano"); !errors.As(err, &ue) {
+		t.Errorf("garantido inexistente: %v", err)
+	}
+}
