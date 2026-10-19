@@ -1,8 +1,13 @@
 package userapp
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -234,7 +239,7 @@ func TestLojaEMeusPedidos(t *testing.T) {
 		!strings.Contains(b, "PowerShell 7") || !strings.Contains(b, "sem instalador aprovado") || strings.Contains(b, "26.01 → <b>26.04</b>") {
 		t.Fatalf("loja: o botão leva à confirmação, não pede direto:\n%s", b)
 	}
-	if !strings.Contains(b, `class="conta">1</span>`) {
+	if !strings.Contains(b, `<span class="cont" title="atualizações disponíveis">1</span>`) {
 		t.Error("a aba Atualizações mostra quantas há")
 	}
 	b = get(a, a.base()+"?aba=loja&confirmar=vscode").Body.String()
@@ -314,7 +319,7 @@ func TestAbaReinicio(t *testing.T) {
 	a.Loc = time.UTC
 
 	b := get(a, a.base()+"?aba=reinicio").Body.String()
-	for _, quer := range []string{`class="conta alerta"`, `value="agora" checked`, "Daqui a 1 hora (às 10:30)", "Na hora do almoço (12:00)",
+	for _, quer := range []string{`class="cont alerta"`, `value="agora" checked`, "Daqui a 1 hora (às 10:30)", "Na hora do almoço (12:00)",
 		"No fim do expediente (18:00)", "Daqui a 4 horas (às 13:30)", `name="action" value="reiniciar"`} {
 		if !strings.Contains(b, quer) {
 			t.Errorf("aba reinício sem %q:\n%s", quer, b)
@@ -347,7 +352,7 @@ func TestAbaReinicio(t *testing.T) {
 	c.loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &sim, Allowed: true, JobID: 90, At: &as18}
 	c.mu.Unlock()
 	b = get(a, a.base()+"?aba=reinicio").Body.String()
-	if !strings.Contains(b, "Reinício agendado para as <b>18:00</b> (pedido nº 90)") || strings.Contains(b, "conta alerta") || strings.Contains(b, `name="quando"`) {
+	if !strings.Contains(b, "Reinício agendado para as <b>18:00</b> (pedido nº 90)") || strings.Contains(b, "cont alerta") || strings.Contains(b, `name="quando"`) {
 		t.Errorf("agendado:\n%s", b)
 	}
 	// Sem pendência; em servidor; agente antigo (sem o campo): a aba some.
@@ -463,5 +468,75 @@ func TestAvisoDaDecisaoDaTI(t *testing.T) {
 	}
 	if title, _ := noticeText(Notice{Done: []string{"7-Zip 26.04: recusado pela TI"}}); title != "Resposta da TI" {
 		t.Errorf("título de uma decisão: %q", title)
+	}
+}
+
+// Aula 19.1b: a Central no layout do painel. Barra lateral com o logotipo do painel (que o
+// agente entregou e a página conferiu), o usuário e as seções; barra superior com a consulta
+// e a versão do agente.
+func TestLayoutDaCentral(t *testing.T) {
+	var img bytes.Buffer
+	_ = png.Encode(&img, image.NewGray(image.Rect(0, 0, 16, 16)))
+	logo := img.Bytes()
+	sum := sha256.Sum256(logo)
+	sha := hex.EncodeToString(sum[:])
+	var pediuLogo int
+	loja := localapi.Response{OK: true, Account: `EXEMPLO\joao.silva`, Catalog: &protocol.SelfServiceCatalog{Brand: "patchd · TJ", Logo: sha,
+		Items:  []protocol.SelfServiceItem{{App: "7zip", Name: "7-Zip", Installed: "26.01", Target: "26.04", Action: "atualizar"}},
+		Reboot: &protocol.SelfServiceRebootState{Allowed: true}}}
+	entrega := logo
+	a := New(func(_ context.Context, r localapi.Request) (localapi.Response, error) {
+		if r.Op == localapi.OpLogo {
+			pediuLogo++
+			return localapi.Response{OK: true, Logo: entrega, LogoType: "image/png"}, nil
+		}
+		return loja, nil
+	})
+	a.Addr, a.Version = "127.0.0.1:5555", "v0.17.6"
+	a.Now = func() time.Time { return time.Date(2026, 10, 19, 9, 30, 0, 0, time.UTC) }
+
+	b := get(a, a.base()).Body.String()
+	src := a.base() + "logo?v=" + sha[:16]
+	for _, tr := range []string{
+		`<aside class="lado"`, `<input type="checkbox" id="menu" class="menu-chk"`, `<img src="` + src + `"`,
+		`Central de software<small>patchd · TJ</small>`, `<span class="avatar" aria-hidden="true">JS</span>`,
+		`<strong>joao.silva</strong><small>EXEMPLO · este computador</small>`,
+		`<p class="grupo"><span class="rot">Software</span></p>`, `<p class="grupo"><span class="rot">Computador</span></p>`,
+		`title="Atualizações" class="ativo" aria-current="page">`, `<span class="cont" title="atualizações disponíveis">1</span>`,
+		`<span class="titulo">Atualizações</span>`, `Agente <b>v0.17.6</b>`, `Consultado às 19/10 09:30`,
+	} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("faltou %q", tr)
+		}
+	}
+	if strings.Contains(b, "<script") {
+		t.Error("sem JavaScript")
+	}
+	get(a, a.base()+"?aba=loja")
+	if pediuLogo != 1 {
+		t.Errorf("o logotipo é pedido uma vez só: %d", pediuLogo)
+	}
+	w := get(a, src)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" || !bytes.Equal(w.Body.Bytes(), logo) ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "img-src 'self' data:") {
+		t.Errorf("servir o logotipo: %d %v", w.Code, w.Header())
+	}
+	if w := get(a, "/s/outro/logo"); w.Code != 404 {
+		t.Error("sem o segredo, nada")
+	}
+
+	// O agente entregou outra coisa (ou nada): fica o ícone padrão.
+	b2 := New(func(_ context.Context, r localapi.Request) (localapi.Response, error) {
+		if r.Op == localapi.OpLogo {
+			return localapi.Response{OK: true, Logo: []byte("GIF89a"), LogoType: "image/png"}, nil
+		}
+		return loja, nil
+	})
+	b2.Addr = "127.0.0.1:5555"
+	if p := get(b2, b2.base()).Body.String(); strings.Contains(p, "<img") || !strings.Contains(p, `<span class="escudo">`) {
+		t.Error("logotipo que não confere não aparece")
+	}
+	if w := get(b2, b2.base()+"logo"); w.Code != 404 {
+		t.Error("sem logotipo guardado, 404")
 	}
 }

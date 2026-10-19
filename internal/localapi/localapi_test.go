@@ -2,10 +2,15 @@ package localapi
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"net"
@@ -382,5 +387,80 @@ func TestLojaComJobPendenteAcorda(t *testing.T) {
 	s.Serve(context.Background(), Identity{Account: `EXEMPLO\ana`}, Request{Op: OpCatalog})
 	if acordou.Load() != 1 {
 		t.Errorf("entregue, aguardando a TI ou velho não acordam: %d", acordou.Load())
+	}
+}
+
+// backendComLogo: o servidor que também entrega o logotipo (Aula 19.1b).
+type backendComLogo struct {
+	*backend
+	logo  []byte
+	err   error
+	pegou atomic.Int32
+}
+
+func (b *backendComLogo) SelfServiceLogo(ctx context.Context, limit int64) ([]byte, error) {
+	b.pegou.Add(1)
+	return b.logo, b.err
+}
+
+func pngMinimo(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func shaHex(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
+
+// Aula 19.1b: o agente baixa o logotipo quando o SHA-256 anunciado muda, confere e repassa só
+// o que passou; o que falha não é tentado de novo a cada página.
+func TestLogotipoParaACentral(t *testing.T) {
+	logo := pngMinimo(t)
+	b := &backendComLogo{backend: &backend{loja: &protocol.SelfServiceCatalog{Brand: "patchd · TJ", Logo: shaHex(logo)}}, logo: logo}
+	s, _, agora := servidor(b)
+	ctx := context.Background()
+	id := Identity{Account: `EXEMPLO\teste`}
+	r := s.Serve(ctx, id, Request{Op: OpCatalog})
+	if !r.OK || r.Catalog.Logo != shaHex(logo) || r.Catalog.Brand != "patchd · TJ" || b.pegou.Load() != 1 {
+		t.Fatalf("loja: %+v (baixou %d)", r.Catalog, b.pegou.Load())
+	}
+	if r := s.Serve(ctx, id, Request{Op: OpLogo}); !r.OK || !bytes.Equal(r.Logo, logo) || r.LogoType != "image/png" {
+		t.Errorf("logo: %+v", r)
+	}
+	s.Serve(ctx, id, Request{Op: OpCatalog})
+	if b.pegou.Load() != 1 {
+		t.Error("o mesmo logotipo não é baixado de novo")
+	}
+	// Anunciado um, entregue outro: fica o anterior, e só tenta de novo depois de logoRetry.
+	outro := append([]byte(nil), logo...)
+	outro[len(outro)-1] ^= 1
+	b.loja.Logo = shaHex(outro)
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); r.Catalog.Logo != shaHex(logo) {
+		t.Errorf("SHA-256 diferente: a loja deveria anunciar o guardado, anunciou %q", r.Catalog.Logo)
+	}
+	s.Serve(ctx, id, Request{Op: OpCatalog})
+	if b.pegou.Load() != 2 {
+		t.Errorf("falha repetida a cada página: %d", b.pegou.Load())
+	}
+	*agora = agora.Add(logoRetry)
+	b.logo = []byte("GIF89a")
+	b.loja.Logo = shaHex(b.logo)
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); r.Catalog.Logo != shaHex(logo) || b.pegou.Load() != 3 {
+		t.Errorf("não é imagem: %q (%d)", r.Catalog.Logo, b.pegou.Load())
+	}
+	// O painel tirou o logotipo: a Central volta ao ícone.
+	b.loja.Logo = ""
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); r.Catalog.Logo != "" {
+		t.Error("sem logotipo no servidor")
+	}
+	if r := s.Serve(ctx, id, Request{Op: OpLogo}); !r.OK || r.Logo != nil {
+		t.Errorf("logo depois de tirar: %+v", r)
+	}
+	// Backend sem logotipo (o fake antigo): nada anunciado.
+	s2, _, _ := servidor(&backend{loja: &protocol.SelfServiceCatalog{Logo: shaHex(logo)}})
+	if r := s2.Serve(ctx, id, Request{Op: OpCatalog}); r.Catalog.Logo != "" {
+		t.Error("sem LogoBackend, sem logotipo")
 	}
 }

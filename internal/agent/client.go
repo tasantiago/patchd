@@ -184,6 +184,16 @@ func (c *Client) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceR
 	return out, err
 }
 
+// SelfServiceLogo baixa o logotipo do painel (Aula 19.1b), até limit bytes. Quem chama confere
+// o SHA-256 e a imagem.
+func (c *Client) SelfServiceLogo(ctx context.Context, limit int64) ([]byte, error) {
+	var b bytes.Buffer
+	if _, err := c.Download(ctx, protocol.SelfServiceLogoPath, &b, limit); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
 // newRequestID gera o X-Request-ID: o mesmo valor aparece no log do servidor.
 func newRequestID() string {
 	b := make([]byte, 8)

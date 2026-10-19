@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/userapp"
 )
 
@@ -54,6 +55,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 	}
 
 	app := userapp.New(userapp.Caller(localCall))
+	app.Version = buildinfo.Get().Version // Aula 19.1b: o selo na barra superior
 	ln, err := app.Listen()
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: porta local: %v\n", err)

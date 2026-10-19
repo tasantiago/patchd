@@ -15,7 +15,9 @@ import (
 const (
 	SelfServiceCatalogPath = "/api/v1/agent/selfservice/catalog"
 	SelfServiceRequestPath = "/api/v1/agent/selfservice/request"
-	MaxSelfServiceGroups   = 1024
+	// SelfServiceLogoPath (Aula 19.1b): o logotipo do painel, para a Central de software.
+	SelfServiceLogoPath  = "/api/v1/agent/selfservice/logo"
+	MaxSelfServiceGroups = 1024
 )
 
 // Ações que o usuário pede.
@@ -83,6 +85,11 @@ type SelfServiceCatalog struct {
 	// Reboot (Aula 17.6): o reinício pendente e o já pedido. Agentes até a v0.17.2 não
 	// repassam o campo.
 	Reboot *SelfServiceRebootState `json:"reboot,omitempty"`
+	// Aula 19.1b: o nome do painel (PATCHD_PANEL_TITLE) e o SHA-256 do logotipo enviado pelo
+	// admin (vazio: nenhum), para a Central ter a mesma cara. O agente baixa o logotipo por
+	// SelfServiceLogoPath quando o SHA-256 muda. Servidores até a 19.1 não mandam.
+	Brand string `json:"brand,omitempty"`
+	Logo  string `json:"logo,omitempty"`
 }
 
 // SelfServiceJob é um pedido do usuário, como o app mostra em "Meus pedidos".

@@ -3,6 +3,9 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -17,9 +20,11 @@ import (
 
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 // Aula 19.1: o layout do tribunal. Barra lateral com os grupos (Administração só para admin),
@@ -240,5 +245,47 @@ func TestLogotipoDoPainel(t *testing.T) {
 	if strings.Join(acoes, ",") != "aparencia.logo_remover|,aparencia.logo|png · 1 KB · 128x96" &&
 		strings.Join(acoes, ",") != "aparencia.logo|png · 1 KB · 128x96,aparencia.logo_remover|" {
 		t.Errorf("auditoria: %v", acoes)
+	}
+}
+
+// Aula 19.1b: a loja leva o nome do painel e o SHA-256 do logotipo; o agente baixa o arquivo
+// com a credencial da máquina.
+func TestLogotipoParaOAgente(t *testing.T) {
+	m, _ := thirdparty.Default()
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(&m), api.WithBrand("patchd · TJ"))
+	ctx := context.Background()
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	_, _ = st.CreateEnrollmentToken(ctx, hash, "teste", time.Now().Add(time.Hour), 1)
+	maq := registra(t, h, tok)
+	loja := func() protocol.SelfServiceCatalog {
+		t.Helper()
+		r := envia(h, "POST", protocol.SelfServiceCatalogPath, maq.Credential, []byte(`{"account":"EXEMPLO\\ana","groups":[]}`))
+		var c protocol.SelfServiceCatalog
+		if r.Code != http.StatusOK || json.Unmarshal(r.Body.Bytes(), &c) != nil {
+			t.Fatalf("loja: %d %s", r.Code, r.Body)
+		}
+		return c
+	}
+	if c := loja(); c.Brand != "patchd · TJ" || c.Logo != "" {
+		t.Errorf("sem logotipo: %+v", c)
+	}
+	if r := envia(h, "GET", protocol.SelfServiceLogoPath, maq.Credential, nil); r.Code != http.StatusNotFound {
+		t.Errorf("sem logotipo: %d", r.Code)
+	}
+	arq := pngDe(t, 32, 32)
+	if r := envioDeLogo(h, sessaoAdmin, "enviar", arq); r.Header().Get("Location") != "/painel/configuracao?logo=gravado" {
+		t.Fatalf("enviar: %s", r.Header().Get("Location"))
+	}
+	sum := sha256.Sum256(arq)
+	if c := loja(); c.Logo != hex.EncodeToString(sum[:]) {
+		t.Errorf("a loja anuncia o SHA-256: %q", c.Logo)
+	}
+	if r := envia(h, "GET", protocol.SelfServiceLogoPath, "", nil); r.Code != http.StatusUnauthorized {
+		t.Errorf("sem credencial: %d", r.Code)
+	}
+	r := envia(h, "GET", protocol.SelfServiceLogoPath, maq.Credential, nil)
+	if r.Code != 200 || r.Header().Get("Content-Type") != "image/png" || !bytes.Equal(r.Body.Bytes(), arq) {
+		t.Errorf("agente: %d %v", r.Code, r.Header())
 	}
 }

@@ -10,6 +10,8 @@ package localapi
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/agent"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/ui"
 )
 
 // PipeName é o nome do canal. Um nome fixo: o app não precisa de configuração.
@@ -33,6 +36,7 @@ const (
 	OpWhoami  = "whoami"  // quem o agente vê: conta e grupos do token
 	OpCatalog = "catalog" // a loja do usuário nesta máquina
 	OpRequest = "request" // pedir atualizar ou instalar
+	OpLogo    = "logo"    // Aula 19.1b: o logotipo do painel, para a Central
 )
 
 // Códigos de erro do canal (Response.Code).
@@ -67,6 +71,9 @@ type Response struct {
 	Groups  []string                      `json:"groups,omitempty"` // só no whoami
 	Catalog *protocol.SelfServiceCatalog  `json:"catalog,omitempty"`
 	Result  *protocol.SelfServiceResponse `json:"result,omitempty"`
+	// Aula 19.1b: no "logo", a imagem já conferida pelo agente (vazia: nenhuma).
+	Logo     []byte `json:"logo,omitempty"`
+	LogoType string `json:"logo_type,omitempty"`
 }
 
 // Identity é quem abriu o pipe, como o token do Windows diz.
@@ -168,6 +175,15 @@ type Backend interface {
 	SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error)
 }
 
+// LogoBackend (Aula 19.1b): o servidor que entrega o logotipo do painel. Opcional: um
+// Backend sem ele deixa a Central com o ícone padrão.
+type LogoBackend interface {
+	SelfServiceLogo(ctx context.Context, limit int64) ([]byte, error)
+}
+
+// logoRetry: depois de uma falha, o mesmo logotipo só é tentado de novo depois disso.
+const logoRetry = 10 * time.Minute
+
 // Limites do canal, por usuário (a conta, sem diferenciar maiúsculas).
 const (
 	RequestLimit  = 5 // pedidos (atualizar, instalar)...
@@ -200,6 +216,13 @@ type Server struct {
 	sem  chan struct{}
 	mu   sync.Mutex
 	hits map[string][]time.Time
+
+	logoMu    sync.Mutex
+	logoSHA   string // o que está guardado; vazio: nenhum
+	logoType  string
+	logoData  []byte
+	logoFail  string // o SHA-256 que falhou por último, e quando
+	logoFailT time.Time
 }
 
 func (s *Server) init() {
@@ -296,7 +319,15 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 				cat.Reboot.Pending = st.Pending
 			}
 		}
+		cat.Logo = s.syncLogo(ctx, cat.Logo)
 		return Response{OK: true, Account: id.Account, Catalog: &cat}
+	case OpLogo:
+		if wait, ok := s.allow("q:"+id.Account, QueryLimit, QueryWindow); !ok {
+			return limited(wait)
+		}
+		s.logoMu.Lock()
+		defer s.logoMu.Unlock()
+		return Response{OK: true, Account: id.Account, Logo: s.logoData, LogoType: s.logoType}
 	case OpRequest:
 		if err := checkRequest(req); err != nil {
 			return fail(CodeInvalid, err.Error())
@@ -318,6 +349,45 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 	default:
 		return fail(CodeInvalid, fmt.Sprintf("operação desconhecida %q", req.Op))
 	}
+}
+
+// syncLogo deixa guardado o logotipo que o servidor anuncia (want: o SHA-256) e devolve o
+// SHA-256 do que está guardado, para a Central só pedir o que o agente tem. A imagem é
+// conferida aqui (SHA-256, PNG ou JPEG de verdade, tamanho e pixels): o app recebe pelo
+// canal só o que passou.
+func (s *Server) syncLogo(ctx context.Context, want string) string {
+	s.logoMu.Lock()
+	defer s.logoMu.Unlock()
+	lb, ok := s.Backend.(LogoBackend)
+	switch {
+	case want == "" || !ok:
+		s.logoSHA, s.logoType, s.logoData = "", "", nil
+		return ""
+	case want == s.logoSHA:
+		return want
+	case want == s.logoFail && s.now().Sub(s.logoFailT) < logoRetry:
+		return s.logoSHA
+	}
+	lctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	b, err := lb.SelfServiceLogo(lctx, ui.MaxLogoSize)
+	if err == nil {
+		sum := sha256.Sum256(b)
+		if got := hex.EncodeToString(sum[:]); got != want {
+			err = fmt.Errorf("SHA-256 diferente do anunciado (%s…)", got[:12])
+		}
+	}
+	var ct string
+	if err == nil {
+		ct, _, _, err = ui.CheckLogo(b)
+	}
+	if err != nil {
+		s.Logger.Warn("autoatendimento: logotipo do painel não usado", "error", err)
+		s.logoFail, s.logoFailT = want, s.now()
+		return s.logoSHA
+	}
+	s.logoSHA, s.logoType, s.logoData = want, ct, b
+	return want
 }
 
 // undelivered: há job do usuário pendente (criado, não entregue), de até um dia atrás.
