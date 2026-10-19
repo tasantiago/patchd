@@ -457,3 +457,20 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   sistema). O e-mail da 18.6 lembra o comando.
 - O `selfservice catalog` mostra o pedido que espera como "pedido à TI nº N" (antes saía
   "job 0").
+
+## Ofertas em lote e a Central renovada (Aula 18.8)
+
+- Configuração › Autoatendimento é um formulário só: mude as caixas e os grupos de quantas
+  linhas quiser e clique em **Salvar alterações**. Só as linhas que mudaram são gravadas e
+  vão para a auditoria (`autoatendimento.oferta` ou `.remover`, com "em lote"), mais um
+  resumo `autoatendimento.oferta_lote`.
+- **Em lote**: marque os programas na primeira coluna (ou escolha "todos os programas") e
+  escolha o que aplicar: atualizar, instalar, aprovação da TI e grupos, cada um com "manter".
+  O lote vale por cima do que está na tela.
+- Tudo ou nada: um grupo inválido em qualquer linha e nada é gravado; a página volta com o
+  que foi digitado e a linha marcada.
+- A Central de software confere a cada minuto se a cópia `patchd-app.exe` foi trocada por
+  uma atualização do agente e, se foi, reabre sozinha com a nova (o ícone some e volta; a
+  página aberta no navegador para de responder: abra de novo pelo ícone). Se a cópia sumir
+  (agente removido, `-user-app=false`), a Central fecha. Vale a partir da release do agente
+  com a Aula 18.8; a Central aberta antes dela ainda precisa de um último logon.
