@@ -17,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/ui"
 )
 
 // As telas do painel (Aula 7.6): a frota, o detalhe de uma máquina e as aposentadas.
@@ -530,32 +531,32 @@ var pages = template.Must(template.New("").Parse(`
 <div class="usuario" title="{{.Session.Greeting}} · {{.RoleLabel}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot"><strong>{{.Session.Greeting}}</strong><small>{{.RoleLabel}} · {{.Session.SourceLabel}}</small></span></div>
 <nav aria-label="principal">
 <p class="grupo"><span class="rot">Navegação</span></p>
-<a href="/painel/" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + icFrota + `<span class="rot">Frota</span></a>
-<a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + icInventario + `<span class="rot">Inventário</span></a>
-<a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + icAposentadas + `<span class="rot">Aposentadas</span></a>
+<a href="/painel/" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Frota</span></a>
+<a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + ui.IcInventario + `<span class="rot">Inventário</span></a>
+<a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAposentadas + `<span class="rot">Aposentadas</span></a>
 <p class="grupo"><span class="rot">Patch</span></p>
-<a href="/painel/patch?aba=geral" title="Patch › Visão geral" {{if and (eq .Nav "patch") (eq .Sub "geral")}}class="ativo" aria-current="page"{{end}}>` + icGeral + `<span class="rot">Visão geral</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}</a>
-<a href="/painel/patch" title="Patch › Sistema operacional" {{if and (eq .Nav "patch") (ne .Sub "geral") (ne .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + icSistema + `<span class="rot">Sistema</span></a>
-<a href="/painel/patch?aba=terceiros" title="Patch › Programas de terceiros" {{if and (eq .Nav "patch") (eq .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + icTerceiros + `<span class="rot">Terceiros</span></a>
+<a href="/painel/patch?aba=geral" title="Patch › Visão geral" {{if and (eq .Nav "patch") (eq .Sub "geral")}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Visão geral</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}</a>
+<a href="/painel/patch" title="Patch › Sistema operacional" {{if and (eq .Nav "patch") (ne .Sub "geral") (ne .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + ui.IcSistema + `<span class="rot">Sistema</span></a>
+<a href="/painel/patch?aba=terceiros" title="Patch › Programas de terceiros" {{if and (eq .Nav "patch") (eq .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + ui.IcTerceiros + `<span class="rot">Terceiros</span></a>
 <p class="grupo"><span class="rot">Automação</span></p>
-<a href="/painel/campanhas" title="Campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}>` + icCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
-<a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + icJobs + `<span class="rot">Jobs</span></a>
-<a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + icAneis + `<span class="rot">Anéis</span></a>
-<a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + icLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
+<a href="/painel/campanhas" title="Campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
+<a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Jobs</span></a>
+<a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Anéis</span></a>
+<a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
 {{if .Admin}}<p class="grupo"><span class="rot">Administração</span></p>
-<a href="/painel/configuracao" title="Configuração" {{if and (eq .Nav "configuracao") (ne .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + icConfig + `<span class="rot">Configuração</span></a>
-<a href="/painel/configuracao?aba=auditoria" title="Auditoria" {{if and (eq .Nav "configuracao") (eq .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + icAuditoria + `<span class="rot">Auditoria</span></a>
+<a href="/painel/configuracao" title="Configuração" {{if and (eq .Nav "configuracao") (ne .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Configuração</span></a>
+<a href="/painel/configuracao?aba=auditoria" title="Auditoria" {{if and (eq .Nav "configuracao") (eq .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcAuditoria + `<span class="rot">Auditoria</span></a>
 {{end}}
 </nav></aside>
 <label for="menu" class="veu" aria-hidden="true"></label>
 <div class="area">
 <header class="barra-topo">
-<label for="menu" class="hamb" title="Recolher ou abrir o menu">` + icMenu + `<span class="sr">menu</span></label>
+<label for="menu" class="hamb" title="Recolher ou abrir o menu">` + ui.IcMenu + `<span class="sr">menu</span></label>
 <span class="trilha">{{with .Section}}<span class="secao">{{.}}</span><span class="sep" aria-hidden="true">›</span>{{end}}<span class="titulo">{{.Title}}</span></span>
 <span class="selos">{{if .ServerVersion}}<span class="selo" title="versão do servidor">Servidor <b>{{.ServerVersion}}</b></span>{{end}}{{if .AgentVersion}}<span class="selo" title="versão do agente publicada para as máquinas">Agente <b>{{.AgentVersion}}</b></span>{{end}}</span>
-<details class="conta"><summary title="{{.Session.Username}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="nome">{{.Session.Greeting}}</span>` + icAbaixo + `</summary>
+<details class="conta"><summary title="{{.Session.Username}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="nome">{{.Session.Greeting}}</span>` + ui.IcAbaixo + `</summary>
 <div class="conta-menu"><p><strong>{{.Session.Greeting}}</strong><span>{{.Session.Username}} · {{.Session.SourceLabel}} · {{.Session.Role}}</span></p>
-<form method="post" action="/painel/sair"><button type="submit" class="sair">` + icSair + `Sair</button></form></div></details>
+<form method="post" action="/painel/sair"><button type="submit" class="sair">` + ui.IcSair + `Sair</button></form></div></details>
 </header>
 <main>
 {{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}

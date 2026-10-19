@@ -496,3 +496,23 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   `/painel/logo` com `nosniff`, CSP `sandbox` e cache pela versão do arquivo. Trocar e remover
   vão para a auditoria (`aparencia.logo`, `aparencia.logo_remover`). Sem logotipo, o ícone
   padrão. O patchd não traz o logotipo de nenhuma instituição: quem instala envia o seu.
+
+### A Central de software no mesmo layout (Aula 19.1b)
+
+- A Central usa o layout do painel (`internal/ui`, compartilhado): barra lateral com o
+  logotipo, o nome "Central de software" e o nome do painel, o usuário (conta e domínio,
+  com as iniciais) e as seções SOFTWARE (Atualizações, Loja, Meus pedidos) e COMPUTADOR
+  (Reinício); barra superior com a hora da consulta, o botão Atualizar e a versão do agente.
+- O logotipo é o mesmo do painel: a loja (`/api/v1/agent/selfservice/catalog`) leva o nome
+  do painel e o SHA-256 do logotipo; o agente baixa o arquivo por
+  `/api/v1/agent/selfservice/logo` (credencial da máquina) só quando o SHA-256 muda, confere
+  o SHA-256 e a imagem e entrega à Central pelo canal local (operação `logo`). Falhou, fica
+  o anterior (ou o ícone padrão) e o mesmo arquivo só é tentado de novo depois de 10 minutos.
+- Exige a release do agente com a 19.1b; com servidor até a 19.1, a Central fica com o
+  ícone padrão.
+- **Atualizar tudo** (com 2 ou mais atualizações para pedir): as que passam pela TI viram
+  pedidos à TI na hora; as outras entram numa fila da própria Central, que pede uma de cada
+  vez (o servidor só aceita uma instalação por máquina) e mostra "Instalando" e "Na fila".
+  Cada pedido é do usuário, pelo canal local, com a loja refeita pelo servidor. "Cancelar o
+  restante" tira da fila o que ainda não foi pedido. A fila vive enquanto a Central estiver
+  aberta; fechar a Central ou sair da sessão para a fila (o que já foi pedido continua).

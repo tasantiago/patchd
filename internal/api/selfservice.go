@@ -36,7 +36,27 @@ func (a *api) selfServiceCatalog(w http.ResponseWriter, r *http.Request, id stri
 		a.internalError(w, r, "montar a loja", err)
 		return
 	}
+	cat.Brand = a.brand // Aula 19.1b: a Central com o nome e o logotipo do painel
+	if l := a.panelLogo(r.Context()); l != nil {
+		cat.Logo = l.SHA256
+	}
 	writeJSON(w, http.StatusOK, cat)
+}
+
+// selfServiceLogo: GET /api/v1/agent/selfservice/logo, com a credencial da máquina (Aula 19.1b).
+// O mesmo arquivo de /painel/logo; o agente confere o SHA-256 e a imagem antes de usar.
+func (a *api) selfServiceLogo(w http.ResponseWriter, r *http.Request, id string) {
+	l := a.panelLogo(r.Context())
+	if l == nil {
+		writeError(w, http.StatusNotFound, "no_logo", "o painel não tem logotipo")
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", l.ContentType)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Length", fmt.Sprint(len(l.Data)))
+	_, _ = w.Write(l.Data)
 }
 
 func (a *api) selfServiceRequest(w http.ResponseWriter, r *http.Request, id string) {

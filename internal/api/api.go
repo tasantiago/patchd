@@ -181,6 +181,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	// Autoatendimento (Aula 17.2).
 	mux.Handle("POST "+protocol.SelfServiceCatalogPath, a.machineAuth(a.selfServiceCatalog))
 	mux.Handle("POST "+protocol.SelfServiceRequestPath, a.machineAuth(a.selfServiceRequest))
+	mux.Handle("GET "+protocol.SelfServiceLogoPath, a.machineAuth(a.selfServiceLogo)) // Aula 19.1b
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/favicon.svg", favicon)
 	mux.HandleFunc("GET /painel/logo", a.logoFile) // Aula 19.1: sem sessão, a tela de login também mostra

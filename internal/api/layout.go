@@ -1,13 +1,9 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"image"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,6 +15,7 @@ import (
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/ui"
 )
 
 // Layout do painel (Aula 19.1): o padrão das aplicações do tribunal. Barra lateral fixa com o
@@ -31,10 +28,6 @@ const (
 	chromeTTL = 20 * time.Second // contadores do menu
 	logoTTL   = time.Minute      // logotipo (outro servidor no mesmo banco vê a troca em até 1 min)
 	logoName  = "logo"
-	// logoMaxSide: o maior lado aceito, em pixels. O arquivo tem até 256 KB, mas um PNG pequeno
-	// pode declarar 30000x30000 e pedir gigabytes ao ser aberto: a conferência lê só o cabeçalho
-	// antes de decodificar.
-	logoMaxSide = 1024
 )
 
 // navCounts: os números ao lado dos itens do menu. Zero não aparece.
@@ -190,38 +183,6 @@ func (a *api) logoFile(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(l.Data)
 }
 
-// checkLogo confere o arquivo pelos bytes, nunca pelo nome nem pelo tipo que o navegador
-// mandou: PNG ou JPEG de verdade, inteiro, até logoMaxSide de lado.
-func checkLogo(b []byte) (contentType string, err error) {
-	switch {
-	case len(b) == 0:
-		return "", errors.New("o arquivo está vazio")
-	case len(b) > store.MaxPanelAsset:
-		return "", fmt.Errorf("o arquivo tem %d KB; o limite é %d KB", (len(b)+1023)/1024, store.MaxPanelAsset/1024)
-	case bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")):
-		contentType = "image/png"
-	case bytes.HasPrefix(b, []byte{0xff, 0xd8, 0xff}):
-		contentType = "image/jpeg"
-	default:
-		return "", errors.New("só PNG ou JPEG (o conteúdo não começa como nenhum dos dois)")
-	}
-	decodeConfig, decode := png.DecodeConfig, png.Decode
-	if contentType == "image/jpeg" {
-		decodeConfig, decode = jpeg.DecodeConfig, jpeg.Decode
-	}
-	cfg, err := decodeConfig(bytes.NewReader(b))
-	if err != nil {
-		return "", errors.New("a imagem está corrompida ou truncada")
-	}
-	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > logoMaxSide || cfg.Height > logoMaxSide {
-		return "", fmt.Errorf("a imagem tem %dx%d pixels; o máximo é %dx%d", cfg.Width, cfg.Height, logoMaxSide, logoMaxSide)
-	}
-	if _, err := decode(bytes.NewReader(b)); err != nil {
-		return "", errors.New("a imagem está corrompida ou truncada")
-	}
-	return contentType, nil
-}
-
 // logoMaxBody: o arquivo e a moldura do multipart.
 const logoMaxBody = store.MaxPanelAsset + 16<<10
 
@@ -265,7 +226,7 @@ func (a *api) logoAction(w http.ResponseWriter, r *http.Request, s panel.Session
 		back("erro=logo&motivo=" + url.QueryEscape("não deu para ler o arquivo"))
 		return
 	}
-	ct, err := checkLogo(data)
+	ct, width, height, err := ui.CheckLogo(data)
 	if err != nil {
 		back("erro=logo&motivo=" + url.QueryEscape(err.Error()))
 		return
@@ -275,8 +236,7 @@ func (a *api) logoAction(w http.ResponseWriter, r *http.Request, s panel.Session
 		return
 	}
 	a.logoChanged()
-	cfg, _, _ := image.DecodeConfig(bytes.NewReader(data))
-	detail := fmt.Sprintf("%s · %d KB · %dx%d", strings.TrimPrefix(ct, "image/"), (len(data)+1023)/1024, cfg.Width, cfg.Height)
+	detail := fmt.Sprintf("%s · %d KB · %dx%d", strings.TrimPrefix(ct, "image/"), (len(data)+1023)/1024, width, height)
 	a.audit(r, s, "aparencia.logo", "logotipo", detail)
 	a.logger.Info("logotipo do painel trocado", "username", s.Username, "detail", detail, "request_id", RequestID(r.Context()))
 	back("logo=gravado")
@@ -294,7 +254,7 @@ type logoView struct {
 }
 
 func (a *api) logoCard(ctx context.Context) (*logoView, error) {
-	v := &logoView{MaxKB: store.MaxPanelAsset / 1024, MaxSide: logoMaxSide}
+	v := &logoView{MaxKB: store.MaxPanelAsset / 1024, MaxSide: ui.MaxLogoSide}
 	l, ok, err := a.store.PanelAsset(ctx, logoName)
 	if err != nil || !ok {
 		return v, err
@@ -359,26 +319,3 @@ func (b pageBase) RoleLabel() string {
 	}
 	return "Leitura"
 }
-
-// Ícones de linha do menu (Aula 19.1), desenhados aqui: currentColor, sem arquivo de fora.
-func icon(paths string) string {
-	return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` + paths + `</svg>`
-}
-
-var (
-	icFrota       = icon(`<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>`)
-	icInventario  = icon(`<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>`)
-	icAposentadas = icon(`<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/>`)
-	icGeral       = icon(`<path d="M3 21h18M7 17v-6M12 17V5M17 17v-9"/>`)
-	icSistema     = icon(`<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/>`)
-	icTerceiros   = icon(`<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>`)
-	icCampanhas   = icon(`<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>`)
-	icJobs        = icon(`<path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/>`)
-	icAneis       = icon(`<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>`)
-	icLoja        = icon(`<path d="M6 7h12l1 14H5z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>`)
-	icConfig      = icon(`<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>`)
-	icAuditoria   = icon(`<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5"/><path d="M14 3l5 5v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="M21 21l-2.3-2.3"/>`)
-	icMenu        = icon(`<path d="M4 6h16M4 12h16M4 18h16"/>`)
-	icSair        = icon(`<path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5M21 12H9"/>`)
-	icAbaixo      = icon(`<path d="M6 9l6 6 6-6"/>`)
-)

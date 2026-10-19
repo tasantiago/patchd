@@ -12,8 +12,10 @@ package userapp
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
@@ -29,6 +31,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/localapi"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/ui"
 )
 
 // Caller é o canal local (localapi.Call); os testes o substituem.
@@ -44,9 +47,21 @@ type App struct {
 	Addr  string // 127.0.0.1:porta, para conferir Host e Origin
 	Now   func() time.Time
 	Loc   *time.Location // fuso das datas da página; nil: o do computador
+	// Version é a versão do agente, no selo da barra superior (Aula 19.1b); vazio: sem selo.
+	Version string
 
 	mu    sync.Mutex
 	flash *flash
+	// Fila do "Atualizar tudo" (Aula 19.1b, queue.go).
+	life         context.Context // o do Serve: a fila para quando a Central fecha
+	queue        []string
+	queueCurrent string
+	queueFailed  []string
+	queueRunning bool
+	queueCheck   time.Duration // QueueCheck; os testes encurtam
+	// O logotipo do painel (Aula 19.1b), como o agente entregou e a página conferiu.
+	logoSHA, logoType string
+	logoData          []byte
 
 	kickOnce      sync.Once
 	kick          chan struct{}
@@ -91,6 +106,9 @@ func (a *App) TabURL(tab string) string {
 
 // Serve atende até o contexto acabar.
 func (a *App) Serve(ctx context.Context, ln net.Listener) error {
+	a.mu.Lock()
+	a.life = ctx
+	a.mu.Unlock()
 	srv := &http.Server{Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
 	go func() {
@@ -110,7 +128,7 @@ func (a *App) Serve(ctx context.Context, ln net.Listener) error {
 func (a *App) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		// O segredo está no caminho: same-origin só manda o Referer para a própria página. Aula
@@ -133,12 +151,24 @@ func (a *App) Handler() http.Handler {
 		switch {
 		case sub == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 			a.page(w, r)
+		case sub == "logo" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+			a.logo(w, r)
 		case sub == "pedir" && r.Method == http.MethodPost:
 			if !a.sameOrigin(r) {
 				http.Error(w, "origem recusada", http.StatusForbidden)
 				return
 			}
 			a.request(w, r)
+		case (sub == "atualizar-tudo" || sub == "cancelar-fila") && r.Method == http.MethodPost: // Aula 19.1b
+			if !a.sameOrigin(r) {
+				http.Error(w, "origem recusada", http.StatusForbidden)
+				return
+			}
+			if sub == "atualizar-tudo" {
+				a.updateAll(w, r)
+			} else {
+				a.cancelAll(w, r)
+			}
 		default:
 			http.Error(w, "não encontrado", http.StatusNotFound)
 		}
@@ -166,6 +196,8 @@ const (
 
 type tab struct {
 	ID, Label string
+	Icon      template.HTML // Aula 19.1b: o ícone de linha da barra lateral
+	Href      string
 	Count     int  // um número ao lado do rótulo (atualizações disponíveis); 0: nada
 	Alert     bool // um "!" ao lado do rótulo (reinício pendente sem hora escolhida)
 	Active    bool
@@ -224,6 +256,8 @@ type Item struct {
 	App, Name, Installed, Target, Reason string
 	Approval                             bool  // Aula 18.4: o pedido passa pela TI
 	Pending                              int64 // o pedido deste usuário que já espera a TI
+	// Aula 19.1b: na fila do "Atualizar tudo" (Queued) ou pedido por ela e instalando (Running).
+	Queued, Running bool
 }
 
 // reqView é um pedido em "Meus pedidos".
@@ -237,13 +271,21 @@ type reqView struct {
 type pageData struct {
 	Title, Base, Account, Error, Checked, Tab string
 	Tabs                                      []tab
-	Flash                                     *flash
-	Updates, Current                          []Item
-	Install, Installed, Unavailable           []Item
-	Confirm                                   *Item
-	Requests                                  []reqView
-	Reboot                                    *rebootView
-	Busy                                      int64
+	// Aula 19.1b: o layout do painel. Tabs são as do grupo Software; Computer, a do Reinício.
+	Computer               []tab
+	Brand, Logo, Version   string
+	User, Domain, Initials string
+	TabLabel               string
+	// Aula 19.1b: o "Atualizar tudo" (com 2 ou mais atualizações que ainda dá para pedir) e a fila.
+	UpdateAll                       int
+	Queue                           queueState
+	Flash                           *flash
+	Updates, Current                []Item
+	Install, Installed, Unavailable []Item
+	Confirm                         *Item
+	Requests                        []reqView
+	Reboot                          *rebootView
+	Busy                            int64
 }
 
 func (a *App) page(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +308,9 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		d.Error = userError(resp)
 	default:
 		d.Account = resp.Account
+		d.User, d.Domain, d.Initials = splitAccount(resp.Account)
+		d.Brand = resp.Catalog.Brand
+		a.syncLogo(ctx, resp.Catalog.Logo)
 		d.Busy = resp.Catalog.OpenJob
 		refresh = d.Busy > 0
 		for _, it := range resp.Catalog.Items {
@@ -314,24 +359,114 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.Tabs = []tab{
-		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
-		{ID: tabStore, Label: "Loja"},
-		{ID: tabRequests, Label: "Meus pedidos"},
+		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates), Icon: template.HTML(ui.IcAtualizar)},
+		{ID: tabStore, Label: "Loja", Icon: template.HTML(ui.IcLoja)},
+		{ID: tabRequests, Label: "Meus pedidos", Icon: template.HTML(ui.IcPedidos)},
 	}
 	if d.Reboot != nil { // agentes até a v0.17.2 não trazem o reinício
-		d.Tabs = append(d.Tabs, tab{ID: tabReboot, Label: "Reinício", Alert: d.Reboot.Options != nil})
+		d.Computer = []tab{{ID: tabReboot, Label: "Reinício", Alert: d.Reboot.Options != nil, Icon: template.HTML(ui.IcReinicio)}}
 	} else if d.Tab == tabReboot && d.Error == "" {
 		d.Tab = tabUpdates
 	}
-	for i := range d.Tabs {
-		d.Tabs[i].Active = d.Tabs[i].ID == d.Tab
+	for _, l := range [][]tab{d.Tabs, d.Computer} {
+		for i := range l {
+			l[i].Href = a.base() + "?aba=" + l[i].ID
+			if l[i].Active = l[i].ID == d.Tab; l[i].Active {
+				d.TabLabel = l[i].Label
+			}
+		}
 	}
+	d.Version = a.Version
+	d.Queue = a.queueView()
+	for i := range d.Updates {
+		it := &d.Updates[i]
+		it.Queued = slices.Contains(d.Queue.Waiting, it.App)
+		it.Running = it.App == d.Queue.Current
+		if !it.Queued && !it.Running && it.Pending == 0 {
+			d.UpdateAll++
+		}
+	}
+	if d.UpdateAll < 2 {
+		d.UpdateAll = 0
+	}
+	if len(d.Queue.Waiting) > 0 || d.Queue.Current != "" {
+		refresh = true // a página acompanha a fila sozinha
+	}
+	a.mu.Lock()
+	if a.logoSHA != "" {
+		d.Logo = a.base() + "logo?v=" + a.logoSHA[:16]
+	}
+	a.mu.Unlock()
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	if refresh {
 		h.Set("Refresh", "15") // a página acompanha a instalação sozinha (sem JavaScript)
 	}
 	_ = pageTmpl.Execute(w, d)
+}
+
+// splitAccount separa DOMINIO\usuario e tira as iniciais do usuário (o painel não guarda foto).
+func splitAccount(acc string) (user, domain, initials string) {
+	user = acc
+	if i := strings.LastIndexByte(acc, '\\'); i >= 0 {
+		domain, user = acc[:i], acc[i+1:]
+	}
+	words := strings.FieldsFunc(user, func(r rune) bool { return unicode.IsSpace(r) || r == '.' || r == '_' || r == '-' })
+	var out []rune
+	for i, w := range words {
+		if i != 0 && i != len(words)-1 {
+			continue
+		}
+		if r := []rune(w); len(r) > 0 && unicode.IsLetter(r[0]) {
+			out = append(out, unicode.ToUpper(r[0]))
+		}
+	}
+	if len(out) == 0 {
+		out = []rune{'?'}
+	}
+	return user, domain, string(out)
+}
+
+// syncLogo guarda o logotipo que o agente anuncia na loja (want: o SHA-256). O agente já
+// conferiu; a página confere de novo antes de servir (o canal é local, mas não custa).
+func (a *App) syncLogo(ctx context.Context, want string) {
+	a.mu.Lock()
+	have := a.logoSHA
+	if want == "" {
+		a.logoSHA, a.logoType, a.logoData = "", "", nil
+	}
+	a.mu.Unlock()
+	if want == "" || want == have {
+		return
+	}
+	resp, err := a.Call(ctx, localapi.Request{Op: localapi.OpLogo})
+	if err != nil || !resp.OK || len(resp.Logo) == 0 {
+		return
+	}
+	sum := sha256.Sum256(resp.Logo)
+	ct, _, _, err := ui.CheckLogo(resp.Logo)
+	if hex.EncodeToString(sum[:]) != want || err != nil {
+		return
+	}
+	a.mu.Lock()
+	a.logoSHA, a.logoType, a.logoData = want, ct, resp.Logo
+	a.mu.Unlock()
+}
+
+// logo serve o logotipo guardado (Aula 19.1b).
+func (a *App) logo(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	data, ct := a.logoData, a.logoType
+	a.mu.Unlock()
+	if data == nil {
+		http.Error(w, "não encontrado", http.StatusNotFound)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", ct)
+	h.Set("Cache-Control", "private, max-age=86400")
+	h.Set("Content-Length", strconv.Itoa(len(data)))
+	_, _ = w.Write(data)
 }
 
 // stateLabel é o estado do job em palavras do usuário, com a cor.
@@ -656,19 +791,37 @@ func (a *App) kickWatch() {
 
 var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Title}}</title><style>` + css + `</style></head><body>
-<header><span class="marca">` + shield + `{{.Title}}</span>{{if .Account}}<span class="quem">{{.Account}}</span>{{end}}</header>
-<nav class="abas" aria-label="seções">{{range .Tabs}}<a href="{{$.Base}}?aba={{.ID}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="conta">{{.Count}}</span>{{end}}{{if .Alert}} <span class="conta alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}</nav>
+<title>{{if .TabLabel}}{{.TabLabel}} · {{end}}{{.Title}}</title><style>` + ui.LayoutCSS + css + `</style></head><body>
+<input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
+<aside class="lado" aria-label="menu lateral">
+<a class="marca" href="{{.Base}}" title="{{.Title}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + ui.ShieldSVG + `</span>{{end}}<span class="rot">{{.Title}}{{if .Brand}}<small>{{.Brand}}</small>{{end}}</span></a>
+{{if .Account}}<div class="usuario" title="{{.Account}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot"><strong>{{.User}}</strong><small>{{if .Domain}}{{.Domain}} · {{end}}este computador</small></span></div>{{end}}
+<nav aria-label="seções">
+<p class="grupo"><span class="rot">Software</span></p>
+{{range .Tabs}}{{template "item" .}}{{end}}
+{{if .Computer}}<p class="grupo"><span class="rot">Computador</span></p>
+{{range .Computer}}{{template "item" .}}{{end}}{{end}}
+</nav></aside>
+<label for="menu" class="veu" aria-hidden="true"></label>
+<div class="area">
+<header class="barra-topo">
+<label for="menu" class="hamb" title="Recolher ou abrir o menu">` + ui.IcMenu + `<span class="sr">menu</span></label>
+<span class="trilha"><span class="secao">{{.Title}}</span>{{if .TabLabel}}<span class="sep" aria-hidden="true">›</span><span class="titulo">{{.TabLabel}}</span>{{end}}</span>
+<span class="selos"><span class="consulta">Consultado às {{.Checked}}</span><a class="btn-atualizar" href="{{.Base}}?aba={{.Tab}}" title="consultar de novo">` + ui.IcAtualizar + `<span>Atualizar</span></a>{{if .Version}}<span class="selo" title="versão do patchd neste computador">Agente <b>{{.Version}}</b></span>{{end}}</span>
+</header>
 <main>
 {{with .Flash}}<p class="aviso {{.Kind}}" role="status">{{.Text}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{else}}
 {{if .Busy}}<p class="aviso andamento" role="status"><span class="gira" aria-hidden="true"></span>Há uma instalação em andamento neste computador (pedido nº {{.Busy}}). Esta página se atualiza sozinha.</p>{{end}}
 {{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else}}{{template "pedidos" .}}{{end}}
 {{end}}
-</main><footer>Consultado às {{.Checked}} · <a href="{{.Base}}?aba={{.Tab}}">atualizar a página</a></footer></body></html>
-{{define "atualizacoes"}}<section><h1>Atualizações para você</h1>
+</main></div></body></html>
+{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{.Icon}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}
+{{define "atualizacoes"}}<section><div class="cab"><h1>Atualizações para você</h1>{{if .UpdateAll}}<form method="post" action="{{$.Base}}atualizar-tudo"><button type="submit">Atualizar tudo ({{.UpdateAll}})</button></form>{{end}}</div>
+{{with .Queue}}{{if .Waiting}}<div class="fila" role="status"><span class="gira" aria-hidden="true"></span><span>Atualizando tudo, uma de cada vez: {{len .Waiting}} na fila. Deixe a Central aberta até terminar.</span><form method="post" action="{{$.Base}}cancelar-fila"><button class="sec" type="submit">Cancelar o restante</button></form></div>{{end}}
+{{if .Failed}}<ul class="falhas">{{range .Failed}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}
 {{if .Updates}}<ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}} → <b>{{.Target}}</b>{{if .Approval}} · com aprovação da TI{{end}}</span></div>
-{{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
+{{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else if .Running}}<span class="selo andamento">Instalando</span>{{else if .Queued}}<span class="selo neutro">Na fila</span>{{else}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
 <button type="submit"{{if $.Busy}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Atualizar{{end}}</button></form>{{end}}</li>{{end}}</ul>
 <p class="nota">Feche o programa antes de atualizar. A instalação roda em segundo plano e leva poucos minutos.</p>
 {{else}}<p class="vazio">Nenhuma atualização disponível para você neste computador.</p>{{end}}
@@ -706,43 +859,45 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 </section>
 {{end}}`))
 
-const shield = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>`
-
+// css: o que é da Central, por cima do layout do painel (ui.LayoutCSS, Aula 19.1b).
 const css = `
-:root{--verde:#0b7a45;--fundo:#f9fafb;--borda:#e5e7eb;--texto:#111827;--muted:#6b7280;--azul:#066fd1;--azul-2:#0559a8;--vermelho:#d63939;--laranja:#f59f00;--ok:#2fb344;--raio:8px}
-*{box-sizing:border-box}
-body{margin:0;font:15px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--texto);background:var(--fundo)}
-header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0 1.25rem;min-height:56px;background:var(--verde);color:#fff}
-.marca{display:flex;align-items:center;gap:.55rem;font-weight:700;font-size:1.15rem}.marca svg{width:24px;height:24px}
-.quem{font-size:.8rem;color:#d5efe0}
-nav.abas{display:flex;gap:.25rem;padding:0 1.25rem;background:#fff;border-bottom:1px solid var(--borda)}
-nav.abas a{padding:.7rem .9rem;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;font-weight:600}
-nav.abas a.ativa{color:var(--verde);border-bottom-color:var(--verde)}
-main{max-width:44rem;margin:1.25rem auto;padding:0 1rem}
-section{background:#fff;border:1px solid var(--borda);border-radius:var(--raio);padding:1rem 1.25rem;margin:0 0 1rem}
-h1{font-size:1.15rem;margin:0 0 .75rem}h2{font-size:1rem;margin:0 0 .5rem;color:var(--muted)}
+body{font-size:15px}
+.lado .marca{font-size:1rem}
+main{max-width:52rem;margin:0 auto;padding:1.5rem 1.5rem 3rem}
+@media (max-width:600px){main{padding:1rem .9rem 2rem}.barra-topo{padding:0 .8rem}.trilha .secao,.trilha .sep{display:none}}
+.consulta{color:var(--muted);font-size:.8rem;white-space:nowrap;align-self:center}
+a.btn-atualizar{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .65rem;border:1px solid var(--borda);border-radius:999px;color:var(--texto);
+text-decoration:none;font-size:.8rem;background:#fff;white-space:nowrap}a.btn-atualizar:hover{background:#f1f3f7}a.btn-atualizar .ic{width:14px;height:14px}
+.selos{align-items:center}
+@media (max-width:960px){.selos{display:flex}.consulta,.selos .selo{display:none}}
+.lado .cont.alerta{background:var(--laranja)}
+.cab{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:0 0 .75rem}.cab h1{margin:0}
+.fila{display:flex;align-items:center;gap:.7rem;padding:.65rem .85rem;border:1px solid #c3dbf5;background:#eef5fd;color:#0b3f73;border-radius:var(--raio);margin:0 0 .75rem}
+.fila form{margin-left:auto}button.sec{background:#fff;color:var(--azul)}button.sec:hover{background:#eef5fd}
+ul.falhas{margin:0 0 .75rem;padding:.6rem .9rem .6rem 2rem;background:#fff6e0;border:1px solid #f6d68b;border-radius:var(--raio);color:#7a4b00;font-size:.88rem}
+section{background:#fff;border:1px solid var(--borda);border-radius:var(--raio);box-shadow:var(--sombra);padding:1rem 1.25rem;margin:0 0 1rem}
+h1{font-size:1.15rem;font-weight:600;margin:0 0 .75rem}h2{font-size:1rem;font-weight:600;margin:0 0 .5rem;color:var(--muted)}
 ul.lista{list-style:none;margin:0;padding:0}
 ul.lista li{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem 0;border-top:1px solid var(--borda)}
 ul.lista li:first-child{border-top:0}
 ul.lista li div{display:flex;flex-direction:column}
 .ver{color:var(--muted);font-size:.85rem}.ver b{color:var(--texto)}
 form{margin:0}
-button{font:inherit;font-size:.9rem;padding:.45rem 1.1rem;border-radius:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;cursor:pointer}
+button{font:inherit;font-size:.9rem;padding:.45rem 1.1rem;border-radius:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;cursor:pointer;white-space:nowrap}
 button:hover{background:var(--azul-2)}button:disabled{background:#c7d2df;border-color:#c7d2df;cursor:not-allowed}
-.selo{font-size:.82rem;font-weight:600;padding:.15rem .6rem;border-radius:999px;white-space:nowrap;text-align:right}
+.selo{font-size:.82rem;font-weight:600;padding:.15rem .6rem;border-radius:999px;white-space:nowrap;text-align:right;border:0}
+.barra-topo .selo{font-size:.74rem;font-weight:400;border:1px solid var(--borda);background:#f7f8fb;color:var(--muted)}
 .selo.sucesso{color:#14532d;background:#eaf7ee}.selo.andamento{color:#0b3f73;background:#eef5fd}.selo.atencao{color:#7a4b00;background:#fff6e0}
 .selo.erro{color:#7f1d1d;background:#fbe9e9}.selo.neutro{color:var(--muted);background:#f1f3f5}
 .det{color:var(--muted);font-size:.8rem;margin-top:.15rem}
-.conta{display:inline-block;min-width:1.3rem;padding:0 .35rem;border-radius:999px;background:var(--azul);color:#fff;font-size:.75rem;text-align:center}
 a.btn{display:inline-block;padding:.45rem 1.1rem;border:1px solid var(--azul);border-radius:6px;color:var(--azul);text-decoration:none;font-size:.9rem;background:#fff;white-space:nowrap}
 a.btn:hover{background:#eef5fd}
 section.confirma{border-color:#9cc3ec;background:#f7fbff}.confirma p{margin:.25rem 0 1rem}
 .botoes{display:flex;align-items:center;gap:1rem}a.sec{color:var(--muted)}
-.conta.alerta{background:var(--laranja)}
 .aviso.agendado{background:#eef5fd;border-color:#c3dbf5;color:#0b3f73}
 form.horas fieldset{border:0;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:.35rem}
 form.horas legend{font-weight:600;margin-bottom:.35rem}
-form.horas label{display:flex;align-items:center;gap:.55rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer}
+form.horas label{display:flex;align-items:center;gap:.55rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer;background:#fff}
 form.horas label:has(input:checked){border-color:var(--azul);background:#eef5fd}
 .vazio,.nota{color:var(--muted);margin:.25rem 0 0}.nota{font-size:.85rem;margin-top:.75rem}
 .aviso{padding:.75rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}
@@ -750,5 +905,4 @@ form.horas label:has(input:checked){border-color:var(--azul);background:#eef5fd}
 .aviso.erro{background:#fbe9e9;border-color:#ecb3b3;color:#7f1d1d}.aviso.andamento{background:#eef5fd;border-color:#c3dbf5;color:#0b3f73;display:flex;align-items:center;gap:.6rem}
 .gira{width:14px;height:14px;border:2px solid #9cc3ec;border-top-color:var(--azul);border-radius:50%;animation:g 1s linear infinite;flex:none}
 @keyframes g{to{transform:rotate(360deg)}}
-footer{text-align:center;color:var(--muted);font-size:.8rem;margin:0 0 1.5rem}footer a{color:var(--muted)}
 `
