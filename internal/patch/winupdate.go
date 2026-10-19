@@ -87,6 +87,7 @@ var retryHResults = map[uint32]bool{
 	0x8024001E: true, // WU_E_SERVICE_STOP: o serviço está parando
 }
 
+// #nosec G115 -- o HRESULT tem 32 bits; o WUA o entrega com sinal
 func hresultText(h int64) string { return wuerr.Text(uint32(h)) }
 
 // comFailure classifica a falha de uma chamada COM (Download, Install): um HRESULT de
@@ -116,6 +117,7 @@ func phaseFailures(targets []wuaTarget, ops []wuaOp) (failed []string, allRetry 
 			continue
 		}
 		failed = append(failed, fmt.Sprintf("%s %s (%s)", t.label(), resultName(op.ResultCode), hresultText(op.HResult)))
+		// #nosec G115 -- o HRESULT tem 32 bits; o WUA o entrega com sinal
 		allRetry = allRetry && retryHResults[uint32(op.HResult)]
 	}
 	return failed, allRetry && len(failed) > 0

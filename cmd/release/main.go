@@ -94,7 +94,7 @@ func keygen(args []string, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	if _, err := f.WriteString(release.EncodePrivateKey(priv)); err != nil {
-		f.Close()
+		_ = f.Close()
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime
 	}
@@ -159,16 +159,19 @@ func sign(args []string, stdout, stderr io.Writer) int {
 	}
 
 	vdir := filepath.Join(*out, *version)
+	// #nosec G301 -- releases são públicas: o servidor as entrega a qualquer agente
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime
 	}
 	// Uma versão assinada não muda: mudar o conteúdo é publicar outra versão.
+	// #nosec G301 -- releases são públicas: o servidor as entrega a qualquer agente
 	if err := os.Mkdir(vdir, 0o755); err != nil {
 		fmt.Fprintf(stderr, "patchd-release: %v (uma versão assinada não é refeita; use outro número)\n", err)
 		return exitRuntime
 	}
 	for name, data := range contents {
+		// #nosec G306 -- releases são públicas: o servidor as entrega a qualquer agente
 		if err := os.WriteFile(filepath.Join(vdir, name), data, 0o644); err != nil {
 			fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 			return exitRuntime
@@ -179,10 +182,12 @@ func sign(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime
 	}
+	// #nosec G306 -- manifesto assinado: público
 	if err := os.WriteFile(filepath.Join(vdir, release.ManifestFile), manifest, 0o644); err != nil {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime
 	}
+	// #nosec G306 -- assinatura: pública
 	if err := os.WriteFile(filepath.Join(vdir, release.SignatureFile), sig, 0o644); err != nil {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime

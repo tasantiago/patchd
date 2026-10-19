@@ -131,21 +131,21 @@ func (c *Client) getOnce(ctx context.Context, path string, q url.Values) (data [
 	req.Header.Set("User-Agent", c.UserAgent)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, true, fmt.Errorf("Bodhi %s: %w", path, err)
+		return nil, true, fmt.Errorf("consulta ao Bodhi %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		trecho, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
 		retry = resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return nil, retry, fmt.Errorf("Bodhi %s: %s: %s", path, resp.Status, strings.TrimSpace(string(trecho)))
+		return nil, retry, fmt.Errorf("consulta ao Bodhi %s: %s: %s", path, resp.Status, strings.TrimSpace(string(trecho)))
 	}
 	data, err = io.ReadAll(io.LimitReader(resp.Body, c.MaxPageSize+1))
 	if err != nil {
 		// A conexão caiu no meio do corpo: é o "connection reset by peer" do laboratório.
-		return nil, true, fmt.Errorf("Bodhi %s: %w", path, err)
+		return nil, true, fmt.Errorf("consulta ao Bodhi %s: %w", path, err)
 	}
 	if int64(len(data)) > c.MaxPageSize {
-		return nil, false, fmt.Errorf("Bodhi %s: resposta maior que o limite de %d bytes", path, c.MaxPageSize)
+		return nil, false, fmt.Errorf("consulta ao Bodhi %s: resposta maior que o limite de %d bytes", path, c.MaxPageSize)
 	}
 	return data, false, nil
 }

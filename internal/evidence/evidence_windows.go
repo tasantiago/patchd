@@ -25,7 +25,7 @@ func collectOS(ctx context.Context, run platform.Runner) (protocol.IdentityEvide
 		problems = append(problems, "MachineGuid: "+err.Error())
 	} else {
 		v, _, err := k.GetStringValue("MachineGuid")
-		k.Close()
+		_ = k.Close()
 		if err != nil {
 			problems = append(problems, "MachineGuid: "+err.Error())
 		}

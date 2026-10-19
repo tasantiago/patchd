@@ -42,6 +42,7 @@ func (r ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byt
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// #nosec G204 -- executar programas é o trabalho do agente; quem chama passa nomes fixos
 	cmd := exec.CommandContext(ctx, name, args...)
 	// Saída sempre em inglês e sem formatação regional. Com chaves repetidas,
 	// o os/exec usa o último valor, então estas vencem as herdadas do ambiente.

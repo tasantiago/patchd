@@ -21,6 +21,7 @@ const (
 	tokenMaxUses = 10000
 )
 
+// #nosec G101 -- texto de ajuda do comando, não é credencial
 const tokenUsage = `uso: patchd-server token <comando> [opções]
 
 comandos:

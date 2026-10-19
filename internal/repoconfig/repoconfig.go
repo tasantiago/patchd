@@ -185,7 +185,7 @@ func (c *Config) check(ctx context.Context, rc protocol.RepoCache) error {
 	if err != nil {
 		return fmt.Errorf("o cache não respondeu em %s: %w", rc.Base(), err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("o cache em %s respondeu %s em /repo/stats", rc.Base(), resp.Status)
 	}
@@ -199,10 +199,12 @@ func (c *Config) write(file string, content []byte) (bool, error) {
 	if old, err := os.ReadFile(p); err == nil && bytes.Equal(old, content) {
 		return false, nil
 	}
+	// #nosec G301 -- pastas do apt e do dnf: o padrão delas
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return false, err
 	}
 	tmp := p + ".tmp"
+	// #nosec G306 -- configuração do apt e do dnf: legível por todos, como manda o sistema
 	if err := os.WriteFile(tmp, content, 0o644); err != nil {
 		return false, err
 	}

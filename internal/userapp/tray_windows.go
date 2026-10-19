@@ -151,14 +151,14 @@ func SingleInstance() (release func(), ok bool) {
 	h, err := windows.CreateMutex(nil, false, name)
 	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		if h != 0 {
-			windows.CloseHandle(h)
+			_ = windows.CloseHandle(h)
 		}
 		return func() {}, false
 	}
 	if err != nil {
 		return func() {}, true // sem o mutex, segue: no pior caso, dois ícones
 	}
-	return func() { windows.CloseHandle(h) }, true
+	return func() { _ = windows.CloseHandle(h) }, true
 }
 
 // RunTray mostra o ícone e roda o laço de mensagens até o contexto acabar ou o usuário
@@ -188,6 +188,7 @@ func RunTray(ctx context.Context, opts TrayOptions) error {
 	t.wnd = windows.HWND(r)
 	tc, _ := windows.UTF16PtrFromString("TaskbarCreated")
 	m, _, _ := procRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(tc)))
+	// #nosec G115 -- o Win32 devolve um UINT no uintptr
 	t.taskbarCreated = uint32(m)
 
 	icon, _, _ := procLoadIconW.Call(0, idiShield)
@@ -207,7 +208,7 @@ func RunTray(ctx context.Context, opts TrayOptions) error {
 		for {
 			select {
 			case <-ctx.Done():
-				procPostMessageW.Call(uintptr(t.wnd), wmClose, 0, 0)
+				_, _, _ = procPostMessageW.Call(uintptr(t.wnd), wmClose, 0, 0)
 				return
 			case n, ok := <-opts.Notices:
 				if !ok {
@@ -217,7 +218,7 @@ func RunTray(ctx context.Context, opts TrayOptions) error {
 				t.mu.Lock()
 				t.pending = &n
 				t.mu.Unlock()
-				procPostMessageW.Call(uintptr(t.wnd), wmNotice, 0, 0)
+				_, _, _ = procPostMessageW.Call(uintptr(t.wnd), wmNotice, 0, 0)
 			}
 		}
 	}()
@@ -225,11 +226,12 @@ func RunTray(ctx context.Context, opts TrayOptions) error {
 	var mm msg
 	for {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&mm)), 0, 0, 0)
+		// #nosec G115 -- o GetMessage devolve um BOOL (int32) no uintptr
 		if int32(r) <= 0 { // 0: WM_QUIT; -1: erro
 			break
 		}
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&mm)))
-		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&mm)))
+		_, _, _ = procTranslateMessage.Call(uintptr(unsafe.Pointer(&mm)))
+		_, _, _ = procDispatchMessageW.Call(uintptr(unsafe.Pointer(&mm)))
 	}
 	return nil
 }
@@ -244,8 +246,10 @@ func (t *tray) notify(op uintptr) error {
 
 func wndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	t := current
+	// #nosec G115 -- mensagens do Win32 são UINT
 	switch uint32(message) {
 	case wmTray:
+		// #nosec G115 -- a palavra baixa do lParam, como manda o Shell_NotifyIcon
 		switch uint32(lparam) & 0xffff {
 		case wmLButtonUp:
 			t.opts.Open("")
@@ -263,18 +267,19 @@ func wndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 		case cmdOpen:
 			t.opts.Open("")
 		case cmdQuit:
-			procPostMessageW.Call(hwnd, wmClose, 0, 0)
+			_, _, _ = procPostMessageW.Call(hwnd, wmClose, 0, 0)
 		}
 		return 0
 	case wmClose:
 		t.nid.Flags = 0
 		_ = t.notify(nimDelete)
-		procDestroyWindow.Call(hwnd)
+		_, _, _ = procDestroyWindow.Call(hwnd)
 		return 0
 	case wmDestroy:
-		procPostQuitMessage.Call(0)
+		_, _, _ = procPostQuitMessage.Call(0)
 		return 0
 	}
+	// #nosec G115 -- mensagens do Win32 são UINT
 	if t != nil && t.taskbarCreated != 0 && uint32(message) == t.taskbarCreated {
 		// O Explorer reiniciou: o ícone sumiu junto e é posto de novo.
 		t.nid.Flags = nifMessage | nifIcon | nifTip
@@ -293,16 +298,17 @@ func (t *tray) menu() {
 	defer procDestroyMenu.Call(h)
 	open, _ := windows.UTF16PtrFromString("Abrir a " + strings.ToLower(Title[:1]) + Title[1:])
 	quit, _ := windows.UTF16PtrFromString("Fechar este ícone")
-	procAppendMenuW.Call(h, mfString, cmdOpen, uintptr(unsafe.Pointer(open)))
-	procAppendMenuW.Call(h, mfSeparator, 0, 0)
-	procAppendMenuW.Call(h, mfString, cmdQuit, uintptr(unsafe.Pointer(quit)))
+	_, _, _ = procAppendMenuW.Call(h, mfString, cmdOpen, uintptr(unsafe.Pointer(open)))
+	_, _, _ = procAppendMenuW.Call(h, mfSeparator, 0, 0)
+	_, _, _ = procAppendMenuW.Call(h, mfString, cmdQuit, uintptr(unsafe.Pointer(quit)))
 	var p point
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
+	_, _, _ = procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
 	// Sem trazer a janela para a frente, o menu não fecha ao clicar fora (documentado).
-	procSetForegroundWindow.Call(uintptr(t.wnd))
+	_, _, _ = procSetForegroundWindow.Call(uintptr(t.wnd))
+	// #nosec G115 -- coordenadas da tela passam por uintptr, como pede o Win32
 	cmd, _, _ := procTrackPopupMenu.Call(h, tpmRetCmd|tpmRightBtn, uintptr(p.X), uintptr(p.Y), 0, uintptr(t.wnd), 0)
 	if cmd != 0 {
-		procPostMessageW.Call(uintptr(t.wnd), wmCommand, cmd, 0)
+		_, _, _ = procPostMessageW.Call(uintptr(t.wnd), wmCommand, cmd, 0)
 	}
 }
 

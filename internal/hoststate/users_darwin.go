@@ -28,8 +28,12 @@ func loggedUsers(ctx context.Context) ([]protocol.LoggedUser, error) {
 	}
 	full := func(u string) string {
 		return names.get(u, func() string {
+			if strings.HasPrefix(u, "-") { // viraria opção do id (Aula 20.2)
+				return ""
+			}
 			c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			// #nosec G204 -- programa fixo; u é um nome de conta do utmpx, sem "-" no começo
 			b, err := exec.CommandContext(c, "/usr/bin/id", "-F", u).Output()
 			if err != nil {
 				return ""

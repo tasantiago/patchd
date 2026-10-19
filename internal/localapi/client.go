@@ -33,10 +33,10 @@ func Call(ctx context.Context, req Request) (Response, error) {
 	}()
 	select {
 	case res := <-done:
-		c.Close()
+		_ = c.Close()
 		return res.r, res.err
 	case <-ctx.Done():
-		c.Close()
+		_ = c.Close()
 		return Response{}, fmt.Errorf("o agente não respondeu a tempo: %w", ctx.Err())
 	}
 }

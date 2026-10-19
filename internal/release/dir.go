@@ -138,7 +138,7 @@ func writeAtomic(path string, data []byte) error {
 	name := tmp.Name()
 	defer os.Remove(name) // sem efeito depois da renomeação
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -147,6 +147,7 @@ func writeAtomic(path string, data []byte) error {
 	// O CreateTemp cria com 0600. O servidor em produção roda com outro usuário (65532,
 	// Aula 9.3) e só lê a pasta: com 0600, o "current" fica ilegível para ele, e nenhuma
 	// versão é oferecida (Aula 12.1e). O conteúdo é só o número da versão: nada a esconder.
+	// #nosec G302 -- o "current" só tem o número da versão; ver o comentário acima
 	if err := os.Chmod(name, 0o644); err != nil {
 		return err
 	}

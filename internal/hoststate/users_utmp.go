@@ -39,6 +39,7 @@ func parseUtmp(b []byte) []utmpEntry {
 			continue
 		}
 		e := utmpEntry{
+			// #nosec G115 -- o utmp guarda o PID como int32
 			PID:  int32(binary.LittleEndian.Uint32(r[utmpOffPID:])),
 			Line: cstr(r[utmpOffLine : utmpOffLine+utmpLenLine]),
 			User: cstr(r[utmpOffUser : utmpOffUser+utmpLenUser]),

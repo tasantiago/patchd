@@ -80,6 +80,7 @@ func copyBinary(dest string) error {
 	if strings.EqualFold(filepath.Clean(src), filepath.Clean(dest)) {
 		return nil // já está rodando do lugar instalado
 	}
+	// #nosec G301 -- Program Files: no Windows a permissão vem da ACL, não do modo
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
@@ -94,7 +95,7 @@ func copyBinary(dest string) error {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		os.Remove(tmp)
 		return err
 	}
@@ -126,7 +127,7 @@ func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer)
 	}
 	defer m.Disconnect()
 	if s, err := m.OpenService(serviceName); err == nil {
-		s.Close()
+		_ = s.Close()
 		fmt.Fprintf(stderr, "patchd-agent: o serviço %s já existe; desinstale antes (patchd-agent service uninstall)\n", serviceName)
 		return exitRuntime
 	}
@@ -208,7 +209,7 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 	// O Delete só marca o serviço para remoção: ele sai do SCM quando o último handle
 	// fecha. Por isso o handle fecha aqui, e não num defer, e a espera vem em seguida;
 	// sem ela, a reinstalação do install acharia o serviço ainda lá.
-	s.Close()
+	_ = s.Close()
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: remover o serviço: %v\n", err)
 		return exitRuntime
@@ -245,7 +246,7 @@ func waitServiceGone(m *mgr.Mgr, limit time.Duration) {
 		if err != nil {
 			return
 		}
-		s.Close()
+		_ = s.Close()
 		time.Sleep(500 * time.Millisecond)
 	}
 }
@@ -344,6 +345,7 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 			// O laço terminou sozinho: é erro (credencial ausente, por exemplo). O código
 			// vai para o gerenciador, e as ações de recuperação reiniciam o serviço.
 			changes <- svc.Status{State: svc.StopPending}
+			// #nosec G115 -- códigos de saída do agente: pequenos e positivos
 			return code != exitOK, uint32(code)
 		case c := <-r:
 			switch c.Cmd {
@@ -351,6 +353,7 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 				changes <- c.CurrentStatus
 			case svc.Stop, svc.Shutdown:
 				h.logger.Info("parada pedida pelo gerenciador de serviços", "shutdown", c.Cmd == svc.Shutdown)
+				// #nosec G115 -- constante de segundos: cabe em uint32
 				changes <- svc.Status{State: svc.StopPending, WaitHint: uint32((stopGrace + 5*time.Second).Milliseconds())}
 				cancel()
 				select {

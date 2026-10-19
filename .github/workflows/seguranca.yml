@@ -1,0 +1,28 @@
+# Análise estática de segurança (Aula 20.2). Roda a cada push e pull request, e toda segunda:
+# uma vulnerabilidade nova aparece na base do Go sem que o código mude.
+name: seguranca
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 9 * * 1" # segunda, 05:17 em Porto Velho
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analise:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: scripts/seguranca.sh

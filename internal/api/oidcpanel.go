@@ -91,6 +91,7 @@ func (a *api) oidcStart(w http.ResponseWriter, r *http.Request) {
 	}
 	// SameSite=Lax: a volta do provedor é uma navegação de outro site, e o cookie Strict
 	// não viria. HttpOnly e só para /painel/oidc/.
+	// #nosec G124 -- Lax é obrigatório na volta do provedor; Secure segue o TLS da conexão
 	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: l.State, Path: oidcPath, MaxAge: int(oidcLoginTTL.Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil})
 	w.Header().Set("Cache-Control", "no-store")
@@ -103,6 +104,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// #nosec G124 -- apaga o cookie do state; os atributos repetem os de quem o criou
 	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: oidcPath, MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil})
 	q := r.URL.Query()

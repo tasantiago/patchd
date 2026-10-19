@@ -42,7 +42,7 @@ func (r *RotatingFile) open() error {
 	}
 	st, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	r.f, r.size = f, st.Size()

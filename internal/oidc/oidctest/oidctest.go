@@ -21,7 +21,8 @@ import (
 
 // Valores fixos do provedor de teste.
 const (
-	ClientID     = "patchd-painel"
+	ClientID = "patchd-painel"
+	// #nosec G101 -- segredo do provedor falso dos testes
 	ClientSecret = "segredo+com/simbolos"
 	Code         = "codigo-bom"
 )

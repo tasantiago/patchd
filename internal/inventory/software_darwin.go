@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"errors"
+	"os"
 )
 
 // Software junta três fontes: os aplicativos do system_profiler, os aplicativos do
@@ -28,4 +29,17 @@ func (c *darwinCollector) Software(ctx context.Context) ([]Software, error) {
 
 	sortSoftware(list)
 	return list, errors.Join(errApps, errCryptex, errReceipts)
+}
+
+// listDirNames devolve os nomes das entradas de uma pasta (os.ReadDir, sem os detalhes).
+func listDirNames(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names, nil
 }

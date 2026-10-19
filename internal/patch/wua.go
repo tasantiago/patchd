@@ -150,6 +150,7 @@ func toHistory(h wuaHistory) protocol.UpdateHistoryEntry {
 		e.Operation = "uninstall"
 	}
 	if h.HResult != 0 {
+		// #nosec G115 -- o HRESULT tem 32 bits; o WUA o entrega com sinal
 		e.HResult = fmt.Sprintf("0x%08X", uint32(h.HResult))
 	}
 	return e

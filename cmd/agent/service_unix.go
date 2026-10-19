@@ -45,6 +45,7 @@ func protectDataDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	// #nosec G302 -- é uma pasta: 0700 é só o dono (root)
 	return os.Chmod(dir, 0o700)
 }
 
@@ -59,6 +60,7 @@ func requireAdmin(stderr io.Writer) bool {
 
 // writeRootFile grava data em path de forma atômica, com dono root e as permissões dadas.
 func writeRootFile(path string, data []byte, perm os.FileMode) error {
+	// #nosec G301 -- pastas do sistema (/etc/systemd, /Library/LaunchDaemons): o padrão delas
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -69,7 +71,7 @@ func writeRootFile(path string, data []byte, perm os.FileMode) error {
 	name := tmp.Name()
 	defer os.Remove(name) // sem efeito depois da renomeação
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

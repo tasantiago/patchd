@@ -104,9 +104,7 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 	}
 	for _, d := range s.Disks {
 		row := diskRow{Mount: d.Mount, FS: dash(d.FS), Device: d.Device, Model: d.Model, Bus: d.Bus, Total: bytesLabel(d.TotalBytes), Free: bytesLabel(d.FreeBytes)}
-		if d.TotalBytes > 0 {
-			row.Pct = int((d.TotalBytes - d.FreeBytes) * 100 / d.TotalBytes)
-		}
+		row.Pct = usedPct(d.TotalBytes, d.FreeBytes)
 		switch {
 		case row.Pct >= diskFull:
 			row.Level = "cheio"
@@ -122,6 +120,16 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 	}
 	hv.Active = activeSessions(s.Users)
 	return nil
+}
+
+// usedPct: a ocupação de 0 a 100. Os números vêm do agente: livre maior que o total dava
+// um número negativo enorme, e (total-livre)*100 estoura o uint64 acima de 184 PB (Aula 20.2,
+// gosec G115). Em float64 a conta fica entre 0 e 100.
+func usedPct(total, free uint64) int {
+	if total == 0 || free >= total {
+		return 0
+	}
+	return int(float64(total-free) * 100 / float64(total))
 }
 
 // bytesLabel: 1536 → "1,5 KiB", em potências de 1024, como o df -h e o Explorador do

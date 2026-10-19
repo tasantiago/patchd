@@ -45,7 +45,7 @@ func TestNotificacoesNoPainel(t *testing.T) {
 	}
 
 	c := &carteiro{}
-	h, st, log := ambientePaginas(t, api.WithNotifier(c), api.WithPublicURL("https://patchd.exemplo:8443"))
+	h, st, _ := ambientePaginas(t, api.WithNotifier(c), api.WithPublicURL("https://patchd.exemplo:8443"))
 	b = pagina(h, "GET", "/painel/configuracao", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, "<dt>Notificações</dt><dd>ligadas · smtp.exemplo:587 (starttls)") || !strings.Contains(b, `action="/painel/configuracao/notificacoes/teste"`) {
 		t.Error("ligadas: a linha e o botão")
@@ -75,7 +75,7 @@ func TestNotificacoesNoPainel(t *testing.T) {
 
 	// Falha: a página mostra o erro, a trilha e o log guardam.
 	c2 := &carteiro{falha: errors.New("SMTP: autenticação recusada: 535 5.7.8 credenciais inválidas")}
-	h, st, log = ambientePaginas(t, api.WithNotifier(c2))
+	h, st, log := ambientePaginas(t, api.WithNotifier(c2))
 	r = pagina(h, "POST", "/painel/configuracao/notificacoes/teste", sessaoAdmin, nil)
 	if r.Code != http.StatusBadGateway || !strings.Contains(r.Body.String(), "O teste falhou: SMTP: autenticação recusada: 535 5.7.8") {
 		t.Errorf("falha: %d", r.Code)

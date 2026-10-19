@@ -113,6 +113,11 @@ func (p *Postgres) Windows(ctx context.Context) ([]RingWindow, error) {
 		if err != nil {
 			return nil, fmt.Errorf("janela do anel %d: fuso %q: %w", rw.Ring, tz, err)
 		}
+		// O CHECK do banco já garante; conferir aqui deixa a conversão para uint8 à vista
+		// (Aula 20.2, gosec G115).
+		if days < 1 || days > 127 {
+			return nil, fmt.Errorf("janela do anel %d: dias %d fora de 1 a 127", rw.Ring, days)
+		}
 		rw.Window = window.Window{Days: window.Days(days), Start: time.Duration(start) * time.Minute,
 			Duration: time.Duration(dur) * time.Minute, Location: loc}
 		rw.UpdatedAt = rw.UpdatedAt.UTC()

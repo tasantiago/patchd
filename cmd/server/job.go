@@ -161,7 +161,7 @@ func jobKeygen(args []string, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	if _, err := io.WriteString(f, jobs.EncodePrivateKey(priv)); err != nil {
-		f.Close()
+		_ = f.Close()
 		os.Remove(*out)
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime

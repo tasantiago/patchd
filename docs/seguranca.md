@@ -33,6 +33,11 @@ fronteira nova. A matriz de rotas (docs/rotas.md) é gerada pelo teste e não pr
 | T5 Fonte externa comprometida (catálogo, winget, CDN de instalador) | Mandar dados ou arquivos que o servidor baixa | Instalador adulterado distribuído pela frota |
 | T6 Quem tem acesso ao servidor ou ao banco (operador, backup) | Ler arquivos e tabelas | As chaves e os segredos (A1, A7), o inventário (A6) |
 
+Sobre T6 no ambiente atual (Aula 20.2): o root do host do servidor é de uma equipe de
+manutenção de servidores, com acesso registrado e gravado. É um controle de detecção, não de
+prevenção: quem tem root lê a chave de jobs (A1). Cópias do banco ainda não existem (**F4**). A
+chave de release (A2) existe numa máquina só, sem cópia (**F5**).
+
 ## 3. Fronteiras de confiança
 
 ```
@@ -108,7 +113,8 @@ quem resolve.
 |---|---|---|---|
 | I | Segredo no log, na tela ou no banco | Segredos só em arquivo (`_FILE`); nunca por flag; o log e a auditoria não levam segredos (testes); parâmetros da tela sem segredo (19.2) | — |
 | I | Dump do banco com dado pessoal | Retenção (10.5, 19.2) | Cópias do banco cifradas e com acesso restrito: **S9** |
-| T | Dependência vulnerável | Poucas dependências; Go atualizado | **S2**: govulncheck e gosec a cada build |
+| T | Dependência vulnerável | Poucas dependências; Go na versão exata (Dockerfiles e go.mod); `scripts/seguranca.sh` e o CI semanal (20.2) | — |
+| D | Banco perdido sem cópia | — | **F4** |
 | E | Porta de métricas | Porta separada, com token (10.2) | — |
 | E | Proxy do cache de repositórios | Só as origens da lista (6.6) | Conferir que não vira proxy aberto: **S5** |
 
@@ -117,6 +123,7 @@ quem resolve.
 | | Ameaça | Controle | Lacuna |
 |---|---|---|---|
 | T | Release adulterada | Chave de release fora do servidor; manifesto assinado conferido pelo agente; o agente só aceita versão mais nova (5.4, 15.x) | Rotação da chave: **S8** |
+| D | Chave de release perdida | — | Uma cópia só: **F5** |
 
 ## 5. Achados desta revisão
 
@@ -132,6 +139,51 @@ quem resolve.
 - **F3 — O `.bat` de senha de BIOS nas máquinas HP** (fora do patchd, achado na conversa da
   Aula 17): a senha fica legível por qualquer usuário da máquina. Tratar junto com o
   inventário da BIOS (Módulo 21): ACL por SID e migração para um cofre.
+- **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
+  servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
+  depende do banco para funcionar), mas sem trilha. Ação: cópia diária com `pg_dump`, cifrada
+  (por exemplo, `age` com a chave pública no servidor e a privada fora dele), guardada fora do
+  servidor, com retenção e um teste de restauração por mês. A cópia leva dado pessoal (A6) e
+  os hashes de sessão: o acesso a ela é de T6. Desenho e roteiro no **S9**.
+- **F5 — A chave de release existe numa máquina só, sem cópia** (Aula 20.2). Perder a chave
+  impede publicar versões: os agentes só aceitam essa chave, e trocar de chave exige uma
+  release assinada pela antiga. Comprometer a máquina de desenvolvimento compromete a frota.
+  Ações: (1) agora, duas cópias offline cifradas (dois pendrives, guardados em lugares
+  diferentes, por exemplo um cofre), com a frase de acesso fora do pendrive; (2) no **S8**, o
+  agente aceitar duas chaves (a atual e a seguinte), para a troca não depender da antiga.
+
+## 5a. Análise estática (S2, Aula 20.2)
+
+`scripts/seguranca.sh` roda govulncheck, staticcheck e gosec, em versões fixas, para linux,
+windows e darwin, e sai com erro se algum achar algo. O CI (`.github/workflows/seguranca.yml`)
+roda o mesmo script a cada push e toda segunda.
+
+Primeira passada (Go 1.27.1):
+
+- **govulncheck**: 12 vulnerabilidades da biblioteca padrão alcançadas pelo código (net/http,
+  HTTP/2, textproto, crypto/tls, html/template), todas corrigidas no Go 1.27.2. Correção: a
+  versão exata nos dois Dockerfiles e `go 1.27.2` no go.mod. Os agentes só recebem a correção
+  numa release nova (v0.17.7). Uma 13ª (`os.Root` no Windows) estava num pacote importado, mas
+  em função não chamada: o govulncheck a lista à parte e não falha por ela.
+- **staticcheck**: código morto que dependia do SO (funções de um sistema só em arquivo comum),
+  dois valores atribuídos e nunca lidos em testes, mensagens de erro com maiúscula. Os `| 0`
+  do BER ficam, com `//lint:ignore` e o motivo.
+- **gosec**: 179 achados no Linux e mais 74 só no Windows. Corrigidos: a ocupação do disco
+  com livre > total (vinha do agente: T3), o escape `\UFFFFFFFF` no YAML do winget, o
+  `uint64` do WMI acima do `int64`, os dias da janela do anel, o `-` no começo de um nome de
+  conta no macOS, os ícones da Central montados sem `template.HTML`.
+
+Regras da casa para exceções:
+
+1. Toda exceção é `// #nosec Gxxx -- motivo` na linha (ou no comando de várias linhas). Sem a
+   regra ou sem o motivo, o gosec recusa a anotação (`nosec-require-*` no `.gosec.json`).
+2. Erro ignorado de propósito é `_ = f.Close()`, à vista. Ficam fora do G104 só o `os.Remove`
+   de limpeza, as escritas num `bufio.Writer` (o erro volta no `Flush`) e o `Flush` do
+   `tabwriter` dos comandos de terminal.
+3. G304 (arquivo aberto por caminho variável) fica desligada: dispara em todo caminho vindo de
+   configuração. O caminho vindo de fora (requisição) é a G703, que fica ligada.
+4. G103 (`unsafe`) fica desligada só nos arquivos `_windows.go`: a API do Windows exige.
+5. Ferramenta nova ou versão nova é um commit só para isso, com os achados que ela trouxer.
 
 ## 6. Plano do bloco de segurança
 
@@ -139,10 +191,10 @@ quem resolve.
 |---|---|---|
 | S1 | Este modelo de ameaças | 20.1 |
 | S4 | Matriz de rotas gerada do código e testada na prática | 20.1 |
-| S2 | govulncheck, gosec e staticcheck no script de build e num roteiro de CI | 20.2 |
+| S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem | 20.3 |
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão | 20.4 |
 | S6 | API dos agentes: limite por máquina, F1 e F2, tokens de enrollment | 20.5 |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar | 20.6 |
-| S8 | Rotação das chaves de jobs e de release sem parar a frota | 20.7 |
-| S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco | 20.8 |
+| S8 | Rotação das chaves de jobs e de release sem parar a frota (F5) | 20.7 |
+| S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco (F4) | 20.8 |

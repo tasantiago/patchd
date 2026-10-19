@@ -183,6 +183,7 @@ func (f *Fetcher) download(ctx context.Context, dir, final, url, want string, pr
 	}
 
 	tmp := filepath.Join(dir, ".baixando-"+randomHex())
+	// #nosec G302 -- cópia de um pacote público do fornecedor
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
 	if err != nil {
 		return 0, permanent{err}
@@ -190,7 +191,7 @@ func (f *Fetcher) download(ctx context.Context, dir, final, url, want string, pr
 	keep := false
 	defer func() {
 		if !keep {
-			out.Close()
+			_ = out.Close()
 			os.Remove(tmp)
 		}
 	}()

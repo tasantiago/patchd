@@ -50,6 +50,7 @@ func pruneRepoCacheLoop(ctx context.Context, logger *slog.Logger, c *repocache.C
 		logger.Info("limpeza do cache de repositórios desligada (PATCHD_REPO_CACHE_MAX_AGE=0 e sem PATCHD_REPO_CACHE_MAX_SIZE)")
 		return
 	}
+	// #nosec G404 -- espalhar a limpeza não precisa de aleatório criptográfico
 	wait := 10*time.Minute + time.Duration(rand.Int64N(int64(10*time.Minute)))
 	for {
 		select {

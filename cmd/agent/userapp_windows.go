@@ -100,6 +100,7 @@ func refreshUserApp() (bool, error) {
 		}
 	}
 	tmp := dest + ".novo"
+	// #nosec G306 G703 -- a cópia da Central para o usuário: executável; dest é fixo (Program Files)
 	if err := os.WriteFile(tmp, img, 0o755); err != nil {
 		os.Remove(tmp)
 		return false, err
@@ -125,7 +126,7 @@ func removeUserApp() error {
 		if err := k.DeleteValue(runValue); err != nil && !errors.Is(err, registry.ErrNotExist) && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, err)
 		}
-		k.Close()
+		_ = k.Close()
 	}
 	dest := userAppPath()
 	if err := os.Remove(dest); err != nil && !errors.Is(err, fs.ErrNotExist) {

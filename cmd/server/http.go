@@ -83,7 +83,7 @@ func serve(ctx context.Context, logger *slog.Logger, ls []listener) error {
 		ln, err := net.Listen("tcp", l.addr)
 		if err != nil {
 			for _, r := range all {
-				r.ln.Close()
+				_ = r.ln.Close()
 			}
 			return fmt.Errorf("não foi possível escutar em %s: %w", l.addr, err)
 		}
@@ -159,7 +159,7 @@ func healthcheck(listen string, useTLS bool) error {
 	}
 	client := &http.Client{Timeout: healthcheckTimeout}
 	if useTLS {
-		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // só liveness em 127.0.0.1
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} // #nosec G402 -- só liveness em 127.0.0.1, sem dado nenhum
 	}
 	resp, err := client.Get(u)
 	if err != nil {

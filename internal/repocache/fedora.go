@@ -103,6 +103,7 @@ func sha256Of(hs []mlHash) string {
 // parseMetalink lê o metalink; httpOK aceita espelhos http (só nos testes).
 func parseMetalink(b []byte, httpOK bool) (*metalinkInfo, error) {
 	var m metalinkXML
+	// #nosec G709 -- o encoding/xml não expande entidades externas
 	if err := xml.Unmarshal(b, &m); err != nil {
 		return nil, fmt.Errorf("metalink ilegível: %w", err)
 	}
@@ -186,10 +187,12 @@ func (c *Cache) fetchMetalink(ctx context.Context, u string) (*metalinkInfo, err
 func (c *Cache) get(ctx context.Context, u string, limit int64) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.idle())
 	defer cancel()
+	// #nosec G704 -- URL do metalink, montada de valores das listas
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G704 -- URL do metalink, montada de valores das listas
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -267,6 +270,7 @@ func (c *Cache) serveRepomd(w http.ResponseWriter, r *http.Request, repo, rel, a
 	defer unlock()
 
 	storedSum := ""
+	// #nosec G703 -- repo, versão e arquitetura passaram pelas listas de serveFedora
 	if b, err := os.ReadFile(file); err == nil {
 		s := sha256.Sum256(b)
 		storedSum = hex.EncodeToString(s[:])

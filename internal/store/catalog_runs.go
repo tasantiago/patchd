@@ -28,7 +28,7 @@ func (p *Postgres) TryCatalogLock(ctx context.Context) (unlock func(), ok bool, 
 		defer cancel()
 		if _, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, catalogLockKey); err != nil {
 			// Sem o unlock, a conexão não pode voltar ao pool com a trava: fecha.
-			conn.Hijack().Close(ctx)
+			_ = conn.Hijack().Close(ctx)
 			return
 		}
 		conn.Release()

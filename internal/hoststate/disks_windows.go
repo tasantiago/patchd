@@ -93,6 +93,7 @@ func probeVolume(letter string) (local bool, bus, model string) {
 	err = windows.DeviceIoControl(h, ioctlVolumeDiskExtents, nil, 0, (*byte)(unsafe.Pointer(&ext[0])), uint32(len(ext)*8), &n, nil)
 	switch {
 	case err == nil:
+		// #nosec G115 -- NumberOfDiskExtents é um DWORD; os 4 bytes altos são alinhamento
 		if c := uint32(ext[0]); c == 0 {
 			return false, "", ""
 		} else if c > 1 {

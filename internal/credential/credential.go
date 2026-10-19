@@ -73,7 +73,7 @@ func CheckWritable(dataDir string) error {
 		return fmt.Errorf("sem permissão de escrita em %s: %w", dataDir, err)
 	}
 	name := f.Name()
-	f.Close()
+	_ = f.Close()
 	return os.Remove(name)
 }
 
@@ -97,7 +97,7 @@ func Save(dataDir string, c Credential) error {
 	ok := false
 	defer func() {
 		if !ok {
-			tmp.Close()
+			_ = tmp.Close()
 			os.Remove(name)
 		}
 	}()

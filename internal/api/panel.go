@@ -286,6 +286,7 @@ func (a *api) openSession(w http.ResponseWriter, r *http.Request, user, name, ro
 		a.internalError(w, r, "abrir sessão do painel", err)
 		return false
 	}
+	// #nosec G124 -- Secure segue o TLS da conexão (o laboratório roda sem TLS)
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: plain, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
@@ -378,6 +379,7 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 		a.logger.Info("saída do painel", "username", s.Username, "remote", remoteIP(r), "request_id", RequestID(r.Context()))
 		a.audit(r, s, "sessao.sair", "", "")
 	}
+	// #nosec G124 -- apaga o cookie da sessão; os atributos repetem os de quem o criou
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil})
 	http.Redirect(w, r, "/painel/entrar", http.StatusSeeOther)

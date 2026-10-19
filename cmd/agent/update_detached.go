@@ -25,6 +25,7 @@ func startInstaller(bin string, args []string, dataDir string) error {
 	defer logf.Close() // o filho tem a própria cópia do arquivo aberto
 	fmt.Fprintf(logf, "==== %s instalador: %s\n", time.Now().Format(time.RFC3339), bin)
 
+	// #nosec G204 -- bin é a versão nova, já conferida pela assinatura da release
 	cmd := exec.Command(bin, append([]string{"install"}, args...)...)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = detachedAttr()

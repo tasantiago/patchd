@@ -1,0 +1,15 @@
+{
+  "global": {
+    "exclude": "G304",
+    "nosec-require-rules": "true",
+    "nosec-require-justification": "true"
+  },
+  "exclude-rules": [
+    {"path": "_windows\\.go$", "rules": ["G103"]}
+  ],
+  "G104": {
+    "os": ["Remove", "RemoveAll"],
+    "bufio.Writer": ["Write", "WriteByte", "WriteRune", "WriteString"],
+    "text/tabwriter.Writer": ["Flush"]
+  }
+}

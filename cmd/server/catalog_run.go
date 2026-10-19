@@ -459,6 +459,7 @@ func runScheduledSync(ctx context.Context, logger *slog.Logger, st catalogSchedu
 // servidor já está atendendo, e várias instâncias (ou reinícios seguidos) não batem nas
 // fontes no mesmo instante.
 func firstCatalogRun() time.Duration {
+	// #nosec G404 -- espalhar a primeira execução não precisa de aleatório criptográfico
 	return time.Minute + rand.N(4*time.Minute)
 }
 

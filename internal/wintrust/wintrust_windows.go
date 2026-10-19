@@ -1,6 +1,7 @@
 package wintrust
 
 import (
+	// #nosec G505 -- impressão digital SHA-1 é a que o Windows mostra; não confere nada
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -25,16 +26,18 @@ var (
 // cryptProviderSgnr é o começo da CRYPT_PROVIDER_SGNR (wintrust.h), até pChainContext.
 // O Windows informa o tamanho real em cbStruct; o campo só é lido se couber nele.
 type cryptProviderSgnr struct {
-	cbStruct          uint32
-	verifyAsOf        windows.Filetime
-	csCertChain       uint32
-	pasCertChain      *cryptProviderCert
-	dwSignerType      uint32
-	psSigner          uintptr
-	dwError           uint32
-	csCounterSigners  uint32
-	pasCounterSigners uintptr
-	pChainContext     *windows.CertChainContext
+	// Os campos "_" existem só para o deslocamento dos seguintes (Aula 20.2: o
+	// staticcheck os marcava como sem uso). O nome da struct do Windows fica no comentário.
+	cbStruct      uint32
+	_             windows.Filetime // sftVerifyAsOf
+	csCertChain   uint32
+	pasCertChain  *cryptProviderCert
+	_             uint32  // dwSignerType
+	_             uintptr // psSigner
+	_             uint32  // dwError
+	_             uint32  // csCounterSigners
+	_             uintptr // pasCounterSigners
+	pChainContext *windows.CertChainContext
 }
 
 // VerifyChain confere a assinatura Authenticode de path com o WinVerifyTrust e devolve a
@@ -163,6 +166,7 @@ var (
 
 func certInfo(c *windows.CertContext) Cert {
 	der := unsafe.Slice(c.EncodedCert, c.Length)
+	// #nosec G401 -- impressão digital SHA-1 é a que o Windows mostra; não confere nada
 	sum := sha1.Sum(der) // impressão digital: identifica o certificado, não é uma conferência
 	return Cert{
 		CommonName:   nameAttr(c, oidCommonName),

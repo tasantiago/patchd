@@ -44,8 +44,10 @@ func disks(ctx context.Context) ([]protocol.Disk, []error) {
 			continue
 		}
 		// As contagens de blocos vêm na unidade f_frsize (o df usa a mesma regra).
+		// #nosec G115 -- tamanho de bloco do statfs: nunca negativo
 		unit := uint64(st.Frsize)
 		if unit == 0 {
+			// #nosec G115 -- tamanho de bloco do statfs: nunca negativo
 			unit = uint64(st.Bsize)
 		}
 		m.TotalBytes, m.FreeBytes = st.Blocks*unit, st.Bavail*unit

@@ -148,3 +148,19 @@ func checkPending(pkgs []jobs.Package, pending []protocol.MissingUpdate, compare
 	}
 	return nil
 }
+
+// lastLines devolve as últimas n linhas não vazias, para o detalhe do resultado.
+func lastLines(out []byte, n int) string {
+	var keep []string
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i := len(lines) - 1; i >= 0 && len(keep) < n; i-- {
+		if l := strings.TrimSpace(lines[i]); l != "" {
+			keep = append([]string{l}, keep...)
+		}
+	}
+	s := strings.Join(keep, " | ")
+	if len(s) > 400 {
+		s = s[:400] + "…"
+	}
+	return s
+}
