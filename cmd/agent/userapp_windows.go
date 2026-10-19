@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -26,6 +27,16 @@ const (
 )
 
 func userAppPath() string { return filepath.Join(filepath.Dir(installedBinary()), "patchd-app.exe") }
+
+// managedAppPath: o caminho da cópia que o serviço mantém, se é dela que o app está rodando
+// (Aula 18.8); vazio quando o app roda de outro lugar (um executável de teste): nada a vigiar.
+func managedAppPath() string {
+	exe, err := os.Executable()
+	if err != nil || !strings.EqualFold(filepath.Clean(exe), filepath.Clean(userAppPath())) {
+		return ""
+	}
+	return userAppPath()
+}
 
 // syncUserApp põe (ou tira) o app do logon. Só o serviço instalado mexe nisso.
 func syncUserApp(logger *slog.Logger, enabled bool) {

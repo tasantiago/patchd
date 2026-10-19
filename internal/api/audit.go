@@ -67,6 +67,7 @@ var auditActions = []struct{ Key, Label string }{
 	{"job.cancelar", "Job cancelado"},
 	{"autoatendimento.oferta", "Oferta do autoatendimento gravada"},
 	{"autoatendimento.remover", "Programa fora do autoatendimento"},
+	{"autoatendimento.oferta_lote", "Ofertas do autoatendimento gravadas em lote"},
 	{"autoatendimento.pedido", "Pedido do autoatendimento atendido"},
 	{"autoatendimento.recusado", "Pedido do autoatendimento recusado"},
 	{"autoatendimento.solicitacao", "Pedido do autoatendimento aguardando a TI"},

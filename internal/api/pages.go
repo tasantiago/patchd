@@ -604,14 +604,26 @@ var pages = template.Must(template.New("").Parse(`
 {{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
 <div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
 <p class="muted">Os pedidos feitos e as recusas ficam em <a href="/painel/autoatendimento">Automação › Autoatendimento</a>. Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD pelo sAMAccountName (GG-Exemplo ou DOMINIO\GG-Exemplo), separados por vírgula; vazio: qualquer usuário da máquina. O agente confere pelos grupos do token do Windows de quem pede, inclusive os aninhados. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Aprovação da TI (Aula 18.3): cada pedido espera alguém aprovar em Automação › Autoatendimento antes de virar job. Desmarcar atualizar e instalar tira o programa da loja.</p>
-<div class="tabela"><table><thead><tr><th>Programa</th><th>Aprovada mais nova</th><th>Atualizar</th><th>Instalar</th><th>Aprovação da TI</th><th>Grupos do AD</th><th></th><th>Última mudança</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td>{{.Name}} <span class="muted"><code>{{.AppID}}</code></span></td><td><code>{{.Approved}}</code></td>
-<td><input form="ss-{{.AppID}}" type="checkbox" name="atualizar" value="1" aria-label="atualizar {{.Name}}" {{if .CanUpdate}}checked{{end}}></td>
-<td><input form="ss-{{.AppID}}" type="checkbox" name="instalar" value="1" aria-label="instalar {{.Name}}" {{if .CanInstall}}checked{{end}}></td>
-<td><input form="ss-{{.AppID}}" type="checkbox" name="aprovacao" value="1" aria-label="aprovação da TI para {{.Name}}" {{if .NeedsApproval}}checked{{end}}></td>
-<td><input form="ss-{{.AppID}}" type="text" name="grupos" maxlength="2000" value="{{.Groups}}" placeholder="qualquer usuário" aria-label="grupos de {{.Name}}"></td>
-<td><form id="ss-{{.AppID}}" method="post" action="/painel/configuracao/autoatendimento"><input type="hidden" name="app" value="{{.AppID}}"><button class="sec" type="submit">Salvar</button></form></td>
-<td class="muted">{{if .Active}}{{.Updated}}{{else}}fora da loja{{end}}</td></tr>{{end}}</tbody></table></div></div>
+<style>.ss-lote{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;border:1px solid var(--borda);border-radius:var(--raio);padding:.7rem .9rem;margin:.9rem 0 0}.ss-lote legend{font-weight:600;padding:0 .3rem}.ss-lote label{display:flex;gap:.35rem;align-items:center}.ss-lote input[type=text]{width:16rem}tr.ss-erro td{background:#fdf2f2}.ss-erro-msg{color:var(--vermelho);font-size:.85rem;margin-top:.25rem}.ss-salvar{display:flex;gap:.6rem;align-items:center;margin:.9rem 0 0}</style>
+<form method="post" action="/painel/configuracao/autoatendimento">
+<div class="tabela"><table><thead><tr><th aria-label="marcar para o lote"></th><th>Programa</th><th>Aprovada mais nova</th><th>Atualizar</th><th>Instalar</th><th>Aprovação da TI</th><th>Grupos do AD</th><th>Última mudança</th></tr></thead>
+<tbody>{{range .Rows}}<tr{{if .Problem}} class="ss-erro"{{end}}><td><input type="checkbox" name="sel" value="{{.AppID}}" aria-label="marcar {{.Name}} para o lote" {{if .Selected}}checked{{end}}><input type="hidden" name="apps" value="{{.AppID}}"></td>
+<td>{{.Name}} <span class="muted"><code>{{.AppID}}</code></span></td><td><code>{{.Approved}}</code></td>
+<td><input type="checkbox" name="atualizar.{{.AppID}}" value="1" aria-label="atualizar {{.Name}}" {{if .CanUpdate}}checked{{end}}></td>
+<td><input type="checkbox" name="instalar.{{.AppID}}" value="1" aria-label="instalar {{.Name}}" {{if .CanInstall}}checked{{end}}></td>
+<td><input type="checkbox" name="aprovacao.{{.AppID}}" value="1" aria-label="aprovação da TI para {{.Name}}" {{if .NeedsApproval}}checked{{end}}></td>
+<td><input type="text" name="grupos.{{.AppID}}" maxlength="2000" value="{{.Groups}}" placeholder="qualquer usuário" aria-label="grupos de {{.Name}}">{{if .Problem}}<div class="ss-erro-msg">{{.Problem}}</div>{{end}}</td>
+<td class="muted">{{if .Active}}{{.Updated}}{{else}}fora da loja{{end}}</td></tr>{{end}}</tbody></table></div>
+<div class="ss-salvar"><button type="submit" name="modo" value="salvar">Salvar alterações</button><span class="muted">grava só as linhas que mudaram</span></div>
+<fieldset class="ss-lote"><legend>Em lote</legend>
+<label>Aplicar a <select name="lote_alvo"><option value="marcados">os marcados</option><option value="todos">todos os programas</option></select></label>
+<label>Atualizar <select name="lote_atualizar"><option value="">manter</option><option value="1">sim</option><option value="0">não</option></select></label>
+<label>Instalar <select name="lote_instalar"><option value="">manter</option><option value="1">sim</option><option value="0">não</option></select></label>
+<label>Aprovação da TI <select name="lote_aprovacao"><option value="">manter</option><option value="1">sim</option><option value="0">não</option></select></label>
+<label>Grupos <select name="lote_grupos_modo"><option value="">manter</option><option value="trocar">trocar por</option></select></label><input type="text" name="lote_grupos" maxlength="2000" placeholder="vazio: qualquer usuário" aria-label="grupos para o lote">
+<button class="sec" type="submit" name="modo" value="lote">Aplicar</button>
+<span class="muted">vale por cima do que está na tela; o que não estiver em "manter" substitui</span></fieldset>
+</form></div>
 <div class="card"><div class="card-cab"><h2>Prévia da loja</h2></div>
 <p class="muted">O que um usuário destes grupos veria nesta máquina agora, com o último inventário dela. No app do usuário (Aula 17.4), os grupos vêm do AD.</p>
 <form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="autoatendimento">

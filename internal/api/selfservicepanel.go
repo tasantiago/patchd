@@ -27,6 +27,8 @@ type ssOfferRow struct {
 	NeedsApproval         bool // Aula 18.3
 	Groups, Updated       string
 	Active                bool
+	Selected              bool   // Aula 18.8: marcada para o lote (volta marcada se nada foi gravado)
+	Problem               string // Aula 18.8: o problema desta linha, quando nada foi gravado
 }
 
 type ssMachineOption struct {
@@ -169,9 +171,13 @@ func splitGroups(s string) []string {
 // autoatendimento.
 func (a *api) selfServiceOfferAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	back := "/painel/configuracao?aba=autoatendimento"
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, ssBatchMaxBody)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	if r.PostForm.Has("modo") { // Aula 18.8: a tabela inteira, ou o lote
+		a.selfServiceBatchAction(w, r, s)
 		return
 	}
 	app := r.PostFormValue("app")
@@ -224,6 +230,10 @@ func selfServiceFlash(q url.Values, b *pageBase) {
 	switch {
 	case q.Get("salvo") != "":
 		b.Flash = fmt.Sprintf("Oferta de %s gravada. Vale a partir do próximo pedido de um usuário (Aula 17.2).", q.Get("salvo"))
+	case q.Has("lote") && q.Get("lote") == "":
+		b.Flash = "Nada mudou: as ofertas já estavam assim."
+	case q.Get("lote") != "":
+		b.Flash = fmt.Sprintf("Ofertas gravadas: %s. Valem a partir do próximo pedido de um usuário.", q.Get("lote"))
 	case q.Get("removido") != "":
 		b.Flash = fmt.Sprintf("%s fora do autoatendimento.", q.Get("removido"))
 	case q.Get("erro") == "programa":
