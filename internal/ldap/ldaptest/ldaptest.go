@@ -68,7 +68,7 @@ func Start(t testing.TB, dir Directory) *Server {
 		t.Fatal(err)
 	}
 	s := &Server{dir: dir, ln: ln, pool: pool}
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	go s.serve()
 	return s
 }
@@ -125,6 +125,7 @@ func (s *Server) handle(c net.Conn) {
 		id, _ := msg.Children[0].Int()
 		op := msg.Children[1]
 		switch op.ID {
+		//lint:ignore SA4016 o "| 0" deixa à vista o número da tag ([APPLICATION 0], [0]), como na RFC
 		case ber.ClassApplication | ber.Constructed | 0: // bind
 			s.Binds.Add(1)
 			name, pw := op.Children[1].String(), op.Children[2].String()
@@ -204,6 +205,7 @@ func (s *Server) chain(direct []string) map[string]bool {
 
 func (s *Server) match(f *ber.Packet, o object) bool {
 	switch f.ID {
+	//lint:ignore SA4016 o "| 0" deixa à vista o número da tag ([APPLICATION 0], [0]), como na RFC
 	case ber.ClassContext | ber.Constructed | 0: // and
 		for _, c := range f.Children {
 			if !s.match(c, o) {
@@ -243,6 +245,7 @@ func (s *Server) match(f *ber.Packet, o object) bool {
 
 func describe(f *ber.Packet) string {
 	switch f.ID {
+	//lint:ignore SA4016 o "| 0" deixa à vista o número da tag ([APPLICATION 0], [0]), como na RFC
 	case ber.ClassContext | ber.Constructed | 0:
 		var b strings.Builder
 		b.WriteString("(&")

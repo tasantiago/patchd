@@ -77,8 +77,8 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			if attempt == attempts {
 				return resp, nil // a última resposta volta como veio, para a mensagem de erro de quem chamou
 			}
-			io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-			resp.Body.Close()
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+			_ = resp.Body.Close()
 		case resp.StatusCode >= 200 && resp.StatusCode < 300 && req.Method == http.MethodGet:
 			if resp.ContentLength > maxBody {
 				return resp, nil // grande demais para a memória: segue em fluxo, sem repetição do corpo
@@ -86,7 +86,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			data, rerr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			switch {
 			case rerr != nil:
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				reason = "corpo interrompido: " + rerr.Error()
 				err = rerr
 			case int64(len(data)) > maxBody:
@@ -98,7 +98,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				}{io.MultiReader(bytes.NewReader(data), resp.Body), resp.Body}
 				return resp, nil
 			default:
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				resp.Body = io.NopCloser(bytes.NewReader(data))
 				resp.ContentLength = int64(len(data))
 				return resp, nil

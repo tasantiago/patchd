@@ -63,6 +63,8 @@ func TestYAMLRecusa(t *testing.T) {
 		"bloco com indicador":        {"A: |2\n  x\n", "não é aceito"},
 		"lista sem fechar":           {"A: [a, b\n", "sem fechamento"},
 		"não UTF-8":                  {"A: \xff\n", "não é UTF-8"},
+		"escape fora do Unicode":     {"A: \"\\UFFFFFFFF\"\n", "escape \\U inválido"}, // Aula 20.2
+		"escape de substituto":       {"A: \"\\uD800\"\n", "escape \\u inválido"},
 	} {
 		_, err := parseYAML([]byte(c.in))
 		if err == nil || !strings.Contains(err.Error(), c.msg) {

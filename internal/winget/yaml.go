@@ -301,7 +301,8 @@ func quoted(s string, num int) (string, string, error) {
 					return "", "", fmt.Errorf("yaml: linha %d: escape \\%c incompleto", num, e)
 				}
 				r, err := strconv.ParseUint(s[i+1:i+1+n], 16, 32)
-				if err != nil {
+				// Aula 20.2 (gosec G115): \UFFFFFFFF passava de rune; o código tem de ser Unicode.
+				if err != nil || r > utf8.MaxRune || !utf8.ValidRune(rune(r)) {
 					return "", "", fmt.Errorf("yaml: linha %d: escape \\%c inválido", num, e)
 				}
 				b.WriteRune(rune(r))

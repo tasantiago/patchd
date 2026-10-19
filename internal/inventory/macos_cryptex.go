@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/platform"
@@ -61,17 +60,4 @@ func collectCryptexApps(ctx context.Context, run platform.Runner, listDir func(s
 		})
 	}
 	return list, errors.Join(errs...)
-}
-
-// listDirNames devolve os nomes das entradas de uma pasta (os.ReadDir, sem os detalhes).
-func listDirNames(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	return names, nil
 }

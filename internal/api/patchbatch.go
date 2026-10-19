@@ -69,13 +69,13 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 	pq := parsePatchQuery(r.PostForm) // o filtro de onde o lote saiu, para voltar a ele
 	back := pq.href()
 	if a.compliance == nil {
-		http.Redirect(w, r, back, http.StatusSeeOther)
+		redirectPatch(w, r, back)
 		return
 	}
 	sels := r.PostForm["sel"]
 	byFilter := r.PostFormValue("filtro") == "1"
 	if !byFilter && len(sels) > maxApproveBatch {
-		http.Redirect(w, r, withParams(back, "erro", "lote-grande"), http.StatusSeeOther)
+		redirectPatch(w, r, withParams(back, "erro", "lote-grande"))
 		return
 	}
 	items, err := a.fleetItems(r.Context())
@@ -132,7 +132,7 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	if len(chosen) == 0 {
-		http.Redirect(w, r, withParams(back, "lote", "0", "fora", strconv.Itoa(skipped)), http.StatusSeeOther)
+		redirectPatch(w, r, withParams(back, "lote", "0", "fora", strconv.Itoa(skipped)))
 		return
 	}
 	list := make([]store.PatchApproval, 0, len(chosen))
@@ -152,8 +152,8 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 	a.logger.Info("lote de aprovação", "aprovados", len(created), "ja_aprovados", already, "fora", skipped,
 		"username", s.Username, "request_id", rid)
 	a.audit(r, s, "patch.aprovar_lote", "", fmt.Sprintf("%d aprovado(s), %d já aprovado(s), %d fora", len(created), already, skipped))
-	http.Redirect(w, r, withParams(back, "lote", strconv.Itoa(len(created)), "ja", strconv.Itoa(already),
-		"fora", strconv.Itoa(skipped)), http.StatusSeeOther)
+	redirectPatch(w, r, withParams(back, "lote", strconv.Itoa(len(created)), "ja", strconv.Itoa(already),
+		"fora", strconv.Itoa(skipped)))
 }
 
 // batchConfirm mostra a conferência. Mais que maxApproveBatch: leva os primeiros, pela ordem da
@@ -161,7 +161,7 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 func (a *api) batchConfirm(w http.ResponseWriter, r *http.Request, s panel.Session, chosen []patchItem, skipped int,
 	pq patchQuery, note, errMsg string) {
 	if len(chosen) == 0 {
-		http.Redirect(w, r, withParams(pq.href(), "erro", "lote-vazio"), http.StatusSeeOther)
+		redirectPatch(w, r, withParams(pq.href(), "erro", "lote-vazio"))
 		return
 	}
 	v := batchView{pageBase: a.baseFor(r.Context(), s, "Aprovar em lote", "patch"), Max: maxApproveBatch, MaxNote: maxNoteLen,
@@ -179,6 +179,16 @@ func (a *api) batchConfirm(w http.ResponseWriter, r *http.Request, s panel.Sessi
 			Sel: batchSel(p.ID, p.FixedIn), Exploited: p.Exploited, Machines: len(p.Machines)})
 	}
 	a.render(w, r, http.StatusOK, "patch-lote", v)
+}
+
+// redirectPatch volta para a lista do patch. O destino vem de patchQuery.href e withParams:
+// sempre /painel/patch com a query montada por url.Values, nunca um endereço de fora. A
+// conferência do prefixo é a defesa para quando alguém mudar isso (Aula 20.2, gosec G710).
+func redirectPatch(w http.ResponseWriter, r *http.Request, target string) {
+	if !strings.HasPrefix(target, "/painel/patch") || strings.HasPrefix(target, "//") {
+		target = "/painel/patch"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther) // #nosec G710 -- destino local conferido acima
 }
 
 // withParams acrescenta parâmetros a um caminho que pode já ter query.

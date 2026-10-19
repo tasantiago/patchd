@@ -2,6 +2,7 @@ package wincom
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	ole "github.com/go-ole/go-ole"
@@ -172,6 +173,10 @@ func toInt64(name string, v any) (int64, error) {
 	case uint32:
 		return int64(n), nil
 	case uint64:
+		// Acima do int64 a conversão daria um número negativo (Aula 20.2, gosec G115).
+		if n > math.MaxInt64 {
+			return 0, fmt.Errorf("%s: %d não cabe em int64", name, n)
+		}
 		return int64(n), nil
 	default:
 		return 0, fmt.Errorf("%s: esperado inteiro, veio %T", name, v)

@@ -22,6 +22,7 @@ import (
 
 // Operações (RFC 4511, seção 4.2 em diante): [APPLICATION n].
 const (
+	//lint:ignore SA4016 o "| 0" deixa à vista o número da tag ([APPLICATION 0], [0]), como na RFC
 	opBindRequest     = ber.ClassApplication | ber.Constructed | 0
 	opBindResponse    = ber.ClassApplication | ber.Constructed | 1
 	opUnbindRequest   = ber.ClassApplication | 2
@@ -159,6 +160,7 @@ func (c *Conn) Bind(name, password string) error {
 	if err := c.send(ber.Cons(opBindRequest,
 		ber.Int(ber.TagInteger, 3),
 		ber.Str(ber.TagOctetString, name),
+		//lint:ignore SA4016 o "| 0" deixa à vista o número da tag ([APPLICATION 0], [0]), como na RFC
 		ber.Str(ber.ClassContext|0, password), // simple [0]
 	)); err != nil {
 		return err
@@ -182,6 +184,7 @@ func And(fs ...Filter) Filter {
 	for i, f := range fs {
 		parts[i] = f
 	}
+	//lint:ignore SA4016 o "| 0" deixa à vista o número da tag ([APPLICATION 0], [0]), como na RFC
 	return Filter(ber.Cons(ber.ClassContext|0, parts...))
 }
 

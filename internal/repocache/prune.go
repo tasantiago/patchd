@@ -47,6 +47,7 @@ func (c *Cache) upgradeTimes() error {
 			_ = os.Chtimes(e.path, now, now)
 		}
 	}
+	// #nosec G306 -- marcador sem conteúdo sensível
 	return os.WriteFile(marker, []byte("a data dos arquivos de sha256/ e pool/ é o último uso (Aula 6.6, parte 5)\n"), 0o640)
 }
 

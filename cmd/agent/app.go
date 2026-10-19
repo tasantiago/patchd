@@ -96,6 +96,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 	case r := <-renew:
 		if r == userapp.RenewReplaced {
 			release()
+			// #nosec G204 -- reabre o próprio executável (os.Executable)
 			if err := exec.Command(self, "app").Start(); err != nil {
 				fmt.Fprintf(stderr, "patchd-agent: reabrir a Central: %v\n", err)
 				return exitRuntime

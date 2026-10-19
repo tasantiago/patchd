@@ -142,6 +142,7 @@ func (u *Updater) fetch(ctx context.Context, v string) (string, error) {
 
 	final := filepath.Join(u.DataDir, updateDir, v+"-"+f.Name)
 	part := final + ".part"
+	// #nosec G302 -- o executável novo precisa de x; só o dono (S7 revê a pasta)
 	out, err := os.OpenFile(part, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o700)
 	if err != nil {
 		return "", err

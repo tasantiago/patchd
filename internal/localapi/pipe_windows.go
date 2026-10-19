@@ -79,7 +79,7 @@ func Listen(ctx context.Context, handle func(Conn)) error {
 		<-watcher
 		_ = windows.SetEvent(stop)
 		wg.Wait()
-		windows.CloseHandle(stop)
+		_ = windows.CloseHandle(stop)
 	}()
 	var open atomic.Int32
 
@@ -109,15 +109,15 @@ func Listen(ctx context.Context, handle func(Conn)) error {
 		first = false
 		c, err := newPipeConn(h, stop)
 		if err != nil {
-			windows.CloseHandle(h)
+			_ = windows.CloseHandle(h)
 			return err
 		}
 		if err := c.connect(); err != nil {
-			c.Close()
+			_ = c.Close()
 			continue
 		}
 		if open.Load() >= maxOpen { // alguém abrindo conexões e não mandando nada
-			c.Close()
+			_ = c.Close()
 			continue
 		}
 		open.Add(1)
@@ -281,7 +281,7 @@ func (c *pipeConn) clientToken() (windows.Token, error) {
 	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &tok)
 	if rerr := windows.RevertToSelf(); rerr != nil {
 		if err == nil {
-			tok.Close()
+			_ = tok.Close()
 		}
 		return 0, fmt.Errorf("RevertToSelf: %w", rerr)
 	}
@@ -298,7 +298,7 @@ func (c *pipeConn) Close() error {
 	}
 	c.closed = true
 	_ = windows.DisconnectNamedPipe(c.h)
-	windows.CloseHandle(c.ev)
+	_ = windows.CloseHandle(c.ev)
 	return windows.CloseHandle(c.h)
 }
 
@@ -356,7 +356,7 @@ func dial(ctx context.Context) (*os.File, error) {
 		switch {
 		case err == nil:
 			if err := checkOwner(h); err != nil {
-				windows.CloseHandle(h)
+				_ = windows.CloseHandle(h)
 				return nil, err
 			}
 			return os.NewFile(uintptr(h), PipeName), nil

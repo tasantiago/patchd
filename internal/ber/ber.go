@@ -107,6 +107,7 @@ func Bool(id byte, v bool) []byte {
 
 func appendLength(out []byte, n int) []byte {
 	if n < 0x80 {
+		// #nosec G115 -- n < 0x80 nesta linha
 		return append(out, byte(n))
 	}
 	var tmp [8]byte
@@ -121,9 +122,11 @@ func appendLength(out []byte, n int) []byte {
 }
 
 func encodeInt(v int64) []byte {
+	// #nosec G115 -- o byte baixo, de propósito (complemento de dois)
 	b := []byte{byte(v)}
 	for v >= 0x80 || v < -0x80 {
 		v >>= 8
+		// #nosec G115 -- o byte baixo, de propósito (complemento de dois)
 		b = append([]byte{byte(v)}, b...)
 	}
 	return b
@@ -133,6 +136,7 @@ func decodeInt(b []byte) (int64, error) {
 	if len(b) == 0 || len(b) > 8 {
 		return 0, fmt.Errorf("ber: inteiro com %d bytes", len(b))
 	}
+	// #nosec G115 -- o primeiro byte é lido com sinal, como manda o BER
 	v := int64(int8(b[0])) // o primeiro byte carrega o sinal
 	for _, c := range b[1:] {
 		v = v<<8 | int64(c)

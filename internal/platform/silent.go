@@ -27,6 +27,7 @@ func (r SilentRunner) Run(ctx context.Context, name string, args ...string) ([]b
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// #nosec G204 -- executar programas é o trabalho do agente; quem chama passa nomes fixos
 	cmd := exec.CommandContext(ctx, name, args...)
 	// Stdout e Stderr nil: o processo recebe o dispositivo nulo, não um pipe.
 	cmd.WaitDelay = 10 * time.Second

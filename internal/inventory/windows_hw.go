@@ -51,7 +51,8 @@ func windowsHardwareInfo(w wmiHardware) Hardware {
 	if len(w.Processors) > 0 {
 		hw.CPUModel = asString(w.Processors[0]["Name"])
 		for _, p := range w.Processors {
-			if n, ok := asUint64(p["NumberOfLogicalProcessors"]); ok {
+			// Um processador com mais de 4096 threads é dado estragado (G115: o int não estoura).
+			if n, ok := asUint64(p["NumberOfLogicalProcessors"]); ok && n <= maxThreadsPerCPU {
 				hw.CPUThreads += int(n)
 			}
 		}
@@ -71,6 +72,18 @@ func asString(v any) string {
 	return strings.TrimSpace(fmt.Sprint(v))
 }
 
+// maxThreadsPerCPU: acima disso o WMI devolveu lixo.
+const maxThreadsPerCPU = 4096
+
+// nonNegative: o número com sinal vira uint64 só se não for negativo (Aula 20.2, gosec G115:
+// antes a conversão vinha primeiro, e o -1 virava 18446744073709551615 com ok=false).
+func nonNegative[T int8 | int16 | int32 | int64 | int](n T) (uint64, bool) {
+	if n < 0 {
+		return 0, false
+	}
+	return uint64(n), true
+}
+
 // asUint64 aceita números de qualquer largura e também texto: pela interface de scripting
 // do WMI, inteiros de 64 bits costumam chegar como string.
 func asUint64(v any) (uint64, bool) {
@@ -84,15 +97,15 @@ func asUint64(v any) (uint64, bool) {
 	case uint64:
 		return n, true
 	case int8:
-		return uint64(n), n >= 0
+		return nonNegative(n)
 	case int16:
-		return uint64(n), n >= 0
+		return nonNegative(n)
 	case int32:
-		return uint64(n), n >= 0
+		return nonNegative(n)
 	case int64:
-		return uint64(n), n >= 0
+		return nonNegative(n)
 	case int:
-		return uint64(n), n >= 0
+		return nonNegative(n)
 	case string:
 		u, err := strconv.ParseUint(strings.TrimSpace(n), 10, 64)
 		return u, err == nil

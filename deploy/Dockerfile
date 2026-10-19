@@ -3,7 +3,8 @@
 #   docker build -f deploy/Dockerfile --build-arg VERSION=v0.1.0 --build-arg COMMIT=$(git rev-parse HEAD) -t patchd-server:v0.1.0 .
 
 # ---------- Estágio 1: compilação ----------
-FROM golang:1.27.1-trixie AS build
+# A mesma versão do Dockerfile.dev e do go.mod (Aula 20.2).
+FROM golang:1.27.2-trixie AS build
 
 # CA corporativa (opcional): necessária para baixar módulos atrás da inspeção TLS
 # e copiada para a imagem final, para o servidor buscar os catálogos.

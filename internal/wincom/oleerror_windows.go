@@ -16,6 +16,7 @@ func comError(op string, err error) error {
 	if !errors.As(err, &oe) {
 		return &Error{Op: op, Err: err}
 	}
+	// #nosec G115 -- HRESULT: 32 bits num uintptr
 	code := uint32(oe.Code())
 	if code == dispException {
 		// O EXCEPINFO vem como subcausa. A busca por interface evita depender do tipo exato.

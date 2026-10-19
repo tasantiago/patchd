@@ -65,7 +65,7 @@ func keySignal(path string) protocol.RebootSignal {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|registry.WOW64_64KEY)
 	switch {
 	case err == nil:
-		k.Close()
+		_ = k.Close()
 		sig.Pending = true
 	case errors.Is(err, registry.ErrNotExist):
 	default:

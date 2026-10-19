@@ -329,6 +329,7 @@ func (c *Cache) serveIndex(w http.ResponseWriter, r *http.Request, host, p strin
 
 	var meta indexMeta
 	stored := false
+	// #nosec G703 -- host da lista e caminho limpo (ServeHTTP)
 	if b, err := os.ReadFile(metaFile); err == nil && json.Unmarshal(b, &meta) == nil {
 		if _, err := os.Stat(file); err == nil {
 			stored = true
@@ -341,6 +342,7 @@ func (c *Cache) serveIndex(w http.ResponseWriter, r *http.Request, host, p strin
 		return c.stale(w, r, file, true, errors.New("a origem falhou há menos de 1 minuto; sem nova tentativa"))
 	}
 
+	// #nosec G704 -- host da lista PATCHD_REPO_CACHE_HOSTS e caminho limpo (ServeHTTP)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, c.origin(host, p), nil)
 	if err != nil {
 		return "", 0, err
@@ -353,6 +355,7 @@ func (c *Cache) serveIndex(w http.ResponseWriter, r *http.Request, host, p strin
 			req.Header.Set("If-None-Match", meta.ETag)
 		}
 	}
+	// #nosec G704 -- host da lista PATCHD_REPO_CACHE_HOSTS e caminho limpo (ServeHTTP)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		c.markDown(host)
@@ -458,6 +461,7 @@ type call struct {
 // serveObject entrega um arquivo imutável: do disco, ou da primeira origem que o tiver
 // (origins: uma para o apt; os espelhos do metalink para o Fedora).
 func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host string, origins []string, file, sum string) (string, int64, error) {
+	// #nosec G703 -- file vem de ServeHTTP ou serveFedora, já conferido
 	if fi, err := os.Stat(file); err == nil {
 		c.touch(file, fi.ModTime())
 		return c.serveFile(w, r, file, "HIT")
@@ -482,6 +486,7 @@ func (c *Cache) serveObject(w http.ResponseWriter, r *http.Request, host string,
 		case <-r.Context().Done():
 			return "MISS", 0, r.Context().Err()
 		}
+		// #nosec G703 -- file vem de ServeHTTP ou serveFedora, já conferido
 		if _, err := os.Stat(file); cl.err != nil || err != nil {
 			// O download que estava em andamento falhou ou não guardou nada (404 na origem).
 			w.Header().Set(cacheHeader, "MISS")
@@ -551,10 +556,12 @@ func (c *Cache) fetchObject(parent context.Context, w http.ResponseWriter, host 
 	var lastErr error
 	notFound, serverFail := 0, false
 	for _, u := range origins {
+		// #nosec G704 -- origens da lista de hosts ou espelhos do metalink
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			return fail(http.StatusInternalServerError, "erro interno do cache", err)
 		}
+		// #nosec G704 -- origens da lista de hosts ou espelhos do metalink
 		rs, err := c.HTTP.Do(req)
 		if err != nil {
 			lastErr, serverFail = err, true
@@ -564,7 +571,7 @@ func (c *Cache) fetchObject(parent context.Context, w http.ResponseWriter, host 
 			resp = rs
 			break
 		}
-		rs.Body.Close()
+		_ = rs.Body.Close()
 		switch {
 		case rs.StatusCode == http.StatusNotFound:
 			notFound++
@@ -627,9 +634,11 @@ func (c *Cache) fetchObject(parent context.Context, w http.ResponseWriter, host 
 	}
 	// A data do arquivo é o último uso (não a da origem): é por ela que a limpeza decide o
 	// que sai (prune.go).
+	// #nosec G703 -- file vem de ServeHTTP ou serveFedora, já conferido
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
 		return n, err
 	}
+	// #nosec G703 -- file vem de ServeHTTP ou serveFedora, já conferido
 	return n, os.Rename(tmp.Name(), file)
 }
 
@@ -654,6 +663,7 @@ func (b *bestEffort) Write(p []byte) (int, error) {
 func (c *Cache) pass(w http.ResponseWriter, r *http.Request, host, u string) (string, int64, error) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	// #nosec G704 -- host da lista PATCHD_REPO_CACHE_HOSTS e caminho limpo (ServeHTTP)
 	req, err := http.NewRequestWithContext(ctx, r.Method, u, nil)
 	if err != nil {
 		return "PASS", 0, err
@@ -663,6 +673,7 @@ func (c *Cache) pass(w http.ResponseWriter, r *http.Request, host, u string) (st
 			req.Header.Set(h, v)
 		}
 	}
+	// #nosec G704 -- host da lista PATCHD_REPO_CACHE_HOSTS e caminho limpo (ServeHTTP)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		c.markDown(host)
@@ -703,6 +714,7 @@ func (c *Cache) origin(host, p string) string {
 
 // serveFile entrega um arquivo guardado (com Range e If-Modified-Since do apt).
 func (c *Cache) serveFile(w http.ResponseWriter, r *http.Request, file, result string) (string, int64, error) {
+	// #nosec G703 -- file vem de ServeHTTP ou serveFedora, já conferido
 	f, err := os.Open(file)
 	if err != nil {
 		http.Error(w, "erro interno do cache", http.StatusInternalServerError)
@@ -748,6 +760,7 @@ func (c *Cache) lock(key string) func() {
 }
 
 func writeAtomic(file string, data []byte) error {
+	// #nosec G703 -- quem chama passa caminhos dentro de c.Dir, já conferidos
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
 		return err
 	}
@@ -757,12 +770,13 @@ func writeAtomic(file string, data []byte) error {
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+	// #nosec G703 -- quem chama passa caminhos dentro de c.Dir, já conferidos
 	return os.Rename(tmp.Name(), file)
 }
 

@@ -112,7 +112,7 @@ func TestNomeDeExibicao(t *testing.T) {
 	longo := strings.Repeat("Á", MaxDisplayName+10)
 	for in, want := range map[string]string{
 		"  Fulano   de\tTal ":           "Fulano de Tal",
-		"Ana‮Lima":                      "AnaLima", // o caractere que inverte o texto some
+		"Ana\u202eLima":                 "AnaLima", // o caractere que inverte o texto some
 		"Bia\x00\x1b[31m Souza":         "Bia[31m Souza",
 		"":                              "",
 		"\xffZé":                        "Zé",

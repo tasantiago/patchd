@@ -63,12 +63,13 @@ func TestAsUint64(t *testing.T) {
 		{int32(12), 12, true},
 		{uint16(3), 3, true},
 		{int32(-1), 0, false},
+		{int64(-1), 0, false}, // Aula 20.2: e o valor também é 0, não 18446744073709551615
 		{"não é número", 0, false},
 		{nil, 0, false},
 	}
 	for _, c := range casos {
 		got, ok := asUint64(c.v)
-		if ok != c.ok || (ok && got != c.quer) {
+		if ok != c.ok || got != c.quer {
 			t.Errorf("asUint64(%#v) = (%d, %t), esperado (%d, %t)", c.v, got, ok, c.quer, c.ok)
 		}
 	}

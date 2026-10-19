@@ -122,12 +122,12 @@ func writeJSONAtomic(path string, v any) error {
 	}
 	name := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		os.Remove(name)
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		os.Remove(name)
 		return err
 	}

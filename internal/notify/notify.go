@@ -123,7 +123,7 @@ func (m *Mailer) Send(ctx context.Context, subject, body string) error {
 	_ = conn.SetDeadline(deadline)
 	c, err := smtp.NewClient(conn, host)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("SMTP: %w", err)
 	}
 	defer c.Close()

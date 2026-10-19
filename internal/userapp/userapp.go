@@ -111,6 +111,7 @@ func (a *App) Serve(ctx context.Context, ln net.Listener) error {
 	a.mu.Unlock()
 	srv := &http.Server{Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
+	// #nosec G118 -- o ctx já acabou; o desligamento precisa de um prazo próprio
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -195,8 +196,7 @@ const (
 )
 
 type tab struct {
-	ID, Label string
-	Icon      template.HTML // Aula 19.1b: o ícone de linha da barra lateral
+	ID, Label string // o ícone sai do ID (template "icone"; Aula 20.2: sem template.HTML)
 	Href      string
 	Count     int  // um número ao lado do rótulo (atualizações disponíveis); 0: nada
 	Alert     bool // um "!" ao lado do rótulo (reinício pendente sem hora escolhida)
@@ -359,12 +359,12 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.Tabs = []tab{
-		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates), Icon: template.HTML(ui.IcAtualizar)},
-		{ID: tabStore, Label: "Loja", Icon: template.HTML(ui.IcLoja)},
-		{ID: tabRequests, Label: "Meus pedidos", Icon: template.HTML(ui.IcPedidos)},
+		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
+		{ID: tabStore, Label: "Loja"},
+		{ID: tabRequests, Label: "Meus pedidos"},
 	}
 	if d.Reboot != nil { // agentes até a v0.17.2 não trazem o reinício
-		d.Computer = []tab{{ID: tabReboot, Label: "Reinício", Alert: d.Reboot.Options != nil, Icon: template.HTML(ui.IcReinicio)}}
+		d.Computer = []tab{{ID: tabReboot, Label: "Reinício", Alert: d.Reboot.Options != nil}}
 	} else if d.Tab == tabReboot && d.Error == "" {
 		d.Tab = tabUpdates
 	}
@@ -816,7 +816,8 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else}}{{template "pedidos" .}}{{end}}
 {{end}}
 </main></div></body></html>
-{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{.Icon}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}
+{{define "icone"}}{{if eq . "atualizacoes"}}` + ui.IcAtualizar + `{{else if eq . "loja"}}` + ui.IcLoja + `{{else if eq . "pedidos"}}` + ui.IcPedidos + `{{else if eq . "reinicio"}}` + ui.IcReinicio + `{{end}}{{end}}
+{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{template "icone" .ID}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}
 {{define "atualizacoes"}}<section><div class="cab"><h1>Atualizações para você</h1>{{if .UpdateAll}}<form method="post" action="{{$.Base}}atualizar-tudo"><button type="submit">Atualizar tudo ({{.UpdateAll}})</button></form>{{end}}</div>
 {{with .Queue}}{{if .Waiting}}<div class="fila" role="status"><span class="gira" aria-hidden="true"></span><span>Atualizando tudo, uma de cada vez: {{len .Waiting}} na fila. Deixe a Central aberta até terminar.</span><form method="post" action="{{$.Base}}cancelar-fila"><button class="sec" type="submit">Cancelar o restante</button></form></div>{{end}}
 {{if .Failed}}<ul class="falhas">{{range .Failed}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}

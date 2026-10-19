@@ -194,7 +194,7 @@ func TestInstalarInnoEProgramaAberto(t *testing.T) {
 	inst := []byte("MZ instalador inno do vscode")
 	ctx := context.Background()
 	run := &runnerFalso{code: 5}
-	e, pedido := executor(t, inst, run, google, nil)
+	e, _ := executor(t, inst, run, google, nil)
 	p := params(inst, "inno", "/VERYSILENT", "/mergetasks=!runcode")
 	p.ReturnCodes = nil
 	log := filepath.Join(e.LogDir, "instalar-job-33.log")
@@ -214,7 +214,7 @@ func TestInstalarInnoEProgramaAberto(t *testing.T) {
 	// Programa aberto: nem baixa nem executa; o erro diz quantos, quais e em que sessão.
 	p.Processes = []string{"Code.exe"}
 	run = &runnerFalso{}
-	e, pedido = executor(t, inst, run, google, nil)
+	e, pedido := executor(t, inst, run, google, nil)
 	e.Processes = func() ([]platform.Process, error) {
 		return []platform.Process{{Name: "Code.exe", PID: 1, Session: 1}, {Name: "code.exe", PID: 2, Session: 1}, {Name: "explorer.exe", PID: 3, Session: 1}}, nil
 	}

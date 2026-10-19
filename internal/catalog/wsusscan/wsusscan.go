@@ -112,7 +112,7 @@ func (c *Client) head(ctx context.Context) (Remote, error) {
 	if err != nil {
 		return Remote{}, err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return Remote{}, fmt.Errorf("HEAD %s: %s", c.URL, resp.Status)
 	}
@@ -190,9 +190,11 @@ func (c *Client) download(ctx context.Context, part string, remote Remote, progr
 		}
 	}
 	if offset == 0 {
+		// #nosec G306 -- ETag de um arquivo público
 		if err := os.WriteFile(part+".etag", []byte(remote.ETag), 0o640); err != nil {
 			return err
 		}
+		// #nosec G306 -- o wsusscn2.cab é público (da Microsoft)
 		if err := os.WriteFile(part, nil, 0o640); err != nil {
 			return err
 		}
@@ -273,6 +275,7 @@ func (c *Client) fetch(ctx context.Context, part string, offset int64, remote Re
 		return offset, permanent{fmt.Errorf("GET %s: %s", c.URL, resp.Status)}
 	}
 
+	// #nosec G302 -- o wsusscn2.cab é público (da Microsoft)
 	f, err := os.OpenFile(part, flags, 0o640)
 	if err != nil {
 		return offset, permanent{err}
