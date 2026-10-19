@@ -218,7 +218,7 @@ func (a *api) endUserSessionsAction(w http.ResponseWriter, r *http.Request, s pa
 
 // renderAccess: a aba Acesso, com um aviso ou o resultado de um teste.
 func (a *api) renderAccess(w http.ResponseWriter, r *http.Request, s panel.Session, status int, edit func(*settingsView)) {
-	v := settingsView{pageBase: a.baseFor(s, "Configuração", "configuracao"), Tab: "acesso"}
+	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "acesso"}
 	if err := a.accessView(r, s, &v); err != nil {
 		a.internalError(w, r, "montar a aba Acesso", err)
 		return
@@ -351,7 +351,7 @@ type passwordView struct {
 
 // localPasswordPage: a senha aparece uma única vez, na resposta do POST.
 func (a *api) localPasswordPage(w http.ResponseWriter, r *http.Request, s panel.Session, v passwordView) {
-	v.pageBase = a.baseFor(s, "Usuário local", "configuracao")
+	v.pageBase = a.baseFor(r.Context(), s, "Usuário local", "configuracao")
 	w.Header().Set("Cache-Control", "no-store")
 	a.render(w, r, http.StatusOK, "senha-local", v)
 }

@@ -1,10 +1,10 @@
 package api
 
-// Aparência do painel (Aula 11.3): o mesmo padrão do painel de conformidade que a equipe já
-// usa (barra verde, menu com ícone sobre o rótulo, cartões de indicadores, tabelas em
-// cartões). Tudo inline: a CSP do painel não carrega nada de fora (sem CDN, sem fonte
-// externa, sem JavaScript). Os ícones são emoji e um SVG inline, que não são recursos
-// buscados e passam pela CSP.
+// Aparência do painel (Aula 11.3, refeita na 19.1): o padrão das aplicações do tribunal. Barra
+// lateral azul-marinho com o logotipo, o usuário e os grupos do menu; barra superior branca;
+// conteúdo em cinza-claro com os cartões brancos. Tudo inline: a CSP do painel não carrega
+// nada de fora (sem CDN, sem fonte externa, sem JavaScript). Os ícones são SVG de linha
+// desenhados no próprio HTML (layout.go).
 
 // WithBrand define o nome no topo do painel e na tela de login (PATCHD_PANEL_TITLE).
 func WithBrand(name string) Option {
@@ -18,29 +18,90 @@ func WithBrand(name string) Option {
 // shieldSVG é o escudo da marca, desenhado em linha (currentColor: herda o branco da barra).
 const shieldSVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>`
 
-// themeCSS: as cores são as do painel de referência (verde da barra, cinzas, azul,
-// vermelho e laranja dos indicadores).
+// themeCSS: as cores das aplicações do tribunal (marinho da barra lateral, lilás dos títulos
+// dos grupos, rosa dos contadores) e as do painel de conformidade nos indicadores.
 const themeCSS = `
-:root{--verde:#0b7a45;--fundo:#f9fafb;--borda:#e5e7eb;--texto:#111827;--muted:#6b7280;--azul:#066fd1;--azul-2:#0559a8;
---vermelho:#d63939;--laranja:#f59f00;--verde-ok:#2fb344;--raio:8px;--sombra:0 1px 2px rgba(17,24,39,.05)}
+:root{--marinho:#1c2541;--marinho-2:#26305a;--marinho-3:#323d6b;--lilas:#a8a5f0;--rosa:#e5487c;--lado-texto:#c3c9de;
+--destaque:#4352c9;--fundo:#f1f3f7;--borda:#e3e6ec;--texto:#111827;--muted:#6b7280;--azul:#066fd1;--azul-2:#0559a8;
+--vermelho:#d63939;--laranja:#f59f00;--verde-ok:#2fb344;--raio:8px;--sombra:0 1px 2px rgba(17,24,39,.05);
+--lado-w:16rem;--lado-mini:4.5rem;--barra-h:3.6rem}
 *{box-sizing:border-box}
 body{margin:0;font:14px/1.5 "Segoe UI",Inter,system-ui,-apple-system,Roboto,sans-serif;color:var(--texto);background:var(--fundo)}
 a{color:var(--azul)}code{font-size:.88em}
-header.topo{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1.5rem;padding:0 1.25rem;min-height:56px;background:var(--verde);color:#fff}
-.marca{display:flex;align-items:center;gap:.55rem;color:#fff;text-decoration:none;font-weight:700;font-size:1.25rem;white-space:nowrap}
-.marca svg{width:24px;height:24px}
-header nav{display:flex;flex-wrap:wrap;align-items:stretch;margin-left:auto}
-header nav a,header nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:.4rem .7rem .25rem;
-color:#fff;text-decoration:none;font:inherit;font-size:.82rem;background:none;border:0;border-bottom:3px solid transparent;border-radius:0;cursor:pointer}
-header nav .ic{font-size:1.1rem;line-height:1.2}
-header nav a:hover,header nav button:hover{background:rgba(255,255,255,.1)}
-header nav a.ativo{border-bottom-color:#fff;font-weight:600}
-header nav form{display:flex;margin:0}
-.quem{display:flex;flex-direction:column;line-height:1.2;color:#d5efe0;font-size:.72rem;white-space:nowrap;max-width:16rem}
-ul.usuarios{margin:0;padding:0;list-style:none}
-.quem .ola{color:#fff;font-size:.86rem;font-weight:600;overflow:hidden;text-overflow:ellipsis}
-main{max-width:90rem;margin:0 auto;padding:1.5rem 1.25rem 3rem}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Layout (Aula 19.1). O checkbox #menu guarda o estado: na tela larga recolhe a barra lateral
+para só os ícones; na estreita, abre a gaveta. */
+.menu-chk{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;margin:0}
+.lado{position:fixed;inset:0 auto 0 0;z-index:30;width:var(--lado-w);display:flex;flex-direction:column;background:var(--marinho);
+color:var(--lado-texto);overflow-x:hidden;overflow-y:auto;transition:width .15s ease,transform .2s ease}
+.lado .marca{display:flex;align-items:center;gap:.7rem;min-height:var(--barra-h);padding:.6rem 1.1rem;color:#fff;text-decoration:none;
+font-weight:700;font-size:1.12rem;letter-spacing:.01em;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap}
+.lado .marca img{width:36px;height:36px;object-fit:contain;flex:none;border-radius:4px}
+.lado .escudo{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:8px;background:var(--destaque)}
+.lado .escudo svg{width:22px;height:22px}
+.lado .rot{overflow:hidden;text-overflow:ellipsis}
+.lado .usuario{display:flex;align-items:center;gap:.7rem;padding:1rem 1.1rem;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap}
+.lado .usuario .rot{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.lado .usuario strong{color:#fff;font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis}
+.lado .usuario small{font-size:.74rem;color:var(--lado-texto)}
+.avatar{display:grid;place-items:center;flex:none;width:2.2rem;height:2.2rem;border-radius:50%;background:var(--marinho-3);color:#fff;
+font-size:.8rem;font-weight:600;letter-spacing:.03em}
+.lado nav{display:flex;flex-direction:column;padding:.4rem 0 1.5rem}
+.lado .grupo{margin:1.1rem 0 .3rem;padding:0 1.2rem;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--lilas);white-space:nowrap}
+.lado nav a{position:relative;display:flex;align-items:center;gap:.8rem;margin:1px .6rem;padding:.55rem .65rem;border-radius:6px;color:var(--lado-texto);
+text-decoration:none;white-space:nowrap;font-size:.9rem}
+.lado nav a:hover{background:var(--marinho-2);color:#fff}
+.lado nav a.ativo{background:var(--marinho-3);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 var(--lilas)}
+.lado .ic{width:20px;height:20px;flex:none}
+.lado .cont{margin-left:auto;min-width:1.35rem;padding:.05rem .4rem;border-radius:999px;background:var(--rosa);color:#fff;font-size:.7rem;font-weight:700;
+text-align:center;line-height:1.35}
+.area{margin-left:var(--lado-w);min-height:100vh;transition:margin-left .15s ease}
+.barra-topo{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:.9rem;min-height:var(--barra-h);padding:0 1.25rem;background:#fff;
+border-bottom:1px solid var(--borda);box-shadow:var(--sombra)}
+.hamb{display:grid;place-items:center;width:2.3rem;height:2.3rem;border-radius:6px;color:var(--texto);cursor:pointer;flex:none}
+.hamb:hover{background:#f1f3f7}.hamb svg{width:22px;height:22px}
+.menu-chk:focus-visible~.area .hamb{outline:2px solid var(--destaque);outline-offset:2px}
+.trilha{display:flex;align-items:center;gap:.45rem;min-width:0;font-size:.95rem;white-space:nowrap}
+.trilha .secao{color:var(--muted)}.trilha .sep{color:#b5bac4}.trilha .titulo{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.selos{display:flex;gap:.4rem;margin-left:auto}
+.selo{padding:.18rem .6rem;border-radius:999px;border:1px solid var(--borda);background:#f7f8fb;color:var(--muted);font-size:.74rem;white-space:nowrap}
+.selo b{color:var(--texto);font-weight:600}
+.conta{position:relative}
+.conta summary{display:flex;align-items:center;gap:.5rem;padding:.25rem .4rem;border-radius:6px;cursor:pointer;list-style:none;white-space:nowrap}
+.conta summary::-webkit-details-marker{display:none}.conta summary:hover{background:#f1f3f7}
+.conta summary .avatar{width:2rem;height:2rem;background:var(--destaque)}.conta summary .ic{width:16px;height:16px;color:var(--muted)}
+.conta .nome{max-width:12rem;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.conta-menu{position:absolute;right:0;top:calc(100% + .4rem);min-width:15rem;background:#fff;border:1px solid var(--borda);border-radius:var(--raio);
+box-shadow:0 8px 24px rgba(17,24,39,.12);padding:.4rem;z-index:40}
+.conta-menu p{display:flex;flex-direction:column;margin:0;padding:.5rem .6rem .6rem;border-bottom:1px solid var(--borda);line-height:1.35}
+.conta-menu p span{color:var(--muted);font-size:.8rem}
+.conta-menu form{margin:.35rem 0 0}
+.conta-menu button.sair{display:flex;align-items:center;gap:.55rem;width:100%;padding:.5rem .6rem;border:0;border-radius:6px;background:none;color:var(--vermelho);text-align:left}
+.conta-menu button.sair:hover{background:#fbe9e9}.conta-menu .ic{width:18px;height:18px}
+.veu{display:none}
+@media (min-width:961px){
+.menu-chk:checked~.lado{width:var(--lado-mini)}
+.menu-chk:checked~.area{margin-left:var(--lado-mini)}
+.menu-chk:checked~.lado .rot{display:none}
+.menu-chk:checked~.lado .marca,.menu-chk:checked~.lado .usuario{justify-content:center;padding-left:0;padding-right:0}
+.menu-chk:checked~.lado .grupo{height:1px;margin:.7rem 1rem;padding:0;background:rgba(255,255,255,.1)}
+.menu-chk:checked~.lado nav a{justify-content:center;padding:.6rem 0}
+.menu-chk:checked~.lado .cont{position:absolute;top:.1rem;right:.35rem;min-width:1.1rem;padding:0 .25rem;font-size:.62rem}
+}
+@media (max-width:960px){
+.lado{transform:translateX(-100%);box-shadow:none}
+.area{margin-left:0}
+.menu-chk:checked~.lado{transform:none;box-shadow:0 0 40px rgba(0,0,0,.35)}
+.menu-chk:checked~.veu{display:block;position:fixed;inset:0;z-index:25;background:rgba(15,23,42,.45)}
+.selos{display:none}.conta{margin-left:auto}.conta .nome{display:none}
+}
+main{max-width:90rem;margin:0 auto;padding:1.5rem 1.5rem 3rem}
+@media (max-width:600px){main{padding:1rem .9rem 2rem}.barra-topo{padding:0 .8rem}}
 h1{font-size:1.3rem;font-weight:600;margin:.25rem 0 1.1rem}h2{font-size:1rem;font-weight:600;margin:0 0 .75rem}
+ul.usuarios{margin:0;padding:0;list-style:none}
+.logo-linha{display:flex;flex-wrap:wrap;gap:1.25rem;align-items:flex-start}.logo-acoes{flex:1 1 20rem}.logo-acoes p{margin:0 0 .4rem}
+.logo-previa{display:grid;place-items:center;flex:none;width:6.5rem;height:6.5rem;border-radius:var(--raio);background:var(--marinho);color:#fff}
+.logo-previa img{max-width:5rem;max-height:5rem;object-fit:contain}.logo-previa svg{width:2.6rem;height:2.6rem}
 .card,section{background:#fff;border:1px solid var(--borda);border-radius:var(--raio);box-shadow:var(--sombra);padding:1rem 1.25rem;margin:0 0 1.25rem}
 .card-cab{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;margin:-1rem -1.25rem 1rem;padding:.8rem 1.25rem;border-bottom:1px solid var(--borda)}
 .card-cab h2{margin:0}.card-cab .muted{font-size:.8rem}
@@ -78,7 +139,7 @@ dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1.4rem;ma
 .nota{font-size:.78rem;max-width:34rem;margin-top:.15rem}
 .abas{display:flex;flex-wrap:wrap;gap:.25rem;border-bottom:1px solid var(--borda);margin:0 0 1.2rem}
 .abas a{padding:.55rem .95rem;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-weight:500}
-.abas a:hover{color:var(--texto)}.abas a.ativa{color:var(--verde);border-bottom-color:var(--verde)}
+.abas a:hover{color:var(--texto)}.abas a.ativa{color:var(--destaque);border-bottom-color:var(--destaque)}
 .abas .cont{display:inline-block;min-width:1.3rem;padding:0 .35rem;border-radius:999px;background:#eef1f4;color:var(--muted);font-size:.72rem;text-align:center}
 .grade2{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:0 1.2rem}
 .roscas{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:1rem 2.2rem}.roscas li{display:flex;align-items:center;gap:.8rem}

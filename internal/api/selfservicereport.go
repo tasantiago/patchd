@@ -81,7 +81,7 @@ func ssGroup(state string) string {
 }
 
 func (a *api) selfServiceReportPage(w http.ResponseWriter, r *http.Request) {
-	b := a.base(r, "Autoatendimento", "campanhas")
+	b := a.base(r, "Autoatendimento", "autoatendimento")
 	q := r.URL.Query()
 	switch q.Get("msg") { // Aula 18.3: o resultado da decisão
 	case "aprovado":
@@ -242,7 +242,7 @@ func (a *api) approveSelfServiceAction(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	if why != "" {
-		b := a.baseFor(s, "Autoatendimento", "campanhas")
+		b := a.baseFor(r.Context(), s, "Autoatendimento", "autoatendimento")
 		b.Error = fmt.Sprintf("Pedido nº %d não aprovado: %s", id, why)
 		a.renderSSReport(w, r, http.StatusUnprocessableEntity, b)
 		return
@@ -272,7 +272,7 @@ func (a *api) refuseSelfServiceAction(w http.ResponseWriter, r *http.Request, s 
 		return
 	}
 	if why != "" {
-		b := a.baseFor(s, "Autoatendimento", "campanhas")
+		b := a.baseFor(r.Context(), s, "Autoatendimento", "autoatendimento")
 		b.Error = fmt.Sprintf("Pedido nº %d: %s", id, why)
 		a.renderSSReport(w, r, http.StatusUnprocessableEntity, b)
 		return

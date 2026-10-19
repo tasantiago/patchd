@@ -164,6 +164,6 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 
 var oidcDoneTemplate = template.Must(template.New("oidc").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/painel/">
-<title>patchd · entrando</title>` + faviconLink + pageStyle + `</head><body>
-<main class="entrar"><p class="card">Login concluído. <a href="/painel/">Abrir o painel</a>.</p></main></body></html>
+<title>patchd · entrando</title>` + faviconLink + pageStyle + `</head><body class="entrar">
+<main class="entrar" style="padding-top:4rem"><p class="card">Login concluído. <a href="/painel/">Abrir o painel</a>.</p></main></body></html>
 `))

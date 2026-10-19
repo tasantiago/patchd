@@ -87,6 +87,7 @@ type settingsView struct {
 	Audit       *auditView       // aba Auditoria (Aula 15.14)
 	SelfService *selfServiceView // aba Autoatendimento (Aula 17.1)
 	NotifyOn    bool             // aba Sistema: notificações ligadas, com o botão de teste (Aula 18.5)
+	Appearance  *logoView        // aba Sistema: o cartão Aparência (Aula 19.1)
 }
 
 func (a *api) settingsTabs(tab string) string {
@@ -100,8 +101,9 @@ func (a *api) settingsTabs(tab string) string {
 // settingsPage: GET /painel/configuracao[?aba=agente], só admin.
 func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	q := r.URL.Query()
-	v := settingsView{pageBase: a.baseFor(s, "Configuração", "configuracao"), Tab: a.settingsTabs(q.Get("aba")),
+	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: a.settingsTabs(q.Get("aba")),
 		MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: hourOptions(tokenTTLs, 24)}
+	v.Sub = v.Tab
 	switch {
 	case q.Has("revogado"):
 		v.Flash = fmt.Sprintf("Token %s revogado: nenhuma máquina nova se registra com ele.", q.Get("revogado"))
@@ -112,8 +114,11 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	switch v.Tab {
 	case "sistema":
 		notifyFlash(q, &v.pageBase)
+		logoFlash(q, &v.pageBase)
 		v.NotifyOn = a.notifier != nil
-		v.System, err = a.systemRows(r)
+		if v.System, err = a.systemRows(r); err == nil {
+			v.Appearance, err = a.logoCard(r.Context())
+		}
 	case "agente":
 		err = a.agentView(r, &v)
 	case "acesso":
@@ -346,7 +351,7 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 		problem = fmt.Sprintf("Descrição: até %d caracteres, numa linha.", panelTokenMaxNote)
 	}
 	if problem != "" {
-		v := settingsView{pageBase: a.baseFor(s, "Configuração", "configuracao"), Tab: "agente",
+		v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "agente",
 			MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: hourOptions(tokenTTLs, 24)}
 		v.Error = problem
 		if err := a.agentView(r, &v); err != nil {
@@ -366,7 +371,7 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "expires_at", expires.Format(time.RFC3339),
 		"username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), fmt.Sprintf("%d uso(s), vence %s", uses, expires.Format(time.RFC3339)))
-	v := tokenCreatedView{pageBase: a.baseFor(s, "Token de registro", "configuracao"), ID: id, Token: plain,
+	v := tokenCreatedView{pageBase: a.baseFor(r.Context(), s, "Token de registro", "configuracao"), ID: id, Token: plain,
 		Expires: expires.Format("02/01/2006 15:04") + " UTC", Note: note, Uses: uses, CA: len(a.agentCA) > 0}
 	v.Server = a.publicURL
 	if v.Server == "" {

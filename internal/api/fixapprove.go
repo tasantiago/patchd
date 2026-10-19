@@ -146,7 +146,7 @@ func (a *api) approveFixAction(w http.ResponseWriter, r *http.Request, s panel.S
 
 // fixConfirm: o resumo da correção e uma amostra das CVEs, as exploradas primeiro.
 func (a *api) fixConfirm(w http.ResponseWriter, r *http.Request, s panel.Session, fix string, chosen []patchItem, digest, note, errMsg string) {
-	v := fixView{pageBase: a.baseFor(s, "Aprovar a correção", "patch"), FixedIn: fix, Digest: digest, Note: note,
+	v := fixView{pageBase: a.baseFor(r.Context(), s, "Aprovar a correção", "patch"), FixedIn: fix, Digest: digest, Note: note,
 		Back: (patchQuery{Status: "aguardando", Q: fix}).href(), Items: len(chosen), MaxNote: maxNoteLen}
 	v.Error = errMsg
 	sev := map[string]int{}

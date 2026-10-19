@@ -27,7 +27,7 @@ func TestVisaoGeralDePatch(t *testing.T) {
 
 	b := pagina(h, "GET", "/painel/patch?aba=geral", sessaoTeste, nil).Body.String()
 	for _, tr := range []string{
-		`href="/painel/patch?aba=geral" class="ativo"`, `<a href="/painel/patch?aba=geral" class="ativa" aria-current="page">Visão geral</a>`,
+		`href="/painel/patch?aba=geral" title="Patch › Visão geral" class="ativo"`, `<a href="/painel/patch?aba=geral" class="ativa" aria-current="page">Visão geral</a>`,
 		`<span class="kpi-rot">Máquinas em dia</span><span class="kpi-val v-verde">33%</span><span class="kpi-sub">1 de 3</span>`,
 		`<span class="kpi-rot">Sistema: correções aguardando</span><span class="kpi-val v-vermelho">1</span><span class="kpi-sub">1 item(ns) (1 pacote) em 1 máquina(s) · 1 com exploração conhecida</span>`,
 		`<li class="erro"><a href="/painel/patch?status=exploradas">1 item(ns) com exploração conhecida aguardando aprovação</a></li>`,

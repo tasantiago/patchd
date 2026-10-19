@@ -74,7 +74,7 @@ func TestConfiguracao(t *testing.T) {
 
 	// Sistema.
 	b := pagina(h, "GET", "/painel/configuracao", sessaoAdmin, nil).Body.String()
-	for _, tr := range []string{`href="/painel/configuracao" class="ativo"`, "<dt>Servidor</dt><dd>v0.14.4 · commit 8ba97055b6ca · go1.27.1</dd>",
+	for _, tr := range []string{`href="/painel/configuracao" title="Configuração" class="ativo"`, "<dt>Servidor</dt><dd>v0.14.4 · commit 8ba97055b6ca · go1.27.1</dd>",
 		"<dt>Banco</dt><dd>PostgreSQL · migração 30</dd>", `<dt>TLS</dt><dd class="nivel-atencao">ligado · o certificado vence em`,
 		"<dt>URL pública</dt><dd>https://patchd.exemplo:8443</dd>", "<dt>Jobs</dt><dd>ligados · chave " + jobs.KeyID(pub) + "</dd>",
 		"<dt>Atualização do agente</dt><dd>publicada v0.14.4</dd>", `<dt>Conteúdo</dt><dd class="nivel-atencao">desligado`,

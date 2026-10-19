@@ -164,7 +164,7 @@ func (a *api) batchConfirm(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		http.Redirect(w, r, withParams(pq.href(), "erro", "lote-vazio"), http.StatusSeeOther)
 		return
 	}
-	v := batchView{pageBase: a.baseFor(s, "Aprovar em lote", "patch"), Max: maxApproveBatch, MaxNote: maxNoteLen,
+	v := batchView{pageBase: a.baseFor(r.Context(), s, "Aprovar em lote", "patch"), Max: maxApproveBatch, MaxNote: maxNoteLen,
 		Note: note, Status: pq.Status, Q: pq.Q, Back: pq.href(), Skipped: skipped}
 	v.Error = errMsg
 	if len(chosen) > maxApproveBatch {

@@ -205,10 +205,11 @@ type loginData struct {
 	AD       bool // o login é pelo AD: a dica diz para usar o usuário da rede
 	OIDC     bool // botão "Entrar com o RHBK" (Aula 9.4)
 	Brand    string
+	Logo     string // Aula 19.1: o logotipo enviado pelo admin; vazio: o ícone padrão
 }
 
 func (a *api) renderLogin(w http.ResponseWriter, status int, d loginData) {
-	d.OIDC, d.Brand = a.oidc != nil, a.brand
+	d.OIDC, d.Brand, d.Logo = a.oidc != nil, a.brand, a.logoURL(context.Background())
 	pageHeaders(w)
 	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, d)
@@ -384,7 +385,12 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 
 // pageStyle: a tela de login e a de volta do RHBK, no mesmo padrão do painel (Aula 11.3).
 const pageStyle = `<style>` + themeCSS + `
-main.entrar{max-width:26rem;padding-top:3rem}main.entrar h1{margin-top:0}
+body.entrar{min-height:100vh;background:linear-gradient(180deg,var(--marinho) 0 15rem,var(--fundo) 15rem)}
+.entrar-marca{display:flex;flex-direction:column;align-items:center;gap:.6rem;padding:3rem 1rem 1.6rem;color:#fff;font-weight:700;font-size:1.3rem}
+.entrar-marca img{max-width:5.5rem;max-height:5.5rem;object-fit:contain}
+.entrar-marca .escudo{display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:12px;background:var(--destaque)}
+.entrar-marca .escudo svg{width:2rem;height:2rem}
+main.entrar{max-width:26rem;padding-top:0}main.entrar h1{margin-top:0}main.entrar .card{box-shadow:0 10px 30px rgba(17,24,39,.12)}
 main.entrar label{display:block;margin-top:.9rem;font-weight:500}main.entrar input{display:block;width:100%;margin-top:.3rem}
 main.entrar button{margin-top:1.3rem;width:100%;padding:.55rem}main.entrar small{color:var(--muted)}
 a.sso{display:block;text-align:center;padding:.55rem;border:1px solid var(--azul);border-radius:6px;text-decoration:none;color:var(--azul);font-weight:500}
@@ -393,8 +399,8 @@ a.sso:hover{background:#eef5fd}.ou{text-align:center;color:var(--muted);margin:1
 
 var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Brand}} · entrar</title>` + faviconLink + pageStyle + `</head><body>
-<header class="topo"><span class="marca">` + shieldSVG + `<span>{{.Brand}}</span></span></header>
+<title>{{.Brand}} · entrar</title>` + faviconLink + pageStyle + `</head><body class="entrar">
+<div class="entrar-marca">{{if .Logo}}<img src="{{.Logo}}" alt="">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}<span>{{.Brand}}</span></div>
 <main class="entrar"><div class="card">
 <h1>Entrar</h1>
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}

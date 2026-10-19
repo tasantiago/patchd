@@ -104,6 +104,7 @@ func pct(part, total int) int {
 
 func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	v := overviewView{pageBase: a.base(r, "Patch", "patch")}
+	v.Sub = "geral"
 	if a.compliance == nil {
 		v.Unavailable = "A visão geral exige o PostgreSQL com o catálogo."
 		a.render(w, r, http.StatusOK, "patch-geral", v)

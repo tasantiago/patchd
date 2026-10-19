@@ -164,27 +164,25 @@ func TestAnelEmLoteNaFrota(t *testing.T) {
 	}
 }
 
-// Aula 15.11: Campanhas, Jobs e Anéis viraram abas de uma entrada só do menu, Automação.
+// Aula 15.11: Campanhas, Jobs e Anéis são abas da Automação. Aula 19.1: na barra lateral, cada um
+// tem o seu item no grupo AUTOMAÇÃO, e só o da página fica em destaque.
 func TestMenuAutomacao(t *testing.T) {
 	h, _, _ := ambientePaginas(t)
-	menu := `<a href="/painel/campanhas" class="ativo" aria-current="page"><span class="ic">🚀</span>Automação</a>`
-	for path, aba := range map[string]string{
-		"/painel/campanhas": `<a href="/painel/campanhas" class="ativa" aria-current="page">Campanhas</a>`,
-		"/painel/jobs":      `<a href="/painel/jobs" class="ativa" aria-current="page">Jobs</a>`,
-		"/painel/aneis":     `<a href="/painel/aneis" class="ativa" aria-current="page">Anéis e janelas</a>`,
+	for path, c := range map[string]struct{ menu, aba string }{
+		"/painel/campanhas": {`<a href="/painel/campanhas" title="Campanhas" class="ativo" aria-current="page">`, `<a href="/painel/campanhas" class="ativa" aria-current="page">Campanhas</a>`},
+		"/painel/jobs":      {`<a href="/painel/jobs" title="Jobs" class="ativo" aria-current="page">`, `<a href="/painel/jobs" class="ativa" aria-current="page">Jobs</a>`},
+		"/painel/aneis":     {`<a href="/painel/aneis" title="Anéis e janelas" class="ativo" aria-current="page">`, `<a href="/painel/aneis" class="ativa" aria-current="page">Anéis e janelas</a>`},
 	} {
 		b := pagina(h, "GET", path, sessaoAdmin, nil).Body.String()
-		if !strings.Contains(b, menu) || !strings.Contains(b, aba) || strings.Count(b, `class="ativa"`) != 1 {
+		if !strings.Contains(b, c.menu) || !strings.Contains(b, c.aba) || strings.Count(b, `class="ativa"`) != 1 || strings.Count(b, `class="ativo"`) != 1 {
 			t.Errorf("%s: menu ou aba", path)
 		}
-		for _, velho := range []string{"</span>Jobs</a>", "</span>Campanhas</a>", "</span>Anéis</a>"} {
-			if strings.Contains(b, velho) {
-				t.Errorf("%s: o menu ainda tem %q", path, velho)
-			}
+		if !strings.Contains(b, `<p class="grupo"><span class="rot">Automação</span></p>`) {
+			t.Errorf("%s: sem o grupo Automação", path)
 		}
 	}
-	if b := pagina(h, "GET", "/painel/patch?aba=geral", sessaoAdmin, nil).Body.String(); strings.Contains(b, menu) ||
-		!strings.Contains(b, `<a href="/painel/campanhas" ><span class="ic">🚀</span>Automação</a>`) {
+	b := pagina(h, "GET", "/painel/patch?aba=geral", sessaoAdmin, nil).Body.String()
+	if strings.Count(b, `class="ativo"`) != 1 || !strings.Contains(b, `<a href="/painel/campanhas" title="Campanhas" >`) {
 		t.Error("fora da Automação, o item do menu aparece sem destaque")
 	}
 }
