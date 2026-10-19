@@ -1,15 +1,18 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/settings"
@@ -164,6 +167,9 @@ func (a *api) paramsFlash(q url.Values, b *pageBase) {
 			b.Flash = "Restaurado: " + l[0] + " volta a seguir o .env."
 		}
 	}
+	if n, err := strconv.Atoi(q.Get("encerradas")); err == nil && n > 0 && b.Flash != "" {
+		b.Flash += fmt.Sprintf(" %d sessão(ões) aberta(s) pelo AD ou pelo RHBK encerrada(s): quem saiu da lista não fica com o perfil até a sessão vencer; quem continua entra de novo (a sua continua).", n)
+	}
 }
 
 // paramsAction: POST /painel/configuracao/parametros, só admin. Grava o cartão enviado: tudo
@@ -199,6 +205,7 @@ func (a *api) paramsAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		return
 	}
 	who := s.Username
+	before, sources := a.listsBefore(group)
 	changes, err := a.params.Apply(r.Context(), values, who)
 	var fe settings.FieldErrors
 	var rej *settings.RejectedError
@@ -228,7 +235,8 @@ func (a *api) paramsAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		a.logger.Info("parâmetro alterado pela tela", "parametro", c.Key, "username", s.Username, "request_id", RequestID(r.Context()))
 	}
 	a.paramsChanged(s, lines)
-	http.Redirect(w, r, "/painel/configuracao?aba=parametros&gravado="+url.QueryEscape(strings.Join(keys, ",")), http.StatusSeeOther)
+	ended := a.narrowed(r, s, keys, before, sources)
+	http.Redirect(w, r, "/painel/configuracao?aba=parametros&gravado="+url.QueryEscape(strings.Join(keys, ","))+ended, http.StatusSeeOther)
 }
 
 // paramsResetAction: POST /painel/configuracao/parametros/restaurar, só admin.
@@ -243,6 +251,7 @@ func (a *api) paramsResetAction(w http.ResponseWriter, r *http.Request, s panel.
 		return
 	}
 	key := r.PostForm.Get("parametro")
+	before, sources := a.listsBefore("")
 	c, ok, err := a.params.Reset(r.Context(), key, s.Username)
 	var rej *settings.RejectedError
 	switch {
@@ -262,7 +271,99 @@ func (a *api) paramsResetAction(w http.ResponseWriter, r *http.Request, s panel.
 	a.audit(r, s, "parametro.restaurar", c.Key, c.Before+" → "+c.After+" (.env)")
 	a.logger.Info("parâmetro restaurado para o .env", "parametro", c.Key, "username", s.Username, "request_id", RequestID(r.Context()))
 	a.paramsChanged(s, []string{c.String() + " (restaurado para o .env)"})
-	http.Redirect(w, r, "/painel/configuracao?aba=parametros&restaurado="+url.QueryEscape(c.Key), http.StatusSeeOther)
+	ended := a.narrowed(r, s, []string{c.Key}, before, sources)
+	http.Redirect(w, r, "/painel/configuracao?aba=parametros&restaurado="+url.QueryEscape(c.Key)+ended, http.StatusSeeOther)
+}
+
+// Grupos de acesso (Aula 19.4): tirar um grupo (ou papel) da lista encerra as sessões
+// daquela origem, menos a de quem mudou. Sem isso, quem saiu do grupo continuaria com o perfil
+// até a sessão vencer (até 8 h). Acrescentar não encerra nada.
+
+// listsBefore: os valores de agora das listas com sessões (de um cartão; "" = todos).
+func (a *api) listsBefore(group string) (map[string]string, map[string]string) {
+	before, sources := map[string]string{}, map[string]string{}
+	for _, g := range a.params.Groups() {
+		if group != "" && g.Name != group {
+			continue
+		}
+		for _, f := range g.Fields {
+			if f.Sessions != "" {
+				before[f.Key], sources[f.Key] = f.Value, f.Sessions
+			}
+		}
+	}
+	return before, sources
+}
+
+// listItems: as entradas de uma lista da tela (um DN vale inteiro).
+func listItems(v string) []string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	if strings.Contains(v, "=") {
+		return []string{v}
+	}
+	var out []string
+	for _, x := range strings.Split(v, ",") {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// narrowed encerra as sessões das origens cujas listas perderam algum item; devolve o
+// pedaço da URL com quantas ("" nenhuma).
+func (a *api) narrowed(r *http.Request, s panel.Session, keys []string, before, sources map[string]string) string {
+	srcs := map[string]bool{}
+	for _, k := range keys {
+		src, ok := sources[k]
+		if !ok {
+			continue
+		}
+		after := listItems(a.params.Value(k))
+		for _, x := range listItems(before[k]) {
+			if !slices.ContainsFunc(after, func(y string) bool { return strings.EqualFold(x, y) }) {
+				srcs[src] = true
+			}
+		}
+	}
+	if len(srcs) == 0 {
+		return ""
+	}
+	list, err := a.store.PanelSessions(r.Context())
+	if err != nil {
+		a.logger.Error("grupos de acesso: não deu para listar as sessões; encerre em Acesso", "error", err)
+		return ""
+	}
+	var own []byte
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		own = identity.Hash(c.Value)
+	}
+	n := 0
+	for _, x := range list {
+		if !srcs[x.Source] || bytes.Equal(x.Hash, own) {
+			continue
+		}
+		if err := a.store.DeletePanelSession(r.Context(), x.Hash); err != nil {
+			a.logger.Error("grupos de acesso: sessão não encerrada", "session_user", x.Username, "error", err)
+			continue
+		}
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	var labels []string
+	for src := range srcs {
+		labels = append(labels, panel.SourceLabel(src))
+	}
+	slices.Sort(labels)
+	a.audit(r, s, "parametro.sessoes", strings.Join(labels, ", "), fmt.Sprintf("%d sessão(ões) encerrada(s): grupo tirado da lista", n))
+	a.logger.Info("grupos de acesso: sessões encerradas", "quantas", n, "origens", strings.Join(labels, ","), "username", s.Username,
+		"request_id", RequestID(r.Context()))
+	return "&encerradas=" + strconv.Itoa(n)
 }
 
 // paramsChanged: o e-mail para a equipe, sem segurar a resposta (o SMTP pode demorar).

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/identity"
@@ -39,6 +40,9 @@ type ADCheckResult struct {
 	BadPassword                    bool
 	AdminSet, ReadSet, Admin, Read bool
 	Role                           string // vazio: o login seria recusado
+	// Aula 19.4: por qual grupo e os grupos da tela que o AD não achou.
+	AdminVia, ReadVia string
+	Missing           []string
 }
 
 // ADInfo: as variáveis e o teste; o main liga quando o AD está configurado.
@@ -301,19 +305,24 @@ func adResultLines(user string, res ADCheckResult) adResultView {
 	} else {
 		add("Nome de exibição", "vazio no AD: o painel mostra o usuário", "atencao")
 	}
-	grupo := func(set, member bool) (string, string) {
+	grupo := func(set, member bool, via string) (string, string) {
 		switch {
 		case !set:
 			return "não configurado", ""
+		case member && via != "":
+			return "membro, por " + via, ""
 		case member:
 			return "membro", ""
 		}
 		return "não membro", "atencao"
 	}
-	g, l := grupo(res.AdminSet, res.Admin)
-	add("Grupo admin (PATCHD_LDAP_ADMIN_GROUP)", g, l)
-	g, l = grupo(res.ReadSet, res.Read)
-	add("Grupo leitura (PATCHD_LDAP_READ_GROUP)", g, l)
+	g, l := grupo(res.AdminSet, res.Admin, res.AdminVia)
+	add("Grupos admin", g, l)
+	g, l = grupo(res.ReadSet, res.Read, res.ReadVia)
+	add("Grupos leitura", g, l)
+	if len(res.Missing) > 0 {
+		add("Grupos da tela que o AD não achou", strings.Join(res.Missing, ", ")+" (ficam de fora; confira o nome em Parâmetros › Acesso)", "atencao")
+	}
 	if res.Role == "" {
 		add("Perfil no painel", "nenhum: o login seria recusado", "erro")
 		return v

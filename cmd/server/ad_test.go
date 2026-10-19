@@ -60,8 +60,8 @@ func TestADCheck(t *testing.T) {
 	}
 
 	code, out := roda("fulano", "senha-do-fulano")
-	if code != exitOK || !strings.Contains(out, "senha: conferida pelo AD") || !strings.Contains(out, "grupo admin (PATCHD_LDAP_ADMIN_GROUP): membro") ||
-		!strings.Contains(out, "grupo leitura (PATCHD_LDAP_READ_GROUP): não configurado") || !strings.Contains(out, "perfil no painel: admin") ||
+	if code != exitOK || !strings.Contains(out, "senha: conferida pelo AD") || !strings.Contains(out, "grupos admin (1): membro") ||
+		!strings.Contains(out, "grupos leitura (0): não configurado") || !strings.Contains(out, "perfil no painel: admin") ||
 		!strings.Contains(out, "nome de exibição (displayName): preenchido") || strings.Contains(out, "Fulano de Tal") {
 		t.Errorf("fulano: %d\n%s", code, out)
 	}

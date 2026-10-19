@@ -49,6 +49,32 @@ type Config struct {
 	RolesClaim string
 	AdminRole  string // valor no claim que dá o perfil admin
 	ReadRole   string // valor que dá o perfil leitura; vazio: só admins entram
+	// Roles (Aula 19.4): os valores de cada perfil, lidos a cada login (mudam pela tela).
+	// nil: AdminRole e ReadRole. O AdminRole do .env vem sempre na lista de admin.
+	Roles func() (admin, read []string)
+}
+
+// roles: as listas de agora.
+func (c Config) roles() (admin, read []string) {
+	if c.Roles != nil {
+		return c.Roles()
+	}
+	admin = []string{c.AdminRole}
+	if c.ReadRole != "" {
+		read = []string{c.ReadRole}
+	}
+	return admin, read
+}
+
+// anyOf: algum dos valores configurados está no claim (sem a barra inicial dos grupos do
+// RHBK, como RolesAt).
+func anyOf(have, want []string) bool {
+	for _, w := range want {
+		if w = strings.TrimPrefix(strings.TrimSpace(w), "/"); w != "" && slices.Contains(have, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // Validate confere a configuração, sem rede.
@@ -462,10 +488,11 @@ func (p *Provider) identity(claims map[string]any) (Identity, error) {
 	if !panel.ValidUsername(user) {
 		return id, ErrNoUsername
 	}
+	admin, read := p.cfg.roles()
 	switch {
-	case slices.Contains(id.Roles, p.cfg.AdminRole):
+	case anyOf(id.Roles, admin):
 		id.Role = panel.RoleAdmin
-	case p.cfg.ReadRole != "" && slices.Contains(id.Roles, p.cfg.ReadRole):
+	case anyOf(id.Roles, read):
 		id.Role = panel.RoleRead
 	default:
 		return id, panel.ErrNoRole
