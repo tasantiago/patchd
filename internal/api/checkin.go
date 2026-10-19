@@ -39,7 +39,7 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		resp.AgentUpdate = &protocol.AgentUpdate{Version: v}
 	}
 	resp.OfflineCatalog = a.offlineCatalog(r)
-	resp.RepoCache = a.repoCache
+	resp.RepoCache = a.repoAnnouncement()
 	if slices.Contains(req.Capabilities, protocol.CapabilityJobs) {
 		// Uma falha aqui não derruba o check-in: os jobs ficam pendentes para o próximo.
 		delivered, err := a.store.DeliverJobs(r.Context(), id, a.now())

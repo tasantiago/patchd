@@ -88,7 +88,7 @@ func allRings() []int {
 
 // ringsPage lista os anéis em uso (máquinas e janela) e, para o admin, o formulário da janela.
 func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
-	v := ringsView{pageBase: a.base(r, "Anéis e janelas", "aneis"), Rings: allRings(), Days: dayValues, Timezone: a.timezone}
+	v := ringsView{pageBase: a.base(r, "Anéis e janelas", "aneis"), Rings: allRings(), Days: dayValues, Timezone: a.tz()}
 	for _, m := range windowDurations {
 		v.Durations = append(v.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
 	}

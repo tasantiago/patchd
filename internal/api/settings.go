@@ -33,6 +33,8 @@ type SystemInfo struct {
 	TLSNotAfter                func() time.Time
 	Retention                  string
 	Catalog                    string // o agendamento do catálogo, como o log da partida diz
+	// Live (Aula 19.2): o catálogo e a retenção que valem agora (mudam pela tela); nil: os de cima.
+	Live func() (catalog, retention string)
 }
 
 // WithSystemInfo liga a aba Sistema da Configuração.
@@ -88,12 +90,17 @@ type settingsView struct {
 	SelfService *selfServiceView // aba Autoatendimento (Aula 17.1)
 	NotifyOn    bool             // aba Sistema: notificações ligadas, com o botão de teste (Aula 18.5)
 	Appearance  *logoView        // aba Sistema: o cartão Aparência (Aula 19.1)
+	Params      []paramGroup     // aba Parâmetros (Aula 19.2)
 }
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
 	case "agente", "acesso", "auditoria", "autoatendimento":
 		return tab
+	case "parametros":
+		if a.params != nil {
+			return tab
+		}
 	}
 	return "sistema"
 }
@@ -129,6 +136,10 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	case "autoatendimento":
 		selfServiceFlash(q, &v.pageBase)
 		err = a.selfServiceTab(r, &v)
+	case "parametros":
+		a.paramsFlash(q, &v.pageBase)
+		v.NotifyOn = a.notifier != nil
+		v.Params = a.paramsView(nil, nil)
 	}
 	if err != nil {
 		a.internalError(w, r, "montar a configuração", err)
@@ -162,8 +173,12 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 			}
 			add("TLS", fmt.Sprintf("ligado · o certificado vence em %s (%d dias)", exp.UTC().Format("02/01/2006"), days), level)
 		}
-		add("Catálogo", dash(si.Catalog), "")
-		add("Retenção", dash(si.Retention), "")
+		catalog, retention := si.Catalog, si.Retention
+		if si.Live != nil {
+			catalog, retention = si.Live()
+		}
+		add("Catálogo", dash(catalog), "")
+		add("Retenção", dash(retention), "")
 	}
 	if a.publicURL == "" {
 		add("URL pública", "— (sem PATCHD_PUBLIC_URL: o comando de instalação sai com o endereço a preencher)", "atencao")

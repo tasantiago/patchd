@@ -209,7 +209,7 @@ type loginData struct {
 }
 
 func (a *api) renderLogin(w http.ResponseWriter, status int, d loginData) {
-	d.OIDC, d.Brand, d.Logo = a.oidc != nil, a.brand, a.logoURL(context.Background())
+	d.OIDC, d.Brand, d.Logo = a.oidc != nil, a.brandName(), a.logoURL(context.Background())
 	pageHeaders(w)
 	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, d)

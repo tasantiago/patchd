@@ -355,15 +355,25 @@ const catalogRunsRetention = 90 * 24 * time.Hour
 
 // catalogLoop sincroniza o catálogo dentro do servidor: a primeira vez depois de first, e
 // depois a cada interval. Cada execução disputa a trava do banco; se outro processo estiver
-// sincronizando, esta pula a vez. O resultado de cada fonte vai para o log.
-func catalogLoop(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, interval, first time.Duration) {
-	catalogLoopWith(ctx, logger, st, srcs, defaultSyncOptions("agendada", srcs.ContentDir != ""), interval, first)
+// sincronizando, esta pula a vez. O resultado de cada fonte vai para o log. Aula 19.2: o
+// intervalo é lido de novo a cada mudança (changed) e a cada execução; 0 desliga sem parar o
+// laço (ligar de novo pela tela volta a agendar).
+func catalogLoop(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, interval func() time.Duration, first time.Duration, changed <-chan struct{}) {
+	catalogLoopWith(ctx, logger, st, srcs, defaultSyncOptions("agendada", srcs.ContentDir != ""), interval, first, changed)
 }
 
 // catalogLoopWith é o laço do agendamento, com as opções como parâmetro (os testes limitam
 // as fontes).
-func catalogLoopWith(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, opts syncOptions, interval, first time.Duration) {
-	logger.Info("sincronização do catálogo agendada", "primeira_em", first.Round(time.Second).String(), "intervalo", interval.String())
+func catalogLoopWith(ctx context.Context, logger *slog.Logger, st catalogScheduler, srcs catalogSources, opts syncOptions,
+	interval func() time.Duration, first time.Duration, changed <-chan struct{}) {
+	start := time.Now()
+	var last time.Time // a última execução deste laço
+	iv := interval()
+	if iv == 0 {
+		logger.Info("sincronização do catálogo desligada (PATCHD_CATALOG_INTERVAL=0): use patchd-server catalog sync ou ligue em Configuração › Parâmetros")
+	} else {
+		logger.Info("sincronização do catálogo agendada", "primeira_em", first.Round(time.Second).String(), "intervalo", iv.String())
+	}
 	timer := time.NewTimer(first)
 	defer timer.Stop()
 	for {
@@ -371,9 +381,32 @@ func catalogLoopWith(ctx context.Context, logger *slog.Logger, st catalogSchedul
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+		case <-changed:
+			if now := interval(); now != iv {
+				if now == 0 {
+					logger.Info("sincronização do catálogo desligada pela tela")
+				} else {
+					logger.Info("sincronização do catálogo reagendada pela tela", "intervalo", now.String())
+				}
+				iv = now
+			}
+		}
+		iv = interval()
+		if iv == 0 {
+			timer.Stop()
+			continue // desligada: só uma mudança acorda o laço
+		}
+		due := start.Add(first)
+		if !last.IsZero() {
+			due = last.Add(iv)
+		}
+		if wait := time.Until(due); wait > 0 {
+			timer.Reset(wait)
+			continue
 		}
 		runScheduledSync(ctx, logger, st, srcs, opts)
-		timer.Reset(interval)
+		last = time.Now()
+		timer.Reset(iv)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -37,20 +38,7 @@ const (
 // ou 90 a 3650 dias.
 func retentionConfig(look config.Lookup) (store.Retention, error) {
 	days := func(key string, def, min int, zeroOK bool) (int, error) {
-		v := config.String(look, key, strconv.Itoa(def))
-		n, err := strconv.Atoi(v)
-		switch {
-		case err != nil:
-			return 0, fmt.Errorf("%s: use um número de dias (recebido %q)", key, v)
-		case n == 0 && zeroOK:
-			return 0, nil
-		case n < min || n > 3650:
-			if zeroOK {
-				return 0, fmt.Errorf("%s: use 0 (guardar sempre) ou de %d a 3650 dias (recebido %d)", key, min, n)
-			}
-			return 0, fmt.Errorf("%s: use de %d a 3650 dias (recebido %d)", key, min, n)
-		}
-		return n, nil
+		return parseDays(key, config.String(look, key, strconv.Itoa(def)), min, zeroOK)
 	}
 	h, err := days("PATCHD_RETENTION_HISTORY_DAYS", defaultHistoryDays, 30, false)
 	if err != nil {
@@ -66,6 +54,24 @@ func retentionConfig(look config.Lookup) (store.Retention, error) {
 	}
 	return store.Retention{History: time.Duration(h) * 24 * time.Hour, Jobs: time.Duration(j) * 24 * time.Hour,
 		Audit: time.Duration(a) * 24 * time.Hour}, nil
+}
+
+// parseDays confere um prazo em dias: de min a 3650 (e 0, guardar sempre, se zeroOK). Aula
+// 19.2: a mesma conferência vale para o valor que vem da tela.
+func parseDays(key, v string, min int, zeroOK bool) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	switch {
+	case err != nil:
+		return 0, fmt.Errorf("%s: use um número de dias (recebido %q)", key, v)
+	case n == 0 && zeroOK:
+		return 0, nil
+	case n < min || n > 3650:
+		if zeroOK {
+			return 0, fmt.Errorf("%s: use 0 (guardar sempre) ou de %d a 3650 dias (recebido %d)", key, min, n)
+		}
+		return 0, fmt.Errorf("%s: use de %d a 3650 dias (recebido %d)", key, min, n)
+	}
+	return n, nil
 }
 
 // describeRetention: "histórico 90 dias; jobs 400 dias" (ou "jobs guardados sempre").
@@ -88,11 +94,19 @@ type pruner interface {
 }
 
 // retentionLoop aplica a retenção na partida e depois de hora em hora, até o encerramento.
-// deleted (pode ser nil) conta as linhas apagadas por tabela, para as métricas.
-func retentionLoop(ctx context.Context, logger *slog.Logger, p pruner, r store.Retention, deleted *metrics.CounterVec) {
+// deleted (pode ser nil) conta as linhas apagadas por tabela, para as métricas. Aula 19.2: os
+// prazos são lidos a cada passada (mudam pela tela); a mudança não apaga na hora, e quem
+// encurtou por engano tem até a próxima passada para voltar atrás.
+func retentionLoop(ctx context.Context, logger *slog.Logger, p pruner, cur func() store.Retention, deleted *metrics.CounterVec) {
 	t := time.NewTicker(pruneEvery)
 	defer t.Stop()
+	var last store.Retention
 	for {
+		r := cur()
+		if last != (store.Retention{}) && r != last {
+			logger.Info("retenção: prazos novos (parâmetros da tela): " + describeRetention(r))
+		}
+		last = r
 		res, err := p.Prune(ctx, r, time.Now(), false)
 		switch {
 		case err != nil && ctx.Err() == nil:
@@ -155,7 +169,13 @@ func runRetention(args []string, look config.Lookup, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitRuntime
 	}
-	return retentionCommand(ctx, store.NewPostgres(pool), cfg.Retention, args, time.Now(), stdout, stderr)
+	pg := store.NewPostgres(pool)
+	// Aula 19.2: os prazos que valem são os da tela, se houver (os mesmos do servidor).
+	r := cfg.Retention
+	if rr, err := retentionConfig(screenLookup(ctx, look, pg)); err == nil {
+		r = rr
+	}
+	return retentionCommand(ctx, pg, r, args, time.Now(), stdout, stderr)
 }
 
 func retentionCommand(ctx context.Context, st retentionStore, r store.Retention, args []string, now time.Time, stdout, stderr io.Writer) int {

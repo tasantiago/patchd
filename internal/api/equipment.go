@@ -553,8 +553,8 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 
 // stamp: a hora no fuso do painel (PATCHD_TIMEZONE, Aula 11.1); sem fuso, em UTC e dito.
 func (a *api) stamp(t time.Time) string {
-	if a.timezone != "" {
-		if loc, err := time.LoadLocation(a.timezone); err == nil {
+	if tz := a.tz(); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
 			return t.In(loc).Format("02/01/2006 15:04")
 		}
 	}
