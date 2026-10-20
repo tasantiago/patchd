@@ -689,3 +689,22 @@ env:PATCHD_PUBLIC_URL       # o valor desta variável no .env ou no deploy/.env
 Além da lista, o script procura o conteúdo de cada arquivo de `deploy/secrets/`, o cookie da
 varredura do ZAP e chaves privadas (do patchd, do age e PEM). Um achado mostra o arquivo e a
 linha da lista (nunca o valor) e o `.tar.gz` não é gerado. O histórico do git é só contado.
+
+## Nome nos avisos do Windows (Aula 20.9)
+
+Os avisos da Central de software (o balão perto do relógio) mostram no título o nome do
+programa que o Windows tira da "Descrição do arquivo" do executável. Sem ela, aparecia o nome
+do arquivo (`patchd-app.exe` ou `patchd-agent.exe`). O `scripts/build.sh` agora grava o
+recurso de versão no agente do Windows:
+
+| Variável do build | Padrão | Onde aparece |
+|---|---|---|
+| `PATCHD_APP_NAME` | `Central de software` | título dos avisos, Gerenciador de Tarefas, aplicativos de inicialização, Propriedades › Detalhes |
+| `PATCHD_APP_COMPANY` | vazio | Propriedades › Detalhes (Empresa) |
+
+Junto vão a versão (FileVersion e ProductVersion, como a do build), `ProductName` patchd e o
+nome original `patchd-agent.exe`. Os dois nomes são do ambiente, como as chaves públicas: ficam
+fora do repositório. O mesmo executável é o serviço e a Central, então o serviço também aparece
+com esse nome no Gerenciador de Tarefas (na aba Serviços, o nome continua o do serviço).
+
+O Windows pode guardar o nome antigo do remetente dos avisos até o próximo logon do usuário.
