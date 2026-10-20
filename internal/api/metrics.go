@@ -17,6 +17,8 @@ type Metrics struct {
 	checkins *metrics.CounterVec
 	jobs     *metrics.CounterVec
 	logins   *metrics.CounterVec
+	// Aula 20.5: requisições de máquinas recusadas pelo limite, por classe.
+	agentLimits *metrics.CounterVec
 }
 
 // NewMetrics registra as métricas da API no registro.
@@ -27,6 +29,8 @@ func NewMetrics(r *metrics.Registry) *Metrics {
 		checkins: r.NewCounter("patchd_checkins_total", "Check-ins dos agentes, por canal (https ou http).", "canal"),
 		jobs:     r.NewCounter("patchd_jobs_encerrados_total", "Jobs encerrados com o resultado do agente, por tipo e estado.", "tipo", "estado"),
 		logins:   r.NewCounter("patchd_logins_total", "Logins no painel, por método (senha ou rhbk) e resultado.", "metodo", "resultado"),
+		agentLimits: r.NewCounter("patchd_agente_limitado_total",
+			"Requisições de máquinas recusadas pelo limite por máquina (429), por classe (relatorio ou geral).", "classe"),
 	}
 }
 

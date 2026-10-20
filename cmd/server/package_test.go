@@ -41,9 +41,9 @@ func TestPackageShow(t *testing.T) {
 	c := wingetFalso(t)
 	m, err := thirdparty.Parse([]byte(`{"version": 1, "apps": [
 		{"id": "7zip", "os": "windows", "name": "7-Zip", "category": "feed", "match": "^7-Zip", "source": {"type": "winget", "id": "7zip.7zip"},
-		 "install": {"winget": "7zip.7zip", "type": "exe"}},
+		 "install": {"winget": "7zip.7zip", "type": "exe", "unsigned_reason": "teste"}},
 		{"id": "sumiu", "os": "windows", "name": "Sumiu", "category": "minimum", "match": "^Sumiu", "min_version": "1",
-		 "install": {"winget": "Empresa.Sumiu"}},
+		 "install": {"winget": "Empresa.Sumiu", "unsigned_reason": "teste"}},
 		{"id": "so-avalia", "os": "windows", "name": "Só avalia", "category": "minimum", "match": "^X", "min_version": "1"}]}`))
 	if err != nil {
 		t.Fatal(err)

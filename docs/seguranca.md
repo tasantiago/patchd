@@ -84,11 +84,12 @@ quem resolve.
 | S | Servidor falso entregando jobs | TLS com a CA da instituição (`-ca-file`, 9.2); **jobs assinados (A1) e conferidos pelo agente**; releases assinadas (A2) | — |
 | S | Máquina se passando por outra | A máquina é a dona da credencial: o ID vem da credencial, nunca da URL (4.3) | — |
 | T | Job adulterado no caminho | Assinatura Ed25519 do job, prazo de validade, ID amarrado à máquina (8.1) | — |
-| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura Authenticode exigida quando o manifesto define | **F1** (abaixo): com a chave de jobs, instala qualquer executável. **S6/S8** |
-| T | Inventário falso (T3) envenena o painel | Escape no HTML; limites de tamanho (8 MiB por corpo, listas) | Parsers sem fuzzing: **S3** |
-| D | Máquina enchendo o servidor | Limite de corpo; gzip conferido | Sem limite de requisições por máquina: **S6** |
+| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura Authenticode exigida quando o manifesto define | **F1** (abaixo): com a chave de jobs, instala qualquer executável. **20.5b** (lista no agente) e **S8** |
+| T | Inventário falso (T3) envenena o painel | Escape no HTML; limites de tamanho (8 MiB por corpo, listas); texto limpo na entrada e fuzzing (20.3) | — |
+| D | Máquina enchendo o servidor | Limite de corpo; gzip conferido; **limite de requisições por máquina** (20.5: inventário e busca 20/h, o resto 720/h; 429 com Retry-After) | — |
 | I | Credencial vazada no tráfego | TLS; porta HTTP só para transição e cache (9.3) | Fechar a porta HTTP quando ninguém usar (já possível; registrar) |
-| E | Token de enrollment reaproveitado | Prazo e número de usos; só o hash (4.2, 15.2) | Revisão no **S6** |
+| E | Token de enrollment reaproveitado | Prazo e número de usos (padrão 24 h e 1 uso; máximo 30 dias e 10 mil); só o hash; 256 bits (adivinhar é inviável, não precisa de limite de tentativas) (4.2, 15.2, revisto na 20.5) | — |
+| S | **Credencial de máquina copiada** (imagem de disco, backup do agente) | Pasta do agente só do SYSTEM/root; aposentar a máquina revoga a credencial | Não expira nem gira: **S8** (rotação) |
 
 ### 4.3 Central ↔ agente (pipe local)
 
@@ -103,7 +104,7 @@ quem resolve.
 
 | | Ameaça | Controle | Lacuna |
 |---|---|---|---|
-| T | Instalador adulterado na origem (T5) | Download com SHA-256 do winget; organização Authenticode da regra (14.2); aprovação humana (14.5) | Regras sem `Signer` aceitam instalador sem assinatura conhecida: **F2** |
+| T | Instalador adulterado na origem (T5) | Download com SHA-256 do winget; organização Authenticode da regra (14.2); aprovação humana (14.5); regra sem `signer` exige `unsigned_reason`, à vista na aprovação (20.5) | O 7-Zip não assina: vale o SHA-256 do winget e a aprovação |
 | T | Catálogo envenenado | Fontes oficiais por HTTPS; o catálogo só informa, não executa; fuzzing do YAML do winget e do metalink (20.3); os JSON das fontes passam pelo `encoding/json` | — |
 | D | Fonte fora do ar | Catálogo guardado; offline (wsusscn2) | — |
 
@@ -129,13 +130,15 @@ quem resolve.
 
 - **F1 — A chave de jobs é a chave da frota.** Quem controla o servidor (ou só lê o arquivo da
   chave de jobs) assina um job `thirdparty` com um executável qualquer e o SHA-256 dele; sem
-  `Signer` no job, o agente aceita um arquivo sem assinatura conhecida. Mitigação a desenhar no
-  **S6/S8**: o agente exigir assinatura Authenticode de uma organização de uma lista que fica
-  na máquina (fora do alcance do servidor), e a aprovação de um instalador assinada por uma
+  `Signer` no job, o agente aceita um arquivo sem assinatura conhecida. Mitigação: na **20.5b**,
+  o agente exige assinatura Authenticode de uma organização de uma lista que fica na máquina
+  (fora do alcance do servidor); no **S8**, a aprovação de um instalador assinada por uma
   segunda chave guardada fora do servidor (como a de release).
 - **F2 — Regra de terceiros sem `Signer`.** O manifesto pode ter programas sem a organização
-  da assinatura; para eles, só o SHA-256 vale. Revisar o manifesto e tornar o `Signer`
-  obrigatório para executáveis (**S6**).
+  da assinatura; para eles, só o SHA-256 vale. **Resolvido na 20.5**: toda regra de instalação
+  tem `signer` ou `unsigned_reason`; sem os dois, o manifesto não carrega. No manifesto
+  embutido, só o 7-Zip fica sem assinatura (ele não assina o instalador), com o motivo, que a
+  tela de aprovação mostra.
 - **F3 — O `.bat` de senha de BIOS nas máquinas HP** (fora do patchd, achado na conversa da
   Aula 17): a senha fica legível por qualquer usuário da máquina. Tratar junto com o
   inventário da BIOS (Módulo 21): ACL por SID e migração para um cofre.
@@ -257,7 +260,7 @@ Lacuna conhecida: a Central de software (no agente, porta local) ainda usa `styl
 | S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (preparado: seção 5c; resultado do lab a registrar) | 20.4 |
-| S6 | API dos agentes: limite por máquina, F1 e F2, tokens de enrollment | 20.5 |
+| S6 | API dos agentes: limite por máquina, F2 e tokens (feito na 20.5); F1 na 20.5b (lista de organizações no agente, release) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota (F5) | 20.7 |
 | S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco (F4) | 20.8 |

@@ -54,6 +54,9 @@ func (a *api) machineAuth(next func(http.ResponseWriter, *http.Request, string))
 			unauthorized(w, "credencial da máquina ausente ou inválida")
 			return
 		}
+		if !a.checkAgentLimit(w, r, id) {
+			return
+		}
 		next(w, r, id)
 	})
 }

@@ -152,6 +152,7 @@ type api struct {
 	oidcLogins  oidcPending                // logins pelo RHBK em andamento (state → nonce e PKCE)
 	metrics     *Metrics                   // contadores da Aula 10.2; nil: desligados
 	limiter     loginLimiter               // falhas de login por usuário+IP e por IP
+	agentLimits agentLimiter               // requisições por máquina (Aula 20.5)
 	hashSlots   chan struct{}              // conferências de senha simultâneas
 	system      *SystemInfo                // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
 	agentCA     []byte                     // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)

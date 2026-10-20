@@ -20,7 +20,7 @@ import (
 // o cartão "Instaladores guardados" mostra cada versão que o servidor baixou e conferiu,
 // com a aprovação. Aprovar é por programa e versão, e só o admin aprova.
 
-type tpInstallInfo struct{ Winget, Type, Signer, Processes string }
+type tpInstallInfo struct{ Winget, Type, Signer, Unsigned, Processes string }
 
 type tpPackageRow struct{ Type, Arch, Size, SHA, Fetched string }
 
@@ -52,7 +52,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	if rule == nil {
 		return nil
 	}
-	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer,
+	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
 		Processes: strings.Join(rule.Install.Processes, ", ")}
 	v.MaxNote = maxNoteLen
 	pkgs, err := a.store.ThirdPartyPackages(r.Context())

@@ -73,8 +73,13 @@ type Install struct {
 	// serve, na ordem do manifesto (como o winget).
 	Type string `json:"type,omitempty"`
 	// Signer exige que o instalador seja assinado por esta organização (O= do certificado,
-	// Aula 14.4). Vazio: o agente confere e informa a assinatura, mas não exige.
+	// Aula 14.4).
 	Signer string `json:"signer,omitempty"`
+	// UnsignedReason: por que o instalador não tem assinatura que se possa exigir (Aula
+	// 20.5, achado F2). Uma regra de instalação tem Signer ou UnsignedReason, nunca nenhum
+	// dos dois: sem assinatura, o que garante o arquivo é o SHA-256 do manifesto do
+	// winget-pkgs, que vem do mesmo lugar que o endereço do download. Fica escrito e à vista.
+	UnsignedReason string `json:"unsigned_reason,omitempty"`
 	// Processes lista os executáveis do programa (Aula 14.6b). Com algum deles aberto, o
 	// agente não instala e o job falha dizendo qual: o instalador não substitui arquivo em
 	// uso, e o patchd não fecha o programa de quem está trabalhando. Só os medidos entram.
@@ -183,6 +188,15 @@ func (a *App) compile() error {
 			if !jobs.ValidProcess(n) {
 				return fmt.Errorf("install.processes: %q não é o nome de um executável (Code.exe)", n)
 			}
+		}
+		switch { // Aula 20.5 (F2): depois das conferências de forma
+		case a.Install.Signer == "" && strings.TrimSpace(a.Install.UnsignedReason) == "":
+			return fmt.Errorf("install exige signer (a organização O= da assinatura do instalador) ou unsigned_reason " +
+				"(por que ele não tem assinatura): sem nenhum dos dois, o SHA-256 do winget-pkgs seria a única garantia (Aula 20.5)")
+		case a.Install.Signer != "" && a.Install.UnsignedReason != "":
+			return fmt.Errorf("install com signer e unsigned_reason: escolha um")
+		case len(a.Install.UnsignedReason) > 300 || strings.ContainsAny(a.Install.UnsignedReason, "\r\n\t"):
+			return fmt.Errorf("install.unsigned_reason: uma linha, até 300 caracteres")
 		}
 	}
 	var err error
