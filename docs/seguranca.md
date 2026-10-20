@@ -311,7 +311,17 @@ aspas, travessia de caminho e textos longos (perto de 17 mil pedidos):
 
 O `scripts/zap.sh` passou a conferir a sessão antes (sessão que não abre o painel: nem
 começa) e depois (caiu no meio: sai com 4), e deixa o "Sair" fora da varredura. A ativa com
-sessão fica para a próxima rodada do lab.
+sessão veio na rodada seguinte (Aula 20.4c).
+
+**Ativa com sessão (Aula 20.4c).** Sessão válida do começo ao fim, 73 rotas (contra 11 da
+primeira ativa), 83 % de respostas 2xx e **nenhuma 5xx**. Os ataques ativos (injeção de SQL,
+XSS refletido e persistente, travessia de caminho, inclusão de arquivo, injeção de comando,
+entre outros) não acharam nada. Nenhum alerta novo: os seis que vieram são os da tabela acima,
+já decididos. O "Private IP Disclosure" apareceu também na aba Hardware da máquina, que mostra
+o gateway da placa de rede: mesma decisão (dado da máquina, só com login). Atenção para o
+pacote de revisão (S9): o relatório do lab tem os endereços das VMs e da rede delas; só vai com
+`ZAP=` se a lista de termos proibidos cobrir esses prefixos, e o `revisao.sh` barra se não
+cobrir. **S5 fechado.**
 
 ## 5d. Elevação local de privilégio (S7, Aula 20.6)
 
@@ -409,7 +419,7 @@ computador que está no histórico continua uma decisão em aberto (reescrever o
 | S4 | Matriz de rotas gerada do código e testada na prática | 20.1 |
 | S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
-| S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (feito: seção 5c; F7 e F8 resolvidos na 20.4b; falta a ativa com sessão) | 20.4 e 20.4b |
+| S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (feito: seção 5c; F7 e F8 resolvidos na 20.4b; ativa com sessão limpa na 20.4c) | 20.4, 20.4b e 20.4c |
 | S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar (feito: seção 5d, v0.17.9) | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota; F5 (feito: seção 5e, v0.17.10) | 20.7 |
