@@ -53,6 +53,9 @@ func (c *linuxCollector) Hardware(ctx context.Context) (Hardware, error) {
 	if dmiLido {
 		hw.Sources = append(hw.Sources, dmiDir)
 	}
+	if hw.Firmware = c.firmware(); hw.Firmware != nil { // Aula 21.1
+		hw.Sources = append(hw.Sources, efiDir, tpmVersionFile)
+	}
 
 	if data, err := c.readFile(cpuinfoPath); err == nil {
 		hw.CPUModel, hw.CPUThreads = parseCPUInfo(data)

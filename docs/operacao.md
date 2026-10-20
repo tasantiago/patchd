@@ -713,3 +713,23 @@ Windows tira da "Descrição do arquivo" do executável. Sem ela, aparecia o nom
 
 O serviço (`patchd-agent.exe`) fica com a descrição padrão; só a cópia da Central leva o nome do
 painel.
+
+## Firmware no inventário (Aula 21.1)
+
+O agente informa o estado do firmware no inventário, **só leitura**, e a aba Hardware da
+máquina mostra o cartão **Firmware**:
+
+| Linha | De onde vem (Windows) | Linux |
+|---|---|---|
+| Modo (UEFI ou BIOS legado) | `GetFirmwareType` | `/sys/firmware/efi` |
+| Secure Boot | `HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State` | variável EFI `SecureBoot` |
+| TPM (2.0, 1.2, nenhum) | WMI `root\cimv2\Security\MicrosoftTpm`, `Win32_Tpm` | `/sys/class/tpm/tpm0` |
+| Senha de administrador e de ligar (definida ou não) | WMI do fabricante: HP `HP_BIOSPassword`, Dell `PasswordObject`, Lenovo `Lenovo_BiosPasswordSettings` | — |
+
+- Das senhas, só se estão definidas: nada da senha passa pelo agente.
+- Modelo sem a interface do fabricante (antigo, ou sem o WMI da BIOS): "sem informação", sem
+  erro no inventário. No macOS, o firmware não é coletado.
+- Destaques: senha de administrador não definida em vermelho; BIOS legado, Secure Boot
+  desligado, TPM 1.2 ou nenhum em amarelo.
+- O servidor confere os valores (conjunto fechado); um firmware fora dele é descartado, o resto
+  do inventário entra, e o motivo fica nos erros do relatório.

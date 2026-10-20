@@ -274,6 +274,7 @@ func (a *api) inventoryView(r *http.Request, id string, v *machineView) error {
 	if inv.Hardware != nil {
 		hw := *inv.Hardware
 		v.HWParams = hardwareParams(hw)
+		v.FWParams = firmwareParams(hw) // Aula 21.1
 		v.HWSources = hw.Sources
 		v.Category = category(hw.Manufacturer, hw.Model, hw.ChassisType)
 		v.Model = strings.TrimSpace(hw.Manufacturer + " " + hw.Model)
@@ -284,4 +285,72 @@ func (a *api) inventoryView(r *http.Request, id string, v *machineView) error {
 		v.Software = softwareTab(id, inv, r.URL.Query(), a.stamp)
 	}
 	return nil
+}
+
+// --- Firmware (Aula 21.1) ------------------------------------------------------------
+
+// fwRow: uma linha do firmware, com o nível (o que merece atenção aparece em destaque).
+type fwRow struct {
+	Label, Value, Level string
+}
+
+// firmwareParams: o estado do firmware como o agente informa, só leitura.
+func firmwareParams(hw protocol.Hardware) []fwRow {
+	f := hw.Firmware
+	if f == nil {
+		return nil
+	}
+	yesNo := func(p *bool, yes, no, noLevel string) (string, string) {
+		switch {
+		case p == nil:
+			return "", ""
+		case *p:
+			return yes, ""
+		}
+		return no, noLevel
+	}
+	var rows []fwRow
+	add := func(label, value, level string) {
+		if value != "" {
+			rows = append(rows, fwRow{label, value, level})
+		}
+	}
+	switch f.Mode {
+	case protocol.FirmwareUEFI:
+		add("Modo", "UEFI", "")
+	case protocol.FirmwareLegacy:
+		add("Modo", "BIOS legado (sem Secure Boot)", "atencao")
+	}
+	v, l := yesNo(f.SecureBoot, "ligado", "desligado", "atencao")
+	add("Secure Boot", v, l)
+	switch f.TPM {
+	case protocol.TPMNone:
+		add("TPM", "nenhum", "atencao")
+	case "1.2":
+		add("TPM", "1.2 (o Windows 11 pede o 2.0)", "atencao")
+	case "2.0":
+		add("TPM", "2.0", "")
+	}
+	if f.Interface == "" {
+		if firmwareVendorKnown(hw.Manufacturer) {
+			add("Senha da BIOS", "sem informação: o modelo não respondeu pela interface do fabricante", "")
+		}
+		return rows
+	}
+	v, l = yesNo(f.AdminPassword, "definida", "NÃO definida: qualquer pessoa na frente da máquina muda o firmware", "erro")
+	add("Senha de administrador da BIOS", v, l)
+	v, _ = yesNo(f.PowerOnPassword, "definida", "não definida", "")
+	add("Senha de ligar", v, "")
+	add("Fonte das senhas", firmwareInterfaceLabel[f.Interface], "")
+	return rows
+}
+
+var firmwareInterfaceLabel = map[string]string{
+	protocol.FirmwareHP: "HP (WMI da BIOS)", protocol.FirmwareDell: "Dell (WMI da BIOS)", protocol.FirmwareLenovo: "Lenovo (WMI da BIOS)",
+}
+
+// firmwareVendorKnown: fabricantes cuja interface o agente consulta.
+func firmwareVendorKnown(manufacturer string) bool {
+	m := strings.ToLower(manufacturer)
+	return strings.HasPrefix(m, "hp") || strings.Contains(m, "hewlett") || strings.HasPrefix(m, "dell") || strings.HasPrefix(m, "lenovo")
 }
