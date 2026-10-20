@@ -143,6 +143,11 @@ func TestInstall(t *testing.T) {
 		regra(`, "install": {"winget": "Google.Chrome", "processes": ["C:\\x\\chrome.exe"]}`):                                                         "não é o nome de um executável",
 		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"winget": "a.b"}}]}`: "só vale para windows",
 		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                       "exige categoria feed ou minimum",
+		// Aula 20.5 (F2): assinatura exigida ou o motivo de não ter.
+		regra(`, "install": {"winget": "Google.Chrome"}`):                                                 "install exige signer",
+		regra(`, "install": {"winget": "Google.Chrome", "unsigned_reason": "  "}`):                        "install exige signer",
+		regra(`, "install": {"winget": "Google.Chrome", "signer": "Google LLC", "unsigned_reason": "x"}`): "escolha um",
+		regra(`, "install": {"winget": "Google.Chrome", "unsigned_reason": "a\nb"}`):                      "uma linha",
 	} {
 		if _, err := Parse([]byte(entrada)); err == nil || !strings.Contains(err.Error(), trecho) {
 			t.Errorf("%s: %v (queria %q)", entrada, err, trecho)

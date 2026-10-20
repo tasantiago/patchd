@@ -185,6 +185,7 @@ curl -s --cacert CA.crt -H @<(printf 'Authorization: Bearer %s\n' "$(cat deploy/
 | `patchd_checkins_total{canal}` | contador | check-ins por canal (https, http) |
 | `patchd_jobs_encerrados_total{tipo,estado}` | contador | resultados de jobs vindos dos agentes |
 | `patchd_logins_total{metodo,resultado}` | contador | logins no painel (senha ou rhbk; ok, recusado, bloqueado, sem_grupo) |
+| `patchd_agente_limitado_total{classe}` | contador | requisições de máquinas recusadas pelo limite por máquina (Aula 20.5; relatorio ou geral). Subindo: uma máquina fora do normal (o log diz qual, uma vez a cada 10 min) |
 | `patchd_machines{canal}` | medidor | máquinas ativas pelo canal do último check-in (https, http, nenhum) |
 | `patchd_compliance_machines{estado}` | medidor | máquinas por estado de compliance (RF-23) |
 | `patchd_jobs{estado}` | medidor | jobs por estado |

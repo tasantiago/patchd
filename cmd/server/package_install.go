@@ -116,7 +116,7 @@ func packageInstall(ctx context.Context, st installStore, key ed25519.PrivateKey
 		fmt.Fprintf(stderr, "patchd-server: criar job: %v\n", err)
 		return exitRuntime
 	}
-	signer := "não exigida (o agente informa)"
+	signer := "não exigida (o agente informa): " + d.App.Install.UnsignedReason
 	if p.Signer != "" {
 		signer = "exigida: " + p.Signer
 	}

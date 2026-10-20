@@ -75,11 +75,11 @@ func ambientePacotes(t *testing.T) (*winget.Client, *pkgcache.Fetcher, thirdpart
 	f.Wait = time.Millisecond
 	m, err := thirdparty.Parse([]byte(`{"version": 1, "apps": [
 		{"id": "google-chrome", "os": "windows", "name": "Google Chrome", "category": "minimum", "match": "^Google Chrome$", "min_version": "1",
-		 "install": {"winget": "Google.Chrome"}},
+		 "install": {"winget": "Google.Chrome", "signer": "Google LLC"}},
 		{"id": "7zip", "os": "windows", "name": "7-Zip", "category": "minimum", "match": "^7-Zip", "min_version": "1",
-		 "install": {"winget": "7zip.7zip", "type": "exe"}},
+		 "install": {"winget": "7zip.7zip", "type": "exe", "unsigned_reason": "teste"}},
 		{"id": "versionado", "os": "windows", "name": "Versionado", "category": "minimum", "match": "^V", "min_version": "1",
-		 "install": {"winget": "Empresa.Versionado"}}]}`))
+		 "install": {"winget": "Empresa.Versionado", "unsigned_reason": "teste"}}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
