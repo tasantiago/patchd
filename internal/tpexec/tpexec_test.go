@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/platform"
@@ -275,5 +276,70 @@ func TestListaDaMaquina(t *testing.T) {
 		case !c.ok && (!errors.Is(err, jobs.ErrRefused) || !strings.Contains(err.Error(), c.msg) || run.prog != ""):
 			t.Errorf("%s: %v (executou %q)", nome, err, run.prog)
 		}
+	}
+}
+
+// runnerComEnv: o runnerFalso que aceita ambiente (como o platform.SilentRunner).
+type runnerComEnv struct {
+	runnerFalso
+	env []string
+}
+
+func (r *runnerComEnv) RunEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	r.env = env
+	return r.Run(ctx, name, args...)
+}
+
+// Aula 20.6 (S7): o instalador fica seguro da conferência ao fim da execução, é conferido de
+// novo depois de seguro, e o TEMP do instalador é uma pasta do job.
+func TestSeguroAteRodar(t *testing.T) {
+	inst := []byte("instalador")
+	ctx := context.Background()
+
+	// Trocado entre o download e o Hold: recusado, nada roda.
+	run := &runnerFalso{}
+	e, _ := executor(t, inst, run, google, nil)
+	e.Hold = func(path string) (func(), error) {
+		_ = os.WriteFile(path, []byte("instalad0r"), 0o600) // mesmo tamanho, outro conteúdo
+		return func() {}, nil
+	}
+	if _, err := e.Install(ctx, 7, params(inst, "nullsoft", "/S")); !errors.Is(err, jobs.ErrRefused) ||
+		!strings.Contains(err.Error(), "mudou depois do download") || run.prog != "" {
+		t.Errorf("trocado: %v (executou %q)", err, run.prog)
+	}
+
+	// Caminho normal: segura antes de rodar, solta depois, e só então o arquivo sai.
+	rodando := &runnerComEnv{}
+	e, _ = executor(t, inst, &rodando.runnerFalso, google, nil)
+	e.Run = rodando
+	var ordem []string
+	e.Hold = func(path string) (func(), error) {
+		ordem = append(ordem, "segura")
+		return func() {
+			if _, err := os.Stat(path); err != nil {
+				t.Error("o arquivo sumiu antes de soltar")
+			}
+			ordem = append(ordem, "solta")
+		}, nil
+	}
+	e.TempDir = filepath.Join(t.TempDir(), "tmp")
+	velha := filepath.Join(e.TempDir, "job-1")
+	_ = os.MkdirAll(velha, 0o700)
+	_ = os.Chtimes(velha, time.Now().Add(-8*24*time.Hour), time.Now().Add(-8*24*time.Hour))
+	if _, err := e.Install(ctx, 7, params(inst, "nullsoft", "/S")); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(e.TempDir, "job-7")
+	if strings.Join(ordem, ",") != "segura,solta" || !rodando.existe {
+		t.Errorf("ordem %v, existia ao rodar: %v", ordem, rodando.existe)
+	}
+	if strings.Join(rodando.env, "|") != "TEMP="+dir+"|TMP="+dir {
+		t.Errorf("ambiente: %q", rodando.env)
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		t.Error("a pasta do job não foi criada")
+	}
+	if _, err := os.Stat(velha); !os.IsNotExist(err) {
+		t.Error("a pasta de um job de mais de 7 dias ficou")
 	}
 }

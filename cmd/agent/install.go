@@ -75,7 +75,7 @@ func runInstall(args []string, look config.Lookup, stdout, stderr io.Writer, age
 	}
 
 	// A pasta é protegida antes de qualquer coisa ser gravada nela (trava e credencial).
-	if err := protectDataDir(cfg.DataDir); err != nil {
+	if err := protectDataDir(cfg.DataDir, func(n string) { fmt.Fprintln(stdout, "pasta de dados: "+n) }); err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: proteger %s: %v\n", cfg.DataDir, err)
 		return exitRuntime
 	}

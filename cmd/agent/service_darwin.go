@@ -46,7 +46,7 @@ func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer)
 		return exitRuntime
 	}
 
-	if err := protectDataDir(cfg.DataDir); err != nil {
+	if err := protectDataDir(cfg.DataDir, func(n string) { fmt.Fprintln(stderr, "patchd-agent: pasta de dados: "+n) }); err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: proteger %s: %v\n", cfg.DataDir, err)
 		return exitRuntime
 	}

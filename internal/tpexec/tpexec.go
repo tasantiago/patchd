@@ -64,7 +64,24 @@ type Executor struct {
 	// disser: quem tem a chave de jobs (o servidor, ou quem roubou a chave) não instala um
 	// executável qualquer. Vazia: vale só o que o job exige.
 	AllowedSigners []string
+	// Hold (Aula 20.6, S7): segura o instalador, sem deixar ninguém escrever, renomear nem
+	// apagar, da conferência até o fim da execução (platform.HoldFile, no Windows). Com ele,
+	// o arquivo é conferido de novo já seguro: o que roda é o que foi conferido.
+	Hold func(path string) (release func(), err error)
+	// TempDir (Aula 20.6): o TEMP e o TMP do instalador ficam numa subpasta desta, uma por
+	// job. Sem isso, um instalador rodando como SYSTEM extrai os arquivos dele em
+	// C:\Windows\Temp, onde um usuário comum também cria arquivos. Vazio: o TEMP do serviço.
+	TempDir string
 }
+
+// envRunner: o Runner que aceita variáveis de ambiente (platform.SilentRunner).
+type envRunner interface {
+	RunEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
+}
+
+// tempKeep: as pastas temporárias dos jobs ficam uma semana (um instalador que pede
+// reinício pode depender delas até lá) e saem no job seguinte.
+const tempKeep = 7 * 24 * time.Hour
 
 // Install executa o job e devolve o detalhe para o servidor. Erros com jobs.ErrRefused viram
 // "rejeitado" (nada foi executado); com ErrRetry ou outros, "falhou".
@@ -85,6 +102,16 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	if err := e.fetch(ctx, file, p); err != nil {
 		return "", err
 	}
+	if e.Hold != nil {
+		release, err := e.Hold(file)
+		if err != nil {
+			return "", fmt.Errorf("%w: segurar o instalador: %v", jobs.ErrNotStarted, err)
+		}
+		defer release() // antes do os.Remove: os defers rodam do último para o primeiro
+		if err := recheck(file, p); err != nil {
+			return "", err
+		}
+	}
 
 	sigNote, err := e.checkSignature(file, p.Signer)
 	if err != nil {
@@ -92,8 +119,17 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	}
 
 	prog, args := e.command(jobID, file, p)
+	env, err := e.jobTemp(jobID)
+	if err != nil {
+		return sigNote, fmt.Errorf("%w: pasta temporária do job: %v", jobs.ErrNotStarted, err)
+	}
 	start := time.Now()
-	_, runErr := e.Run.Run(ctx, prog, args...)
+	var runErr error
+	if er, ok := e.Run.(envRunner); ok && env != nil {
+		_, runErr = er.RunEnv(ctx, env, prog, args...)
+	} else {
+		_, runErr = e.Run.Run(ctx, prog, args...)
+	}
 	took := time.Since(start).Round(time.Second)
 	code := 0
 	var exitErr interface{ ExitCode() int } // *exec.ExitError; nos testes, um falso
@@ -260,4 +296,43 @@ func cmpOr(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// recheck confere de novo o tamanho e o SHA-256, com o arquivo já seguro (Hold): entre o
+// download e o Hold, o arquivo ficou um instante só com a proteção da pasta.
+func recheck(file string, p jobs.ThirdPartyParams) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); n != p.Size || got != p.SHA256 {
+		return fmt.Errorf("%w: o instalador mudou depois do download (SHA-256 %s…): alguém mexeu na pasta de dados", jobs.ErrRefused, got[:12])
+	}
+	return nil
+}
+
+// jobTemp cria a pasta temporária do job e devolve o TEMP e o TMP para o instalador; apaga
+// as pastas de jobs com mais de tempKeep. Sem TempDir, nil (o ambiente do serviço).
+func (e *Executor) jobTemp(jobID int64) ([]string, error) {
+	if e.TempDir == "" {
+		return nil, nil
+	}
+	if old, err := os.ReadDir(e.TempDir); err == nil {
+		for _, d := range old {
+			if info, err := d.Info(); err == nil && strings.HasPrefix(d.Name(), "job-") && time.Since(info.ModTime()) > tempKeep {
+				_ = os.RemoveAll(filepath.Join(e.TempDir, d.Name()))
+			}
+		}
+	}
+	dir := filepath.Join(e.TempDir, "job-"+strconv.FormatInt(jobID, 10))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	return []string{"TEMP=" + dir, "TMP=" + dir}, nil
 }

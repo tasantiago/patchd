@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -129,7 +130,8 @@ func (a *App) Serve(ctx context.Context, ln net.Listener) error {
 func (a *App) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		// Aula 20.6: o CSS vem de estilo.css (o mesmo segredo no caminho); sem 'unsafe-inline'.
+		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		// O segredo está no caminho: same-origin só manda o Referer para a própria página. Aula
@@ -154,6 +156,9 @@ func (a *App) Handler() http.Handler {
 			a.page(w, r)
 		case sub == "logo" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 			a.logo(w, r)
+		case sub == "estilo.css" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+			w.Header().Set("Content-Type", "text/css; charset=utf-8")
+			_, _ = io.WriteString(w, pageCSS)
 		case sub == "pedir" && r.Method == http.MethodPost:
 			if !a.sameOrigin(r) {
 				http.Error(w, "origem recusada", http.StatusForbidden)
@@ -791,7 +796,7 @@ func (a *App) kickWatch() {
 
 var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{if .TabLabel}}{{.TabLabel}} · {{end}}{{.Title}}</title><style>` + ui.LayoutCSS + css + `</style></head><body>
+<title>{{if .TabLabel}}{{.TabLabel}} · {{end}}{{.Title}}</title><link rel="stylesheet" href="{{.Base}}estilo.css"></head><body>
 <input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
 <aside class="lado" aria-label="menu lateral">
 <a class="marca" href="{{.Base}}" title="{{.Title}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + ui.ShieldSVG + `</span>{{end}}<span class="rot">{{.Title}}{{if .Brand}}<small>{{.Brand}}</small>{{end}}</span></a>
@@ -859,6 +864,9 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{else}}<p class="vazio">Você ainda não fez pedidos neste computador.</p>{{end}}
 </section>
 {{end}}`))
+
+// pageCSS: o arquivo estilo.css da Central (Aula 20.6): o layout do painel e o da Central.
+var pageCSS = ui.LayoutCSS + css
 
 // css: o que é da Central, por cima do layout do painel (ui.LayoutCSS, Aula 19.1b).
 const css = `
