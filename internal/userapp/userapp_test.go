@@ -540,3 +540,23 @@ func TestLayoutDaCentral(t *testing.T) {
 		t.Error("sem logotipo guardado, 404")
 	}
 }
+
+// Aula 20.6: a Central sem CSS inline; o estilo vem de estilo.css, sob o mesmo segredo.
+func TestEstiloDaCentral(t *testing.T) {
+	a := appDeTeste(&canal{loja: lojaDeTeste(0)})
+	w := get(a, a.base())
+	b := strings.ToLower(w.Body.String())
+	if strings.Contains(b, "<style") || strings.Contains(b, " style=") || !strings.Contains(b, `href="`+strings.ToLower(a.base())+`estilo.css"`) {
+		t.Error("página com CSS inline ou sem o link para o estilo")
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "style-src 'self'") || strings.Contains(csp, "unsafe-inline") {
+		t.Errorf("CSP: %q", csp)
+	}
+	css := get(a, a.base()+"estilo.css")
+	if css.Code != 200 || css.Header().Get("Content-Type") != "text/css; charset=utf-8" || !strings.Contains(css.Body.String(), ".barra-topo") {
+		t.Errorf("estilo.css: %d %q", css.Code, css.Header().Get("Content-Type"))
+	}
+	if w := get(a, "/s/segredo-errado/estilo.css"); w.Code != 404 {
+		t.Errorf("estilo.css sem o segredo: %d", w.Code)
+	}
+}

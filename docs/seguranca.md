@@ -97,7 +97,7 @@ quem resolve.
 |---|---|---|---|
 | S | Programa se passando pelo usuário | O agente lê a conta e os grupos do token do Windows de quem abriu o pipe (17.3); só sessão interativa; pipe fechado para a rede (SDDL) | — |
 | E | Usuário pedindo o que a loja não oferece | O servidor refaz a loja a cada pedido; só versões aprovadas (17.2) | — |
-| E | Usuário comum virando administrador pelo agente | Página local com segredo no caminho, Host e Origin conferidos (17.4, 17.5b) | **Permissões das pastas do agente** (instaladores baixados, cópia da Central, atualização): troca do arquivo entre a conferência e a execução. **S7** |
+| E | Usuário comum virando administrador pelo agente | Página local com segredo no caminho, Host e Origin conferidos (17.4, 17.5b); pasta de dados com dono Administradores, nascida protegida, sem links (20.6); instalador seguro da conferência ao fim da execução e conferido de novo; TEMP do instalador numa pasta do SYSTEM (20.6) | — |
 | D | Usuário enchendo o servidor de pedidos | Limite por usuário no pipe (5 pedidos e 60 consultas por 10 min) | — |
 
 ### 4.4 Servidor ↔ fontes externas
@@ -159,6 +159,11 @@ quem resolve.
   Ações: (1) agora, duas cópias offline cifradas (dois pendrives, guardados em lugares
   diferentes, por exemplo um cofre), com a frase de acesso fora do pendrive; (2) no **S8**, o
   agente aceitar duas chaves (a atual e a seguinte), para a troca não depender da antiga.
+
+- **F6 — Pasta de dados do agente criada antes do install** (Aula 20.6, revisão do S7). Um
+  usuário comum podia criar `C:\ProgramData\patchd` antes, ficar dono e, depois do install,
+  dar a si mesmo controle total da pasta onde os instaladores esperam para rodar como SYSTEM.
+  **Resolvido na 20.6** (seção 5d).
 
 ## 5a. Análise estática (S2, Aula 20.2)
 
@@ -253,8 +258,34 @@ o motivo: o anti-CSRF por cabeçalho e não por token, as datas na tela, as info
 resto é WARN. O spider não envia formulários POST: as ações ficam com a matriz de rotas e o
 fuzzing.
 
-Lacuna conhecida: a Central de software (no agente, porta local) ainda usa `style-src
-'unsafe-inline'`. Ela muda numa release do agente.
+A Central de software (no agente, porta local) também saiu do `'unsafe-inline'` na Aula 20.6
+(v0.17.9): o CSS vem de `estilo.css`, sob o mesmo segredo no caminho.
+
+## 5d. Elevação local de privilégio (S7, Aula 20.6)
+
+O agente roda como SYSTEM e executa instaladores que ficam na pasta de dados
+(`C:\ProgramData\patchd`): quem escreve nela vira SYSTEM. A revisão achou:
+
+- **Pasta criada antes do install (achado F6).** O Windows deixa qualquer usuário criar pastas
+  em `C:\ProgramData`. Quem criasse `patchd` antes do install ficava dono dela, e o dono
+  sempre pode trocar a DACL, por mais protegida que esteja: bastava esperar o install e se dar
+  controle total, ou plantar uma junção em `pacotes` apontando para uma pasta dele. Correção:
+  a pasta nova nasce já com o descritor (dono Administradores, DACL protegida); se já existe,
+  não pode ser link nem junção (o install recusa), o dono passa a ser Administradores e tudo
+  dentro volta a herdar só dela (links e junções lá dentro são apagados). Cada correção sai no
+  log ("pasta de dados corrigida na partida"). No Linux e no macOS, o mesmo com root.
+- **Troca entre conferir e executar.** O instalador era conferido (SHA-256 e assinatura) e
+  depois executado pelo caminho. Agora o agente segura o arquivo aberto, sem deixar ninguém
+  escrever, renomear nem apagar (nem o SYSTEM), confere de novo e só solta depois que o
+  instalador termina.
+- **TEMP do instalador.** Rodando como SYSTEM, os instaladores extraíam os arquivos deles em
+  `C:\Windows\Temp`, onde usuários comuns também criam arquivos (a porta clássica de troca de
+  DLL). Agora o TEMP e o TMP do instalador são `pasta de dados\tmp\job-N`, só do SYSTEM.
+
+Revistos, sem mudança: o executável do serviço e a cópia da Central ficam em `Program
+Files\patchd` (só administradores escrevem); a atualização do agente e o catálogo offline
+ficam na pasta de dados (agora protegida como acima); o canal local da Central tem a sua
+própria ACL (17.3).
 
 ## 6. Plano do bloco de segurança
 
@@ -266,6 +297,6 @@ Lacuna conhecida: a Central de software (no agente, porta local) ainda usa `styl
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (preparado: seção 5c; resultado do lab a registrar) | 20.4 |
 | S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
-| S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar | 20.6 |
+| S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar (feito: seção 5d, v0.17.9) | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota (F5) | 20.7 |
 | S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco (F4) | 20.8 |

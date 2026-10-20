@@ -66,8 +66,9 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 	}
 
 	asService := isServiceProcess()
+	var dirNotes []string // Aula 20.6: o que a proteção da pasta corrigiu, para o log
 	if asService {
-		if err := protectDataDir(cfg.DataDir); err != nil {
+		if err := protectDataDir(cfg.DataDir, func(n string) { dirNotes = append(dirNotes, n) }); err != nil {
 			// Ainda não há log próprio: vai para o stderr que o gerenciador guardar (se guardar).
 			fmt.Fprintf(stderr, "patchd-agent: proteger %s: %v\n", cfg.DataDir, err)
 			return exitRuntime
@@ -86,6 +87,9 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 		return exitConfig
 	}
 	logger = logger.With("app", "patchd-agent", "version", buildinfo.Get().Version)
+	for _, n := range dirNotes {
+		logger.Warn("pasta de dados corrigida na partida", "detalhe", n)
+	}
 
 	opts := loopOptions{
 		DataDir:        cfg.DataDir,

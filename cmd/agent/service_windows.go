@@ -20,11 +20,6 @@ import (
 	"github.com/tasantiago/patchd/internal/credential"
 )
 
-// dataDirSDDL: controle total para SYSTEM e Administradores, herdado por tudo o que for
-// criado dentro (OI = arquivos, CI = pastas), e DACL protegida (P): a pasta deixa de
-// herdar de C:\ProgramData, onde o grupo Usuários tem leitura.
-const dataDirSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
-
 // stopGrace: quanto o serviço espera o laço terminar depois do pedido de parada. Uma busca
 // do WUA em andamento não é interrompível; passado o prazo, o processo sai assim mesmo, a
 // busca se perde e é refeita na próxima partida (a agenda só avança com a busca concluída).
@@ -33,25 +28,6 @@ const stopGrace = 25 * time.Second
 func isServiceProcess() bool {
 	ok, err := svc.IsWindowsService()
 	return err == nil && ok
-}
-
-// protectDataDir cria a pasta de dados e aplica a DACL protegida. O SetNamedSecurityInfo
-// propaga a herança para o que já existe dentro; a credential.json, que tem DACL
-// protegida própria (Aula 4.3), não é afetada.
-func protectDataDir(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	sd, err := windows.SecurityDescriptorFromString(dataDirSDDL)
-	if err != nil {
-		return err
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		return err
-	}
-	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
 }
 
 // installedBinary é onde o serviço roda: em Arquivos de Programas, onde só administradores
@@ -132,7 +108,7 @@ func serviceInstall(args []string, look config.Lookup, stdout, stderr io.Writer)
 		return exitRuntime
 	}
 
-	if err := protectDataDir(cfg.DataDir); err != nil {
+	if err := protectDataDir(cfg.DataDir, func(n string) { fmt.Fprintln(stderr, "patchd-agent: pasta de dados: "+n) }); err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: proteger %s: %v\n", cfg.DataDir, err)
 		return exitRuntime
 	}

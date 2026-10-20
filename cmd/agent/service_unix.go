@@ -40,15 +40,6 @@ func runAsService(logger *slog.Logger, loop func(context.Context) int) int {
 	return loop(ctx)
 }
 
-// protectDataDir: só o dono (root, no serviço) entra na pasta de dados.
-func protectDataDir(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	// #nosec G302 -- é uma pasta: 0700 é só o dono (root)
-	return os.Chmod(dir, 0o700)
-}
-
 // requireAdmin recusa instalar ou remover o serviço sem root.
 func requireAdmin(stderr io.Writer) bool {
 	if os.Geteuid() != 0 {

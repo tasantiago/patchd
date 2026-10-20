@@ -32,6 +32,10 @@ func newThirdParty(client *agent.Client, dataDir string, allowed []string) func(
 		Processes: platform.Processes,
 		// Aula 20.5b: a lista de organizações da própria máquina.
 		AllowedSigners: allowed,
+		// Aula 20.6: o instalador fica seguro da conferência ao fim da execução, e o TEMP
+		// dele é uma pasta só do SYSTEM.
+		Hold:    platform.HoldFile,
+		TempDir: filepath.Join(dataDir, "tmp"),
 	}
 	return e.Install
 }

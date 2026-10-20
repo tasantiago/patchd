@@ -318,6 +318,18 @@ ou a chave roubada): o job pode dizer o que quiser, a lista é da máquina.
 - O resumo da máquina no painel mostra a lista ("Instaladores aceitos"); sem ela, o aviso
   "qualquer assinatura". Agentes anteriores à v0.17.8 não informam (a linha não aparece).
 
+### Pasta de dados do agente (Aula 20.6)
+
+- O install e a partida do serviço conferem a pasta de dados: ela não pode ser link nem
+  junção (o install recusa: confira quem a criou, apague e rode de novo); o dono passa a ser
+  Administradores (root no Linux e no macOS), e tudo dentro volta a herdar só dela. O que foi
+  corrigido sai no log do agente: "pasta de dados corrigida na partida", com o detalhe.
+- Um "dono trocado" numa máquina recém-instalada por um administrador é normal (o Windows
+  põe a conta dele como dona). Numa máquina em que ninguém mexeu, ou um "link ou junção
+  apagado", investigue: alguém preparou a pasta antes do patchd.
+- O TEMP dos instaladores é `pasta de dados\tmp\job-N`; as pastas com mais de 7 dias saem
+  no job seguinte.
+
 ### Loja e Meus pedidos (Aula 17.5)
 
 - **Loja**: o que a oferta deixa o usuário instalar do zero, com uma confirmação antes do
