@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -27,8 +28,9 @@ func systemInfo(info buildinfo.Info, cfg serverConfig, st any, certs *certReload
 	default:
 		si.Catalog = "sincronizado a cada " + cfg.CatalogInterval.String()
 	}
-	if si.Database {
+	if pg, ok := st.(*store.Postgres); ok {
 		si.Schema = store.SchemaVersion()
+		si.Backups = backupStatus(pg) // Aula 20.8, F4
 	}
 	if certs != nil {
 		si.TLSNotAfter = certs.NotAfter
@@ -68,4 +70,17 @@ func loadAgentCA(path string) ([]byte, int, error) {
 		return nil, 0, errors.New("nenhum certificado em PEM no arquivo")
 	}
 	return data, n, nil
+}
+
+// backupStatus: a cópia e o ensaio de restauração mais recentes, para Configuração › Sistema.
+func backupStatus(pg *store.Postgres) func(context.Context) (api.BackupStatus, error) {
+	return func(ctx context.Context) (api.BackupStatus, error) {
+		var b api.BackupStatus
+		var err error
+		if b.Last, b.HasLast, err = pg.LastBackup(ctx); err != nil {
+			return b, err
+		}
+		b.Test, b.HasTest, err = pg.LastRestoreTest(ctx)
+		return b, err
+	}
 }

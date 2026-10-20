@@ -33,3 +33,6 @@
 
 # Relatórios do ZAP (Aula 20.4): têm os endereços e as respostas do lab
 /zap/relatorios/
+
+# Pacote para revisão externa (Aula 20.8): é gerado, e conferido antes de sair
+/revisao/
