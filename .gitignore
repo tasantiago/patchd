@@ -30,3 +30,6 @@
 *:Zone.Identifier
 /lab-*.sh
 /explora-*.sh
+
+# Relatórios do ZAP (Aula 20.4): têm os endereços e as respostas do lab
+/zap/relatorios/

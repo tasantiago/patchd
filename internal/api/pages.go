@@ -525,7 +525,7 @@ var pages = template.Must(template.New("").Parse(`
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}} · {{.Brand}}</title>` + faviconLink + `
-<style>` + themeCSS + `</style></head><body>
+` + styleLink + `</head><body>
 <input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
 <aside class="lado" aria-label="menu lateral">
 <a class="marca" href="/painel/" title="{{.Brand}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}<span class="rot">{{.Brand}}</span></a>
@@ -567,12 +567,6 @@ var pages = template.Must(template.New("").Parse(`
 {{define "fim"}}</main></div></body></html>{{end}}
 
 {{define "parametros"}}<p class="muted">A tela vence: o valor gravado aqui vale no lugar do .env, em todos os servidores do mesmo banco (os outros percebem em até 30 segundos). "Restaurar o padrão" apaga o valor da tela e o .env volta a valer. Cada mudança vai para a auditoria com o antes e o depois{{if .NotifyOn}} e, por e-mail, para a equipe{{end}}. Banco, portas, TLS, chaves e segredos continuam no ambiente.</p>
-<style>.param{display:grid;grid-template-columns:minmax(12rem,16rem) minmax(0,1fr);gap:.4rem 1.2rem;padding:.9rem 0;border-top:1px solid var(--borda)}.param:first-of-type{border-top:0;padding-top:.2rem}
-.param label{font-weight:600}.param .campo{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}.param .campo input[type=text]{flex:1 1 18rem;max-width:32rem}.param .campo input[type=number]{width:8rem}
-.param .info{grid-column:2;font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:.15rem}.param .origem b{color:var(--texto);font-weight:500}
-.fonte{display:inline-block;padding:0 .45rem;border-radius:999px;font-size:.72rem;font-weight:600;margin-right:.3rem}.fonte.tela{background:#eef0fd;color:var(--destaque)}.fonte.env{background:#eef1f4;color:#4b5563}.fonte.padrao{background:#f6f7f9;color:var(--muted)}
-.param.problema{background:#fdf6f6}.param .erro-campo{color:var(--vermelho);font-size:.85rem}.param button.link{background:none;border:0;color:var(--azul);padding:0;font-size:.82rem;text-decoration:underline}
-.param input:disabled,.param select:disabled{background:#f3f4f6;color:var(--muted);cursor:not-allowed}.param-salvar{display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;margin-top:.6rem}.param label.caixa{font-weight:400;display:inline-flex;gap:.35rem;align-items:center;margin-right:.8rem}@media (max-width:700px){.param{grid-template-columns:1fr}.param .info{grid-column:1}}</style>
 {{range .Params}}<div class="card"><div class="card-cab"><h2>{{.Name}}</h2></div>
 <form method="post" action="/painel/configuracao/parametros"><input type="hidden" name="grupo" value="{{.Name}}">
 {{range .Fields}}<div class="param{{if .Problem}} problema{{end}}"><label for="p-{{.Key}}">{{.Label}}</label>
@@ -660,7 +654,6 @@ var pages = template.Must(template.New("").Parse(`
 {{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
 <div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
 <p class="muted">Os pedidos feitos e as recusas ficam em <a href="/painel/autoatendimento">Automação › Autoatendimento</a>. Por programa com instalação pelo patchd. Atualizar: quem já tem o programa leva para a versão aprovada mais nova. Instalar: quem não tem instala essa versão. Grupos do AD pelo sAMAccountName (GG-Exemplo ou DOMINIO\GG-Exemplo), separados por vírgula; vazio: qualquer usuário da máquina. O agente confere pelos grupos do token do Windows de quem pede, inclusive os aninhados. A versão vem sempre da aprovação em Patch: a oferta não aprova nada. Aprovação da TI (Aula 18.3): cada pedido espera alguém aprovar em Automação › Autoatendimento antes de virar job. Desmarcar atualizar e instalar tira o programa da loja.</p>
-<style>.ss-lote{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;border:1px solid var(--borda);border-radius:var(--raio);padding:.7rem .9rem;margin:.9rem 0 0}.ss-lote legend{font-weight:600;padding:0 .3rem}.ss-lote label{display:flex;gap:.35rem;align-items:center}.ss-lote input[type=text]{width:16rem}tr.ss-erro td{background:#fdf2f2}.ss-erro-msg{color:var(--vermelho);font-size:.85rem;margin-top:.25rem}.ss-salvar{display:flex;gap:.6rem;align-items:center;margin:.9rem 0 0}</style>
 <form method="post" action="/painel/configuracao/autoatendimento">
 <div class="tabela"><table><thead><tr><th aria-label="marcar para o lote"></th><th>Programa</th><th>Aprovada mais nova</th><th>Atualizar</th><th>Instalar</th><th>Aprovação da TI</th><th>Grupos do AD</th><th>Última mudança</th></tr></thead>
 <tbody>{{range .Rows}}<tr{{if .Problem}} class="ss-erro"{{end}}><td><input type="checkbox" name="sel" value="{{.AppID}}" aria-label="marcar {{.Name}} para o lote" {{if .Selected}}checked{{end}}><input type="hidden" name="apps" value="{{.AppID}}"></td>
@@ -801,12 +794,12 @@ var pages = template.Must(template.New("").Parse(`
 <div class="card"><div class="card-cab"><h2>Por anel</h2><a class="muted" href="/painel/aneis">Anéis</a></div>
 {{if .Rings}}<div class="tabela"><table><thead><tr><th>Anel</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
 <tbody>{{range .Rings}}<tr><td>{{.Ring}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Missing}}</td><td class="num">{{.Reboot}}</td><td class="num">{{.Stale}}</td><td class="num">{{.NA}}</td>
-<td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span style="width: {{.Pct}}%"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
+<td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span class="w{{.Pct}}"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Por sistema</h2></div>
 {{if .Systems}}<div class="tabela"><table><thead><tr><th>Sistema</th><th>Máquinas</th><th>Em dia</th><th>Pendentes</th><th>Exploradas</th><th>% em dia</th></tr></thead>
 <tbody>{{range .Systems}}<tr><td>{{.OS}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Pending}}</td><td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td>
-<td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span style="width: {{.Pct}}%"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
+<td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span class="w{{.Pct}}"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
 </div>
 <div class="card"><div class="card-cab"><h2>Correções aguardando aprovação</h2><a class="muted" href="{{.FixesHref}}">todos os itens aguardando</a></div>
@@ -1045,7 +1038,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if .Host.Disks}}<h3>Discos</h3><div class="tabela"><table>
 <thead><tr><th>Volume</th><th>Sistema de arquivos</th><th>Tamanho</th><th>Livre</th><th>Ocupado</th></tr></thead>
 <tbody>{{range .Host.Disks}}<tr><td><code>{{.Mount}}</code>{{if .Device}} <span class="muted">{{.Device}}</span>{{end}}{{if .Model}} <span class="muted">{{.Model}}{{if .Bus}} · {{.Bus}}{{end}}</span>{{end}}</td><td>{{.FS}}</td><td class="num">{{.Total}}</td><td class="num">{{.Free}}</td>
-<td><span class="uso {{.Level}}" role="img" aria-label="{{.Pct}}% ocupado"><span style="width:{{.Pct}}%"></span></span> {{.Pct}}%</td></tr>{{end}}</tbody></table></div>{{end}}
+<td><span class="uso {{.Level}}" role="img" aria-label="{{.Pct}}% ocupado"><span class="w{{.Pct}}"></span></span> {{.Pct}}%</td></tr>{{end}}</tbody></table></div>{{end}}
 {{if .Host.Ifs}}<h3>Interfaces</h3><div class="tabela"><table>
 <thead><tr><th>Interface</th><th>Estado</th><th>MAC</th><th>IPv4</th><th>IPv6</th></tr></thead>
 <tbody>{{range .Host.Ifs}}<tr><td>{{.Name}}</td><td>{{if .Up}}ativa{{else}}<span class="muted">inativa</span>{{end}}</td>

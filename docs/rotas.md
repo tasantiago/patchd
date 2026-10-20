@@ -6,7 +6,7 @@ chama cada rota sem sessão, com a credencial de uma máquina, com sessão de le
 de outra origem. As rotas do processo (`/healthz`, `/repo/`, o proxy do apt e a porta de métricas)
 ficam em cmd/server e estão no modelo de ameaças (docs/seguranca.md).
 
-## Pública (6)
+## Pública (7)
 
 Quem pode: qualquer um. Sem sessão: atende.
 
@@ -14,6 +14,7 @@ Quem pode: qualquer um. Sem sessão: atende.
 |---|---|---|
 | POST | `/api/v1/enroll` | registro da máquina: exige um token de enrollment no corpo |
 | GET | `/painel/entrar` | tela de login |
+| GET | `/painel/estilo.css` | folha de estilo do painel (Aula 20.4): a tela de login também usa |
 | GET | `/painel/favicon.svg` | ícone |
 | GET | `/painel/logo` | logotipo da tela de login (Aula 19.1) |
 | GET | `/painel/oidc/entrar` | início do login pelo RHBK (state, nonce e PKCE) |

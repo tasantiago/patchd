@@ -88,7 +88,7 @@ func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 		"<dt>IP principal</dt><dd>192.0.2.1</dd>",
 		"203.0.113.9 <span class=\"muted\">· não é de nenhuma interface da máquina",
 		"<code>/</code> <span class=\"muted\">/dev/sda2</span>", "100,0 GiB", "5,0 GiB",
-		`<span class="uso cheio" role="img" aria-label="95% ocupado"><span style="width:95%"></span></span> 95%`,
+		`<span class="uso cheio" role="img" aria-label="95% ocupado"><span class="w95"></span></span> 95%`,
 		`<span class="uso " role="img" aria-label="50% ocupado">`, "2,0 TiB",
 		"<td>eth0</td><td>ativa</td>", "2001:db8::1/64",
 		`<code>D:</code> <span class="muted">Disco &lt;Teste&gt; · SATA</span>`,

@@ -120,6 +120,8 @@ var auditActions = []struct{ Key, Label string }{
 	{"parametro.restaurar", "Parâmetro restaurado para o .env"},
 	{"parametro.sessoes", "Sessões encerradas: grupo de acesso tirado da lista"},
 	{"cli.settings.reset", "Parâmetro restaurado para o .env (terminal)"},
+	{"cli.session.create", "Sessão de varredura aberta (terminal)"}, // Aula 20.4
+	{"cli.session.end", "Sessões de varredura encerradas (terminal)"},
 }
 
 // AuditLabel: o rótulo da ação; a chave quando não há (ação de uma versão mais nova).

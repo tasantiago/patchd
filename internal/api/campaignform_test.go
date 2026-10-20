@@ -46,7 +46,8 @@ func TestFormularioDaCampanha(t *testing.T) {
 	if b := pagina(h, "GET", "/painel/campanhas?tipo=reboot", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="reboot" checked`) || !strings.Contains(b, `value="Reinício pendente"`) {
 		t.Error("?tipo=reboot")
 	}
-	if css := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String(); !strings.Contains(css, `form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio{display:none}`) {
+	// Aula 20.4: o CSS saiu da página para /painel/estilo.css.
+	if css := pagina(h, "GET", "/painel/estilo.css", "", nil).Body.String(); !strings.Contains(css, `form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio{display:none}`) {
 		t.Error("CSS do :has()")
 	}
 }

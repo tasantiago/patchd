@@ -20,6 +20,6 @@ func favicon(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "public, max-age=86400")
 	h.Set("X-Content-Type-Options", "nosniff")
 	// Um SVG aberto direto no navegador é um documento: sem script, como as páginas.
-	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	h.Set("Content-Security-Policy", defaultCSP) // o SVG não tem CSS: sem 'unsafe-inline' (Aula 20.4)
 	_, _ = w.Write([]byte(faviconSVG))
 }

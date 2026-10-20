@@ -30,8 +30,9 @@ var cliAudited = map[string][]string{
 	"user":     {"create", "password", "delete"},
 	"package":  {"fetch", "install", "approve", "revoke"},
 	"release":  {"publish", "withdraw"},
-	"notify":   {"test"},  // Aula 18.5: uma mensagem sai para a lista
-	"settings": {"reset"}, // Aula 19.2: o valor da tela sai e o .env volta
+	"notify":   {"test"},          // Aula 18.5: uma mensagem sai para a lista
+	"settings": {"reset"},         // Aula 19.2: o valor da tela sai e o .env volta
+	"session":  {"create", "end"}, // Aula 20.4: sessão para a varredura do ZAP
 }
 
 // cliSource é a origem dos eventos da linha de comando.

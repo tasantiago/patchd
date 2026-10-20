@@ -194,7 +194,7 @@ func pageHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "same-origin")
 }
@@ -385,23 +385,9 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/painel/entrar", http.StatusSeeOther)
 }
 
-// pageStyle: a tela de login e a de volta do RHBK, no mesmo padrão do painel (Aula 11.3).
-const pageStyle = `<style>` + themeCSS + `
-body.entrar{min-height:100vh;background:linear-gradient(180deg,var(--marinho) 0 15rem,var(--fundo) 15rem)}
-.entrar-marca{display:flex;flex-direction:column;align-items:center;gap:.6rem;padding:3rem 1rem 1.6rem;color:#fff;font-weight:700;font-size:1.3rem}
-.entrar-marca img{max-width:5.5rem;max-height:5.5rem;object-fit:contain}
-.entrar-marca .escudo{display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:12px;background:var(--destaque)}
-.entrar-marca .escudo svg{width:2rem;height:2rem}
-main.entrar{max-width:26rem;padding-top:0}main.entrar h1{margin-top:0}main.entrar .card{box-shadow:0 10px 30px rgba(17,24,39,.12)}
-main.entrar label{display:block;margin-top:.9rem;font-weight:500}main.entrar input{display:block;width:100%;margin-top:.3rem}
-main.entrar button{margin-top:1.3rem;width:100%;padding:.55rem}main.entrar small{color:var(--muted)}
-a.sso{display:block;text-align:center;padding:.55rem;border:1px solid var(--azul);border-radius:6px;text-decoration:none;color:var(--azul);font-weight:500}
-a.sso:hover{background:#eef5fd}.ou{text-align:center;color:var(--muted);margin:1rem 0 0}
-</style>`
-
 var loginTemplate = template.Must(template.New("entrar").Parse(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Brand}} · entrar</title>` + faviconLink + pageStyle + `</head><body class="entrar">
+<title>{{.Brand}} · entrar</title>` + faviconLink + styleLink + `</head><body class="entrar">
 <div class="entrar-marca">{{if .Logo}}<img src="{{.Logo}}" alt="">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}<span>{{.Brand}}</span></div>
 <main class="entrar"><div class="card">
 <h1>Entrar</h1>

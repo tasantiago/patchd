@@ -71,7 +71,7 @@ quem resolve.
 | S | Senha adivinhada | Limite por usuário+IP e por IP (7.2); AD por LDAPS com bind do próprio usuário (7.3); RHBK com PKCE e nonce (9.4) | — |
 | S | Sessão roubada | Cookie `HttpOnly`, `Secure` com TLS, `SameSite=Strict`; 8 h e 30 min parado; só o hash no banco (7.2) | Sem amarração ao IP ou ao navegador (aceitável; registrar) |
 | T | Formulário de outro site (CSRF) | `CrossOriginProtection` em todo POST; `SameSite=Strict`; **matriz de rotas testada (20.1)** | — |
-| T | Script injetado (XSS) | `html/template` com escape; CSP sem `script-src` (nenhum JavaScript roda) e `frame-ancestors 'none'` (7.2, 11.3) | Varredura dinâmica: **S5 (ZAP)** |
+| T | Script injetado (XSS) | `html/template` com escape; CSP sem `script-src` (nenhum JavaScript roda), sem `'unsafe-inline'` nem no CSS, e `frame-ancestors 'none'` (7.2, 11.3, 20.4); varredura do ZAP (20.4) | — |
 | R | Admin nega o que fez | Trilha de auditoria com antes → depois, origem e ID da requisição (15.13, 19.2); terminal também (18.1) | Trilha no mesmo banco que o admin influencia: **S9** (cópia para fora) |
 | I | Leitura vendo o que é de admin | `adminAction` em toda a Configuração; **teste da matriz (20.1)** | — |
 | E | Leitura fazendo o que é de admin | `sameOrigin(adminAction)` em toda ação; sessão de leitura recebe 403 e vira `acesso.negado` (15.13); **teste da matriz (20.1)** | — |
@@ -116,7 +116,7 @@ quem resolve.
 | T | Dependência vulnerável | Poucas dependências; Go na versão exata (Dockerfiles e go.mod); `scripts/seguranca.sh` e o CI semanal (20.2) | — |
 | D | Banco perdido sem cópia | — | **F4** |
 | E | Porta de métricas | Porta separada, com token (10.2) | — |
-| E | Proxy do cache de repositórios | Só as origens da lista (6.6) | Conferir que não vira proxy aberto: **S5** |
+| E | Proxy do cache de repositórios | Só as origens da lista, só GET/HEAD na porta 80, CONNECT recusado; testes do repocache (6.6) | — |
 
 ### 4.6 Publicação ↔ frota
 
@@ -223,6 +223,31 @@ erro do RHBK.
 Lacuna conhecida: os formulários do painel (POST) não passam pela mesma limpeza. Um admin que
 mande UTF-8 inválido de propósito recebe um 500 na própria tela; não afeta outra pessoa.
 
+## 5c. Varredura dinâmica (S5, Aula 20.4)
+
+Antes do ZAP, o que ele confere de forma passiva virou regra do servidor e teste:
+
+- **Cabeçalhos em toda resposta** (`api.SecurityHeaders`): `nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener/Embedder/Resource-Policy`,
+  CSP padrão fechada e `Cache-Control: no-store`. Antes, só as páginas tinham; o JSON da API,
+  os erros e os redirecionamentos saíam sem nada. Quem precisa de outro valor troca (a página,
+  com a CSP dela; o CSS e o ícone, com cache).
+- **CSP das páginas sem `'unsafe-inline'`**: o CSS saiu das páginas para `/painel/estilo.css`
+  (com o hash na URL e cache longo), e as larguras das barras viraram classes (`.w0` a
+  `.w100`). Atributo `style` e `<style>` na página quebram o teste.
+- `TestCabecalhosDeSeguranca` chama todas as rotas do `api.go` (sem nada e com a sessão certa)
+  e confere tudo isso; rota nova entra sozinha.
+
+O ZAP (`scripts/zap.sh`, no host, contra o lab) roda com uma sessão aberta pela linha de
+comando (`patchd-server session create -role leitura`, origem "varredura", prazo curto, na
+trilha). `zap/regras.tsv` diz o que é FAIL (o que o teste acima garante), o que é IGNORE (com
+o motivo: o anti-CSRF por cabeçalho e não por token, as datas na tela, as informativas) e o
+resto é WARN. O spider não envia formulários POST: as ações ficam com a matriz de rotas e o
+fuzzing.
+
+Lacuna conhecida: a Central de software (no agente, porta local) ainda usa `style-src
+'unsafe-inline'`. Ela muda numa release do agente.
+
 ## 6. Plano do bloco de segurança
 
 | | O quê | Aula |
@@ -231,7 +256,7 @@ mande UTF-8 inválido de propósito recebe um 500 na própria tela; não afeta o
 | S4 | Matriz de rotas gerada do código e testada na prática | 20.1 |
 | S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
-| S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão | 20.4 |
+| S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (preparado: seção 5c; resultado do lab a registrar) | 20.4 |
 | S6 | API dos agentes: limite por máquina, F1 e F2, tokens de enrollment | 20.5 |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota (F5) | 20.7 |
