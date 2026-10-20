@@ -159,3 +159,25 @@ func TestUsuariosConectados(t *testing.T) {
 		t.Errorf("CSV:\n%s", csv)
 	}
 }
+
+// Aula 20.5b: o resumo da máquina mostra a lista de organizações que o agente aceita.
+func TestResumoMostraAListaDeAssinaturas(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	resumo := func(lista []string) string {
+		e := estadoTeste()
+		e.AllowedSigners = lista
+		if err := st.SaveHostState(context.Background(), "60ef97e4-0001", e, "192.0.2.1"); err != nil {
+			t.Fatal(err)
+		}
+		return pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String()
+	}
+	if b := resumo(nil); strings.Contains(b, "Instaladores aceitos") {
+		t.Error("agente que não informa (Linux, versão velha): sem a linha")
+	}
+	if b := resumo([]string{}); !strings.Contains(b, `<dd class="nivel-atencao">qualquer assinatura (sem <code>-allowed-signers</code> nesta máquina)</dd>`) {
+		t.Error("lista vazia: o aviso")
+	}
+	if b := resumo([]string{"Google LLC", "Mozilla Corporation"}); !strings.Contains(b, "<dd>só os assinados por Google LLC, Mozilla Corporation</dd>") {
+		t.Error("lista: as organizações")
+	}
+}

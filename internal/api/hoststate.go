@@ -24,6 +24,10 @@ type hostView struct {
 	UsersKnown bool
 	Users      []userRow
 	Active     int // sessões ativas (alguém na tela): o reinício "agora" pede confirmação (Aula 15.12)
+	// Aula 20.5b: a lista de organizações que o agente aceita nos instaladores de terceiros.
+	// SignersKnown: o agente informa (Windows, v0.17.8 ou mais nova).
+	SignersKnown bool
+	Signers      string
 }
 
 // userRow: uma sessão de usuário na máquina.
@@ -119,6 +123,7 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 		hv.Users = append(hv.Users, userRow{Name: u.DisplayName, Account: u.Account, Session: sessionLabels[u.Session], Active: u.Active})
 	}
 	hv.Active = activeSessions(s.Users)
+	hv.SignersKnown, hv.Signers = s.AllowedSigners != nil, strings.Join(s.AllowedSigners, ", ")
 	return nil
 }
 

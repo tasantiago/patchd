@@ -50,6 +50,18 @@ func TestCheckEstado(t *testing.T) {
 		"exibição com controle": func(s *MachineState) { s.Users[0].DisplayName = "Fulano\x1b]0;x" },
 		"sessão desconhecida":   func(s *MachineState) { s.Users[1].Session = "telnet" },
 		"usuários demais":       func(s *MachineState) { s.Users = make([]LoggedUser, MaxStateUsers+1) },
+		// Aula 20.5b: a lista de organizações aceitas.
+		"organização vazia":        func(s *MachineState) { s.AllowedSigners = []string{""} },
+		"organização com controle": func(s *MachineState) { s.AllowedSigners = []string{"Google\x1b[31m"} },
+		"organização longa":        func(s *MachineState) { s.AllowedSigners = []string{strings.Repeat("a", MaxSignerText+1)} },
+		"organizações demais": func(s *MachineState) {
+			s.AllowedSigners = strings.Split(strings.Repeat("a,", MaxAllowedSigners+1), ",")
+		},
+	}
+	s := estadoValido()
+	s.AllowedSigners = []string{"Google LLC", "Mozilla Corporation"}
+	if err := s.Check(); err != nil {
+		t.Errorf("lista válida recusada: %v", err)
 	}
 	for nome, muda := range casos {
 		s := estadoValido()

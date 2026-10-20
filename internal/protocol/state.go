@@ -24,7 +24,17 @@ type MachineState struct {
 	// ou SO sem suporte); [] = ninguém conectado.
 	Users  []LoggedUser `json:"users"`
 	Errors []string     `json:"errors,omitempty"` // falhas parciais da coleta
+	// AllowedSigners (Aula 20.5b): a lista de organizações que o agente aceita na assinatura
+	// dos instaladores de terceiros (-allowed-signers). null = o agente não informa (anterior
+	// à 20.5b, ou fora do Windows); [] = sem lista, qualquer assinatura.
+	AllowedSigners []string `json:"allowed_signers"`
 }
+
+// Limites da lista de organizações aceitas (Aula 20.5b).
+const (
+	MaxAllowedSigners = 32
+	MaxSignerText     = 128
+)
 
 // LoggedUser é uma sessão de usuário aberta na máquina (Aula 15.6).
 type LoggedUser struct {
@@ -98,6 +108,13 @@ func (s MachineState) Check() error {
 		return fmt.Errorf("%d usuários (máximo %d)", len(s.Users), MaxStateUsers)
 	case len(s.Errors) > MaxStateErrors:
 		return fmt.Errorf("%d erros (máximo %d)", len(s.Errors), MaxStateErrors)
+	case len(s.AllowedSigners) > MaxAllowedSigners:
+		return fmt.Errorf("%d organizações aceitas (máximo %d)", len(s.AllowedSigners), MaxAllowedSigners)
+	}
+	for _, o := range s.AllowedSigners {
+		if o == "" || len(o) > MaxSignerText || strings.ContainsFunc(o, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			return errors.New("organização aceita vazia, longa demais ou com caractere de controle")
+		}
 	}
 	text := func(campo, v string, vazioOK bool) error {
 		switch {

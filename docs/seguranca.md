@@ -84,7 +84,7 @@ quem resolve.
 | S | Servidor falso entregando jobs | TLS com a CA da instituição (`-ca-file`, 9.2); **jobs assinados (A1) e conferidos pelo agente**; releases assinadas (A2) | — |
 | S | Máquina se passando por outra | A máquina é a dona da credencial: o ID vem da credencial, nunca da URL (4.3) | — |
 | T | Job adulterado no caminho | Assinatura Ed25519 do job, prazo de validade, ID amarrado à máquina (8.1) | — |
-| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura Authenticode exigida quando o manifesto define | **F1** (abaixo): com a chave de jobs, instala qualquer executável. **20.5b** (lista no agente) e **S8** |
+| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura exigida quando o manifesto define; **lista de organizações da própria máquina** (`-allowed-signers`, 20.5b) | Máquina sem a lista; versão antiga de programa da lista: **S8** |
 | T | Inventário falso (T3) envenena o painel | Escape no HTML; limites de tamanho (8 MiB por corpo, listas); texto limpo na entrada e fuzzing (20.3) | — |
 | D | Máquina enchendo o servidor | Limite de corpo; gzip conferido; **limite de requisições por máquina** (20.5: inventário e busca 20/h, o resto 720/h; 429 com Retry-After) | — |
 | I | Credencial vazada no tráfego | TLS; porta HTTP só para transição e cache (9.3) | Fechar a porta HTTP quando ninguém usar (já possível; registrar) |
@@ -130,10 +130,14 @@ quem resolve.
 
 - **F1 — A chave de jobs é a chave da frota.** Quem controla o servidor (ou só lê o arquivo da
   chave de jobs) assina um job `thirdparty` com um executável qualquer e o SHA-256 dele; sem
-  `Signer` no job, o agente aceita um arquivo sem assinatura conhecida. Mitigação: na **20.5b**,
-  o agente exige assinatura Authenticode de uma organização de uma lista que fica na máquina
-  (fora do alcance do servidor); no **S8**, a aprovação de um instalador assinada por uma
-  segunda chave guardada fora do servidor (como a de release).
+  `Signer` no job, o agente aceita um arquivo sem assinatura conhecida. **Mitigado na 20.5b**:
+  com `-allowed-signers` no serviço do agente, ele só executa instalador com assinatura válida
+  de uma organização da lista, diga o job o que disser; a lista fica na linha de comando do
+  serviço (só um administrador da máquina muda) e aparece no resumo da máquina no painel.
+  Resta: a lista é opcional (máquina sem ela continua como antes, e o painel avisa), e quem
+  tem a chave de jobs ainda instala a versão que quiser de um programa assinado por uma
+  organização da lista (inclusive uma versão antiga, com falha conhecida). Para isso, no
+  **S8**: a aprovação de um instalador assinada por uma segunda chave fora do servidor.
 - **F2 — Regra de terceiros sem `Signer`.** O manifesto pode ter programas sem a organização
   da assinatura; para eles, só o SHA-256 vale. **Resolvido na 20.5**: toda regra de instalação
   tem `signer` ou `unsigned_reason`; sem os dois, o manifesto não carrega. No manifesto
@@ -144,10 +148,11 @@ quem resolve.
   inventário da BIOS (Módulo 21): ACL por SID e migração para um cofre.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
-  depende do banco para funcionar), mas sem trilha. Ação: cópia diária com `pg_dump`, cifrada
-  (por exemplo, `age` com a chave pública no servidor e a privada fora dele), guardada fora do
-  servidor, com retenção e um teste de restauração por mês. A cópia leva dado pessoal (A6) e
-  os hashes de sessão: o acesso a ela é de T6. Desenho e roteiro no **S9**.
+  depende do banco para funcionar), mas sem trilha. As ferramentas já existem
+  (`deploy/backup.sh`, o timer do systemd, a cifragem com `age` e o ensaio de restauração:
+  Aulas 10.1 e 10.3, em `docs/operacao.md`); falta ligar no servidor de produção: o timer, as
+  chaves públicas em `backup_recipients`, a cópia para fora do host e o ensaio mensal. A cópia
+  leva dado pessoal (A6) e os hashes de sessão: o acesso a ela é de T6. Roteiro no **S9**.
 - **F5 — A chave de release existe numa máquina só, sem cópia** (Aula 20.2). Perder a chave
   impede publicar versões: os agentes só aceitam essa chave, e trocar de chave exige uma
   release assinada pela antiga. Comprometer a máquina de desenvolvimento compromete a frota.
@@ -260,7 +265,7 @@ Lacuna conhecida: a Central de software (no agente, porta local) ainda usa `styl
 | S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (preparado: seção 5c; resultado do lab a registrar) | 20.4 |
-| S6 | API dos agentes: limite por máquina, F2 e tokens (feito na 20.5); F1 na 20.5b (lista de organizações no agente, release) | 20.5 e 20.5b |
+| S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota (F5) | 20.7 |
 | S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco (F4) | 20.8 |

@@ -238,3 +238,42 @@ func TestInstalarInnoEProgramaAberto(t *testing.T) {
 		t.Errorf("fechado: %q %v", d, err)
 	}
 }
+
+// Aula 20.5b (F1): a lista da máquina vale acima do job. Quem tem a chave de jobs não
+// instala um executável sem assinatura, nem assinado por outra organização, mesmo pondo
+// (ou tirando) o Signer do job.
+func TestListaDaMaquina(t *testing.T) {
+	inst := []byte("instalador")
+	ctx := context.Background()
+	lista := []string{"Mozilla Corporation", "Google LLC"}
+	semAssinatura := errors.New("o arquivo não tem assinatura")
+	for nome, c := range map[string]struct {
+		sig    wintrust.Signature
+		sigErr error
+		signer string // o que o job exige
+		ok     bool
+		msg    string
+	}{
+		"assinado por uma da lista, job sem exigência": {google, nil, "", true, ""},
+		"assinado por uma da lista, job exige a mesma": {google, nil, "Google LLC", true, ""},
+		"sem assinatura, job sem exigência":            {wintrust.Signature{}, semAssinatura, "", false, "não pôde ser conferida"},
+		"assinado por outra, job sem exigência": {wintrust.Signature{Chain: []wintrust.Cert{{CommonName: "x", Organization: "Fulano Ltda"}}},
+			nil, "", false, `assinado por "Fulano Ltda", fora da lista`},
+		"assinado por outra, job exige a outra": {wintrust.Signature{Chain: []wintrust.Cert{{CommonName: "x", Organization: "Fulano Ltda"}}},
+			nil, "Fulano Ltda", false, "fora da lista"},
+		"da lista, mas o job exige outra da lista": {google, nil, "Mozilla Corporation", false, `não por "Mozilla Corporation"`},
+	} {
+		run := &runnerFalso{}
+		e, _ := executor(t, inst, run, c.sig, c.sigErr)
+		e.AllowedSigners = lista
+		p := params(inst, "nullsoft", "/S")
+		p.Signer = c.signer
+		_, err := e.Install(ctx, 1, p)
+		switch {
+		case c.ok && (err != nil || run.prog == ""):
+			t.Errorf("%s: recusou: %v", nome, err)
+		case !c.ok && (!errors.Is(err, jobs.ErrRefused) || !strings.Contains(err.Error(), c.msg) || run.prog != ""):
+			t.Errorf("%s: %v (executou %q)", nome, err, run.prog)
+		}
+	}
+}
