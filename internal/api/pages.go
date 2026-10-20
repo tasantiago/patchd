@@ -990,6 +990,7 @@ var pages = template.Must(template.New("").Parse(`
 <dt>Último contato</dt><dd>{{.Seen}}</dd>
 <dt>Inventário coletado</dt><dd>{{.Collected}}</dd>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
+{{if .Host.SignersKnown}}<dt>Instaladores aceitos</dt>{{if .Host.Signers}}<dd>só os assinados por {{.Host.Signers}}</dd>{{else}}<dd class="nivel-atencao">qualquer assinatura (sem <code>-allowed-signers</code> nesta máquina)</dd>{{end}}{{end}}
 <dt>Canal</dt><dd>{{.Channel}}</dd>
 {{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="anel novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de anel</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}

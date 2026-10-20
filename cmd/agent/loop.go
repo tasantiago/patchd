@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"runtime"
 	"strings"
 	"time"
 
@@ -34,6 +35,8 @@ type loopOptions struct {
 	ServiceArgs []string
 	// UserApp (Aula 17.4): só como serviço do Windows; põe ou tira o app do usuário.
 	UserApp bool
+	// AllowedSigners (Aula 20.5b): a lista de organizações aceitas nos instaladores.
+	AllowedSigners []string
 }
 
 // inContainer é a detecção de container; os testes a substituem.
@@ -126,7 +129,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		State: func(ctx context.Context) protocol.MachineState {
 			ctx, cancel := context.WithTimeout(ctx, stateTimeout)
 			defer cancel()
-			return hoststate.Collect(ctx)
+			s := hoststate.Collect(ctx)
+			if runtime.GOOS == "windows" { // Aula 20.5b: o painel mostra a lista (vazia: [] e não null)
+				s.AllowedSigners = append([]string{}, opts.AllowedSigners...)
+			}
+			return s
 		},
 		DataDir:   opts.DataDir,
 		Interval:  opts.Interval,
@@ -178,7 +185,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		ag.Install = inst.Install
 	}
 	// Job thirdparty (Aula 14.4): só no Windows.
-	if tp := newThirdParty(client, opts.DataDir); tp != nil {
+	if tp := newThirdParty(client, opts.DataDir, opts.AllowedSigners); tp != nil {
 		ag.ThirdParty = tp
 	}
 	// Job windows_update (Aula 16.1): só no Windows, pelo WUA.

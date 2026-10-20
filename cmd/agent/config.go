@@ -8,11 +8,15 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/platform"
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // agentConfig é a configuração efetiva do agente, depois de aplicar padrão, ambiente e flags.
@@ -32,6 +36,11 @@ type agentConfig struct {
 	// UserApp: no Windows, o serviço põe o app do usuário (Aula 17.4) para abrir no logon de
 	// todos. false: tira (servidores, máquinas sem usuário).
 	UserApp bool
+	// AllowedSigners (Aula 20.5b, achado F1): no Windows, as únicas organizações (O= da
+	// assinatura Authenticode) cujos instaladores o agente executa num job de terceiros.
+	// Vazia: qualquer uma (o job ainda pode exigir a dele). A lista fica na linha de comando
+	// do serviço, que só um administrador da máquina muda: o servidor não alcança.
+	AllowedSigners []string
 }
 
 // loadAgentConfig monta a configuração com a precedência flag > variável de ambiente > padrão
@@ -64,6 +73,10 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		"certificado da CA do servidor, em PEM; com ele, o agente confia só nessa CA (env PATCHD_CA_FILE)")
 	fs.BoolVar(&cfg.UserApp, "user-app", envUserApp,
 		"Windows: abre a Central de software (app do usuário) no logon; -user-app=false tira (env PATCHD_USER_APP)")
+	var signers string
+	fs.StringVar(&signers, "allowed-signers", config.String(look, "PATCHD_ALLOWED_SIGNERS", ""),
+		"Windows: organizações aceitas na assinatura dos instaladores de terceiros, separadas por ponto e vírgula, "+
+			"ex.: \"Google LLC;Mozilla Corporation\" (env PATCHD_ALLOWED_SIGNERS; no install, use a flag: ela fica no serviço)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")
@@ -90,6 +103,11 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	}
 	if modes := btoi(cfg.Inventory) + btoi(cfg.Scan) + btoi(cfg.State); modes > 1 {
 		problems = append(problems, errors.New("use só um de -inventory, -scan e -state"))
+	}
+	if list, err := parseSigners(signers); err != nil {
+		problems = append(problems, fmt.Errorf("-allowed-signers/PATCHD_ALLOWED_SIGNERS: %w", err))
+	} else {
+		cfg.AllowedSigners = list
 	}
 	if cfg.OfflineCatalog != "" && !filepath.IsAbs(cfg.OfflineCatalog) {
 		problems = append(problems, fmt.Errorf("-offline-cab/PATCHD_OFFLINE_CAB: o caminho precisa ser absoluto (recebido %q)", cfg.OfflineCatalog))
@@ -152,4 +170,24 @@ func btoi(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// parseSigners lê a lista de organizações: separadas por ";", sem espaços nas pontas, sem
+// repetição. Os limites são os do estado que vai ao servidor (protocol.MaxAllowedSigners).
+func parseSigners(s string) ([]string, error) {
+	out := []string{}
+	for _, part := range strings.Split(s, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" || slices.Contains(out, part) {
+			continue
+		}
+		if len(part) > protocol.MaxSignerText || strings.ContainsFunc(part, func(r rune) bool { return !unicode.IsPrint(r) }) {
+			return nil, fmt.Errorf("organização inválida %q (texto visível, até %d bytes)", part, protocol.MaxSignerText)
+		}
+		out = append(out, part)
+	}
+	if len(out) > protocol.MaxAllowedSigners {
+		return nil, fmt.Errorf("%d organizações (máximo %d)", len(out), protocol.MaxAllowedSigners)
+	}
+	return out, nil
 }

@@ -59,6 +59,11 @@ type Executor struct {
 	// Processes lista os processos em execução (platform.Processes), para os jobs que
 	// trazem os executáveis do programa (Aula 14.6b).
 	Processes func() ([]platform.Process, error)
+	// AllowedSigners (Aula 20.5b, achado F1): a lista da própria máquina. Com ela, o
+	// instalador tem de ter assinatura válida de uma dessas organizações, diga o job o que
+	// disser: quem tem a chave de jobs (o servidor, ou quem roubou a chave) não instala um
+	// executável qualquer. Vazia: vale só o que o job exige.
+	AllowedSigners []string
 }
 
 // Install executa o job e devolve o detalhe para o servidor. Erros com jobs.ErrRefused viram
@@ -164,6 +169,16 @@ func (e *Executor) checkSignature(file, signer string) (string, error) {
 	default:
 		s := sig.Signer()
 		note = fmt.Sprintf("assinatura válida: %s (O=%s)", s.CommonName, s.Organization)
+	}
+	if len(e.AllowedSigners) > 0 {
+		if err != nil {
+			return note, fmt.Errorf("%w: a lista desta máquina (-allowed-signers) só aceita instaladores assinados por %s, "+
+				"e a assinatura deste não pôde ser conferida: %v", jobs.ErrRefused, strings.Join(e.AllowedSigners, ", "), err)
+		}
+		if org := sig.Signer().Organization; !slices.Contains(e.AllowedSigners, org) {
+			return note, fmt.Errorf("%w: instalador assinado por %q, fora da lista desta máquina (-allowed-signers: %s)",
+				jobs.ErrRefused, org, strings.Join(e.AllowedSigners, ", "))
+		}
 	}
 	if signer == "" {
 		return note, nil

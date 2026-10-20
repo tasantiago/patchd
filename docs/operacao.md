@@ -297,6 +297,27 @@ console. Cópia em uso é renomeada (`.old-...`) e sai quando ninguém mais a us
   `PATCHD_USER_APP=0`). No próximo início, o serviço tira a chave e a cópia.
 - `patchd-agent app -no-tray` serve a página sem ícone e mostra o endereço no terminal.
 
+### Organizações aceitas nos instaladores (Aula 20.5b)
+
+Com `-allowed-signers`, o agente do Windows só executa instalador de terceiros (job do
+painel, campanha ou pedido da Central) com assinatura Authenticode válida de uma das
+organizações da lista. É a defesa contra quem tem a chave de jobs (o servidor comprometido,
+ou a chave roubada): o job pode dizer o que quiser, a lista é da máquina.
+
+- Na instalação (ou numa reinstalação, que mantém a credencial), pela flag, que vai para a
+  linha de comando do serviço:
+  ```
+  patchd-agent.exe install -allowed-signers "Google LLC;Mozilla Corporation;Microsoft Corporation;NOTEPAD++;The Document Foundation"
+  ```
+  A variável `PATCHD_ALLOWED_SIGNERS` vale para quem roda o agente à mão; o serviço guarda
+  só a flag.
+- O nome é o O= do certificado, exatamente como o `signer` do manifesto (Patch › Terceiros ›
+  programa, "assinatura exigida: …").
+- Programa sem assinatura (o 7-Zip) deixa de ser instalado pelo patchd nas máquinas com a
+  lista: o job volta "rejeitado", com o motivo.
+- O resumo da máquina no painel mostra a lista ("Instaladores aceitos"); sem ela, o aviso
+  "qualquer assinatura". Agentes anteriores à v0.17.8 não informam (a linha não aparece).
+
 ### Loja e Meus pedidos (Aula 17.5)
 
 - **Loja**: o que a oferta deixa o usuário instalar do zero, com uma confirmação antes do
