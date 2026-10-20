@@ -65,6 +65,27 @@ else
   echo "aviso: sem PATCHD_JOB_PUBKEY; os agentes deste build recusam todos os jobs" >&2
 fi
 
+# Chaves seguintes (Aula 20.7, S8): aceitas pelos agentes junto com as atuais, para a troca
+# de chave sem parar a frota (roteiro em docs/operacao.md). Opcionais; cada uma tem de ser
+# diferente das outras três (uma "seguinte" igual à atual não protege nada).
+for par in "PATCHD_UPDATE_PUBKEY_NEXT:release.NextPublicKey:atualização" "PATCHD_JOB_PUBKEY_NEXT:jobs.NextPublicKey:jobs"; do
+  var="${par%%:*}"; resto="${par#*:}"; alvo="${resto%%:*}"; nome="${resto#*:}"
+  valor="${!var:-}"
+  [ -n "$valor" ] || continue
+  if ! [[ "$valor" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    echo "ERRO: $var não parece uma chave pública do patchd (base64 de 32 bytes)." >&2
+    exit 1
+  fi
+  for outra in PATCHD_UPDATE_PUBKEY PATCHD_JOB_PUBKEY PATCHD_UPDATE_PUBKEY_NEXT PATCHD_JOB_PUBKEY_NEXT; do
+    if [ "$outra" != "$var" ] && [ "$valor" = "${!outra:-}" ]; then
+      echo "ERRO: $var igual à $outra: as chaves têm de ser todas diferentes." >&2
+      exit 1
+    fi
+  done
+  LDFLAGS="${LDFLAGS} -X ${MODULO}/internal/${alvo}=${valor}"
+  echo "chave seguinte de ${nome} embutida nos agentes"
+done
+
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 
 rm -rf dist

@@ -602,3 +602,52 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   não fica com o perfil até a sessão vencer. Na auditoria: `parametro.sessoes`.
 - O teste do AD (Configuração › Acesso) mostra por qual grupo o usuário entrou e os grupos
   da tela que o AD não achou; `patchd-server ad check` mostra só as quantidades.
+
+## Troca das chaves de jobs e de release (Aula 20.7)
+
+O agente aceita duas chaves de cada tipo: a atual e a **seguinte**, as duas embutidas no build
+(`PATCHD_JOB_PUBKEY` e `PATCHD_JOB_PUBKEY_NEXT`; `PATCHD_UPDATE_PUBKEY` e
+`PATCHD_UPDATE_PUBKEY_NEXT`). A troca vira três passos, sem máquina parada e sem reinstalar:
+embutir a seguinte, esperar a frota, passar a assinar com ela. O agente informa no estado as
+impressões das chaves que aceita, e Configuração › Sistema › **Chaves na frota** conta quantas
+máquinas (com estado nos últimos 30 dias) aceitam cada uma; agentes anteriores à 20.7 aparecem
+à parte.
+
+Regras do `scripts/build.sh`: as quatro chaves têm de ser diferentes entre si; as seguintes
+são opcionais. O `patchd-release sign` recusa assinar executáveis que não tragam a chave de
+quem assina (como atual ou como seguinte): a frota instalaria a versão, mas recusaria a
+próxima, e a troca pararia no meio. O `keygen`, o `pubkey` e o `sign` mostram a impressão da
+chave.
+
+**Chave seguinte de release, sempre pronta (F5).** Gere já a próxima, guarde a privada só
+offline (dois pendrives cifrados, em lugares diferentes) e embuta a pública como
+`PATCHD_UPDATE_PUBKEY_NEXT`. Se a atual se perder ou vazar, a próxima versão sai assinada pela
+seguinte, que a frota já aceita.
+
+Roteiro da chave de **release**:
+
+1. `patchd-release keygen -key <pendrive>/release-N.key` gera a seguinte; a pública vai para
+   `PATCHD_UPDATE_PUBKEY_NEXT` (junto das outras, fora do repositório).
+2. Build e publicação de uma versão **assinada pela atual**, com a seguinte embutida.
+3. Esperar "release <seguinte>: N de N" em Chaves na frota.
+4. A seguinte vira a atual: `PATCHD_UPDATE_PUBKEY` = a dela; `PATCHD_UPDATE_PUBKEY_NEXT` = uma
+   nova (passo 1 de novo). Build e publicação **assinada pela nova atual**.
+5. A chave antiga sai do uso: os agentes que atualizaram no passo 4 já não a aceitam. Destrua
+   as cópias só depois de "release <antiga>" sumir de Chaves na frota.
+
+Roteiro da chave de **jobs**:
+
+1. `patchd-server job keygen -out <arquivo>` gera a seguinte (o arquivo fica offline até o
+   passo 3); a pública vai para `PATCHD_JOB_PUBKEY_NEXT`.
+2. Build e publicação de uma versão com a seguinte embutida. Esperar "jobs <seguinte>: N" igual
+   ao total em Chaves na frota.
+3. Trocar o conteúdo do segredo `job_signing_key` (o arquivo de `PATCHD_JOB_SIGNING_KEY_FILE`)
+   pela seguinte e reiniciar o servidor. A linha passa a mostrar a nova como "a do servidor";
+   em atenção (amarelo), alguma máquina ainda não a aceita, e os jobs para ela seriam
+   recusados ("assinatura inválida"). Os jobs já criados com a antiga continuam valendo.
+4. Próximo build: `PATCHD_JOB_PUBKEY` = a nova, `PATCHD_JOB_PUBKEY_NEXT` vazia (ou já a
+   próxima). Depois que a frota atualizar, os jobs antigos que restarem na fila vencem sozinhos.
+
+Ainda não giram por este roteiro: a credencial de cada máquina (aposentar e registrar de novo
+continua sendo o caminho) e a aprovação de instaladores por uma segunda chave (seção 5 de
+`docs/seguranca.md`).

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -28,10 +29,19 @@ type MachineState struct {
 	// dos instaladores de terceiros (-allowed-signers). null = o agente não informa (anterior
 	// à 20.5b, ou fora do Windows); [] = sem lista, qualquer assinatura.
 	AllowedSigners []string `json:"allowed_signers"`
+	// JobKeys e ReleaseKeys (Aula 20.7): as impressões (12 hexadecimais) das chaves que o
+	// agente aceita, a atual e a seguinte. O painel conta a frota antes de uma troca de chave.
+	// Ausentes: agente anterior à 20.7.
+	JobKeys     []string `json:"job_keys,omitempty"`
+	ReleaseKeys []string `json:"release_keys,omitempty"`
 }
 
-// Limites da lista de organizações aceitas (Aula 20.5b).
+// keyIDPattern: a impressão curta de uma chave (jobs.KeyID, release.KeyID).
+var keyIDPattern = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
+// Limites da lista de organizações aceitas (Aula 20.5b) e das impressões de chave (20.7).
 const (
+	MaxKeyIDs         = 4
 	MaxAllowedSigners = 32
 	MaxSignerText     = 128
 )
@@ -110,6 +120,16 @@ func (s MachineState) Check() error {
 		return fmt.Errorf("%d erros (máximo %d)", len(s.Errors), MaxStateErrors)
 	case len(s.AllowedSigners) > MaxAllowedSigners:
 		return fmt.Errorf("%d organizações aceitas (máximo %d)", len(s.AllowedSigners), MaxAllowedSigners)
+	}
+	for _, l := range [][]string{s.JobKeys, s.ReleaseKeys} {
+		if len(l) > MaxKeyIDs {
+			return fmt.Errorf("%d impressões de chave (máximo %d)", len(l), MaxKeyIDs)
+		}
+		for _, k := range l {
+			if !keyIDPattern.MatchString(k) {
+				return fmt.Errorf("impressão de chave fora do formato: %q", k)
+			}
+		}
 	}
 	for _, o := range s.AllowedSigners {
 		if o == "" || len(o) > MaxSignerText || strings.ContainsFunc(o, func(r rune) bool { return r < 0x20 || r == 0x7f }) {

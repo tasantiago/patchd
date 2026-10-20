@@ -103,6 +103,7 @@ func keygen(args []string, stdout, stderr io.Writer) int {
 		return exitRuntime
 	}
 	fmt.Fprintf(stderr, "patchd-release: chave privada gravada em %s; guarde uma cópia offline\n", *keyPath)
+	fmt.Fprintf(stderr, "impressão da chave (release_keys no estado das máquinas): %s\n", release.KeyID(pub))
 	fmt.Fprintln(stdout, release.EncodePublicKey(pub))
 	return exitOK
 }
@@ -152,7 +153,8 @@ func sign(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "patchd-release: nenhum executável do agente em %s (rode o scripts/build.sh)\n", *dist)
 		return exitConfig
 	}
-	commit, err := checkBuild(contents, *version)
+	pub := priv.Public().(ed25519.PublicKey)
+	commit, err := checkBuild(contents, *version, release.EncodePublicKey(pub))
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-release: %v\nnada foi assinado: rode o scripts/build.sh %s, espere ele terminar e assine de novo\n", err, *version)
 		return exitConfig
@@ -192,7 +194,7 @@ func sign(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitRuntime
 	}
-	fmt.Fprintf(stdout, "versão %s assinada em %s (%d executáveis, commit %s)\n", *version, vdir, len(m.Files), commit)
+	fmt.Fprintf(stdout, "versão %s assinada em %s (%d executáveis, commit %s, chave %s)\n", *version, vdir, len(m.Files), commit, release.KeyID(pub))
 	return exitOK
 }
 
@@ -203,15 +205,22 @@ func sign(args []string, stdout, stderr io.Writer) int {
 //     string aparece uma vez, e a versão anterior não aparece);
 //   - cada um é um executável Go com o commit gravado, sem alterações locais, e todos do
 //     mesmo commit (o -trimpath não grava o -ldflags, mas grava o vcs.revision).
+//   - a chave pública de quem assina está dentro de cada executável (Aula 20.7), como a
+//     PATCHD_UPDATE_PUBKEY ou a PATCHD_UPDATE_PUBKEY_NEXT do build: senão, a frota até
+//     instalaria esta versão (se confiar na chave hoje), mas recusaria a próxima assinada
+//     pela mesma chave, e a troca de chave pararia no meio.
 //
 // Devolve o commit (12 dígitos), para quem assina comparar com o git log.
-func checkBuild(contents map[string][]byte, version string) (string, error) {
+func checkBuild(contents map[string][]byte, version, pubB64 string) (string, error) {
 	names := slices.Sorted(maps.Keys(contents))
 	commits := map[string][]string{}
 	for _, name := range names {
 		data := contents[name]
 		if !bytes.Contains(data, []byte(version)) {
 			return "", fmt.Errorf("%s não é da versão %s (o build ainda não terminou, ou o dist/ é de outra versão)", name, version)
+		}
+		if !bytes.Contains(data, []byte(pubB64)) {
+			return "", fmt.Errorf("%s não confia na chave que assina (impressão %s): compile com ela no PATCHD_UPDATE_PUBKEY ou no PATCHD_UPDATE_PUBKEY_NEXT", name, keyIDOf(pubB64))
 		}
 		bi, err := buildinfo.Read(bytes.NewReader(data))
 		if err != nil {
@@ -244,6 +253,14 @@ func checkBuild(contents map[string][]byte, version string) (string, error) {
 	return "", nil
 }
 
+func keyIDOf(pubB64 string) string {
+	pub, err := release.ParsePublicKey(pubB64)
+	if err != nil {
+		return "?"
+	}
+	return release.KeyID(pub)
+}
+
 func shortRev(rev string) string {
 	switch {
 	case rev == "":
@@ -270,7 +287,9 @@ func pubkey(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "patchd-release: %v\n", err)
 		return exitConfig
 	}
-	fmt.Fprintln(stdout, release.EncodePublicKey(priv.Public().(ed25519.PublicKey)))
+	pub := priv.Public().(ed25519.PublicKey)
+	fmt.Fprintf(stderr, "impressão da chave (release_keys no estado das máquinas): %s\n", release.KeyID(pub))
+	fmt.Fprintln(stdout, release.EncodePublicKey(pub))
 	return exitOK
 }
 

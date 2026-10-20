@@ -41,6 +41,8 @@ type Updater struct {
 	DataDir   string
 	Current   string            // versão deste executável
 	PublicKey ed25519.PublicKey // a chave embutida no build
+	// PublicKeyNext (Aula 20.7): a chave de release seguinte, aceita junto. nil: só a atual.
+	PublicKeyNext ed25519.PublicKey
 	// Install inicia a instalação da versão nova fora deste processo: ela vai parar este
 	// serviço, trocar o executável e iniciar o novo.
 	Install func(bin string) error
@@ -126,7 +128,11 @@ func (u *Updater) fetch(ctx context.Context, v string) (string, error) {
 	if _, err := u.Client.Download(ctx, base+release.SignatureFile, &sbuf, maxSignatureSize); err != nil {
 		return "", fmt.Errorf("baixar a assinatura: %w", err)
 	}
-	m, err := release.Verify(u.PublicKey, mbuf.Bytes(), sbuf.Bytes())
+	keys := []ed25519.PublicKey{u.PublicKey}
+	if u.PublicKeyNext != nil {
+		keys = append(keys, u.PublicKeyNext)
+	}
+	m, err := release.VerifyAny(keys, mbuf.Bytes(), sbuf.Bytes())
 	if err != nil {
 		return "", err
 	}

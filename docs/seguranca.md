@@ -36,7 +36,8 @@ fronteira nova. A matriz de rotas (docs/rotas.md) é gerada pelo teste e não pr
 Sobre T6 no ambiente atual (Aula 20.2): o root do host do servidor é de uma equipe de
 manutenção de servidores, com acesso registrado e gravado. É um controle de detecção, não de
 prevenção: quem tem root lê a chave de jobs (A1). Cópias do banco ainda não existem (**F4**). A
-chave de release (A2) existe numa máquina só, sem cópia (**F5**).
+chave de release (A2) existia numa máquina só, sem cópia (**F5**, resolvido na 20.7 com a chave
+seguinte guardada offline).
 
 ## 3. Fronteiras de confiança
 
@@ -84,12 +85,12 @@ quem resolve.
 | S | Servidor falso entregando jobs | TLS com a CA da instituição (`-ca-file`, 9.2); **jobs assinados (A1) e conferidos pelo agente**; releases assinadas (A2) | — |
 | S | Máquina se passando por outra | A máquina é a dona da credencial: o ID vem da credencial, nunca da URL (4.3) | — |
 | T | Job adulterado no caminho | Assinatura Ed25519 do job, prazo de validade, ID amarrado à máquina (8.1) | — |
-| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura exigida quando o manifesto define; **lista de organizações da própria máquina** (`-allowed-signers`, 20.5b) | Máquina sem a lista; versão antiga de programa da lista: **S8** |
+| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura exigida quando o manifesto define; **lista de organizações da própria máquina** (`-allowed-signers`, 20.5b); a chave de jobs gira sem parar a frota (20.7) | Máquina sem a lista; versão antiga de programa da lista: aprovação por segunda chave (desenho na seção 5e) |
 | T | Inventário falso (T3) envenena o painel | Escape no HTML; limites de tamanho (8 MiB por corpo, listas); texto limpo na entrada e fuzzing (20.3) | — |
 | D | Máquina enchendo o servidor | Limite de corpo; gzip conferido; **limite de requisições por máquina** (20.5: inventário e busca 20/h, o resto 720/h; 429 com Retry-After) | — |
 | I | Credencial vazada no tráfego | TLS; porta HTTP só para transição e cache (9.3) | Fechar a porta HTTP quando ninguém usar (já possível; registrar) |
 | E | Token de enrollment reaproveitado | Prazo e número de usos (padrão 24 h e 1 uso; máximo 30 dias e 10 mil); só o hash; 256 bits (adivinhar é inviável, não precisa de limite de tentativas) (4.2, 15.2, revisto na 20.5) | — |
-| S | **Credencial de máquina copiada** (imagem de disco, backup do agente) | Pasta do agente só do SYSTEM/root; aposentar a máquina revoga a credencial | Não expira nem gira: **S8** (rotação) |
+| S | **Credencial de máquina copiada** (imagem de disco, backup do agente) | Pasta do agente só do SYSTEM/root (20.6); aposentar a máquina revoga a credencial | Não expira nem gira (fora da 20.7: aposentar e registrar de novo) |
 
 ### 4.3 Central ↔ agente (pipe local)
 
@@ -123,8 +124,8 @@ quem resolve.
 
 | | Ameaça | Controle | Lacuna |
 |---|---|---|---|
-| T | Release adulterada | Chave de release fora do servidor; manifesto assinado conferido pelo agente; o agente só aceita versão mais nova (5.4, 15.x) | Rotação da chave: **S8** |
-| D | Chave de release perdida | — | Uma cópia só: **F5** |
+| T | Release adulterada | Chave de release fora do servidor; manifesto assinado conferido pelo agente; o agente só aceita versão mais nova (5.4, 15.x); a chave gira sem parar a frota (20.7) | — |
+| D | Chave de release perdida | **Chave seguinte** embutida nos agentes, com a privada só offline (20.7) | — |
 
 ## 5. Achados desta revisão
 
@@ -136,8 +137,9 @@ quem resolve.
   serviço (só um administrador da máquina muda) e aparece no resumo da máquina no painel.
   Resta: a lista é opcional (máquina sem ela continua como antes, e o painel avisa), e quem
   tem a chave de jobs ainda instala a versão que quiser de um programa assinado por uma
-  organização da lista (inclusive uma versão antiga, com falha conhecida). Para isso, no
-  **S8**: a aprovação de um instalador assinada por uma segunda chave fora do servidor.
+  organização da lista (inclusive uma versão antiga, com falha conhecida). Para isso: a
+  aprovação de um instalador assinada por uma segunda chave fora do servidor (desenho na
+  seção 5e, sem aula marcada).
 - **F2 — Regra de terceiros sem `Signer`.** O manifesto pode ter programas sem a organização
   da assinatura; para eles, só o SHA-256 vale. **Resolvido na 20.5**: toda regra de instalação
   tem `signer` ou `unsigned_reason`; sem os dois, o manifesto não carrega. No manifesto
@@ -156,9 +158,11 @@ quem resolve.
 - **F5 — A chave de release existe numa máquina só, sem cópia** (Aula 20.2). Perder a chave
   impede publicar versões: os agentes só aceitam essa chave, e trocar de chave exige uma
   release assinada pela antiga. Comprometer a máquina de desenvolvimento compromete a frota.
-  Ações: (1) agora, duas cópias offline cifradas (dois pendrives, guardados em lugares
-  diferentes, por exemplo um cofre), com a frase de acesso fora do pendrive; (2) no **S8**, o
-  agente aceitar duas chaves (a atual e a seguinte), para a troca não depender da antiga.
+  Ações: (1) duas cópias offline cifradas (dois pendrives, guardados em lugares diferentes,
+  por exemplo um cofre), com a frase de acesso fora do pendrive; (2) **feito na 20.7**: o
+  agente aceita duas chaves (a atual e a seguinte); a seguinte é gerada já, guardada só
+  offline e embutida no build, de modo que perder ou vazar a atual se resolve com uma versão
+  assinada pela seguinte (seção 5e).
 
 - **F6 — Pasta de dados do agente criada antes do install** (Aula 20.6, revisão do S7). Um
   usuário comum podia criar `C:\ProgramData\patchd` antes, ficar dono e, depois do install,
@@ -287,6 +291,33 @@ Files\patchd` (só administradores escrevem); a atualização do agente e o cat�
 ficam na pasta de dados (agora protegida como acima); o canal local da Central tem a sua
 própria ACL (17.3).
 
+## 5e. Rotação de chaves (S8, Aula 20.7)
+
+As duas chaves que a frota conhece (jobs, A1; release, A2) eram trocáveis só com a frota
+inteira parada: o agente aceitava uma chave de cada, e a troca exigia que todas as máquinas
+recebessem um agente novo **e** que o servidor mudasse a chave no mesmo instante. Agora:
+
+- **Duas chaves de cada tipo no agente**: a atual e a seguinte, embutidas no build. Um job ou
+  um manifesto vale se qualquer uma delas o assinou; as outras conferências (máquina, prazo,
+  número do job, versão mais nova) valem igual para as duas.
+- **A frota informa o que aceita**: o estado da máquina leva as impressões (12 hexadecimais)
+  das chaves aceitas, e Configuração › Sistema › Chaves na frota conta. É o que diz quando o
+  passo seguinte da troca é seguro (roteiro em `docs/operacao.md`).
+- **Travas no build e na assinatura**: as quatro chaves do build são diferentes entre si; o
+  `patchd-release sign` não assina executáveis que não confiam na chave que assina.
+- **F5**: a chave seguinte de release existe desde já, só offline. Perder a atual não para as
+  atualizações; vazar a atual se responde com uma versão assinada pela seguinte que não aceita
+  mais a vazada (até a frota atualizar, a vazada só serve a quem também controla o servidor,
+  que é quem entrega as versões).
+
+Fica de fora, por decisão: a credencial de cada máquina (não gira; aposentar e registrar de
+novo resolve o caso de cópia) e a **aprovação com segunda chave** (F1). Desenho registrado
+para quando for necessário: o servidor guarda, para cada instalador aprovado, uma aprovação
+(SHA-256, programa, versão) assinada por uma chave que fica fora do servidor, e o agente,
+com a pública dela embutida, exige essa aprovação além do job. Custa um passo manual em cada
+aprovação; hoje a lista de organizações (20.5b) e os tipos de job fechados cobrem a maior
+parte do risco.
+
 ## 6. Plano do bloco de segurança
 
 | | O quê | Aula |
@@ -298,5 +329,5 @@ própria ACL (17.3).
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (preparado: seção 5c; resultado do lab a registrar) | 20.4 |
 | S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar (feito: seção 5d, v0.17.9) | 20.6 |
-| S8 | Rotação das chaves de jobs e de release sem parar a frota (F5) | 20.7 |
+| S8 | Rotação das chaves de jobs e de release sem parar a frota; F5 (feito: seção 5e, v0.17.10) | 20.7 |
 | S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco (F4) | 20.8 |

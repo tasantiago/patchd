@@ -55,9 +55,25 @@ func TestKeygenEAssinatura(t *testing.T) {
 		t.Error("a pasta da versão recusada foi criada")
 	}
 
-	out.Reset()
+	// Executáveis que não trazem a chave de quem assina (Aula 20.7): nada é assinado. A
+	// frota instalaria esta versão, mas recusaria a próxima assinada pela mesma chave.
 	args := []string{"sign", "-key", key, "-version", "v0.5.1", "-dist", dist, "-out", rel}
-	if code := run(args, &out, &errs); code != exitOK || !strings.Contains(out.String(), "2 executáveis, commit ") {
+	errs.Reset()
+	if code := run(args, &out, &errs); code != exitConfig ||
+		!strings.Contains(errs.String(), "não confia na chave que assina (impressão "+release.KeyID(pub)+")") {
+		t.Errorf("sem a chave nos executáveis: %d %s", code, errs.String())
+	}
+	if _, err := os.Stat(filepath.Join(rel, "v0.5.1")); !os.IsNotExist(err) {
+		t.Error("a pasta da versão recusada foi criada")
+	}
+	// Com a chave dentro (o build a injeta com -X; aqui, anexada ao fim do executável).
+	exe = append(exe, []byte(release.EncodePublicKey(pub))...)
+	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-linux-amd64"), exe, 0o755)
+	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-windows-amd64.exe"), exe, 0o755)
+
+	out.Reset()
+	if code := run(args, &out, &errs); code != exitOK || !strings.Contains(out.String(), "2 executáveis, commit ") ||
+		!strings.Contains(out.String(), "chave "+release.KeyID(pub)) {
 		t.Fatalf("sign: %d %s %s", code, out.String(), errs.String())
 	}
 	data, _ := os.ReadFile(filepath.Join(rel, "v0.5.1", release.ManifestFile))
@@ -125,7 +141,7 @@ func TestSignRecusaNaoGo(t *testing.T) {
 	}
 	dist := filepath.Join(dir, "dist")
 	_ = os.MkdirAll(dist, 0o755)
-	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-linux-amd64"), []byte("agente v0.5.1"), 0o755)
+	_ = os.WriteFile(filepath.Join(dist, "patchd-agent-linux-amd64"), []byte("agente v0.5.1 "+out.String()), 0o755)
 	errs.Reset()
 	if code := run([]string{"sign", "-key", key, "-version", "v0.5.1", "-dist", dist, "-out", filepath.Join(dir, "rel")}, &out, &errs); code != exitConfig ||
 		!strings.Contains(errs.String(), "não é um executável Go") {

@@ -28,6 +28,11 @@ import (
 // Vazia (build sem PATCHD_JOB_PUBKEY): o agente recusa todo job, e diz por quê.
 var PublicKey = ""
 
+// NextPublicKey (Aula 20.7, S8): a chave de jobs seguinte, embutida antes da troca
+// (PATCHD_JOB_PUBKEY_NEXT). O agente aceita as duas; quando a frota toda já tem a seguinte,
+// o servidor passa a assinar com ela, sem nenhum job recusado no meio.
+var NextPublicKey = ""
+
 // Tipos de job (RF-08). A lista é fechada: o agente recusa o que não conhece, e nenhum
 // tipo leva comando livre.
 const (
@@ -111,6 +116,19 @@ var (
 	ErrNoKey     = errors.New("o agente foi compilado sem chave de jobs (PATCHD_JOB_PUBKEY)")
 	ErrSignature = errors.New("assinatura inválida (outra chave ou job alterado)")
 )
+
+// VerifyAny confere com a primeira chave que reconhecer a assinatura (a atual ou a seguinte,
+// Aula 20.7). As outras recusas (outra máquina, prazo, tipo) valem para qualquer chave.
+func VerifyAny(keys []ed25519.PublicKey, env protocol.SignedJob, machineID string, now time.Time, lastID int64) (Job, error) {
+	err := ErrNoKey
+	for _, k := range keys {
+		var j Job
+		if j, err = Verify(k, env, machineID, now, lastID); !errors.Is(err, ErrSignature) && !errors.Is(err, ErrNoKey) {
+			return j, err
+		}
+	}
+	return Job{}, err
+}
 
 // Verify confere o envelope com a chave pública e só então interpreta o job. Recusa:
 // assinatura inválida, job de outra máquina, fora do prazo, tipo desconhecido, e job já

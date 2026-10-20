@@ -16,9 +16,11 @@ import (
 	"github.com/tasantiago/patchd/internal/credential"
 	"github.com/tasantiago/patchd/internal/hoststate"
 	"github.com/tasantiago/patchd/internal/inventory"
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/patch"
 	"github.com/tasantiago/patchd/internal/platform"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/release"
 )
 
 // loopOptions é o que o laço de check-in precisa da configuração.
@@ -105,6 +107,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		logger.Info("CA do servidor: só a do arquivo", "ca_file", opts.CAFile, "certificados", certs)
 	}
 	cab := newOfflineCab(logger, client, opts)
+	// As chaves aceitas (Aula 20.7): a de jobs e a seguinte; as impressões delas e as das de
+	// release vão no estado de cada check-in, para o painel contar a frota antes de uma troca.
+	jobPub, jobNext := jobKey(logger), jobKeyNext(logger)
+	jobIDs := keyIDs(jobs.KeyID, jobPub, jobNext)
+	releaseIDs := keyIDs(release.KeyID, releaseKeys(logger)...)
 	ag := &agent.Agent{
 		Client: client,
 		// O inventário passa pela mesma função do "-inventory": o check-in envia exatamente
@@ -133,6 +140,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			if runtime.GOOS == "windows" { // Aula 20.5b: o painel mostra a lista (vazia: [] e não null)
 				s.AllowedSigners = append([]string{}, opts.AllowedSigners...)
 			}
+			s.JobKeys, s.ReleaseKeys = jobIDs, releaseIDs
 			return s
 		},
 		DataDir:   opts.DataDir,
@@ -178,7 +186,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		return credential.Save(opts.DataDir, c)
 	}
 	ag.MachineID = cred.MachineID
-	ag.JobKey = jobKey(logger)
+	ag.JobKey, ag.JobKeyNext = jobPub, jobNext
 	// Job update (Aula 8.4): só no Linux. 30 min por comando: uma atualização grande, com
 	// download, passa fácil dos 30 s padrão.
 	if inst := patch.NewInstaller(platform.ExecRunner{Timeout: installTimeout}); inst != nil {

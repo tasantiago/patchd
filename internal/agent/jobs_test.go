@@ -112,6 +112,37 @@ func TestJobsRecusados(t *testing.T) {
 	}
 }
 
+// TestJobDaChaveSeguinte (Aula 20.7, S8): o agente compilado com a chave seguinte aceita
+// os jobs do servidor que já trocou de chave, e continua aceitando os da atual (os jobs
+// criados antes da troca, ainda na fila).
+func TestJobDaChaveSeguinte(t *testing.T) {
+	srv, id, cred := novoServidor(t)
+	atual, privAtual, _ := jobs.GenerateKey()
+	seguinte, privSeguinte, _ := jobs.GenerateKey()
+	var buscas atomic.Int32
+	log := &bytes.Buffer{}
+	a := agenteDeTeste(t, srv, cred, &buscas, log)
+	a.MachineID, a.JobKey = id, atual
+	ctx := context.Background()
+	a.CheckIn(ctx) // busca diária feita
+
+	// Sem a seguinte no build: o job da chave nova é recusado.
+	j1 := criaJob(t, srv, privSeguinte, id, nil)
+	a.CheckIn(ctx)
+	if e := estadoDoJob(srv, id, j1); e.State != jobs.StateRejected {
+		t.Fatalf("sem a seguinte: %+v", e)
+	}
+	// Com a seguinte: os dois são aceitos.
+	a.JobKeyNext = seguinte
+	for _, priv := range []ed25519.PrivateKey{privAtual, privSeguinte} {
+		j := criaJob(t, srv, priv, id, nil)
+		a.CheckIn(ctx)
+		if e := estadoDoJob(srv, id, j); e.State != jobs.StateDone {
+			t.Errorf("job %d: %+v\n%s", j, e, log.String())
+		}
+	}
+}
+
 func TestResultadoGuardadoComServidorFora(t *testing.T) {
 	srv, id, cred := novoServidor(t)
 	pub, priv, _ := jobs.GenerateKey()

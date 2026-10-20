@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"strings"
@@ -50,7 +51,11 @@ func (j acceptedJobs) forceScan() bool {
 func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) acceptedJobs {
 	var acc acceptedJobs
 	for _, env := range received {
-		j, err := jobs.Verify(a.JobKey, env, a.MachineID, a.now(), state.LastJobID)
+		keys := []ed25519.PublicKey{a.JobKey}
+		if a.JobKeyNext != nil {
+			keys = append(keys, a.JobKeyNext)
+		}
+		j, err := jobs.VerifyAny(keys, env, a.MachineID, a.now(), state.LastJobID)
 		if err != nil {
 			id := jobs.ID(env)
 			a.Logger.Warn("job recusado", "job_id", id, "reason", err.Error())
