@@ -294,6 +294,15 @@ func (a *api) submitInventory(w http.ResponseWriter, r *http.Request, id string)
 		writeError(w, http.StatusUnprocessableEntity, "missing_os", "o relatório não identifica o sistema operacional")
 		return
 	}
+	// Aula 21.1: o firmware só entra com os valores conhecidos; fora disso, fica de fora (o
+	// resto do inventário segue) e o motivo vai para os erros do relatório.
+	if hw := rep.Hardware; hw != nil && hw.Firmware != nil {
+		if err := hw.Firmware.Check(); err != nil {
+			a.logger.Warn("inventário: firmware descartado", "machine_id", id, "error", err)
+			hw.Firmware = nil
+			rep.Errors = append(rep.Errors, "firmware: descartado pelo servidor: "+err.Error())
+		}
+	}
 
 	stored, err := a.store.SaveInventory(r.Context(), id, rep)
 	if err != nil {

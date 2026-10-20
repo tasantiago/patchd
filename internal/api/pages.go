@@ -254,6 +254,7 @@ type machineView struct {
 	HasInventory  bool
 	OSParams      []paramRow
 	HWParams      []paramRow
+	FWParams      []fwRow // Aula 21.1
 	HWSources     []string
 	Category      string
 	Model, Serial string
@@ -1031,6 +1032,9 @@ var pages = template.Must(template.New("").Parse(`
 {{if .HWSources}}<p class="muted fontes">Fontes: {{range $i, $s := .HWSources}}{{if $i}}; {{end}}{{$s}}{{end}}</p>{{end}}
 {{else}}<p class="muted">O inventário desta máquina não tem a seção de hardware.</p>{{end}}
 </div>
+{{if .FWParams}}<div class="card"><div class="card-cab"><h2>Firmware</h2><span class="muted">só leitura</span></div>
+<dl class="dados">{{range .FWParams}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
+</div>{{end}}
 <div class="card"><div class="card-cab"><h2>Rede e discos</h2>{{if .Host.Has}}<span class="muted">coletado {{.Host.Age}}</span>{{end}}</div>
 {{if .Host.Has}}<dl class="dados">
 <dt>IP principal</dt><dd>{{.Host.Primary}}</dd>

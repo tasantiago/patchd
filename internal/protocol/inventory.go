@@ -56,18 +56,67 @@ type Software struct {
 // Hardware descreve a máquina física ou virtual. Valores crus da fonte: seriais
 // genéricos ("To be filled by O.E.M.") são filtrados no servidor (Aula 4.3).
 type Hardware struct {
-	Manufacturer string   `json:"manufacturer,omitempty"`
-	Model        string   `json:"model,omitempty"`
-	SerialNumber string   `json:"serial_number,omitempty"`
-	UUID         string   `json:"uuid,omitempty"`         // UUID do SMBIOS ou de plataforma
-	ChassisType  string   `json:"chassis_type,omitempty"` // código SMBIOS cru (ex.: 3 = desktop, 9 e 10 = notebook)
-	BIOSVendor   string   `json:"bios_vendor,omitempty"`
-	BIOSVersion  string   `json:"bios_version,omitempty"`
-	BIOSDate     string   `json:"bios_date,omitempty"`
-	CPUModel     string   `json:"cpu_model,omitempty"`
-	CPUThreads   int      `json:"cpu_threads,omitempty"` // processadores lógicos
-	MemoryBytes  uint64   `json:"memory_bytes,omitempty"`
-	Sources      []string `json:"sources"` // de onde cada dado veio (P-03)
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Model        string `json:"model,omitempty"`
+	SerialNumber string `json:"serial_number,omitempty"`
+	UUID         string `json:"uuid,omitempty"`         // UUID do SMBIOS ou de plataforma
+	ChassisType  string `json:"chassis_type,omitempty"` // código SMBIOS cru (ex.: 3 = desktop, 9 e 10 = notebook)
+	BIOSVendor   string `json:"bios_vendor,omitempty"`
+	BIOSVersion  string `json:"bios_version,omitempty"`
+	BIOSDate     string `json:"bios_date,omitempty"`
+	CPUModel     string `json:"cpu_model,omitempty"`
+	CPUThreads   int    `json:"cpu_threads,omitempty"` // processadores lógicos
+	MemoryBytes  uint64 `json:"memory_bytes,omitempty"`
+	// Firmware (Aula 21.1): o estado do firmware, só leitura. nil: agente anterior.
+	Firmware *Firmware `json:"firmware,omitempty"`
+	Sources  []string  `json:"sources"` // de onde cada dado veio (P-03)
+}
+
+// Firmware é o estado do firmware (BIOS/UEFI) como a máquina informa, só leitura (Aula 21.1).
+// Ponteiro nil e texto vazio: não se sabe (sem a interface, sem permissão, sistema sem a
+// informação). Senha: só se está definida, nunca nada da senha.
+type Firmware struct {
+	Mode       string `json:"mode,omitempty"`        // FirmwareUEFI ou FirmwareLegacy
+	SecureBoot *bool  `json:"secure_boot,omitempty"` // Secure Boot ligado
+	TPM        string `json:"tpm,omitempty"`         // "2.0", "1.2" ou TPMNone
+	// Interface: a interface do fabricante que respondeu (FirmwareHP, FirmwareDell,
+	// FirmwareLenovo); vazio: nenhuma, e as senhas ficam sem informação.
+	Interface       string `json:"interface,omitempty"`
+	AdminPassword   *bool  `json:"admin_password,omitempty"`    // senha de administrador (setup/supervisor) definida
+	PowerOnPassword *bool  `json:"power_on_password,omitempty"` // senha de ligar definida
+}
+
+// Valores do Firmware.
+const (
+	FirmwareUEFI   = "uefi"
+	FirmwareLegacy = "legado"
+	TPMNone        = "nenhum"
+	FirmwareHP     = "hp"
+	FirmwareDell   = "dell"
+	FirmwareLenovo = "lenovo"
+)
+
+// Check confere os valores fechados: o painel mostra o que passou daqui.
+func (f Firmware) Check() error {
+	switch f.Mode {
+	case "", FirmwareUEFI, FirmwareLegacy:
+	default:
+		return fmt.Errorf("modo do firmware desconhecido %q", f.Mode)
+	}
+	switch f.TPM {
+	case "", "1.2", "2.0", TPMNone:
+	default:
+		return fmt.Errorf("versão de TPM desconhecida %q", f.TPM)
+	}
+	switch f.Interface {
+	case "", FirmwareHP, FirmwareDell, FirmwareLenovo:
+	default:
+		return fmt.Errorf("interface do fabricante desconhecida %q", f.Interface)
+	}
+	if f.Interface == "" && (f.AdminPassword != nil || f.PowerOnPassword != nil) {
+		return fmt.Errorf("senha informada sem a interface do fabricante")
+	}
+	return nil
 }
 
 // InventoryReport é o relatório de inventário enviado pelo agente ao servidor.
