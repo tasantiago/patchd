@@ -86,6 +86,16 @@ for par in "PATCHD_UPDATE_PUBKEY_NEXT:release.NextPublicKey:atualização" "PATC
   echo "chave seguinte de ${nome} embutida nos agentes"
 done
 
+# Recurso de versão do agente do Windows (Aula 20.9): a "Descrição do arquivo" é o nome que
+# o Windows mostra no título dos avisos da Central, no Gerenciador de Tarefas e nos aplicativos
+# de inicialização (sem ela, aparece o nome do arquivo). PATCHD_APP_NAME muda o nome (padrão
+# "Central de software"); PATCHD_APP_COMPANY, a organização (opcional). Os .syso são gerados
+# aqui, fora do git, e apagados no fim.
+trap 'rm -f cmd/agent/versao_windows_*.syso' EXIT
+go run ./cmd/winres -version "$VERSAO" -name "${PATCHD_APP_NAME:-Central de software}" \
+  -company "${PATCHD_APP_COMPANY:-}" -out cmd/agent > /dev/null
+echo "recurso de versão do Windows: \"${PATCHD_APP_NAME:-Central de software}\""
+
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 
 rm -rf dist
