@@ -88,13 +88,13 @@ done
 
 # Recurso de versão do agente do Windows (Aula 20.9): a "Descrição do arquivo" é o nome que
 # o Windows mostra no título dos avisos da Central, no Gerenciador de Tarefas e nos aplicativos
-# de inicialização (sem ela, aparece o nome do arquivo). PATCHD_APP_NAME muda o nome (padrão
-# "Central de software"); PATCHD_APP_COMPANY, a organização (opcional). Os .syso são gerados
-# aqui, fora do git, e apagados no fim.
+# de inicialização (sem ela, aparece o nome do arquivo). Aula 20.10: o nome vem do painel
+# (Configuração › Parâmetros › Aparência, PATCHD_APP_NAME): o build grava o padrão num espaço
+# de tamanho fixo e o agente troca na cópia da Central. PATCHD_APP_COMPANY é a organização
+# (opcional). Os .syso são gerados aqui, fora do git, e apagados no fim.
 trap 'rm -f cmd/agent/versao_windows_*.syso' EXIT
-go run ./cmd/winres -version "$VERSAO" -name "${PATCHD_APP_NAME:-Central de software}" \
-  -company "${PATCHD_APP_COMPANY:-}" -out cmd/agent > /dev/null
-echo "recurso de versão do Windows: \"${PATCHD_APP_NAME:-Central de software}\""
+go run ./cmd/winres -version "$VERSAO" -company "${PATCHD_APP_COMPANY:-}" -out cmd/agent > /dev/null
+echo "recurso de versão do Windows gravado (o nome da Central vem do painel)"
 
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 

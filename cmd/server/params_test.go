@@ -30,6 +30,10 @@ func TestParametrosConferidosComoNaPartida(t *testing.T) {
 	}{
 		{"PATCHD_PANEL_TITLE", `"patchd · TJ"`, "patchd · TJ", true},
 		{"PATCHD_PANEL_TITLE", strings.Repeat("x", 41), "", false},
+		{"PATCHD_APP_NAME", ` "Atualizações da TI" `, "Atualizações da TI", true}, // Aula 20.10
+		{"PATCHD_APP_NAME", strings.Repeat("x", 41), "", false},
+		{"PATCHD_APP_NAME", "", "", false},
+		{"PATCHD_APP_NAME", "Central\u200b", "", false},
 		{"PATCHD_TIMEZONE", " America/Porto_Velho ", "America/Porto_Velho", true},
 		{"PATCHD_TIMEZONE", "", "", true},
 		{"PATCHD_TIMEZONE", "Marte/Olympus", "", false},

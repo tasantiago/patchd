@@ -210,6 +210,9 @@ type Server struct {
 	// RebootStatus (Aula 17.6): o reinício pendente lido na hora; a loja do servidor traz o
 	// da última busca, que pode ter um dia. nil: fica o do servidor.
 	RebootStatus func(ctx context.Context) (protocol.RebootStatus, error)
+	// OnAppName (Aula 20.10): o nome da Central que o servidor mandou na loja (já conferido).
+	// O agente grava na cópia da Central; chamado em outra goroutine, a cada consulta.
+	OnAppName func(name string)
 
 	now  func() time.Time
 	once sync.Once
@@ -320,6 +323,13 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 			}
 		}
 		cat.Logo = s.syncLogo(ctx, cat.Logo)
+		if cat.AppName != "" && protocol.CheckAppName(cat.AppName) != nil {
+			s.Logger.Warn("autoatendimento: nome da Central recusado", "error", protocol.CheckAppName(cat.AppName))
+			cat.AppName = ""
+		}
+		if cat.AppName != "" && s.OnAppName != nil {
+			go s.OnAppName(cat.AppName)
+		}
 		return Response{OK: true, Account: id.Account, Catalog: &cat}
 	case OpLogo:
 		if wait, ok := s.allow("q:"+id.Account, QueryLimit, QueryWindow); !ok {

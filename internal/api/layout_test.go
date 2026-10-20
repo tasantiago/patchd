@@ -267,7 +267,7 @@ func TestLogotipoParaOAgente(t *testing.T) {
 		}
 		return c
 	}
-	if c := loja(); c.Brand != "patchd · TJ" || c.Logo != "" {
+	if c := loja(); c.Brand != "patchd · TJ" || c.Logo != "" || c.AppName != protocol.DefaultAppName {
 		t.Errorf("sem logotipo: %+v", c)
 	}
 	if r := envia(h, "GET", protocol.SelfServiceLogoPath, maq.Credential, nil); r.Code != http.StatusNotFound {

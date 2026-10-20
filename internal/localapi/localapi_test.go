@@ -464,3 +464,34 @@ func TestLogotipoParaACentral(t *testing.T) {
 		t.Error("sem LogoBackend, sem logotipo")
 	}
 }
+
+// Aula 20.10: o nome da Central que vem na loja vai para o agente (OnAppName); um nome que não
+// passa na conferência não vai nem para o agente nem para a página.
+func TestNomeDaCentral(t *testing.T) {
+	b := &backend{loja: &protocol.SelfServiceCatalog{AppName: "Atualizações da TI"}}
+	s, _, _ := servidor(b)
+	got := make(chan string, 2)
+	s.OnAppName = func(n string) { got <- n }
+	ctx := context.Background()
+	id := Identity{Account: `EXEMPLO\teste`}
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); !r.OK || r.Catalog.AppName != "Atualizações da TI" {
+		t.Fatalf("loja: %+v", r)
+	}
+	select {
+	case n := <-got:
+		if n != "Atualizações da TI" {
+			t.Errorf("OnAppName: %q", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnAppName não foi chamado")
+	}
+	b.loja.AppName = "x\x1b[31m"
+	if r := s.Serve(ctx, id, Request{Op: OpCatalog}); r.Catalog.AppName != "" {
+		t.Errorf("nome inválido repassado: %q", r.Catalog.AppName)
+	}
+	select {
+	case n := <-got:
+		t.Errorf("OnAppName com nome inválido: %q", n)
+	case <-time.After(200 * time.Millisecond):
+	}
+}

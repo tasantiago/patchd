@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"unsafe"
 
@@ -296,7 +295,7 @@ func (t *tray) menu() {
 		return
 	}
 	defer procDestroyMenu.Call(h)
-	open, _ := windows.UTF16PtrFromString("Abrir a " + strings.ToLower(Title[:1]) + Title[1:])
+	open, _ := windows.UTF16PtrFromString("Abrir " + Title) // Aula 20.10: o nome vem do painel
 	quit, _ := windows.UTF16PtrFromString("Fechar este ícone")
 	_, _, _ = procAppendMenuW.Call(h, mfString, cmdOpen, uintptr(unsafe.Pointer(open)))
 	_, _, _ = procAppendMenuW.Call(h, mfSeparator, 0, 0)

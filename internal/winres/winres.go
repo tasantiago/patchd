@@ -40,6 +40,10 @@ const (
 // MaxText: limite de cada texto (o Windows trunca descrições longas no aviso).
 const MaxText = 80
 
+// DescSlot: o espaço da descrição, em unidades UTF-16, com o zero final. Cabem MaxText
+// caracteres mesmo que todos precisem de duas unidades (fora do plano básico).
+const DescSlot = 2*MaxText + 1
+
 var versionNumbers = regexp.MustCompile(`^v?(\d{1,5})\.(\d{1,5})\.(\d{1,5})`)
 
 // Numbers devolve os quatro números da versão (o quarto é sempre 0); fora do formato: zeros.
@@ -103,8 +107,14 @@ func VersionInfo(i Info) ([]byte, error) {
 	}
 
 	var strs [][]byte
+	// A descrição vai num espaço de tamanho fixo (DescSlot), com zeros depois do texto: o
+	// agente troca o nome na cópia da Central sem mexer em mais nada do executável
+	// (SetDescription, Aula 20.10). Quem lê o recurso para no primeiro zero.
+	desc := make([]byte, 2*DescSlot)
+	copy(desc, utf16z(i.FileDescription))
+	strs = append(strs, node("FileDescription", desc, DescSlot, 1, nil))
 	for _, kv := range [][2]string{
-		{"CompanyName", i.CompanyName}, {"FileDescription", i.FileDescription}, {"FileVersion", i.Version},
+		{"CompanyName", i.CompanyName}, {"FileVersion", i.Version},
 		{"InternalName", i.InternalName}, {"LegalCopyright", i.LegalCopyright}, {"OriginalFilename", i.OriginalFilename},
 		{"ProductName", i.ProductName}, {"ProductVersion", i.Version},
 	} {
@@ -226,4 +236,77 @@ func Syso(goarch string, versionInfo []byte) ([]byte, error) {
 		return nil, fmt.Errorf("tamanho do objeto inesperado: %d", out.Len())
 	}
 	return out.Bytes(), nil
+}
+
+// ErrNoSlot: o executável não tem o recurso de versão com o espaço da descrição (um build
+// sem o scripts/build.sh, por exemplo).
+var ErrNoSlot = errors.New("o executável não tem o espaço da descrição no recurso de versão")
+
+// descKey: a chave do texto, em UTF-16 com o zero, como fica no recurso.
+var descKey = utf16z("FileDescription")
+
+// descSlot acha o espaço da descrição: o nó String com a chave, tipo texto e o tamanho fixo.
+// Devolve onde começa o valor. Mais de um candidato também é ErrNoSlot (não adivinha).
+func descSlot(exe []byte) (int, error) {
+	found := -1
+	for i := 0; ; {
+		j := bytes.Index(exe[i:], descKey)
+		if j < 0 {
+			break
+		}
+		k := i + j
+		i = k + 1
+		if k < 6 || k%2 != 0 {
+			continue
+		}
+		wLen := binary.LittleEndian.Uint16(exe[k-6:])
+		vLen := binary.LittleEndian.Uint16(exe[k-4:])
+		typ := binary.LittleEndian.Uint16(exe[k-2:])
+		val := k - 6 + (6+len(descKey)+3)&^3 // o valor vem alinhado a 4 a partir do início do nó
+		if typ != 1 || vLen != DescSlot || int(wLen) != val-(k-6)+2*DescSlot || val+2*DescSlot > len(exe) {
+			continue
+		}
+		if found >= 0 {
+			return 0, ErrNoSlot
+		}
+		found = val
+	}
+	if found < 0 {
+		return 0, ErrNoSlot
+	}
+	return found, nil
+}
+
+// Description lê a descrição gravada no executável (ok=false: sem o espaço).
+func Description(exe []byte) (string, bool) {
+	at, err := descSlot(exe)
+	if err != nil {
+		return "", false
+	}
+	u := make([]uint16, 0, DescSlot)
+	for i := 0; i < DescSlot; i++ {
+		c := binary.LittleEndian.Uint16(exe[at+2*i:])
+		if c == 0 {
+			break
+		}
+		u = append(u, c)
+	}
+	return string(utf16.Decode(u)), true
+}
+
+// SetDescription devolve uma cópia do executável com outra descrição no mesmo espaço; o resto
+// do arquivo fica igual, byte a byte.
+func SetDescription(exe []byte, name string) ([]byte, error) {
+	if err := checkText("FileDescription", name, true); err != nil {
+		return nil, err
+	}
+	at, err := descSlot(exe)
+	if err != nil {
+		return nil, err
+	}
+	out := bytes.Clone(exe)
+	slot := out[at : at+2*DescSlot]
+	clear(slot)
+	copy(slot, utf16z(name))
+	return out, nil
 }
