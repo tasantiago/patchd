@@ -24,8 +24,13 @@
 # variáveis só para o docker, apagado no fim. O relatório fica em zap/relatorios/ (fora do
 # git: tem os endereços e as respostas do lab).
 #
+# A sessão é conferida antes e depois (Aula 20.4b): na primeira rodada da ativa ela já tinha
+# vencido (30 min parada), e o ZAP atacou só a tela de login. Sessão que não abre o painel:
+# a varredura nem começa. Sessão que caiu no meio: o script avisa e sai com 4. O "Sair"
+# (/painel/sair) fica fora da varredura, para nenhum ataque encerrar a sessão.
+#
 # Saída: 0 nenhuma regra FAIL (os avisos ficam no relatório); 1 alguma regra FAIL
-# (zap/regras.tsv); 3 erro.
+# (zap/regras.tsv); 3 erro; 4 a sessão caiu durante a varredura (refaça).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -67,6 +72,22 @@ patchd_ses_*) ;;
 	;;
 esac
 
+# A sessão abre o painel? O cookie vai num arquivo de cabeçalho (nunca na linha de comando).
+# -k: só aqui e só no lab (o endereço já foi conferido acima: 127.0.0.1 ou localhost).
+hdr=$(mktemp)
+chmod 600 "$hdr"
+printf 'Cookie: patchd_sessao=%s\n' "$valor" >"$hdr"
+sessao_vale() {
+	[ "$(curl -sk -o /dev/null -w '%{http_code}' -H @"$hdr" "$url/painel/")" = 200 ]
+}
+if ! sessao_vale; then
+	rm -f "$hdr"
+	echo "a sessão de $sessao não abre o painel (vencida, encerrada ou de outro servidor)." >&2
+	echo "Ela vence com 30 min parada: crie outra logo antes de rodar, no container:" >&2
+	echo "  (umask 077; patchd-server session create -role leitura > zap/relatorios/.sessao)" >&2
+	exit 3
+fi
+
 saida="zap/relatorios/$(date +%Y%m%d-%H%M)-$modo"
 mkdir -p "$saida"
 cp zap/regras.tsv "$saida/"
@@ -74,13 +95,17 @@ chmod a+rwx "$saida" # o ZAP roda no container como o usuário zap (uid 1000)
 
 envfile=$(mktemp)
 chmod 600 "$envfile"
-trap 'rm -f "$envfile"' EXIT
+trap 'rm -f "$envfile" "$hdr"' EXIT
 {
 	echo "ZAP_AUTH_HEADER=Cookie"
 	echo "ZAP_AUTH_HEADER_VALUE=patchd_sessao=$valor"
 } >"$envfile"
 
 opcoes="-config spider.postform=false"
+# O "Sair" fica fora de tudo (spider e ataques): um POST nele encerraria a sessão no meio.
+opcoes="$opcoes -config globalexcludeurl.url_list.url(0).regex=.*/painel/sair.*"
+opcoes="$opcoes -config globalexcludeurl.url_list.url(0).description=sair"
+opcoes="$opcoes -config globalexcludeurl.url_list.url(0).enabled=true"
 if [ "$modo" = ativa ]; then
 	opcoes="$opcoes -config scanner.maxScanDurationInMins=$minutos -config scanner.maxRuleDurationInMins=5"
 fi
@@ -96,4 +121,10 @@ rc=$?
 set -e
 echo
 echo "relatório: $saida/relatorio.html (e .md, .json); código $rc"
+if ! sessao_vale; then
+	echo "ATENÇÃO: no fim, a sessão já não abria o painel: parte da varredura rodou sem login." >&2
+	echo "Crie outra sessão e refaça (ZAP_MINUTOS menor ajuda)." >&2
+	exit 4
+fi
+echo "sessão válida do começo ao fim"
 exit "$rc"

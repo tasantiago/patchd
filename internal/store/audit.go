@@ -5,9 +5,10 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Trilha de auditoria (Aula 15.13): quem fez o quê, quando, de onde. Só se acrescenta.
@@ -43,15 +44,11 @@ type AuditFilter struct {
 	Limit    int       // até MaxAuditPage; 0 = 100
 }
 
-func clipText(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
-}
+// clipText limpa e corta. Aula 20.4b (achado F8): o caminho de uma URL com %00 ou UTF-8
+// inválido ia cru para o "acesso.negado", o PostgreSQL recusava o INSERT e a tentativa
+// ficava fora da trilha. Agora o NUL e o UTF-8 inválido viram "�" (texto.Clip): o evento
+// entra, com o pedido do jeito que dá para mostrar.
+func clipText(s string, n int) string { return texto.Clip(s, n) }
 
 func (e *AuditEvent) clip() {
 	e.Username, e.Source, e.Action = clipText(e.Username, maxAuditText), clipText(e.Source, maxAuditText), clipText(e.Action, maxAuditText)
