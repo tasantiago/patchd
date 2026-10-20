@@ -1,5 +1,6 @@
-# Análise estática de segurança (Aula 20.2). Roda a cada push e pull request, e toda segunda:
-# uma vulnerabilidade nova aparece na base do Go sem que o código mude.
+# Análise estática de segurança (Aula 20.2) e fuzzing (Aula 20.3). A análise roda a cada push
+# e pull request, e toda segunda: uma vulnerabilidade nova aparece na base do Go sem que o
+# código mude. O fuzzing roda só na segunda (ou à mão).
 name: seguranca
 
 on:
@@ -26,3 +27,24 @@ jobs:
           go-version-file: go.mod
           cache: false
       - run: scripts/seguranca.sh
+
+  # Fuzzing (Aula 20.3): só no agendamento e à mão, 1 minuto por alvo. Uma entrada que
+  # quebra um alvo sobe como artefato do job; copie-a para o testdata/fuzz/ do pacote.
+  fuzz:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: FUZZTIME=1m scripts/fuzz.sh
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-achados
+          path: "**/testdata/fuzz/"

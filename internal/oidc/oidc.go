@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Limites.
@@ -335,12 +336,7 @@ func (p *Provider) Exchange(ctx context.Context, code string, l Login) (Identity
 	return p.identity(claims)
 }
 
-func trim(s string) string {
-	if len(s) > 200 {
-		return s[:200]
-	}
-	return s
-}
+func trim(s string) string { return texto.Clip(s, 200) }
 
 // VerifyIDToken confere o ID token: assinatura RS256 com uma chave da JWKS do provedor,
 // emissor exato, audiência com o client_id (e azp, se houver mais de uma), prazo, emissão

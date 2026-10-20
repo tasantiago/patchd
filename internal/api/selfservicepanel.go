@@ -10,6 +10,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/selfservice"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
 	"github.com/tasantiago/patchd/internal/version"
@@ -93,9 +94,7 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 	// Prévia: a loja de uma máquina Windows, para os grupos digitados.
 	q := r.URL.Query()
 	chosen, groups := q.Get("maquina"), strings.TrimSpace(q.Get("grupos"))
-	if len(groups) > 2000 {
-		groups = groups[:2000]
-	}
+	groups = texto.Clip(groups, 2000)
 	sv.Groups = groups
 	machines, err := a.store.Machines(ctx)
 	if err != nil {

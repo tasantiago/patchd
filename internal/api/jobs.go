@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/version"
 )
 
@@ -48,9 +49,7 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 		writeError(w, http.StatusUnprocessableEntity, "invalid_status", "status deve ser ok, falhou, rejeitado ou adiado")
 		return
 	}
-	if len(res.Detail) > 2000 {
-		res.Detail = res.Detail[:2000]
-	}
+	res.Detail = texto.Clip(res.Detail, 2000) // Aula 20.3: o corte em bytes partia o "ç" e o banco recusava
 	// O job tem de ser desta máquina: a credencial de uma não fecha o job de outra.
 	job, found, err := a.store.JobForMachine(r.Context(), machineID, id)
 	if err != nil {
