@@ -173,10 +173,16 @@ func (p *Provider) Sign(ajuste func(map[string]any)) string {
 	if ajuste != nil {
 		ajuste(c)
 	}
+	b, _ := json.Marshal(c)
+	return p.SignRaw(b)
+}
+
+// SignRaw assina um conteúdo qualquer, mesmo que não seja JSON (Aula 20.3: o fuzzing
+// testa o que vem depois da assinatura conferida).
+func (p *Provider) SignRaw(b []byte) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	h, _ := json.Marshal(map[string]string{"alg": p.alg, "kid": p.kid, "typ": "JWT"})
-	b, _ := json.Marshal(c)
 	in := base64.RawURLEncoding.EncodeToString(h) + "." + base64.RawURLEncoding.EncodeToString(b)
 	sum := sha256.Sum256([]byte(in))
 	sig, err := rsa.SignPKCS1v15(rand.Reader, p.key, crypto.SHA256, sum[:])

@@ -11,6 +11,7 @@ import (
 	"github.com/tasantiago/patchd/internal/export"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Configuração › Auditoria (Aula 15.14): a trilha da 15.13 no painel, só para admin. Filtro
@@ -49,9 +50,7 @@ type auditQuery struct {
 
 func parseAuditQuery(v url.Values) auditQuery {
 	q := auditQuery{User: panel.NormalizeUsername(v.Get("usuario")), Period: "7d"}
-	if len(q.User) > 64 {
-		q.User = q.User[:64]
-	}
+	q.User = texto.Clip(q.User, 64) // Aula 20.3: vai para o banco; UTF-8 inválido virava 500
 	act := v.Get("acao")
 	for _, g := range auditGroups {
 		if g.Key == act {

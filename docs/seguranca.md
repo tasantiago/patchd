@@ -104,7 +104,7 @@ quem resolve.
 | | Ameaça | Controle | Lacuna |
 |---|---|---|---|
 | T | Instalador adulterado na origem (T5) | Download com SHA-256 do winget; organização Authenticode da regra (14.2); aprovação humana (14.5) | Regras sem `Signer` aceitam instalador sem assinatura conhecida: **F2** |
-| T | Catálogo envenenado | Fontes oficiais por HTTPS; o catálogo só informa, não executa | Fuzzing dos parsers do catálogo: **S3** |
+| T | Catálogo envenenado | Fontes oficiais por HTTPS; o catálogo só informa, não executa; fuzzing do YAML do winget e do metalink (20.3); os JSON das fontes passam pelo `encoding/json` | — |
 | D | Fonte fora do ar | Catálogo guardado; offline (wsusscn2) | — |
 
 ### 4.5 Servidor ↔ banco, segredos e processo
@@ -165,6 +165,11 @@ Primeira passada (Go 1.27.1):
   versão exata nos dois Dockerfiles e `go 1.27.2` no go.mod. Os agentes só recebem a correção
   numa release nova (v0.17.7). Uma 13ª (`os.Root` no Windows) estava num pacote importado, mas
   em função não chamada: o govulncheck a lista à parte e não falha por ela.
+- **govulncheck, no container com rede**: mais 2 no `golang.org/x/text` v0.29.0
+  (GO-2026-6629 e GO-2026-5970), que entra pelo pgx (normalização da senha do banco). Caminho
+  só do servidor. Atualizado para v0.43.0 (com `golang.org/x/sync` v0.24.0). Onde as
+  dependências são cópias locais (`replace`), o govulncheck não sabe a versão do módulo e não
+  as compara: a análise que vale é a do ambiente com as versões reais e a do CI.
 - **staticcheck**: código morto que dependia do SO (funções de um sistema só em arquivo comum),
   dois valores atribuídos e nunca lidos em testes, mensagens de erro com maiúscula. Os `| 0`
   do BER ficam, com `//lint:ignore` e o motivo.
@@ -185,6 +190,39 @@ Regras da casa para exceções:
 4. G103 (`unsafe`) fica desligada só nos arquivos `_windows.go`: a API do Windows exige.
 5. Ferramenta nova ou versão nova é um commit só para isso, com os achados que ela trouxer.
 
+## 5b. Fuzzing (S3, Aula 20.3)
+
+`scripts/fuzz.sh` roda cada alvo `FuzzXxx` do código (a lista sai do código: alvo novo entra
+sozinho) por `FUZZTIME` (30 s por padrão). O CI roda toda segunda, 1 minuto por alvo. Uma
+entrada que quebra um alvo fica em `testdata/fuzz/<Alvo>/` do pacote e vira teste de
+regressão: o `go test` comum roda todas.
+
+| Alvo | De onde vem a entrada | Propriedade | Achado |
+|---|---|---|---|
+| `store.FuzzSaveInventory` | Agente (T3) | Depois da limpeza da entrada, o PostgreSQL grava | **Sim**: byte 0xff e NUL faziam o INSERT falhar; o inventário virava 500 a cada envio |
+| `api.FuzzDecodeJSON` | Agente, puro ou gzip | Nunca 5xx; nenhum NUL passa | Guarda a correção acima |
+| `api.FuzzConsultas` | URL do painel | Filtros em UTF-8 válido, sem NUL, no limite | **Sim**: `%C3` (meio "ç") ia para a tela e, na Auditoria, para o banco (500) |
+| `texto.FuzzClip` | — | Corte sem partir caractere | Correção nova (`internal/texto`) |
+| `repocache.FuzzMetalink` | Fedora (T5) | Espelho é base https terminada em "/" | **Sim** (pela semente, não pela mutação): `?x` ou `#` no endereço do espelho |
+| `ber.FuzzParse` | Servidor LDAP | Sem pânico; remontado decodifica igual | Não |
+| `ldap.FuzzRespostas` | Servidor LDAP | Bind e busca terminam sem pânico | Não |
+| `oidc.FuzzIDToken` | Navegador (volta do RHBK) | Só o token assinado passa; ≤ 1 leitura da JWKS | Não |
+| `oidc.FuzzIDTokenClaims` | RHBK com defeito | O que passa cumpre emissor, audiência, prazo, nonce | Não |
+| `export.FuzzTable` | Agente → planilha | Relê igual; nenhuma célula começa como fórmula | Não (o primeiro "achado" era a propriedade exigente demais com o `\r`) |
+| `ui.FuzzCheckLogo` | Admin, API da Central | Aceito = PNG/JPEG nos limites | Não |
+| `winget.FuzzParseInstaller` | GitHub do winget (T5) | Sem pânico | Não |
+| `version.FuzzCompare` | Agente e fontes | Comparação é uma ordem (a = a; trocar lados troca o sinal) | Não |
+
+A correção dos dois primeiros é uma só, na entrada: `internal/texto` troca UTF-8 inválido e NUL
+por U+FFFD (a mesma troca que o `encoding/json` já faz com UTF-8 inválido), e o `decodeJSON`
+aplica a todo texto do corpo. Os cortes de texto (`s[:n]`) viraram `texto.Clip`: o detalhe do
+resultado do job (2000 bytes, com texto em português, partia o "ç" e o banco recusava o
+resultado), as buscas, o usuário da Auditoria, os grupos da prévia da loja e a descrição de
+erro do RHBK.
+
+Lacuna conhecida: os formulários do painel (POST) não passam pela mesma limpeza. Um admin que
+mande UTF-8 inválido de propósito recebe um 500 na própria tela; não afeta outra pessoa.
+
 ## 6. Plano do bloco de segurança
 
 | | O quê | Aula |
@@ -192,7 +230,7 @@ Regras da casa para exceções:
 | S1 | Este modelo de ameaças | 20.1 |
 | S4 | Matriz de rotas gerada do código e testada na prática | 20.1 |
 | S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
-| S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem | 20.3 |
+| S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão | 20.4 |
 | S6 | API dos agentes: limite por máquina, F1 e F2, tokens de enrollment | 20.5 |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar | 20.6 |

@@ -259,6 +259,12 @@ func TestParseMetalinkSoHTTPS(t *testing.T) {
 	if _, err := parseMetalink([]byte(strings.Replace(x, "https://espelho2", "http://espelho2", 1)), false); err == nil {
 		t.Error("metalink só com espelhos http aceito")
 	}
+	// Aula 20.3: query, fragmento e usuário no endereço do espelho.
+	y := strings.Replace(x, "https://espelho3/fedora/outra-coisa.xml", "https://espelho3/f/repodata/repomd.xml?x=1", 1)
+	y = strings.Replace(y, "http://espelho1/fedora/repodata/repomd.xml", "https://espelho1/f/repodata/repomd.xml#", 1)
+	if info, err := parseMetalink([]byte(y), false); err != nil || len(info.mirrors) != 2 || info.mirrors[0] != "https://espelho1/f/" {
+		t.Errorf("query e fragmento: %+v %v", info, err)
+	}
 }
 
 // Com a origem fora, o InRelease guardado sai na hora a partir da segunda vez, sem esperar

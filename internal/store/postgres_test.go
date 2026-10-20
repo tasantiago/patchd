@@ -17,7 +17,7 @@ import (
 
 // bancoDeTeste conecta no PATCHD_TEST_DATABASE_URL, num schema próprio e descartável.
 // Sem a variável, o teste é pulado: go test ./... continua rodando sem banco.
-func bancoDeTeste(t *testing.T) *pgxpool.Pool {
+func bancoDeTeste(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("PATCHD_TEST_DATABASE_URL")
 	if url == "" {

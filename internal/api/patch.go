@@ -14,6 +14,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Patch › Pendentes (Aula 13.1): a frota vista por item pendente, como o "Missing
@@ -178,9 +179,7 @@ type patchQuery struct {
 
 func parsePatchQuery(v url.Values) patchQuery {
 	q := patchQuery{Page: 1, Q: strings.TrimSpace(v.Get("q"))}
-	if len(q.Q) > maxSearchLen {
-		q.Q = q.Q[:maxSearchLen]
-	}
+	q.Q = texto.Clip(q.Q, maxSearchLen) // Aula 20.3: sem partir caractere, sem UTF-8 inválido da URL
 	if s := v.Get("status"); s == "aguardando" || s == "aprovados" || s == "exploradas" {
 		q.Status = s
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/version"
 )
 
@@ -174,9 +175,7 @@ func parseEquipQuery(v url.Values) equipQuery {
 		q.Field = f
 	}
 	q.Q = strings.TrimSpace(v.Get("q"))
-	if len(q.Q) > maxSearchLen {
-		q.Q = q.Q[:maxSearchLen]
-	}
+	q.Q = texto.Clip(q.Q, maxSearchLen) // Aula 20.3: sem partir caractere, sem UTF-8 inválido da URL
 	if s := v.Get("status"); s == statusOnline || s == statusOffline || s == statusNoState {
 		q.Status = s
 	}

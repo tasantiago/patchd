@@ -10,6 +10,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Login pelo RHBK (Aula 9.4): o botão leva o navegador ao provedor com state, nonce e o
@@ -119,10 +120,7 @@ func (a *api) oidcReturn(w http.ResponseWriter, r *http.Request) {
 		a.renderLogin(w, status, loginData{Error: msg, AD: a.directory != nil})
 	}
 	if e := q.Get("error"); e != "" {
-		desc := q.Get("error_description")
-		if len(desc) > 200 {
-			desc = desc[:200]
-		}
+		desc := texto.Clip(q.Get("error_description"), 200) // vai para a auditoria
 		fail(http.StatusUnauthorized, "O RHBK não concluiu o login.", "o provedor respondeu "+e+": "+desc, nil)
 		return
 	}

@@ -133,7 +133,14 @@ func parseMetalink(b []byte, httpOK bool) (*metalinkInfo, error) {
 			if pu.Scheme != "https" && !(httpOK && pu.Scheme == "http") {
 				continue
 			}
-			info.mirrors = append(info.mirrors, strings.TrimSuffix(raw, "repodata/repomd.xml"))
+			// Aula 20.3 (fuzzing): com "?x" ou "#x" no fim, a base não terminava em "/" e o
+			// caminho do arquivo ia parar dentro da query. Espelho não tem query, fragmento
+			// nem usuário; a base sai do endereço já lido, não do texto.
+			if pu.RawQuery != "" || pu.Fragment != "" || pu.User != nil {
+				continue
+			}
+			pu.ForceQuery, pu.RawFragment = false, ""
+			info.mirrors = append(info.mirrors, strings.TrimSuffix(pu.String(), "repodata/repomd.xml"))
 		}
 		if len(info.mirrors) == 0 {
 			return nil, errors.New("metalink sem espelhos https")

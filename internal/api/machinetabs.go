@@ -13,6 +13,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Detalhe do equipamento em abas (Aula 12.3), como o ITOM: Resumo, Hardware, Software,
@@ -181,9 +182,7 @@ type softwareView struct {
 
 func softwareTab(id string, inv protocol.InventoryReport, q url.Values, stamp func(time.Time) string) softwareView {
 	v := softwareView{Total: len(inv.Software), Q: strings.TrimSpace(q.Get("q"))}
-	if len(v.Q) > maxSearchLen {
-		v.Q = v.Q[:maxSearchLen]
-	}
+	v.Q = texto.Clip(v.Q, maxSearchLen) // Aula 20.3: sem partir caractere, sem UTF-8 inválido da URL
 	if !inv.CollectedAt.IsZero() {
 		v.Collected = stamp(inv.CollectedAt)
 	}

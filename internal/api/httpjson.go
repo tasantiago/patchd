@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Limites do corpo das requisições. Um inventário de 1500 pacotes tem perto de 500 KB, e
@@ -88,6 +89,9 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		writeError(w, http.StatusBadRequest, "invalid_json", "o corpo tem dados além do JSON")
 		return false
 	}
+	// Aula 20.3 (fuzzing): um "\u0000" em qualquer texto fazia o PostgreSQL recusar o
+	// INSERT, e o inventário (ou a busca, ou o resultado do job) virava um 500 a cada envio.
+	texto.CleanAll(dst)
 	return true
 }
 
