@@ -39,3 +39,34 @@ func (p *Postgres) RecordBackup(ctx context.Context, b BackupRun) error {
 		b.FinishedAt, b.File, b.Bytes, b.Encrypted)
 	return err
 }
+
+// RestoreTest é um ensaio de restauração registrado pelo deploy/restaurar.sh --testar
+// (Aula 20.8, F4).
+type RestoreTest struct {
+	FinishedAt time.Time
+	File       string // a cópia ensaiada, só o nome
+	OK         bool   // as contagens restauradas conferiram com as da cópia
+}
+
+// LastRestoreTest devolve o ensaio mais recente; found = false se nenhum foi registrado.
+func (p *Postgres) LastRestoreTest(ctx context.Context) (RestoreTest, bool, error) {
+	var r RestoreTest
+	err := p.pool.QueryRow(ctx, `
+		SELECT finished_at, file, ok
+		FROM restore_tests ORDER BY finished_at DESC, id DESC LIMIT 1`).Scan(&r.FinishedAt, &r.File, &r.OK)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RestoreTest{}, false, nil
+	}
+	if err != nil {
+		return RestoreTest{}, false, err
+	}
+	return r, true, nil
+}
+
+// RecordRestoreTest grava um ensaio (o restaurar.sh faz o mesmo INSERT pelo psql).
+func (p *Postgres) RecordRestoreTest(ctx context.Context, r RestoreTest) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO restore_tests (finished_at, file, ok) VALUES ($1, $2, $3)`,
+		r.FinishedAt, r.File, r.OK)
+	return err
+}

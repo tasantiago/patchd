@@ -651,3 +651,41 @@ Roteiro da chave de **jobs**:
 Ainda não giram por este roteiro: a credencial de cada máquina (aposentar e registrar de novo
 continua sendo o caminho) e a aprovação de instaladores por uma segunda chave (seção 5 de
 `docs/seguranca.md`).
+
+## Cópias do banco no painel (Aula 20.8)
+
+Configuração › Sistema › **Cópias do banco** mostra a última cópia registrada pelo
+`backup.sh` (há quanto tempo, cifrada ou não) e o último ensaio do `restaurar.sh --testar`
+(conferiu ou não). O ensaio agora grava o resultado na tabela `restore_tests` do banco em uso
+(migration 0040); os dados do banco em uso continuam intocados. Vermelho: nenhuma cópia, ou o
+último ensaio não conferiu. Amarelo: cópia com mais de 36 h (o timer parou?), sem cifra, sem
+ensaio, ou ensaio com mais de 35 dias. Cópia fora do host o servidor não enxerga: roteiro de F4
+em `docs/seguranca.md` (seção 5f).
+
+## Pacote para revisão externa (Aula 20.8)
+
+```bash
+./scripts/build.sh v0.17.11            # o build da versão, com a árvore limpa
+./scripts/revisao.sh v0.17.11          # revisao/patchd-revisao-v0.17.11.tar.gz (+ .sha256)
+```
+
+O pacote tem o código do commit, o SBOM de cada executável (CycloneDX 1.5), os resultados do
+`seguranca.sh`, do `go test` e do `fuzz.sh`, o `docs/seguranca.md` e o `docs/rotas.md`, e um
+LEIAME para quem revisa. Pule etapas com `PULAR="seguranca testes fuzz"`; `FUZZTIME` muda o
+tempo por alvo (padrão 30s); `ZAP=zap/relatorios/AAAAMMDD-HHMM-modo` inclui um relatório do
+ZAP (encerre antes a sessão da varredura: `patchd-server session end`).
+
+A lista de termos que nunca podem sair fica fora do repositório, em
+`~/.config/patchd/proibidos.txt` (ou `PATCHD_PROIBIDOS`), permissão 600:
+
+```text
+# um termo por linha; maiúsculas e minúsculas tanto faz
+<domínio interno>
+<prefixo dos IPs internos, com o ponto final>
+<nome de host do servidor>
+env:PATCHD_PUBLIC_URL       # o valor desta variável no .env ou no deploy/.env
+```
+
+Além da lista, o script procura o conteúdo de cada arquivo de `deploy/secrets/`, o cookie da
+varredura do ZAP e chaves privadas (do patchd, do age e PEM). Um achado mostra o arquivo e a
+linha da lista (nunca o valor) e o `.tar.gz` não é gerado. O histórico do git é só contado.

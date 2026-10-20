@@ -9,8 +9,9 @@
 # fica fora do servidor; se ela tiver senha, o age pergunta). O texto claro vai do age direto
 # para dentro do container do Postgres, sem passar pelo disco deste host.
 #
-# O teste não toca no banco em uso: é o ensaio que deve rodar todo mês (uma cópia que nunca
-# foi restaurada não é uma cópia). A substituição para o servidor, apaga o banco patchd,
+# O teste não toca nos dados do banco em uso (só registra o resultado do ensaio na tabela
+# restore_tests, Aula 20.8): é o ensaio que deve rodar todo mês (uma cópia que nunca foi
+# restaurada não é uma cópia). A substituição para o servidor, apaga o banco patchd,
 # cria de novo e restaura em uma transação só (se algo falhar no meio, o banco fica vazio,
 # não pela metade: rode de novo), e sobe o servidor. Apagar e criar, e não restaurar por
 # cima: tabelas de migrations mais novas que a cópia não podem sobrar.
@@ -64,7 +65,19 @@ if [ "$mode" = "--testar" ]; then
   psqlc postgres "DROP DATABASE IF EXISTS $db WITH (FORCE)" >/dev/null
   psqlc postgres "CREATE DATABASE $db OWNER patchd" >/dev/null
   trap 'psqlc postgres "DROP DATABASE IF EXISTS $db WITH (FORCE)" >/dev/null; limpa' EXIT
-  pg pg_restore -U patchd -d "$db" --no-owner --exit-on-error --single-transaction /tmp/patchd-restaurar.dump
+  # Aula 20.8 (F4): o resultado do ensaio fica no banco em uso, para Configuração › Sistema.
+  registra() {
+    pg psql -U patchd -d patchd -v ON_ERROR_STOP=1 -qAtX -v arq="$(basename "$dump")" -v ok="$1" > /dev/null <<'SQL' ||
+INSERT INTO restore_tests (file, ok) VALUES (:'arq', :ok);
+DELETE FROM restore_tests WHERE finished_at < now() - interval '400 days';
+SQL
+      echo "aviso: o ensaio não foi registrado no banco (o servidor já aplicou a migration 0040?)" >&2
+  }
+  if ! pg pg_restore -U patchd -d "$db" --no-owner --exit-on-error --single-transaction /tmp/patchd-restaurar.dump; then
+    registra false
+    echo "a cópia não restaurou no banco temporário" >&2
+    exit 1
+  fi
   got="$(pg psql -U patchd -d "$db" -AtX -f - < deploy/contagens.sql)"
   echo "== contagens restauradas"
   echo "$got" | tabela
@@ -74,10 +87,12 @@ if [ "$mode" = "--testar" ]; then
     else
       echo "DIFERENTE das contagens do momento da cópia:" >&2
       diff <(cat "$dump.contagens") <(echo "$got") >&2 || true
+      registra false
       exit 1
     fi
   fi
-  echo "teste concluído; o banco temporário foi apagado e o banco em uso não mudou"
+  registra true
+  echo "teste concluído e registrado; o banco temporário foi apagado e o banco em uso só ganhou o registro do ensaio"
   exit 0
 fi
 

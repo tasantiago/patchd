@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,6 +36,8 @@ type SystemInfo struct {
 	Catalog                    string // o agendamento do catálogo, como o log da partida diz
 	// Live (Aula 19.2): o catálogo e a retenção que valem agora (mudam pela tela); nil: os de cima.
 	Live func() (catalog, retention string)
+	// Backups (Aula 20.8, F4): a cópia e o ensaio de restauração mais recentes; nil: sem banco.
+	Backups func(ctx context.Context) (BackupStatus, error)
 }
 
 // WithSystemInfo liga a aba Sistema da Configuração.
@@ -161,6 +164,14 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 			add("Banco", fmt.Sprintf("PostgreSQL · migração %d", si.Schema), "")
 		} else {
 			add("Banco", "memória: nada sobrevive à reinicialização", "atencao")
+		}
+		if si.Backups != nil {
+			b, err := si.Backups(r.Context())
+			if err != nil {
+				return nil, err
+			}
+			v, l := backupRow(b, now)
+			add("Cópias do banco", v, l)
 		}
 		switch {
 		case si.TLSNotAfter == nil:

@@ -73,7 +73,7 @@ quem resolve.
 | S | Sessão roubada | Cookie `HttpOnly`, `Secure` com TLS, `SameSite=Strict`; 8 h e 30 min parado; só o hash no banco (7.2) | Sem amarração ao IP ou ao navegador (aceitável; registrar) |
 | T | Formulário de outro site (CSRF) | `CrossOriginProtection` em todo POST; `SameSite=Strict`; **matriz de rotas testada (20.1)** | — |
 | T | Script injetado (XSS) | `html/template` com escape; CSP sem `script-src` (nenhum JavaScript roda), sem `'unsafe-inline'` nem no CSS, e `frame-ancestors 'none'` (7.2, 11.3, 20.4); varredura do ZAP (20.4) | — |
-| R | Admin nega o que fez | Trilha de auditoria com antes → depois, origem e ID da requisição (15.13, 19.2); terminal também (18.1) | Trilha no mesmo banco que o admin influencia: **S9** (cópia para fora) |
+| R | Admin nega o que fez | Trilha de auditoria com antes → depois, origem e ID da requisição (15.13, 19.2); terminal também (18.1) | Trilha no mesmo banco que o admin influencia: a cópia cifrada fora do host (F4, roteiro na seção 5f) |
 | I | Leitura vendo o que é de admin | `adminAction` em toda a Configuração; **teste da matriz (20.1)** | — |
 | E | Leitura fazendo o que é de admin | `sameOrigin(adminAction)` em toda ação; sessão de leitura recebe 403 e vira `acesso.negado` (15.13); **teste da matriz (20.1)** | — |
 | E | Grupo tirado continua com o perfil | Sessões da origem encerradas quando um grupo sai da lista (19.4) | — |
@@ -114,9 +114,9 @@ quem resolve.
 | | Ameaça | Controle | Lacuna |
 |---|---|---|---|
 | I | Segredo no log, na tela ou no banco | Segredos só em arquivo (`_FILE`); nunca por flag; o log e a auditoria não levam segredos (testes); parâmetros da tela sem segredo (19.2) | — |
-| I | Dump do banco com dado pessoal | Retenção (10.5, 19.2) | Cópias do banco cifradas e com acesso restrito: **S9** |
+| I | Dump do banco com dado pessoal | Retenção (10.5, 19.2); cópia cifrada com age, chave privada fora do servidor (10.3) | Ligar a cifra em produção: F4 (seção 5f) |
 | T | Dependência vulnerável | Poucas dependências; Go na versão exata (Dockerfiles e go.mod); `scripts/seguranca.sh` e o CI semanal (20.2) | — |
-| D | Banco perdido sem cópia | — | **F4** |
+| D | Banco perdido sem cópia | `backup.sh` e timer (10.1); ensaio `restaurar.sh --testar` (10.3); **Configuração › Sistema › Cópias do banco** mostra a última cópia e o último ensaio (20.8) | Ligar em produção: **F4** (seção 5f) |
 | E | Porta de métricas | Porta separada, com token (10.2) | — |
 | E | Proxy do cache de repositórios | Só as origens da lista, só GET/HEAD na porta 80, CONNECT recusado; testes do repocache (6.6) | — |
 
@@ -154,7 +154,10 @@ quem resolve.
   (`deploy/backup.sh`, o timer do systemd, a cifragem com `age` e o ensaio de restauração:
   Aulas 10.1 e 10.3, em `docs/operacao.md`); falta ligar no servidor de produção: o timer, as
   chaves públicas em `backup_recipients`, a cópia para fora do host e o ensaio mensal. A cópia
-  leva dado pessoal (A6) e os hashes de sessão: o acesso a ela é de T6. Roteiro no **S9**.
+  leva dado pessoal (A6) e os hashes de sessão: o acesso a ela é de T6. **Na 20.8**: o painel
+  passou a mostrar a última cópia e o último ensaio de restauração (vermelho sem cópia ou com
+  ensaio que não conferiu; amarelo com cópia velha, sem cifra, sem ensaio ou ensaio velho), e o
+  roteiro de produção está na seção 5f. Fica aberto até o roteiro ser cumprido no servidor.
 - **F5 — A chave de release existe numa máquina só, sem cópia** (Aula 20.2). Perder a chave
   impede publicar versões: os agentes só aceitam essa chave, e trocar de chave exige uma
   release assinada pela antiga. Comprometer a máquina de desenvolvimento compromete a frota.
@@ -318,6 +321,41 @@ com a pública dela embutida, exige essa aprovação além do job. Custa um pass
 aprovação; hoje a lista de organizações (20.5b) e os tipos de job fechados cobrem a maior
 parte do risco.
 
+## 5f. Pacote para revisão externa (S9, Aula 20.8)
+
+Quem revisa de fora recebe um arquivo só, gerado por `scripts/revisao.sh VERSÃO` a partir de
+um commit e do build dele (uso em `docs/operacao.md`):
+
+- **Código** do commit (`git archive`, sem o histórico do git).
+- **SBOM** de cada executável, em CycloneDX 1.5 (`cmd/sbom`): o que o próprio executável
+  gravou no build (módulos e versões, hash do go.sum, versão do Go, opções), sem ferramenta de
+  fora. Replace por pasta local aparece como tal, sem a pasta. Determinístico: o mesmo
+  executável dá o mesmo documento. O `cmd/sbom` recusa executável de outro commit ou
+  compilado com alterações não commitadas.
+- **Resultados**: `seguranca.sh` (S2), `go test` (com ou sem PostgreSQL, dito no pacote),
+  `fuzz.sh` (S3) e, quando houver, o relatório do ZAP (S5).
+- **Este documento** e `docs/rotas.md` (S1 e S4).
+
+**Nada do ambiente sai.** Antes de fechar o arquivo, o script procura em tudo o que vai (o
+código inclusive) os termos de uma lista que fica fora do repositório (domínio, nomes de host,
+prefixo dos IPs internos, valores do `.env`), o conteúdo dos arquivos de segredo e qualquer
+chave privada. Achou: diz o arquivo e de onde veio o termo, nunca o valor, e não fecha. O
+histórico do git não vai, mas o script conta em quantos commits cada termo aparece: o nome de
+computador que está no histórico continua uma decisão em aberto (reescrever o histórico).
+
+### Roteiro de F4 no servidor de produção
+
+1. `deploy/secrets/backup_recipients` com as duas chaves públicas do age (operacao.md, Cópias
+   cifradas); as privadas fora do servidor, em dois lugares.
+2. `deploy/systemd/patchd-backup.timer` ligado (`systemctl enable --now`), com o
+   `WorkingDirectory` ajustado.
+3. Cópia para fora do host: o destino é da equipe de servidores (outro host, compartilhamento
+   com backup próprio); as cópias já saem cifradas. O servidor não enxerga este passo: o
+   registro é a data do primeiro arquivo no destino.
+4. Ensaio mensal com `restaurar.sh --testar` e a chave privada só durante o ensaio.
+5. Configuração › Sistema › Cópias do banco sem amarelo nem vermelho: cópia de menos de 36 h,
+   cifrada, e ensaio de menos de 35 dias que conferiu.
+
 ## 6. Plano do bloco de segurança
 
 | | O quê | Aula |
@@ -330,4 +368,4 @@ parte do risco.
 | S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar (feito: seção 5d, v0.17.9) | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota; F5 (feito: seção 5e, v0.17.10) | 20.7 |
-| S9 | Pacote para revisão externa: SBOM, este documento, resultados, cópias do banco (F4) | 20.8 |
+| S9 | Pacote para revisão externa: SBOM, este documento, resultados (feito: seção 5f); cópias do banco no painel e roteiro (F4) | 20.8 |

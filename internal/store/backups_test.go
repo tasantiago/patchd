@@ -39,4 +39,24 @@ func TestCopiasDoBanco(t *testing.T) {
 			t.Errorf("aceito: %+v", ruim)
 		}
 	}
+
+	// Ensaios de restauração (Aula 20.8, F4).
+	if _, found, err := p.LastRestoreTest(ctx); found || err != nil {
+		t.Fatalf("sem ensaios: %v %v", found, err)
+	}
+	for _, r := range []RestoreTest{
+		{FinishedAt: ontem, File: "patchd-20261011T023000Z.dump", OK: true},
+		{FinishedAt: hoje, File: "patchd-20261012T023000Z.dump.age", OK: false},
+	} {
+		if err := p.RecordRestoreTest(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, found, err := p.LastRestoreTest(ctx)
+	if err != nil || !found || !r.FinishedAt.Equal(hoje) || r.OK || r.File != "patchd-20261012T023000Z.dump.age" {
+		t.Errorf("ensaio mais recente: %+v %v %v", r, found, err)
+	}
+	if err := p.RecordRestoreTest(ctx, RestoreTest{FinishedAt: hoje, File: "../patchd.dump", OK: true}); err == nil {
+		t.Error("ensaio com nome que não é de cópia aceito")
+	}
 }
