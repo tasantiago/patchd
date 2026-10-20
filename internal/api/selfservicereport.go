@@ -316,8 +316,7 @@ Período: {{range .Periods}}{{if eq . $.Days}}<b>{{.}} dias</b>{{else}}<a href="
 <ul class="kpis">{{range .KPIs}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{if eq .Filter "#aprovacao"}}#aprovacao{{else}}?dias={{$.Days}}{{if .Filter}}&amp;estado={{.Filter}}{{end}}{{end}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
 <li><div class="kpi"><span class="kpi-rot">Recusados</span><span class="kpi-val v-cinza">{{len .Refusals}}{{if ge (len .Refusals) 30}}+{{end}}</span><span class="kpi-sub">pedidos fora da oferta ou da regra</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Usuários</span><span class="kpi-val">{{.Users}}</span><span class="kpi-sub">com algum pedido atendido</span></div></li></ul>
-{{if .Waiting}}<style>.decisao{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}.decisao form{display:flex;gap:.3rem;margin:0}.decisao input{width:13rem}</style>
-<div class="card" id="aprovacao"><div class="card-cab"><h2>Aguardando a TI</h2><span class="muted">pedidos de programas com aprovação; sem decisão em 7 dias, expiram</span></div>
+{{if .Waiting}}<div class="card" id="aprovacao"><div class="card-cab"><h2>Aguardando a TI</h2><span class="muted">pedidos de programas com aprovação; sem decisão em 7 dias, expiram</span></div>
 <div class="tabela"><table><thead><tr><th>Pedido</th><th>Quando</th><th>Usuário</th><th>Máquina</th><th>Nome</th><th>Programa</th><th>Ação</th><th>Expira em</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Waiting}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{.User}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td><td>{{.What}}</td><td>{{.Action}}</td><td>{{.Expires}}</td>
 {{if $.Admin}}<td><div class="decisao"><form method="post" action="/painel/autoatendimento/pedidos/{{.ID}}/aprovar"><button type="submit">Aprovar</button></form>

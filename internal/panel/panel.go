@@ -25,7 +25,8 @@ const (
 const (
 	SourceLocal = "local"
 	SourceAD    = "ad"
-	SourceOIDC  = "oidc" // RHBK (Aula 9.4)
+	SourceOIDC  = "oidc"      // RHBK (Aula 9.4)
+	SourceScan  = "varredura" // aberta pela linha de comando para o ZAP (Aula 20.4)
 )
 
 // SessionPrefix identifica o segredo da sessão, como os prefixos de identity.
@@ -83,6 +84,8 @@ func SourceLabel(src string) string {
 		return "RHBK"
 	case SourceLocal:
 		return "local"
+	case SourceScan:
+		return "varredura"
 	}
 	return src
 }

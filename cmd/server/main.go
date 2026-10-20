@@ -123,6 +123,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if len(args) > 0 && args[0] == "notify" {
 		return runNotify(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "session" {
+		return runSession(args[1:], look, stdout, stderr)
+	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
 	if errors.Is(err, flag.ErrHelp) {

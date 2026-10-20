@@ -186,7 +186,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET "+protocol.SelfServiceLogoPath, a.machineAuth(a.selfServiceLogo)) // Aula 19.1b
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/favicon.svg", favicon)
-	mux.HandleFunc("GET /painel/logo", a.logoFile) // Aula 19.1: sem sessão, a tela de login também mostra
+	mux.HandleFunc("GET /painel/estilo.css", styleFile) // Aula 20.4: sem sessão, a tela de login também usa
+	mux.HandleFunc("GET /painel/logo", a.logoFile)      // Aula 19.1: sem sessão, a tela de login também mostra
 	mux.HandleFunc("GET /painel/entrar", a.loginForm)
 	mux.Handle("POST /painel/entrar", a.sameOrigin(a.login))
 	mux.Handle("POST /painel/sair", a.sameOrigin(a.logout))
@@ -258,7 +259,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /api/v1/compliance", a.sessionAuth(a.fleetCompliance))
 
 	// Ordem: o ID existe antes do log; o log enxerga o 500 produzido pela recuperação.
-	return withRequestID(withAccessLog(logger, a.observe, withRecover(logger, mux)))
+	return withRequestID(withAccessLog(logger, a.observe, withRecover(logger, SecurityHeaders(mux))))
 }
 
 // machineID lê e valida o {id} da URL nas rotas de leitura. Em caso de erro, já respondeu.

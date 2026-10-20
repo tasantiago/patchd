@@ -46,6 +46,7 @@ const (
 var publicas = map[string]string{
 	"POST /api/v1/enroll":      "registro da máquina: exige um token de enrollment no corpo",
 	"GET /painel/favicon.svg":  "ícone",
+	"GET /painel/estilo.css":   "folha de estilo do painel (Aula 20.4): a tela de login também usa",
 	"GET /painel/logo":         "logotipo da tela de login (Aula 19.1)",
 	"GET /painel/entrar":       "tela de login",
 	"POST /painel/entrar":      "login (conferência de origem, limite de tentativas)",

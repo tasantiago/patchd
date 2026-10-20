@@ -1,0 +1,33 @@
+# Regras do ZAP para o patchd (Aula 20.4). Formato do zap-baseline.py e do zap-full-scan.py:
+# ID<TAB>IGNORE|WARN|FAIL<TAB>(nome, só para leitura). Regra fora desta lista: WARN.
+#
+# FAIL: o que o patchd garante e um teste confere (TestCabecalhosDeSeguranca, Aula 20.4). Se o
+# ZAP achar, é regressão: a varredura falha.
+10010	FAIL	(Cookie No HttpOnly Flag)
+10011	FAIL	(Cookie Without Secure Flag)
+10020	FAIL	(Anti-clickjacking Header)
+10021	FAIL	(X-Content-Type-Options Header Missing)
+10035	FAIL	(Strict-Transport-Security Header)
+10036	FAIL	(Server Leaks Version Information via "Server" HTTP Response Header Field)
+10037	FAIL	(Server Leaks Information via "X-Powered-By" HTTP Response Header Field(s))
+10038	FAIL	(Content Security Policy (CSP) Header Not Set)
+10054	FAIL	(Cookie without SameSite Attribute)
+10055	FAIL	(CSP)
+10063	FAIL	(Permissions Policy Header Not Set)
+90004	FAIL	(Insufficient Site Isolation Against Spectre Vulnerability)
+#
+# IGNORE: falso positivo ou decisão de projeto, cada um com o motivo.
+#
+# 10202: o painel não usa token anti-CSRF. A proteção é a da biblioteca padrão (Go 1.25,
+# http.CrossOriginProtection: Sec-Fetch-Site e Origin), mais o cookie SameSite=Strict, e a
+# matriz de rotas testa um POST de outra origem em toda ação (Aula 20.1). O ZAP procura um
+# campo escondido com nome de token e não sabe disso.
+10202	IGNORE	(Absence of Anti-CSRF Tokens)
+# 10096: as telas mostram datas e horas de propósito (último contato, coleta, prazo).
+10096	IGNORE	(Timestamp Disclosure - Unix)
+# Informativas: o ZAP registra o que viu, não um problema.
+10049	IGNORE	(Non-Storable Content / Storable and Cacheable Content)
+10109	IGNORE	(Modern Web Application)
+10111	IGNORE	(Authentication Request Identified)
+10112	IGNORE	(Session Management Response Identified)
+10104	IGNORE	(User Agent Fuzzer)

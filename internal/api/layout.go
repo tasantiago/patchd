@@ -161,7 +161,7 @@ func (a *api) logoFile(w http.ResponseWriter, r *http.Request) {
 	l := a.panelLogo(r.Context())
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	h.Set("Content-Security-Policy", defaultCSP+"; sandbox")
 	if l == nil {
 		h.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)

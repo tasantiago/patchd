@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/repocache"
 )
 
@@ -48,9 +50,16 @@ func newHandler(apiHandler, repoCache http.Handler) http.Handler {
 		// Fedora (baseurl apontando para o servidor) e as contagens do cache.
 		mux.Handle("/repo/", repoCache)
 	}
+	// Os cabeçalhos de segurança (Aula 20.4) valem também para a raiz, o /healthz e o 404; o
+	// cache de repositórios (apt e dnf) responde com os dele.
+	secured := api.SecurityHeaders(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !repocache.IsProxyRequest(r) {
-			mux.ServeHTTP(w, r)
+			if strings.HasPrefix(r.URL.Path, "/repo/") {
+				mux.ServeHTTP(w, r)
+				return
+			}
+			secured.ServeHTTP(w, r)
 			return
 		}
 		if repoCache == nil {
