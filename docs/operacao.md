@@ -690,21 +690,26 @@ Além da lista, o script procura o conteúdo de cada arquivo de `deploy/secrets/
 varredura do ZAP e chaves privadas (do patchd, do age e PEM). Um achado mostra o arquivo e a
 linha da lista (nunca o valor) e o `.tar.gz` não é gerado. O histórico do git é só contado.
 
-## Nome nos avisos do Windows (Aula 20.9)
+## Nome da Central de software (Aulas 20.9 e 20.10)
 
-Os avisos da Central de software (o balão perto do relógio) mostram no título o nome do
-programa que o Windows tira da "Descrição do arquivo" do executável. Sem ela, aparecia o nome
-do arquivo (`patchd-app.exe` ou `patchd-agent.exe`). O `scripts/build.sh` agora grava o
-recurso de versão no agente do Windows:
+Os avisos da Central (o balão perto do relógio) mostram no título o nome do programa que o
+Windows tira da "Descrição do arquivo" do executável. Sem ela, aparecia o nome do arquivo
+(`patchd-app.exe`). Agora:
 
-| Variável do build | Padrão | Onde aparece |
-|---|---|---|
-| `PATCHD_APP_NAME` | `Central de software` | título dos avisos, Gerenciador de Tarefas, aplicativos de inicialização, Propriedades › Detalhes |
-| `PATCHD_APP_COMPANY` | vazio | Propriedades › Detalhes (Empresa) |
+- **O nome é um parâmetro do painel**: Configuração › Parâmetros › Aparência › **Nome da
+  Central de software** (`PATCHD_APP_NAME`, padrão "Central de software", de 1 a 40
+  caracteres). Vale no título dos avisos, no ícone perto do relógio (dica e menu) e no topo da
+  página da Central.
+- **Como chega às máquinas**: a loja que a Central pede ao agente traz o nome; o agente guarda
+  (`central-nome.txt` na pasta de dados) e grava na descrição da cópia `patchd-app.exe`. A
+  Central percebe a cópia trocada e reabre sozinha em até 1 minuto, já com o nome. A página
+  mostra o nome novo na hora; o título dos avisos, depois do próximo logon do usuário (o
+  Windows guarda o nome de quem manda os avisos).
+- **No build**: o `scripts/build.sh` grava o recurso de versão (versão, `ProductName` patchd,
+  nome original `patchd-agent.exe` e a descrição padrão num espaço de tamanho fixo, que o
+  agente troca sem mexer no resto do arquivo). `PATCHD_APP_COMPANY` (opcional) vai em
+  Propriedades › Detalhes › Empresa. Build sem o `build.sh` (sem o recurso): a Central funciona
+  e o título volta a ser o nome do arquivo.
 
-Junto vão a versão (FileVersion e ProductVersion, como a do build), `ProductName` patchd e o
-nome original `patchd-agent.exe`. Os dois nomes são do ambiente, como as chaves públicas: ficam
-fora do repositório. O mesmo executável é o serviço e a Central, então o serviço também aparece
-com esse nome no Gerenciador de Tarefas (na aba Serviços, o nome continua o do serviço).
-
-O Windows pode guardar o nome antigo do remetente dos avisos até o próximo logon do usuário.
+O serviço (`patchd-agent.exe`) fica com a descrição padrão; só a cópia da Central leva o nome do
+painel.

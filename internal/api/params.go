@@ -51,6 +51,16 @@ func (a *api) brandName() string {
 	return a.brand
 }
 
+// appName (Aula 20.10): o nome da Central de software que vale agora.
+func (a *api) appName() string {
+	if a.params != nil {
+		if v := a.params.Value("PATCHD_APP_NAME"); protocol.CheckAppName(v) == nil {
+			return v
+		}
+	}
+	return protocol.DefaultAppName
+}
+
 // tz: o fuso do painel que vale agora ("" = UTC).
 func (a *api) tz() string {
 	if a.params != nil {

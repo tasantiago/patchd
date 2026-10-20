@@ -19,11 +19,11 @@ import (
 // startSelfService abre o canal local do autoatendimento (Aula 17.3), só no Windows: o
 // app do usuário pede a loja e os pedidos por ele, e o agente fala com o servidor. Um
 // pedido que vira job antecipa o check-in. O canal fecha com o serviço.
-func startSelfService(ctx context.Context, logger *slog.Logger, ag *agent.Agent) {
+func startSelfService(ctx context.Context, logger *slog.Logger, ag *agent.Agent, onAppName func(string)) {
 	if runtime.GOOS != "windows" {
 		return
 	}
-	srv := &localapi.Server{Backend: ag, Logger: logger, OnCreated: ag.Wake, RebootStatus: ag.RebootStatus}
+	srv := &localapi.Server{Backend: ag, Logger: logger, OnCreated: ag.Wake, RebootStatus: ag.RebootStatus, OnAppName: onAppName}
 	go func() {
 		logger.Info("autoatendimento: canal local aberto", "pipe", localapi.PipeName)
 		if err := localapi.Listen(ctx, func(c localapi.Conn) { srv.HandleConn(ctx, c) }); err != nil {

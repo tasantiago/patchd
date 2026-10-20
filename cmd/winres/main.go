@@ -1,7 +1,9 @@
 // Comando winres: grava o recurso de versão do agente do Windows (Aula 20.9) como .syso,
 // que o go build junta ao executável. O scripts/build.sh roda antes de compilar o agente:
 //
-//	go run ./cmd/winres -version v0.17.13 -name "Central de software" -out cmd/agent
+//	go run ./cmd/winres -version v0.17.14 -out cmd/agent
+//
+// -name é só o nome inicial: desde a Aula 20.10 o nome vem do painel e o agente grava na cópia.
 //
 // Grava cmd/agent/versao_windows_amd64.syso e versao_windows_arm64.syso (fora do git).
 package main
@@ -13,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/winres"
 )
 
@@ -22,7 +25,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("winres", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	version := fs.String("version", "", "versão do patchd")
-	name := fs.String("name", "Central de software", "a descrição que o usuário vê (avisos, Gerenciador de Tarefas)")
+	name := fs.String("name", protocol.DefaultAppName, "a descrição inicial (o painel troca na cópia da Central)")
 	company := fs.String("company", "", "a organização (opcional)")
 	out := fs.String("out", "cmd/agent", "pasta do pacote do agente")
 	if err := fs.Parse(args); err != nil || *version == "" || fs.NArg() > 0 {

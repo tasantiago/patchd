@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -90,6 +91,30 @@ type SelfServiceCatalog struct {
 	// SelfServiceLogoPath quando o SHA-256 muda. Servidores até a 19.1 não mandam.
 	Brand string `json:"brand,omitempty"`
 	Logo  string `json:"logo,omitempty"`
+	// AppName (Aula 20.10): o nome da Central (parâmetro PATCHD_APP_NAME do painel), no título
+	// dos avisos do Windows, no ícone e no topo da página. Servidores até a 20.9 não mandam.
+	AppName string `json:"app_name,omitempty"`
+}
+
+// DefaultAppName e MaxAppName: o nome da Central sem parâmetro, e o limite (Aula 20.10).
+const (
+	DefaultAppName = "Central de software"
+	MaxAppName     = 40
+)
+
+// CheckAppName confere o nome da Central: de 1 a MaxAppName caracteres, sem controle nem
+// caractere inválido. Vale para o parâmetro do painel e para o que o agente recebe.
+func CheckAppName(s string) error {
+	n := len([]rune(s))
+	if n == 0 || n > MaxAppName || strings.TrimSpace(s) != s {
+		return fmt.Errorf("use de 1 a %d caracteres, sem espaço no começo ou no fim", MaxAppName)
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) || r == unicode.ReplacementChar || unicode.Is(unicode.Cf, r) {
+			return errors.New("o nome tem caractere de controle ou inválido")
+		}
+	}
+	return nil
 }
 
 // SelfServiceJob é um pedido do usuário, como o app mostra em "Meus pedidos".

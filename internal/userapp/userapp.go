@@ -38,8 +38,20 @@ import (
 // Caller é o canal local (localapi.Call); os testes o substituem.
 type Caller func(ctx context.Context, req localapi.Request) (localapi.Response, error)
 
-// Title é o nome que o usuário vê, na página e no ícone.
-const Title = "Central de software"
+// DefaultTitle é o nome da Central sem o parâmetro do painel.
+const DefaultTitle = protocol.DefaultAppName
+
+// Title é o nome que o usuário vê, na página e no ícone. Aula 20.10: o do painel, que a
+// Central lê da descrição do próprio executável na partida (SetTitle); a página usa também o
+// que a loja traz, para mostrar o nome novo antes de a cópia ser refeita.
+var Title = DefaultTitle
+
+// SetTitle troca o nome, se for válido. Chamado só na partida, antes do ícone e da página.
+func SetTitle(name string) {
+	if protocol.CheckAppName(name) == nil {
+		Title = name
+	}
+}
 
 // App é a página local do usuário.
 type App struct {
@@ -315,6 +327,9 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		d.Account = resp.Account
 		d.User, d.Domain, d.Initials = splitAccount(resp.Account)
 		d.Brand = resp.Catalog.Brand
+		if n := resp.Catalog.AppName; n != "" && protocol.CheckAppName(n) == nil {
+			d.Title = n // Aula 20.10
+		}
 		a.syncLogo(ctx, resp.Catalog.Logo)
 		d.Busy = resp.Catalog.OpenJob
 		refresh = d.Busy > 0

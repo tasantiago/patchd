@@ -68,6 +68,18 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return t, nil
 			}},
+		// Aula 20.10: o nome da Central de software, que o agente grava na cópia dela (o título
+		// dos avisos do Windows vem da descrição do executável).
+		{Key: "PATCHD_APP_NAME", Group: "Aparência", Label: "Nome da Central de software", Default: protocol.DefaultAppName,
+			Help:   "No título dos avisos do Windows, no ícone perto do relógio e no topo da Central. De 1 a 40 caracteres.",
+			Effect: "nas máquinas, na próxima vez que a Central consultar o agente (o título dos avisos, depois do próximo logon do usuário)",
+			Check: func(v string) (string, error) {
+				t, _ := panelTitle(v)
+				if err := protocol.CheckAppName(t); err != nil {
+					return "", err
+				}
+				return t, nil
+			}},
 		{Key: "PATCHD_TIMEZONE", Group: "Aparência", Label: "Fuso horário",
 			Help:   "Fuso IANA sugerido nas janelas de manutenção e usado nas datas da lista de Equipamentos, ex.: America/Porto_Velho. Vazio: UTC.",
 			Effect: "na hora", Check: func(v string) (string, error) {

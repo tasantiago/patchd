@@ -37,6 +37,7 @@ func (a *api) selfServiceCatalog(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	cat.Brand = a.brandName() // Aula 19.1b: a Central com o nome e o logotipo do painel
+	cat.AppName = a.appName() // Aula 20.10
 	if l := a.panelLogo(r.Context()); l != nil {
 		cat.Logo = l.SHA256
 	}

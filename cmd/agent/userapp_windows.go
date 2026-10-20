@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/tasantiago/patchd/internal/winres"
 )
 
 // O app do usuário (Aula 17.4) roda de uma cópia do agente, patchd-app.exe, ao lado do
@@ -39,7 +42,7 @@ func managedAppPath() string {
 }
 
 // syncUserApp põe (ou tira) o app do logon. Só o serviço instalado mexe nisso.
-func syncUserApp(logger *slog.Logger, enabled bool) {
+func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if !runningInstalledCopy() {
 		return
 	}
@@ -50,7 +53,7 @@ func syncUserApp(logger *slog.Logger, enabled bool) {
 		logger.Debug("app do usuário desligado (-user-app=false)")
 		return
 	}
-	changed, err := refreshUserApp()
+	changed, err := refreshUserApp(name)
 	if err != nil {
 		logger.Error("app do usuário: cópia não atualizada", "error", err)
 		return
@@ -74,9 +77,23 @@ func syncUserApp(logger *slog.Logger, enabled bool) {
 	}
 }
 
+// userAppRenamer (Aula 20.10): refaz a cópia com o nome novo, só no serviço instalado.
+func userAppRenamer() func(string) (bool, error) {
+	if !runningInstalledCopy() {
+		return nil
+	}
+	return refreshUserApp
+}
+
+// userAppMu: a partida do serviço e o nome vindo do painel não refazem a cópia ao mesmo tempo.
+var userAppMu sync.Mutex
+
 // refreshUserApp deixa o patchd-app.exe igual ao executável do serviço, mas marcado como
-// programa gráfico (guiImage): aberto no logon, ele não mostra a janela preta do console.
-func refreshUserApp() (bool, error) {
+// programa gráfico (guiImage): aberto no logon, ele não mostra a janela preta do console. E com
+// o nome da Central na descrição (Aula 20.10): é o título dos avisos do Windows.
+func refreshUserApp(name string) (bool, error) {
+	userAppMu.Lock()
+	defer userAppMu.Unlock()
 	dest := userAppPath()
 	cleanOldApps(dest)
 	self, err := os.Executable()
@@ -88,6 +105,12 @@ func refreshUserApp() (bool, error) {
 		return false, err
 	}
 	if img, err = guiImage(img); err != nil {
+		return false, err
+	}
+	switch named, err := winres.SetDescription(img, name); {
+	case err == nil:
+		img = named
+	case !errors.Is(err, winres.ErrNoSlot): // build sem o recurso (fora do build.sh): fica o nome do arquivo
 		return false, err
 	}
 	if cur, err := os.ReadFile(dest); err == nil && bytes.Equal(cur, img) {

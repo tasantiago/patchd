@@ -15,6 +15,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/userapp"
+	"github.com/tasantiago/patchd/internal/winres"
 )
 
 const appUsage = `uso: patchd-agent app [-no-tray]
@@ -54,6 +55,15 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 		return exitOK // já há uma Central aberta nesta sessão: o ícone dela atende
 	}
 
+	// Aula 20.10: o nome da Central é o que o serviço gravou na descrição desta cópia (o mesmo
+	// que o Windows põe no título dos avisos).
+	if exe, err := os.Executable(); err == nil {
+		if b, err := os.ReadFile(exe); err == nil {
+			if name, ok := winres.Description(b); ok {
+				userapp.SetTitle(name)
+			}
+		}
+	}
 	app := userapp.New(userapp.Caller(localCall))
 	app.Version = buildinfo.Get().Version // Aula 19.1b: o selo na barra superior
 	ln, err := app.Listen()

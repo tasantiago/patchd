@@ -560,3 +560,24 @@ func TestEstiloDaCentral(t *testing.T) {
 		t.Errorf("estilo.css sem o segredo: %d", w.Code)
 	}
 }
+
+// Aula 20.10: o nome da Central que vem na loja vale na página; SetTitle só aceita nome válido.
+func TestNomeDaCentralNaPagina(t *testing.T) {
+	loja := localapi.Response{OK: true, Account: `EXEMPLO\joao.silva`, Catalog: &protocol.SelfServiceCatalog{AppName: "Atualizações da TI"}}
+	a := New(func(_ context.Context, r localapi.Request) (localapi.Response, error) { return loja, nil })
+	a.Addr = "127.0.0.1:5555"
+	b := get(a, a.base()).Body.String()
+	if !strings.Contains(b, "<title>Atualizações da TI") && !strings.Contains(b, ">Atualizações da TI<") {
+		t.Errorf("o nome do painel não apareceu:\n%s", b)
+	}
+	antes := Title
+	t.Cleanup(func() { Title = antes })
+	SetTitle("a\x00b")
+	if Title != antes {
+		t.Error("nome inválido aceito")
+	}
+	SetTitle("TI Responde")
+	if Title != "TI Responde" {
+		t.Errorf("Title: %q", Title)
+	}
+}
