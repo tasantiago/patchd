@@ -21,6 +21,7 @@ const (
 	oidcCookie     = "patchd_oidc"    // o state, para amarrar a volta a este navegador
 	oidcLoginTTL   = 10 * time.Minute // tempo para a pessoa concluir o login no provedor
 	oidcMaxPending = 1000             // logins em andamento guardados (protege a memória)
+	oidcMaxPerIP   = 10               // de um mesmo IP (Aula 20.4b): uma pessoa não passa disso
 	oidcTimeout    = 15 * time.Second // descoberta, JWKS e troca do código
 	oidcPath       = "/painel/oidc/"  // o cookie do state só vai para essas rotas
 )
@@ -31,32 +32,64 @@ func WithOIDC(p *oidc.Provider) Option {
 }
 
 // oidcPending guarda os logins em andamento: state → o resto. Cada um vale uma vez.
+//
+// O início do login não tem autenticação (é o botão da tela de login). Aula 20.4b (achado F7
+// da varredura ativa): com um teto que recusava, mil pedidos de qualquer um bloqueavam todo
+// login pelo RHBK por 10 minutos. Agora nunca recusa: cada IP guarda no máximo
+// oidcMaxPerIP (sai o mais velho dele) e, com a tabela cheia, sai o mais velho de todos.
+// Quem enche só derruba os próprios logins, ou precisa de centenas de endereços e de
+// repetir dentro do minuto em que alguém está no provedor; e quem perdeu o login clica de
+// novo.
 type oidcPending struct {
-	mu sync.Mutex
-	m  map[string]pendingLogin
+	mu     sync.Mutex
+	m      map[string]pendingLogin
+	warned time.Time // último aviso de tabela cheia no log
 }
 
 type pendingLogin struct {
 	login   oidc.Login
+	ip      string
+	created time.Time
 	expires time.Time
 }
 
-func (p *oidcPending) put(l oidc.Login, now time.Time) bool {
+// put guarda o login. full: a tabela estava cheia e o mais velho de todos saiu; warn: é hora
+// de avisar no log (no máximo uma vez por minuto).
+func (p *oidcPending) put(l oidc.Login, ip string, now time.Time) (full, warn bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.m == nil {
 		p.m = map[string]pendingLogin{}
 	}
+	var oldest, oldestIP string
+	perIP := 0
 	for k, v := range p.m {
 		if now.After(v.expires) {
 			delete(p.m, k)
+			continue
+		}
+		if oldest == "" || v.created.Before(p.m[oldest].created) {
+			oldest = k
+		}
+		if v.ip == ip {
+			perIP++
+			if oldestIP == "" || v.created.Before(p.m[oldestIP].created) {
+				oldestIP = k
+			}
 		}
 	}
-	if len(p.m) >= oidcMaxPending {
-		return false
+	switch {
+	case perIP >= oidcMaxPerIP:
+		delete(p.m, oldestIP)
+	case len(p.m) >= oidcMaxPending:
+		delete(p.m, oldest)
+		full = true
+		if now.Sub(p.warned) >= time.Minute {
+			p.warned, warn = now, true
+		}
 	}
-	p.m[l.State] = pendingLogin{login: l, expires: now.Add(oidcLoginTTL)}
-	return true
+	p.m[l.State] = pendingLogin{login: l, ip: ip, created: now, expires: now.Add(oidcLoginTTL)}
+	return full, warn
 }
 
 // take tira o login do state (uso único) se ainda vale.
@@ -85,10 +118,9 @@ func (a *api) oidcStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l := oidc.NewLogin()
-	if !a.oidcLogins.put(l, a.now()) {
-		a.logger.Warn("login pelo RHBK: logins em andamento demais", "request_id", RequestID(r.Context()))
-		a.renderLogin(w, http.StatusServiceUnavailable, loginData{Error: "Logins demais em andamento. Aguarde alguns minutos.", AD: a.directory != nil})
-		return
+	if _, warn := a.oidcLogins.put(l, remoteIP(r), a.now()); warn {
+		a.logger.Warn("logins pelo RHBK em andamento no limite: o mais velho saiu (inícios de login de muitos endereços)",
+			"limite", oidcMaxPending, "remote", remoteIP(r), "request_id", RequestID(r.Context()))
 	}
 	// SameSite=Lax: a volta do provedor é uma navegação de outro site, e o cookie Strict
 	// não viria. HttpOnly e só para /painel/oidc/.

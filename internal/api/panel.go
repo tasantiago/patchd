@@ -184,6 +184,16 @@ func (a *api) sameOrigin(next http.HandlerFunc) http.Handler {
 			http.Error(w, "pedido de outra origem recusado", http.StatusForbidden)
 			return
 		}
+		if err := checkFormText(w, r); err != nil {
+			a.logger.Warn("formulário do painel recusado", "error", err, "path", r.URL.Path,
+				"remote", remoteIP(r), "request_id", RequestID(r.Context()))
+			status := http.StatusBadRequest
+			if _, big := errors.AsType[*http.MaxBytesError](err); big {
+				status = http.StatusRequestEntityTooLarge
+			}
+			http.Error(w, "formulário recusado: "+err.Error(), status)
+			return
+		}
 		next(w, r)
 	})
 }

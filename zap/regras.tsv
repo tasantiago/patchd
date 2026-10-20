@@ -31,3 +31,21 @@
 10111	IGNORE	(Authentication Request Identified)
 10112	IGNORE	(Session Management Response Identified)
 10104	IGNORE	(User Agent Fuzzer)
+#
+# Aula 20.4b, depois da primeira rodada do lab (resultado em docs/seguranca.md, seção 5c):
+# 2: o inventário e a máquina mostram o IP de cada máquina: é o dado que a tela existe para
+# mostrar, e só com login. A tela de login e as rotas públicas não mostram IP.
+2	IGNORE	(Private IP Disclosure)
+# 10015: as páginas mandam Cache-Control: no-store, que basta (RFC 9111); o ZAP queria também
+# no-cache e must-revalidate, que nada acrescentam com no-store.
+10015	IGNORE	(Re-examine Cache-control Directives)
+# 10031: os filtros (ordem, dir, status) só voltam para a página se forem um dos valores da
+# lista; o resto é descartado, e o html/template escapa o que volta.
+10031	IGNORE	(User Controllable HTML Element Attribute (Potential XSS))
+# 40025: não há proxy no lab nem na produção. O servidor responde 405 igual a TRACE, TRACK e
+# OPTIONS com qualquer Max-Forwards, sem cabeçalho Server; o "Unknown" é o encaminhamento de
+# porta do Docker/WSL, que só repassa a conexão.
+40025	IGNORE	(Proxy Disclosure)
+# 90027: o zap.sh confere a sessão antes e depois da varredura; é isso que diz se o cookie
+# valeu (na primeira rodada da ativa, não valia: o cookie "não fazia diferença").
+90027	IGNORE	(Cookie Slack Detector)

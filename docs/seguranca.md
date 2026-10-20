@@ -171,6 +171,10 @@ quem resolve.
   usuário comum podia criar `C:\ProgramData\patchd` antes, ficar dono e, depois do install,
   dar a si mesmo controle total da pasta onde os instaladores esperam para rodar como SYSTEM.
   **Resolvido na 20.6** (seção 5d).
+- **F7 — Login pelo RHBK bloqueável sem autenticação** (Aula 20.4b, varredura ativa).
+  **Resolvido** (seção 5c).
+- **F8 — Texto inválido do pedido chegando ao banco**: tentativa negada fora da trilha e 500
+  num formulário (Aula 20.4b, varredura complementar). **Resolvido** (seção 5c).
 
 ## 5a. Análise estática (S2, Aula 20.2)
 
@@ -268,6 +272,47 @@ fuzzing.
 A Central de software (no agente, porta local) também saiu do `'unsafe-inline'` na Aula 20.6
 (v0.17.9): o CSS vem de `estilo.css`, sob o mesmo segredo no caminho.
 
+### Resultado do lab (Aula 20.4b)
+
+Duas rodadas: a passiva, com sessão (60 rotas), e a ativa, que rodou **sem login**: a sessão
+tinha vencido (30 min parada) e o ZAP só achou a tela de login (11 rotas). Nenhum alerta alto.
+
+| Alerta | Rodada | Decisão |
+|---|---|---|
+| Absence of Anti-CSRF Tokens (médio) | as duas | falso positivo: `CrossOriginProtection` em todo POST, inclusive o login, e cookie `SameSite=Strict`; a matriz de rotas testa (20.1). Já era IGNORE |
+| Proxy Disclosure (médio) | ativa | falso positivo: não há proxy; TRACE, TRACK e OPTIONS recebem o mesmo 405 com qualquer `Max-Forwards`, sem `Server` (conferido à mão). IGNORE |
+| Private IP Disclosure (baixo) | passiva | o inventário mostra o IP das máquinas, só com login: é a função da tela. IGNORE |
+| User Controllable HTML Element Attribute (info) | passiva | os filtros só voltam se forem um valor da lista; o resto é descartado. IGNORE |
+| Re-examine Cache-control, Non-Storable, Storable and Cacheable (info) | as duas | `no-store` nas páginas (basta); cache longo só no CSS, no ícone e no logotipo, públicos e com o hash na URL. IGNORE |
+| Cookie Slack Detector (info) | ativa | era o sinal de que a sessão não valia na ativa. IGNORE; o zap.sh agora confere |
+| **2 % de respostas 5xx** | ativa | **achado F7** (abaixo) |
+
+O 5xx levou a duas correções e a uma varredura complementar, com sessão de leitura e de
+admin, de todos os parâmetros de GET e campos de POST do painel com NUL, UTF-8 inválido,
+aspas, travessia de caminho e textos longos (perto de 17 mil pedidos):
+
+- **F7 — Login pelo RHBK bloqueável sem autenticação.** O início do login (`/painel/oidc/entrar`,
+  público) guarda o login em andamento por 10 minutos, com um teto de mil; cheio, recusava
+  com 503. Mil pedidos de qualquer um bloqueavam todo login pelo RHBK por 10 minutos (a
+  varredura ativa fez isso). **Resolvido**: no máximo 10 por IP (sai o mais velho daquele IP)
+  e, com a tabela cheia, sai o mais velho de todos, com aviso no log uma vez por minuto;
+  ninguém é recusado. Quem enche só derruba os próprios logins, ou precisa de centenas de
+  endereços para atrapalhar quem está no provedor naquele minuto, e quem perdeu o login
+  clica de novo. Atrás de um encaminhamento que esconde o IP de origem (Docker Desktop), todos
+  parecem um IP só: aí o limite por IP vira o geral de 10, o que ainda não recusa ninguém.
+- **F8 — Texto inválido do pedido chegando ao PostgreSQL.** NUL ou UTF-8 inválido na URL ou
+  num formulário ia cru para o banco, que recusa. Duas consequências: o "acesso negado" de
+  uma sessão de leitura numa rota de admin com `%00` no caminho **não entrava na trilha**
+  (repúdio), e o "revogar aprovação" dava 500. **Resolvido** em dois lugares: a trilha limpa
+  todo campo antes de gravar (o NUL vira "�"; vale também para a linha de comando), e todo
+  formulário do painel com NUL ou UTF-8 inválido, em qualquer campo ou na URL, recebe 400
+  antes do handler (`checkFormText`, dentro do `sameOrigin`). Depois disso, a varredura
+  complementar terminou sem nenhum 5xx e sem nenhum erro no log.
+
+O `scripts/zap.sh` passou a conferir a sessão antes (sessão que não abre o painel: nem
+começa) e depois (caiu no meio: sai com 4), e deixa o "Sair" fora da varredura. A ativa com
+sessão fica para a próxima rodada do lab.
+
 ## 5d. Elevação local de privilégio (S7, Aula 20.6)
 
 O agente roda como SYSTEM e executa instaladores que ficam na pasta de dados
@@ -364,7 +409,7 @@ computador que está no histórico continua uma decisão em aberto (reescrever o
 | S4 | Matriz de rotas gerada do código e testada na prática | 20.1 |
 | S2 | govulncheck, gosec e staticcheck em `scripts/seguranca.sh` e no CI (feito: seção 5a) | 20.2 |
 | S3 | Fuzzing dos parsers: inventário, busca, BER/LDAP, JWT, gzip, CSV, imagem (feito: seção 5b) | 20.3 |
-| S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (preparado: seção 5c; resultado do lab a registrar) | 20.4 |
+| S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (feito: seção 5c; F7 e F8 resolvidos na 20.4b; falta a ativa com sessão) | 20.4 e 20.4b |
 | S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar (feito: seção 5d, v0.17.9) | 20.6 |
 | S8 | Rotação das chaves de jobs e de release sem parar a frota; F5 (feito: seção 5e, v0.17.10) | 20.7 |

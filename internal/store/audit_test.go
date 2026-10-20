@@ -76,3 +76,29 @@ func TestAuditoriaPostgres(t *testing.T) {
 		t.Errorf("UPDATE: %v", err)
 	}
 }
+
+// TestAuditoriaComTextoInvalido (Aula 20.4b, achado F8): um pedido com %00 ou UTF-8 inválido
+// no caminho tem de entrar na trilha, com o texto trocado por "�", no PostgreSQL e na memória.
+func TestAuditoriaComTextoInvalido(t *testing.T) {
+	testar := func(t *testing.T, st contratoAuditoria) {
+		ctx := context.Background()
+		e := AuditEvent{Username: "leitor\x00", Source: "local", Action: "acesso.negado",
+			Target: "/painel/configuracao\x00", Detail: "perfil \xc3\x28leitura", Remote: "192.0.2.1", RequestID: "abc"}
+		if err := st.RecordAudit(ctx, e); err != nil {
+			t.Fatalf("gravar: %v", err)
+		}
+		l, err := st.AuditEvents(ctx, AuditFilter{Action: "acesso.negado"})
+		if err != nil || len(l) != 1 || l[0].Target != "/painel/configuracao�" || l[0].Username != "leitor�" ||
+			!strings.Contains(l[0].Detail, "�(leitura") {
+			t.Errorf("%+v %v", l, err)
+		}
+	}
+	t.Run("memoria", func(t *testing.T) { testar(t, NewMemory()) })
+	t.Run("postgres", func(t *testing.T) {
+		pool := bancoDeTeste(t)
+		if err := Migrate(context.Background(), pool, silencioso()); err != nil {
+			t.Fatal(err)
+		}
+		testar(t, NewPostgres(pool))
+	})
+}
