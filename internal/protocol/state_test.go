@@ -57,9 +57,15 @@ func TestCheckEstado(t *testing.T) {
 		"organizações demais": func(s *MachineState) {
 			s.AllowedSigners = strings.Split(strings.Repeat("a,", MaxAllowedSigners+1), ",")
 		},
+		// Aula 20.7: as impressões das chaves aceitas.
+		"impressão curta":      func(s *MachineState) { s.JobKeys = []string{"abc123"} },
+		"impressão maiúscula":  func(s *MachineState) { s.ReleaseKeys = []string{"ABCDEF012345"} },
+		"impressão com espaço": func(s *MachineState) { s.JobKeys = []string{"abcdef01234 "} },
+		"impressões demais":    func(s *MachineState) { s.ReleaseKeys = make([]string, MaxKeyIDs+1) },
 	}
 	s := estadoValido()
 	s.AllowedSigners = []string{"Google LLC", "Mozilla Corporation"}
+	s.JobKeys, s.ReleaseKeys = []string{"0123456789ab", "ba9876543210"}, []string{"abcdef012345"}
 	if err := s.Check(); err != nil {
 		t.Errorf("lista válida recusada: %v", err)
 	}

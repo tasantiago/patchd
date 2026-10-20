@@ -28,6 +28,32 @@ import (
 // Vazia (builds de desenvolvimento sem PATCHD_UPDATE_PUBKEY): o agente não se atualiza.
 var PublicKey = ""
 
+// NextPublicKey (Aula 20.7, S8): a chave de release seguinte (PATCHD_UPDATE_PUBKEY_NEXT). O
+// agente aceita versão assinada por qualquer das duas. Ela é também a saída do achado F5: se
+// a chave atual se perder, a seguinte, guardada offline, já é aceita pela frota.
+var NextPublicKey = ""
+
+// ErrSignature: a assinatura não é desta chave (ou o manifesto foi alterado).
+var ErrSignature = errors.New("assinatura do manifesto inválida (outra chave ou manifesto alterado)")
+
+// KeyID é a impressão curta da chave (12 hexadecimais do SHA-256), como a da chave de jobs.
+func KeyID(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:6])
+}
+
+// VerifyAny confere com a primeira chave que reconhecer a assinatura (Aula 20.7).
+func VerifyAny(keys []ed25519.PublicKey, manifest, sig []byte) (Manifest, error) {
+	err := errors.New("nenhuma chave de release embutida")
+	for _, k := range keys {
+		var m Manifest
+		if m, err = Verify(k, manifest, sig); !errors.Is(err, ErrSignature) {
+			return m, err
+		}
+	}
+	return Manifest{}, err
+}
+
 const (
 	// ManifestSchemaVersion é a versão do formato do manifesto.
 	ManifestSchemaVersion = 1
@@ -123,7 +149,7 @@ func Verify(pub ed25519.PublicKey, manifest, sig []byte) (Manifest, error) {
 		return m, errors.New("assinatura do manifesto ilegível")
 	}
 	if !ed25519.Verify(pub, signedMessage(manifest), raw) {
-		return m, errors.New("assinatura do manifesto inválida (outra chave ou manifesto alterado)")
+		return m, ErrSignature
 	}
 	dec := json.NewDecoder(bytes.NewReader(manifest))
 	dec.DisallowUnknownFields()

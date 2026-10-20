@@ -45,6 +45,8 @@ type Store interface {
 	SelfServiceRequestByID(ctx context.Context, id int64) (store.SelfServiceRequest, bool, error)
 	DecideSelfServiceRequest(ctx context.Context, id int64, state, by, note string, jobID int64, at time.Time) error
 	ExpireSelfServiceRequests(ctx context.Context, before, now time.Time) (int64, error)
+	// KeyStats: as chaves de jobs e de release aceitas pela frota (Aula 20.7).
+	KeyStats(ctx context.Context, since time.Time) (store.KeyStats, error)
 	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
 	SourceFailures(ctx context.Context, machineID string) ([]store.SourceFailure, error)
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)

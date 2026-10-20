@@ -42,6 +42,8 @@ type Agent struct {
 	// assinado pela chave de jobs embutida no build. JobKey nil: todo job é recusado.
 	MachineID string
 	JobKey    ed25519.PublicKey
+	// JobKeyNext (Aula 20.7): a chave de jobs seguinte, aceita junto com a atual. nil: só a atual.
+	JobKeyNext ed25519.PublicKey
 	// Install aplica os pacotes de um job update (Aula 8.4). nil: o agente recusa esses
 	// jobs (Windows e macOS, por enquanto). Erro com jobs.ErrNotPending vira "rejeitado".
 	Install func(ctx context.Context, jobID int64, pkgs []jobs.Package) (string, error)

@@ -193,6 +193,11 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 	} else {
 		add("Jobs", "desligados: sem PATCHD_JOB_SIGNING_KEY_FILE, o painel não cria jobs e as campanhas param", "erro")
 	}
+	kv, kl, err := a.fleetKeysRow(r.Context(), now)
+	if err != nil {
+		return nil, err
+	}
+	add("Chaves na frota", kv, kl)
 	switch v, err := a.publishedVersion(); {
 	case a.releases == "":
 		add("Atualização do agente", "desligada (sem PATCHD_RELEASES_DIR)", "atencao")

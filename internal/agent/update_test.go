@@ -210,3 +210,28 @@ func TestServidorNaoOfereceAgenteMaisNovoQueEle(t *testing.T) {
 		t.Errorf("limite de tamanho: %v", err)
 	}
 }
+
+// TestAtualizacaoComAChaveSeguinte (Aula 20.7, S8): a versão assinada pela chave de release
+// seguinte é instalada pelo agente que a tem embutida, e recusada pelo que não tem.
+func TestAtualizacaoComAChaveSeguinte(t *testing.T) {
+	atual, _, _ := ed25519.GenerateKey(rand.Reader)
+	seguinte, privSeguinte, _ := ed25519.GenerateKey(rand.Reader)
+	novo := []byte("executável v0.5.1")
+	d := versaoPublicada(t, privSeguinte, "v0.5.1", novo)
+	srv, _, cred := novoServidor(t, api.WithReleases(d, "v0.5.1"))
+
+	for _, c := range []struct {
+		nome     string
+		proxima  ed25519.PublicKey
+		instalou int32
+	}{{"sem a seguinte", nil, 0}, {"com a seguinte", seguinte, 1}} {
+		var inst instalacoes
+		var log bytes.Buffer
+		u := updaterDeTeste(t, srv, cred, atual, "v0.5.0", &inst, &log)
+		u.PublicKeyNext = c.proxima
+		u.Offer(context.Background(), "v0.5.1")
+		if inst.n.Load() != c.instalou {
+			t.Errorf("%s: instalações=%d\n%s", c.nome, inst.n.Load(), log.String())
+		}
+	}
+}
