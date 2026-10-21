@@ -69,7 +69,9 @@ type Hardware struct {
 	MemoryBytes  uint64 `json:"memory_bytes,omitempty"`
 	// Firmware (Aula 21.1): o estado do firmware, só leitura. nil: agente anterior.
 	Firmware *Firmware `json:"firmware,omitempty"`
-	Sources  []string  `json:"sources"` // de onde cada dado veio (P-03)
+	// Wake (Aula 22.1): ligar pela rede, só leitura. nil: agente anterior ou sistema sem a coleta.
+	Wake    *Wake    `json:"wake,omitempty"`
+	Sources []string `json:"sources"` // de onde cada dado veio (P-03)
 }
 
 // Firmware é o estado do firmware (BIOS/UEFI) como a máquina informa, só leitura (Aula 21.1).

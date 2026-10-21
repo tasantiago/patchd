@@ -157,3 +157,27 @@ func TestCheckinSemEstadoNoJSON(t *testing.T) {
 		t.Errorf("sem estado, o campo não vai: %s", b)
 	}
 }
+
+func TestCheckWake(t *testing.T) {
+	sim := true
+	ok := Wake{BIOS: &sim, Settings: []WakeSetting{{Name: "S5 Wake On LAN", Value: "Enable"}},
+		Adapters: []WakeAdapter{{Name: "Ethernet", MAC: "00:11:22:33:44:55", Wired: true, MagicPacket: WakeOn, DeviceWake: &sim}}}
+	if err := ok.Check(); err != nil {
+		t.Fatal(err)
+	}
+	for nome, muda := range map[string]func(*Wake){
+		"magic estranho":     func(w *Wake) { w.Adapters[0].MagicPacket = "talvez" },
+		"MAC torto":          func(w *Wake) { w.Adapters[0].MAC = "zz" },
+		"placa sem nome":     func(w *Wake) { w.Adapters[0].Name = "" },
+		"valor com controle": func(w *Wake) { w.Settings[0].Value = "Enable\x1b[31m" },
+		"placas demais":      func(w *Wake) { w.Adapters = make([]WakeAdapter, MaxWakeAdapters+1) },
+	} {
+		w := ok
+		w.Adapters = append([]WakeAdapter(nil), ok.Adapters...)
+		w.Settings = append([]WakeSetting(nil), ok.Settings...)
+		muda(&w)
+		if w.Check() == nil {
+			t.Errorf("%s: aceito", nome)
+		}
+	}
+}

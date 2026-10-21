@@ -256,6 +256,7 @@ type machineView struct {
 	HWParams      []paramRow
 	FWParams      []fwRow   // Aula 21.1
 	BIOS          *biosCard // Aula 21.4: a guarda da senha (só na aba Hardware)
+	Wake          *wakeCard // Aula 22.1: ligar pela rede
 	HWSources     []string
 	Category      string
 	Model, Serial string
@@ -1046,6 +1047,17 @@ var pages = template.Must(template.New("").Parse(`
 </div>
 {{if .FWParams}}<div class="card"><div class="card-cab"><h2>Firmware</h2><span class="muted">só leitura</span></div>
 <dl class="dados">{{range .FWParams}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
+</div>{{end}}
+{{with .Wake}}<div class="card" id="wol"><div class="card-cab"><h2>Ligar pela rede (Wake on LAN)</h2><span class="muted">só leitura</span></div>
+<dl class="dados"><dt>Situação</dt><dd class="nivel-{{.Level}}">{{.State}}</dd>
+{{if .Blockers}}<dt>Impede</dt><dd><ul class="usuarios">{{range .Blockers}}<li>{{.}}</li>{{end}}</ul></dd>{{end}}
+{{if .Notes}}<dt>Atenção</dt><dd><ul class="usuarios">{{range .Notes}}<li>{{.}}</li>{{end}}</ul></dd>{{end}}
+<dt>Fast Startup</dt><dd>{{.FastStartup}}</dd>
+<dt>BitLocker</dt><dd>{{.BitLocker}}</dd>
+{{if .Settings}}<dt>Na BIOS</dt><dd>{{range $i, $s := .Settings}}{{if $i}}<br>{{end}}{{$s.Name}}: <code>{{$s.Value}}</code>{{end}}</dd>{{end}}
+</dl>
+{{if .Adapters}}<div class="tabela"><table><thead><tr><th>Placa</th><th>MAC</th><th>Cabo</th><th>Magic Packet</th><th>Pode ligar o computador</th></tr></thead>
+<tbody>{{range .Adapters}}<tr><td>{{.Name}}</td><td><code>{{.MAC}}</code></td><td>{{.Wired}}</td><td>{{.Magic}}</td><td>{{.DeviceWake}}</td></tr>{{end}}</tbody></table></div>{{end}}
 </div>{{end}}
 {{with .BIOS}}<div class="card" id="bios"><div class="card-cab"><h2>Senha da BIOS</h2>{{if .On}}<span class="muted">chave de guarda <code>{{.KeyID}}</code></span>{{end}}</div>
 {{if not .On}}<p class="muted">Guarda desligada: o servidor está sem a chave de guarda (<code>PATCHD_BIOS_ESCROW_KEY_FILE</code>; crie com <code>patchd-server bios keygen</code>).</p>{{end}}
