@@ -204,6 +204,11 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 	} else {
 		add("Jobs", "desligados: sem PATCHD_JOB_SIGNING_KEY_FILE, o painel não cria jobs e as campanhas param", "erro")
 	}
+	if a.escrow != nil { // Aula 21.4
+		add("Guarda da senha da BIOS", "ligada · chave "+a.escrow.id+" (revelar: só admin, com motivo, auditoria e aviso)", "")
+	} else {
+		add("Guarda da senha da BIOS", "desligada (sem PATCHD_BIOS_ESCROW_KEY_FILE)", "")
+	}
 	kv, kl, err := a.fleetKeysRow(r.Context(), now)
 	if err != nil {
 		return nil, err

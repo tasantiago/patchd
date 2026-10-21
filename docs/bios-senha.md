@@ -38,7 +38,7 @@ Cada agente (v0.18.2 em diante) cria, na primeira partida, um par de chaves só 
 Com isso, o servidor pode mandar um segredo que **só aquela máquina abre**, por dentro de um
 job assinado (Aula 8.1). O servidor, o banco, a cópia do banco e o log só veem o envelope.
 
-## 3. O fluxo proposto (Aula 21.4)
+## 3. O fluxo (guarda na Aula 21.4, gravação na 21.5)
 
 ### 3.1 Uma senha por máquina
 
@@ -56,8 +56,9 @@ ThinkPads mais antigos; HP e Dell aceitam mais (decisão D3).
 A senha nova é **guardada antes** de ir para a máquina. A ordem inversa (aplicar e depois
 guardar) perde a senha se o servidor cair no meio.
 
-1. O servidor sorteia a senha e grava, numa tabela própria, **dois envelopes**: um para a
-   chave de guarda (seção 3.3), outro para a caixa da máquina. Estado: `pendente`.
+1. O servidor sorteia a senha e grava, numa tabela própria, o envelope para a chave de
+   guarda (seção 3.3). Estado: `pendente`. (Feito na 21.4: como a guarda ficou no servidor,
+   o envelope da caixa da máquina é feito na hora do job, com a chave da caixa mais recente.)
 2. Um job `bios_password` (tipo novo, lista fechada no agente) leva o envelope da máquina e,
    na troca, o envelope da senha atual. O job é assinado pela chave de jobs, como os outros.
 3. O agente abre os envelopes **só na memória**, chama o método do fabricante (seção 4) e
@@ -84,8 +85,8 @@ fabricante. Duas formas (decisão D1):
   abre o envelope tirado do painel. Quem tomar o servidor não lê nenhuma senha; a revelação
   fica mais lenta e depende de uma pessoa.
 
-A recomendação é **(b)** se a ida à BIOS for rara (formatação, troca de placa), e **(a)** se
-o suporte de campo precisa da senha toda semana.
+A recomendação era **(b)** se a ida à BIOS fosse rara (formatação, troca de placa), e **(a)** se
+o suporte de campo precisasse da senha toda semana. **Decidido: (a)**, feito na Aula 21.4 (seção 7).
 
 ### 3.4 A primeira troca: a senha atual da frota
 
@@ -141,7 +142,20 @@ senha. Conferir no lab que a máquina sobe sem pedir a chave de recuperação.
   outra, e os envelopes antigos param de abrir. O servidor fecha de novo para a chave nova; a
   senha em si não se perde, porque a guarda é separada da caixa.
 
-## 6. Decisões para a Aula 21.4
+## 6. Decisões
+
+Respondidas antes da Aula 21.4:
+
+| | Decisão | Consequência |
+|---|---|---|
+| D1 | **(a) guarda no servidor** | "Revelar" no painel: só admin, motivo obrigatório, auditoria antes de mostrar e aviso por e-mail. Quem tomar o servidor lê as senhas (aceito; seção 7) |
+| D2 | **uma senha por máquina** | sorteada pelo servidor |
+| D3 | **12 caracteres em todos** | o alfabeto da 3.1 |
+| D4 | **não se sabe** se há HP com Sure Admin | a Aula 21.5 lê esse modo no inventário antes de qualquer gravação, e a máquina nesse modo fica de fora |
+| D5 | não oferecer remoção (recomendação mantida) | — |
+| D6 | piloto | definido na Aula 21.5 |
+
+O texto original das perguntas fica abaixo, para registro.
 
 - **D1 — Onde fica a chave de guarda**: (a) no servidor, com "Revelar" no painel; (b) fora do
   servidor, com a revelação por comando no host. Recomendação: (b), salvo uso semanal.
@@ -156,3 +170,32 @@ senha. Conferir no lab que a máquina sobe sem pedir a chave de recuperação.
 - **D6 — Piloto**: em quais máquinas a primeira rotação roda (uma de cada fabricante do
   lab, depois um grupo pequeno, depois a frota), e quem confere a entrada na BIOS com a
   senha revelada antes de seguir para o grupo seguinte.
+
+## 7. A guarda (Aula 21.4)
+
+O que já existe, antes de qualquer gravação na BIOS:
+
+- **Chave de guarda.** Um par HPKE como o da caixa (`patchd-server bios keygen`), com outro
+  propósito (`bios-guarda`). A privada fica no servidor, em `PATCHD_BIOS_ESCROW_KEY_FILE`
+  (segredo do compose). Sem a variável, a guarda fica desligada e o painel diz isso.
+- **Preparar.** Na aba Hardware da máquina, "Preparar senha nova" (só admin) sorteia 12
+  caracteres e grava só o envelope (tabela `bios_passwords`, migration 0042), com a impressão
+  da chave que fechou. Estado `pendente`: nada muda na máquina. No máximo uma pendente por
+  máquina; pedir de novo devolve a mesma. Máquina aposentada não ganha senha nova, mas as
+  guardadas dela continuam (a senha segue na placa).
+- **O envelope leva o ID da máquina.** Trocar envelopes entre máquinas no banco faz a
+  abertura falhar, em vez de mostrar a senha de outra máquina.
+- **Revelar.** Só admin, com motivo (10 a 200 caracteres). A auditoria (`bios.senha.revelar`,
+  com o motivo e sem a senha) é gravada **antes** de a senha aparecer; se ela não gravar, a
+  senha não aparece. A página não fica em cache, a contagem de revelações aparece na linha, e
+  a lista de notificações recebe um e-mail (sem a senha). O log registra quem, qual máquina e
+  de onde, nunca a senha.
+- **Fora da retenção.** A tabela não é limpa pela retenção: a senha vale enquanto a placa existir.
+
+O risco aceito em D1: quem tomar o servidor (o processo, com o arquivo da chave) lê todas as
+senhas guardadas. O banco sozinho, ou a cópia dele, não: só tem envelopes. Por isso a chave de
+guarda **não** vai junto da cópia do banco, e tem duas cópias fora do servidor (perder a chave
+é perder todas as senhas guardadas: a saída passa a ser a assistência do fabricante).
+
+A gravação (o job `bios_password`, a senha atual da frota na primeira troca, a leitura do HP
+Sure Admin e o piloto) é a Aula 21.5.

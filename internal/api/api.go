@@ -45,6 +45,11 @@ type Store interface {
 	SelfServiceRequestByID(ctx context.Context, id int64) (store.SelfServiceRequest, bool, error)
 	DecideSelfServiceRequest(ctx context.Context, id int64, state, by, note string, jobID int64, at time.Time) error
 	ExpireSelfServiceRequests(ctx context.Context, before, now time.Time) (int64, error)
+	// Guarda da senha da BIOS (Aula 21.4).
+	CreateBIOSPassword(ctx context.Context, b store.BIOSPassword) (store.BIOSPassword, bool, error)
+	BIOSPasswords(ctx context.Context, machineID string) ([]store.BIOSPassword, error)
+	BIOSPasswordByID(ctx context.Context, id int64) (store.BIOSPassword, bool, error)
+	MarkBIOSRevealed(ctx context.Context, id int64, by string, at time.Time) error
 	// KeyStats: as chaves de jobs e de release aceitas pela frota (Aula 20.7).
 	KeyStats(ctx context.Context, since time.Time) (store.KeyStats, error)
 	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
@@ -147,6 +152,7 @@ type api struct {
 	compliance  ComplianceSource           // nil: sem estado de compliance (armazenamento em memória)
 	tpManifest  *thirdparty.Manifest       // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
 	jobKey      ed25519.PrivateKey         // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
+	escrow      *escrowKey                 // guarda da senha da BIOS (Aula 21.4); nil: desligada
 	publicURL   string                     // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
 	timezone    string                     // fuso sugerido na janela dos anéis (Aula 11.1)
 	brand       string                     // nome no topo do painel (Aula 11.3)
@@ -234,6 +240,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/windows/instalar", a.sameOrigin(a.adminAction(a.winUpdateAction))) // Aula 16.3
 	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
 	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
+	mux.Handle("POST /painel/maquinas/{id}/bios/preparar", a.sameOrigin(a.adminAction(a.prepareBIOSAction)))        // Aula 21.4
+	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/revelar", a.sameOrigin(a.adminAction(a.revealBIOSAction))) // Aula 21.4
 	// Configuração (Aula 15.2): só admin, inclusive para ver.
 	mux.Handle("GET /painel/configuracao", a.adminAction(a.settingsPage))
 	mux.Handle("GET /painel/configuracao/auditoria.csv", a.adminAction(a.auditCSV))

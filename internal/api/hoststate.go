@@ -30,7 +30,7 @@ type hostView struct {
 	SignersKnown bool
 	Signers      string
 	// BoxKeyID (Aula 21.3): a impressão da chave da caixa da máquina; vazio = o agente não
-	// informa (anterior à 21.3) e não pode receber segredos (a senha da BIOS, 21.4).
+	// informa (anterior à 21.3) e não pode receber segredos (a senha da BIOS, 21.5).
 	BoxKeyID string
 }
 

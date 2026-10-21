@@ -65,6 +65,9 @@ services:
       PATCHD_AGENT_CA_FILE: ${PATCHD_AGENT_CA_FILE:-}
       # Jobs pelo painel e campanhas (Aula 8.2): a MESMA chave cuja pública está nos agentes.
       PATCHD_JOB_SIGNING_KEY_FILE: /run/secrets/job_signing_key
+      # Guarda da senha da BIOS (Aula 21.4): vazio desliga; para ligar, no deploy/.env,
+      # PATCHD_BIOS_ESCROW_KEY_FILE=/run/secrets/bios_escrow_key (veja o gerar-segredos.sh).
+      PATCHD_BIOS_ESCROW_KEY_FILE: ${PATCHD_BIOS_ESCROW_KEY_FILE:-}
       # Atualização dos agentes (Aula 5.4): só leitura. Assinar e publicar é fora daqui.
       PATCHD_RELEASES_DIR: /var/lib/patchd/releases
       # Catálogo offline do Windows e cache de repositórios: volumes do compose.
@@ -104,6 +107,7 @@ services:
     secrets:
       - database_url
       - job_signing_key
+      - bios_escrow_key
       - oidc_client_secret
       - metrics_token
       - smtp_password
@@ -140,6 +144,8 @@ secrets:
     file: ./secrets/database_url
   job_signing_key:
     file: ./secrets/job_signing_key
+  bios_escrow_key:
+    file: ./secrets/bios_escrow_key
   oidc_client_secret:
     file: ./secrets/oidc_client_secret
   metrics_token:

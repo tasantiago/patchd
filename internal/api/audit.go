@@ -81,10 +81,13 @@ var auditActions = []struct{ Key, Label string }{
 	{"maquina.anel_lote", "Máquinas mudaram de anel"},
 	{"maquina.aposentar", "Máquina aposentada"},
 	{"maquina.restaurar", "Máquina restaurada"},
+	{"bios.senha.preparar", "Senha da BIOS sorteada e guardada"},
+	{"bios.senha.revelar", "Senha da BIOS revelada"},
 	{"exportar.csv", "Exportação CSV"},
 	{"acesso.negado", "Acesso negado (perfil)"},
 	// Aula 18.1: a linha de comando (patchd-server no terminal) e a retenção da trilha.
 	{"cli.job.keygen", "Chave de jobs gerada (terminal)"},
+	{"cli.bios.keygen", "Chave da guarda da BIOS gerada (terminal)"},
 	{"cli.job.create", "Job criado (terminal)"},
 	{"cli.job.cancel", "Job cancelado (terminal)"},
 	{"cli.campaign.create", "Campanha criada (terminal)"},

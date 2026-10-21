@@ -24,6 +24,7 @@ import (
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
+	"github.com/tasantiago/patchd/internal/machinebox"
 	"github.com/tasantiago/patchd/internal/metrics"
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/release"
@@ -71,7 +72,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune",
 	// "patchd-server user create|list|delete|password", "patchd-server ad check" e
 	// "patchd-server machine list|retire|restore", "patchd-server job keygen|create|list|cancel"
-	// e "patchd-server package show" (Aula 14.1).
+	// e "patchd-server package show" (Aula 14.1) e "patchd-server bios keygen|key" (Aula 21.4).
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -125,6 +126,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	if len(args) > 0 && args[0] == "session" {
 		return runSession(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "bios" { // Aula 21.4: a chave da guarda da senha da BIOS
+		return runBios(args[1:], look, stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)
@@ -293,6 +297,21 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			"key_id", jobs.KeyID(jobKey.Public().(ed25519.PublicKey)))
 	} else {
 		logger.Info("jobs pelo painel desligados (sem PATCHD_JOB_SIGNING_KEY_FILE): crie jobs com patchd-server job create")
+	}
+	// Guarda da senha da BIOS (Aula 21.4): com a chave, o painel sorteia, guarda e revela.
+	// Chave configurada e ilegível: o servidor não sobe.
+	escrow, err := biosEscrowKey(look)
+	if err != nil {
+		logger.Error("guarda da senha da BIOS", "error", err)
+		return exitConfig
+	}
+	if escrow != nil {
+		apiOpts = append(apiOpts, api.WithBIOSEscrow(escrow))
+		pub, _ := machinebox.Public(escrow)
+		logger.Info("guarda da senha da BIOS ligada: o painel sorteia, guarda e revela (só admin, com motivo)",
+			"chave_guarda", machinebox.KeyID(pub))
+	} else {
+		logger.Info("guarda da senha da BIOS desligada (sem PATCHD_BIOS_ESCROW_KEY_FILE)")
 	}
 	// Troca dos agentes para HTTPS (Aula 9.2): a URL vai, assinada, no job server_url.
 	if cfg.PublicURL != "" {

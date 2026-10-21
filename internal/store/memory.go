@@ -52,6 +52,8 @@ type Memory struct {
 	assets map[string]PanelAsset // arquivos do painel (Aula 19.1): o logotipo
 
 	settings map[string]Setting // parâmetros mudados pela tela (Aula 19.2)
+
+	biosPasswords []BIOSPassword // guarda da senha da BIOS (Aula 21.4), ID = posição + 1
 }
 
 type memMachine struct {
