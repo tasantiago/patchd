@@ -30,6 +30,9 @@ type InventoryRow struct {
 	ChassisType  string // código SMBIOS cru
 	State        *protocol.MachineState
 	CheckinAddr  string
+	// Firmware (Aula 21.2): das colunas da 0041; zero e nil quando o agente não informou.
+	FWMode, FWTPM, FWInterface string
+	FWSecureBoot, FWAdmin      *bool
 }
 
 // InventoryList lista as máquinas da frota (sem as aposentadas) em ordem de ID. Uma
@@ -39,7 +42,8 @@ func (p *Postgres) InventoryList(ctx context.Context) ([]InventoryRow, error) {
 		SELECT m.id, m.last_seen_at, coalesce(m.agent_version, ''), m.ring, m.last_checkin_tls,
 		       coalesce(i.hostname, ''), coalesce(i.os_name, ''), coalesce(i.os_version, ''), i.collected_at,
 		       coalesce(i.hw_manufacturer, ''), coalesce(i.hw_model, ''), coalesce(i.hw_serial, ''), coalesce(i.hw_chassis, ''),
-		       m.state, coalesce(host(m.last_checkin_addr), '')
+		       m.state, coalesce(host(m.last_checkin_addr), ''),
+		       coalesce(i.fw_mode, ''), coalesce(i.fw_tpm, ''), coalesce(i.fw_interface, ''), i.fw_secure_boot, i.fw_admin_password
 		FROM machines m
 		LEFT JOIN inventory_reports i ON i.id = m.current_inventory_id
 		WHERE m.retired_at IS NULL
@@ -55,7 +59,8 @@ func (p *Postgres) InventoryList(ctx context.Context) ([]InventoryRow, error) {
 		var state []byte
 		if err := rows.Scan(&r.ID, &r.LastSeenAt, &r.AgentVersion, &r.Ring, &r.CheckinTLS,
 			&r.Hostname, &r.OSName, &r.OSVersion, &collected,
-			&r.Manufacturer, &r.Model, &r.Serial, &r.ChassisType, &state, &r.CheckinAddr); err != nil {
+			&r.Manufacturer, &r.Model, &r.Serial, &r.ChassisType, &state, &r.CheckinAddr,
+			&r.FWMode, &r.FWTPM, &r.FWInterface, &r.FWSecureBoot, &r.FWAdmin); err != nil {
 			return nil, err
 		}
 		r.LastSeenAt, r.CollectedAt = r.LastSeenAt.UTC(), utc(collected)
@@ -90,6 +95,10 @@ func (m *Memory) InventoryList(ctx context.Context) ([]InventoryRow, error) {
 			r.Hostname, r.OSName, r.OSVersion, r.CollectedAt = inv.OS.Hostname, inv.OS.Name, inv.OS.Version, &t
 			if hw := inv.Hardware; hw != nil {
 				r.Manufacturer, r.Model, r.Serial, r.ChassisType = hw.Manufacturer, hw.Model, hw.SerialNumber, hw.ChassisType
+				if f := hw.Firmware; f != nil {
+					r.FWMode, r.FWTPM, r.FWInterface = f.Mode, f.TPM, f.Interface
+					r.FWSecureBoot, r.FWAdmin = cloneBool(f.SecureBoot), cloneBool(f.AdminPassword)
+				}
 			}
 		}
 		if mm.state != nil {
@@ -100,4 +109,12 @@ func (m *Memory) InventoryList(ctx context.Context) ([]InventoryRow, error) {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	return list, nil
+}
+
+func cloneBool(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }

@@ -77,3 +77,42 @@ func TestListaDeInventarioPostgres(t *testing.T) {
 	}
 	testarListaDeInventario(t, NewPostgres(pool))
 }
+
+// Aula 21.2: o firmware vem das colunas; "não se sabe" (nil) é diferente de "não".
+func testarListaComFirmware(t *testing.T, st contratoInventario) {
+	ctx := context.Background()
+	sim, nao := true, false
+	rep := func(hash string, fw *protocol.Firmware) protocol.InventoryReport {
+		return protocol.InventoryReport{SchemaVersion: 1, Hash: hash, CollectedAt: time.Now().UTC(),
+			OS: protocol.OSInfo{Family: "windows", Hostname: "pc"}, Hardware: &protocol.Hardware{Manufacturer: "LENOVO", Firmware: fw}}
+	}
+	_, _ = st.SaveInventory(ctx, "a-0001", rep("sha256:a", &protocol.Firmware{Mode: "uefi", SecureBoot: &nao, TPM: "2.0",
+		Interface: "lenovo", AdminPassword: &nao, PowerOnPassword: &nao}))
+	_, _ = st.SaveInventory(ctx, "b-0002", rep("sha256:b", &protocol.Firmware{Mode: "uefi", SecureBoot: &sim, TPM: "2.0"}))
+	_, _ = st.SaveInventory(ctx, "c-0003", rep("sha256:c", nil))
+	list, err := st.InventoryList(ctx)
+	if err != nil || len(list) != 3 {
+		t.Fatalf("%v %d", err, len(list))
+	}
+	a, b, c := list[0], list[1], list[2]
+	if a.FWMode != "uefi" || a.FWSecureBoot == nil || *a.FWSecureBoot || a.FWTPM != "2.0" || a.FWInterface != "lenovo" ||
+		a.FWAdmin == nil || *a.FWAdmin {
+		t.Errorf("a: %+v", a)
+	}
+	if b.FWSecureBoot == nil || !*b.FWSecureBoot || b.FWAdmin != nil || b.FWInterface != "" {
+		t.Errorf("b (sem a interface): %+v", b)
+	}
+	if c.FWMode != "" || c.FWSecureBoot != nil || c.FWAdmin != nil {
+		t.Errorf("c (agente anterior): %+v", c)
+	}
+}
+
+func TestListaComFirmwareMemoria(t *testing.T) { testarListaComFirmware(t, NewMemory()) }
+
+func TestListaComFirmwarePostgres(t *testing.T) {
+	pool := bancoDeTeste(t)
+	if err := Migrate(context.Background(), pool, silencioso()); err != nil {
+		t.Fatal(err)
+	}
+	testarListaComFirmware(t, NewPostgres(pool))
+}

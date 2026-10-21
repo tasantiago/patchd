@@ -52,8 +52,18 @@ var searchFields = []struct{ Key, Label string }{
 var equipColumns = []struct{ Key, Label string }{
 	{"nome", "Nome"}, {"status", "Status"}, {"agente", "Agente"}, {"ip", "IP"}, {"usuario", "Usuário"},
 	{"inventario", "Inventário"}, {"contato", "Último contato"}, {"canal", "Canal"},
-	{"so", "Sistema"}, {"categoria", "Categoria"}, {"serial", "Serial"}, {"anel", "Anel"},
+	{"so", "Sistema"}, {"categoria", "Categoria"}, {"serial", "Serial"}, {"bios", "Senha da BIOS"}, {"anel", "Anel"},
 }
+
+// Filtros do firmware (Aula 21.2): os cartões da segunda linha.
+const (
+	fwSemSenha      = "sem-senha"             // senha de administrador da BIOS não definida
+	fwSecureBootOff = "secure-boot-desligado" // Secure Boot desligado (inclui o BIOS legado)
+	fwTPM           = "tpm"                   // sem TPM, ou TPM 1.2
+	fwUnknown       = "sem-info"              // a senha não foi informada (agente anterior, modelo sem a interface)
+)
+
+var fwFilters = []string{fwSemSenha, fwSecureBootOff, fwTPM, fwUnknown}
 
 // Filtros de status (os cartões do topo).
 const (
@@ -114,6 +124,35 @@ type equip struct {
 	Collected                                                               *time.Time
 	ip                                                                      netip.Addr
 	Users                                                                   []protocol.LoggedUser // Aula 15.6
+	// Aula 21.2: o firmware, das colunas do inventário.
+	FWMode, FWTPM, FWInterface string
+	FWSecureBoot, FWAdmin      *bool
+}
+
+// fwMatch: a máquina entra no filtro do firmware.
+func (e equip) fwMatch(f string) bool {
+	switch f {
+	case fwSemSenha:
+		return e.FWAdmin != nil && !*e.FWAdmin
+	case fwSecureBootOff:
+		return e.FWSecureBoot != nil && !*e.FWSecureBoot
+	case fwTPM:
+		return e.FWTPM == protocol.TPMNone || e.FWTPM == "1.2"
+	case fwUnknown:
+		return e.FWAdmin == nil
+	}
+	return true
+}
+
+// biosText: a coluna "Senha da BIOS".
+func (e equip) biosText() string {
+	switch {
+	case e.FWAdmin == nil:
+		return ""
+	case *e.FWAdmin:
+		return "definida"
+	}
+	return "não definida"
 }
 
 // userLabel: como a conta aparece nas listas: o nome de exibição, ou a conta.
@@ -137,7 +176,8 @@ func buildEquip(rows []store.InventoryRow, now time.Time) []equip {
 	for _, r := range rows {
 		e := equip{ID: r.ID, Name: r.Hostname, OS: strings.TrimSpace(r.OSName + " " + r.OSVersion), Agent: r.AgentVersion,
 			Manufacturer: r.Manufacturer, Model: r.Model, Category: category(r.Manufacturer, r.Model, r.ChassisType),
-			Ring: r.Ring, LastSeen: r.LastSeenAt, Collected: r.CollectedAt, Online: now.Sub(r.LastSeenAt) <= onlineWithin}
+			Ring: r.Ring, LastSeen: r.LastSeenAt, Collected: r.CollectedAt, Online: now.Sub(r.LastSeenAt) <= onlineWithin,
+			FWMode: r.FWMode, FWTPM: r.FWTPM, FWInterface: r.FWInterface, FWSecureBoot: r.FWSecureBoot, FWAdmin: r.FWAdmin}
 		if s, ok := identity.NormalizeSerial(r.Serial); ok {
 			e.Serial = s
 		}
@@ -165,6 +205,7 @@ func buildEquip(rows []store.InventoryRow, now time.Time) []equip {
 // equipQuery é o que a URL pede, já conferido.
 type equipQuery struct {
 	Field, Q, Status, Order string
+	Firmware                string // Aula 21.2
 	Desc                    bool
 	Per, Page               int
 }
@@ -178,6 +219,9 @@ func parseEquipQuery(v url.Values) equipQuery {
 	q.Q = texto.Clip(q.Q, maxSearchLen) // Aula 20.3: sem partir caractere, sem UTF-8 inválido da URL
 	if s := v.Get("status"); s == statusOnline || s == statusOffline || s == statusNoState {
 		q.Status = s
+	}
+	if f := v.Get("firmware"); slices.Contains(fwFilters, f) {
+		q.Firmware = f
 	}
 	if o := v.Get("ordem"); slices.ContainsFunc(equipColumns, func(c struct{ Key, Label string }) bool { return c.Key == o }) {
 		q.Order = o
@@ -203,6 +247,9 @@ func (q equipQuery) values() url.Values {
 	}
 	if q.Status != "" {
 		v.Set("status", q.Status)
+	}
+	if q.Firmware != "" {
+		v.Set("firmware", q.Firmware)
 	}
 	if q.Order != "nome" {
 		v.Set("ordem", q.Order)
@@ -277,6 +324,9 @@ func filterEquip(list []equip, q equipQuery) []equip {
 				continue
 			}
 		}
+		if !e.fwMatch(q.Firmware) {
+			continue
+		}
 		if needle != "" && !slices.ContainsFunc(e.texts(q.Field), func(s string) bool { return strings.Contains(strings.ToLower(s), needle) }) {
 			continue
 		}
@@ -331,6 +381,8 @@ func compareEquip(a, b equip, order string) int {
 		return text(a.Serial, b.Serial)
 	case "anel":
 		return cmp.Compare(a.Ring, b.Ring)
+	case "bios": // não definida antes de definida (o vazio já foi para o fim)
+		return cmp.Compare(btoi(*a.FWAdmin), btoi(*b.FWAdmin))
 	}
 	return text(a.Name, b.Name)
 }
@@ -363,6 +415,8 @@ func (e equip) isEmpty(order string) bool {
 		return e.Category == ""
 	case "serial":
 		return e.Serial == ""
+	case "bios":
+		return e.FWAdmin == nil
 	}
 	return false
 }
@@ -390,6 +444,8 @@ func sortEquip(list []equip, order string, desc bool) {
 
 type equipRow struct {
 	ID, Name, Agent, IP, Collected, Seen, Channel, OS, Category, Serial, Ring string
+	BIOS                                                                      string // Aula 21.2
+	BIOSMissing                                                               bool
 	User, UserAll                                                             string // o primeiro usuário; todos, na dica
 	UserMore                                                                  int    // quantos além do primeiro
 	Online, HasState, IPFromCheckin                                           bool
@@ -397,8 +453,11 @@ type equipRow struct {
 
 type equipView struct {
 	pageBase
-	Total, Online, Offline, NoState  int
-	Status                           string
+	Total, Online, Offline, NoState int
+	Status                          string
+	// Aula 21.2: a segunda linha de cartões, a do firmware.
+	Firmware                         string
+	FWCards                          []fwCard
 	KPIAll, KPIOnline, KPIOff, KPINo string // links dos cartões (mantêm a busca)
 	Fields                           []optView
 	Q                                string
@@ -412,6 +471,13 @@ type equipView struct {
 	Pages                            []pageLink
 	CSV                              string
 	HasFilter                        bool
+}
+
+// fwCard: um cartão do firmware: a contagem e o link do filtro (que mantém a busca e o status).
+type fwCard struct {
+	Key, Label, Sub, Href, Class string
+	N                            int
+	Active                       bool
 }
 
 type optView struct {
@@ -481,6 +547,29 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.KPIAll, v.KPIOnline, v.KPIOff, v.KPINo = kpi(""), kpi(statusOnline), kpi(statusOffline), kpi(statusNoState)
 
+	// Aula 21.2: os cartões do firmware contam a frota toda (como os de cima) e filtram;
+	// clicar no ativo tira o filtro.
+	v.Firmware = q.Firmware
+	for _, c := range []fwCard{
+		{Key: fwSemSenha, Label: "BIOS sem senha", Sub: "senha de administrador não definida", Class: "v-vermelho"},
+		{Key: fwSecureBootOff, Label: "Secure Boot desligado", Sub: "inclui o BIOS legado", Class: "v-laranja"},
+		{Key: fwTPM, Label: "TPM ausente ou 1.2", Sub: "o Windows 11 pede o 2.0", Class: "v-laranja"},
+		{Key: fwUnknown, Label: "Senha sem informação", Sub: "agente anterior à 21.1 ou modelo sem a interface"},
+	} {
+		for _, e := range all {
+			if e.fwMatch(c.Key) {
+				c.N++
+			}
+		}
+		k := q
+		k.Firmware, k.Page, c.Active = c.Key, 1, c.Key == q.Firmware
+		if c.Active {
+			k.Firmware = ""
+		}
+		c.Href = k.href("/painel/inventario")
+		v.FWCards = append(v.FWCards, c)
+	}
+
 	for _, f := range searchFields {
 		v.Fields = append(v.Fields, optView{Value: f.Key, Label: f.Label, Selected: f.Key == q.Field})
 	}
@@ -506,7 +595,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 
 	found := filterEquip(all, q)
 	sortEquip(found, q.Order, q.Desc)
-	v.Found, v.HasFilter = len(found), q.Q != "" || q.Status != ""
+	v.Found, v.HasFilter = len(found), q.Q != "" || q.Status != "" || q.Firmware != ""
 	csvQ := q
 	csvQ.Page, csvQ.Per = 1, defaultPerPage
 	v.CSV = csvQ.href("/painel/inventario.csv")
@@ -537,7 +626,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		row := equipRow{ID: e.ID, Name: dash(e.Name), Agent: dash(e.Agent), IP: dash(e.IP), Channel: dash(e.Channel),
 			OS: dash(e.OS), Category: dash(e.Category), Serial: dash(e.Serial), Ring: strconv.Itoa(e.Ring),
 			Online: e.Online, HasState: e.HasState, IPFromCheckin: e.IPFromCheckin,
-			Seen: ago(now.Sub(e.LastSeen)), Collected: "—"}
+			Seen: ago(now.Sub(e.LastSeen)), Collected: "—", BIOS: dash(e.biosText()), BIOSMissing: e.FWAdmin != nil && !*e.FWAdmin}
 		if e.Collected != nil {
 			row.Collected = a.stamp(*e.Collected)
 		}
@@ -586,11 +675,24 @@ func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
 			collected = export.When(*e.Collected)
 		}
 		out = append(out, []string{e.ID, e.Name, status, e.Agent, e.IP, ipSrc, collected, export.When(e.LastSeen),
-			e.Channel, e.OS, e.Category, e.Manufacturer, e.Model, e.Serial, strconv.Itoa(e.Ring), usersSummary(e.Users)})
+			e.Channel, e.OS, e.Category, e.Manufacturer, e.Model, e.Serial, strconv.Itoa(e.Ring), usersSummary(e.Users),
+			e.FWMode, yesNoCSV(e.FWSecureBoot), e.FWTPM, yesNoCSV(e.FWAdmin), e.FWInterface}) // Aula 21.2
 	}
 	name := "patchd-equipamentos-" + a.now().UTC().Format("20060102-1504") + ".csv"
 	a.sendCSV(w, r, name, len(out), func(b *bytes.Buffer) error {
 		return export.Table(b, []string{"maquina", "nome", "status", "agente", "ip", "ip_origem", "inventario_coletado_utc",
-			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "anel", "usuarios"}, out)
+			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "anel", "usuarios",
+			"firmware_modo", "secure_boot", "tpm", "senha_admin_bios", "senha_bios_fonte"}, out)
 	})
+}
+
+// yesNoCSV: sim, nao ou vazio (não se sabe).
+func yesNoCSV(p *bool) string {
+	switch {
+	case p == nil:
+		return ""
+	case *p:
+		return "sim"
+	}
+	return "nao"
 }

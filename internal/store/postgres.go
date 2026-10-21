@@ -117,16 +117,22 @@ func (p *Postgres) SaveInventory(ctx context.Context, id string, rep protocol.In
 	if rep.Hardware != nil {
 		hw = *rep.Hardware
 	}
+	var fw protocol.Firmware // Aula 21.2: o firmware em colunas também
+	if hw.Firmware != nil {
+		fw = *hw.Firmware
+	}
 	var reportID int64
 	err = tx.QueryRow(ctx, `
 		INSERT INTO inventory_reports
 			(machine_id, hash, schema_version, agent_version, collected_at, hostname, os_family, os_name, os_version, report,
-			 hw_manufacturer, hw_model, hw_serial, hw_chassis)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			 hw_manufacturer, hw_model, hw_serial, hw_chassis,
+			 fw_mode, fw_secure_boot, fw_tpm, fw_interface, fw_admin_password)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		RETURNING id`,
 		id, rep.Hash, rep.SchemaVersion, rep.AgentVersion, rep.CollectedAt,
 		rep.OS.Hostname, rep.OS.Family, rep.OS.Name, rep.OS.Version, body,
 		hw.Manufacturer, hw.Model, hw.SerialNumber, hw.ChassisType,
+		fw.Mode, fw.SecureBoot, fw.TPM, fw.Interface, fw.AdminPassword,
 	).Scan(&reportID)
 	if err != nil {
 		return false, fmt.Errorf("inventário: %w", err)
