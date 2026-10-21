@@ -150,7 +150,8 @@ quem resolve.
   inventário da BIOS (Módulo 21): ACL por SID e migração para um cofre. **Na 21.1**: o
   inventário passou a dizer, máquina a máquina, se a senha de administrador da BIOS está
   definida (HP, Dell e Lenovo, pela interface do fabricante); é como conferir o que o `.bat`
-  fez e o que falta, antes de aposentá-lo.
+  fez e o que falta, antes de aposentá-lo. **Na 21.2**: o cartão "BIOS sem senha" em
+  Inventário conta a frota e filtra a lista (e o CSV); é a medida do F3.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

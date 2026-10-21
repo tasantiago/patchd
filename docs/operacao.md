@@ -733,3 +733,24 @@ máquina mostra o cartão **Firmware**:
   desligado, TPM 1.2 ou nenhum em amarelo.
 - O servidor confere os valores (conjunto fechado); um firmware fora dele é descartado, o resto
   do inventário entra, e o motivo fica nos erros do relatório.
+
+### Firmware na frota (Aula 21.2)
+
+Inventário › Equipamentos ganhou uma segunda linha de cartões, contando a frota inteira:
+
+| Cartão | Conta as máquinas com |
+|---|---|
+| BIOS sem senha | senha de administrador da BIOS **não definida** (vermelho) |
+| Secure Boot desligado | Secure Boot desligado, inclusive as em BIOS legado |
+| TPM ausente ou 1.2 | sem TPM ou com TPM 1.2 (o Windows 11 pede o 2.0) |
+| Senha sem informação | a senha não foi informada: agente anterior à 21.1, modelo sem a interface do fabricante, Linux e macOS |
+
+Clicar num cartão filtra a lista (`?firmware=sem-senha`, `secure-boot-desligado`, `tpm` ou
+`sem-info`), junto com a busca e o status; clicar de novo tira o filtro. A coluna **Senha da
+BIOS** mostra definida, não definida (em vermelho) ou —, e ordena. O CSV leva o mesmo filtro e
+as colunas `firmware_modo`, `secure_boot`, `tpm`, `senha_admin_bios` (sim, nao ou vazio) e
+`senha_bios_fonte`.
+
+O firmware fica em colunas do inventário (migration 0041), como o fabricante e o modelo desde a
+0025: a lista não relê o relatório inteiro de cada máquina. A migration preenche as colunas do
+inventário atual de cada máquina.

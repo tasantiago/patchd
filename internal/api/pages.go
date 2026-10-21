@@ -616,9 +616,12 @@ var pages = template.Must(template.New("").Parse(`
 <li><a class="kpi{{if eq .Status "offline"}} ativo{{end}}" href="{{.KPIOff}}"><span class="kpi-rot">Offline</span><span class="kpi-val v-laranja">{{.Offline}}</span><span class="kpi-sub">sem check-in há mais de 2 h</span></a></li>
 <li><a class="kpi{{if eq .Status "sem-estado"}} ativo{{end}}" href="{{.KPINo}}"><span class="kpi-rot">Sem rede e discos</span><span class="kpi-val">{{.NoState}}</span><span class="kpi-sub">agente anterior à Aula 12.1</span></a></li>
 </ul>
+<ul class="kpis" aria-label="firmware">{{range .FWCards}}
+<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val{{if .Class}} {{.Class}}{{end}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
+</ul>
 <div class="card"><div class="card-cab"><h2>Equipamentos</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
 <form class="busca" method="get" action="/painel/inventario">
-{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}
+{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Firmware}}<input type="hidden" name="firmware" value="{{.Firmware}}">{{end}}
 {{if ne .Order "nome"}}<input type="hidden" name="ordem" value="{{.Order}}">{{end}}{{if .Dir}}<input type="hidden" name="dir" value="{{.Dir}}">{{end}}
 <select name="campo" aria-label="campo da busca">{{range .Fields}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Buscar" aria-label="texto da busca">
@@ -633,7 +636,7 @@ var pages = template.Must(template.New("").Parse(`
 <td>{{.Agent}}</td>
 <td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
 <td{{if .UserAll}} title="{{.UserAll}}"{{end}}>{{.User}}{{if .UserMore}} <span class="muted">+{{.UserMore}}</span>{{end}}</td>
-<td>{{.Collected}}</td><td>{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td class="num">{{.Ring}}</td>
+<td>{{.Collected}}</td><td>{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td{{if .BIOSMissing}} class="nivel-erro"{{end}}>{{.BIOS}}</td><td class="num">{{.Ring}}</td>
 </tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>
 {{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}
