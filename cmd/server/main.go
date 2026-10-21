@@ -72,7 +72,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	// "patchd-server compliance -machine ID", "patchd-server repo-cache status|prune",
 	// "patchd-server user create|list|delete|password", "patchd-server ad check" e
 	// "patchd-server machine list|retire|restore", "patchd-server job keygen|create|list|cancel"
-	// e "patchd-server package show" (Aula 14.1) e "patchd-server bios keygen|key" (Aula 21.4).
+	// e "patchd-server package show" (Aula 14.1) e "patchd-server bios keygen|key" (Aula 21.4)
+	// e "patchd-server inventory summary" (Aula 22.1).
 	if len(args) > 0 && args[0] == "token" {
 		return runToken(args[1:], look, stdout, stderr)
 	}
@@ -129,6 +130,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	if len(args) > 0 && args[0] == "bios" { // Aula 21.4: a chave da guarda da senha da BIOS
 		return runBios(args[1:], look, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "inventory" { // Aula 22.1: resumo de inventários avulsos, sem banco
+		return runInventory(args[1:], stdout, stderr)
 	}
 
 	cfg, err := loadServerConfig(args, look, stderr)

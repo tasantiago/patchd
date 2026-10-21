@@ -275,6 +275,7 @@ func (a *api) inventoryView(r *http.Request, id string, v *machineView) error {
 		hw := *inv.Hardware
 		v.HWParams = hardwareParams(hw)
 		v.FWParams = firmwareParams(hw) // Aula 21.1
+		v.Wake = wakeView(hw)           // Aula 22.1
 		v.HWSources = hw.Sources
 		v.Category = category(hw.Manufacturer, hw.Model, hw.ChassisType)
 		v.Model = strings.TrimSpace(hw.Manufacturer + " " + hw.Model)

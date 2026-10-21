@@ -316,6 +316,14 @@ func (a *api) submitInventory(w http.ResponseWriter, r *http.Request, id string)
 			rep.Errors = append(rep.Errors, "firmware: descartado pelo servidor: "+err.Error())
 		}
 	}
+	// Aula 22.1: o mesmo para o bloco de ligar pela rede.
+	if hw := rep.Hardware; hw != nil && hw.Wake != nil {
+		if err := hw.Wake.Check(); err != nil {
+			a.logger.Warn("inventário: ligar pela rede descartado", "machine_id", id, "error", err)
+			hw.Wake = nil
+			rep.Errors = append(rep.Errors, "ligar pela rede: descartado pelo servidor: "+err.Error())
+		}
+	}
 
 	stored, err := a.store.SaveInventory(r.Context(), id, rep)
 	if err != nil {

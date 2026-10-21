@@ -101,6 +101,13 @@ func (c *windowsCollector) Hardware(ctx context.Context) (Hardware, error) {
 	fw.FirmwareType = firmwareType()
 	fw.SecureBoot = secureBootEnabled()
 	hw := windowsHardwareInfo(w)
+	// Aula 22.1: ligar pela rede, com a interface do fabricante que o firmware usou.
+	vendor := firmwareInterface(asString(w.Product["Vendor"]))
+	wake, wakeErrs := collectWake(ctx, vendor)
+	errs = append(errs, wakeErrs...)
+	if hw.Wake = wake; wake != nil {
+		hw.Sources = append(hw.Sources, "WMI "+wmiNetNamespace+" MSFT_NetAdapter", `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power`)
+	}
 	if hw.Firmware = windowsFirmwareInfo(fw); hw.Firmware != nil {
 		hw.Sources = append(hw.Sources, "GetFirmwareType", `HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State`)
 		if fw.TPMQueried {

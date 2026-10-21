@@ -812,3 +812,29 @@ da HP pode travar novas tentativas até reiniciar. Confirme a senha da frota ant
 
 **Incerta**: nada mais é gravado nessa máquina até alguém resolver. Revele a nova e a anterior,
 teste qual a BIOS aceita e clique em **A nova vale** ou **A anterior vale**.
+
+## Inventário avulso da frota (Aula 22.1)
+
+Para a frota que ainda não fala com o servidor (sem o agente instalado, ou sem rota até ele),
+o mesmo executável coleta o inventário só para leitura: `patchd-agent.exe -inventory` não
+instala nada e não fala com ninguém. O roteiro da aula (`lab-coleta-frota.ps1`, fora do
+repositório) roda isso pelo PsExec em uma lista de máquinas e grava um `.json` por máquina.
+
+O resumo, sem banco nem servidor:
+
+```bash
+patchd-server inventory summary -dir PASTA            # só as contagens
+patchd-server inventory summary -dir PASTA -maquinas  # e os nomes em cada contagem (fica com você)
+```
+
+Ele lê os três formatos que o Windows grava (UTF-16 do PowerShell 5, UTF-8 com e sem BOM) e
+conta: interface da BIOS, senha de administrador, HP Sure Admin, Secure Boot, TPM e ligar
+pela rede (pronta, bloqueada, sem informação, com os motivos). As regras são as mesmas do
+painel (Aulas 21.2 e 22.1).
+
+## Ligar pela rede: prontidão (Aula 22.1)
+
+Na aba Hardware, o cartão **Ligar pela rede (Wake on LAN)** mostra a situação (pronta,
+bloqueada ou sem informação), o que impede, os avisos, as configurações da BIOS que pesaram
+(com o nome e o valor como o fabricante escreve) e as placas de rede físicas (cabo, Magic
+Packet, permissão para ligar o computador). O mapa do módulo está em `docs/wake-on-lan.md`.
