@@ -57,6 +57,23 @@ if [ ! -e "$DIR/smtp_password" ]; then
   echo "SMTP: $DIR/smtp_password criado vazio (preencha se o SMTP pedir login)."
 fi
 
+# 2c. Chave da guarda da senha da BIOS (Aula 21.4): como a do RHBK, o compose monta o arquivo
+# mesmo com a guarda desligada; ele existe vazio até o bios keygen gravar a chave nele. A guarda
+# só liga com PATCHD_BIOS_ESCROW_KEY_FILE no deploy/.env.
+if [ ! -e "$DIR/bios_escrow_key" ]; then
+  ( umask 077; : > "$DIR/bios_escrow_key" )
+fi
+if [ -s "$DIR/bios_escrow_key" ]; then
+  echo "guarda da BIOS: chave presente (guarde duas cópias fora do servidor; sem ela, nenhuma senha guardada é revelada)."
+else
+  cat <<MSG
+guarda da BIOS: desligada (opcional). Para ligar:
+    go run ./cmd/server bios keygen -out deploy/secrets/bios_escrow_key
+    e PATCHD_BIOS_ESCROW_KEY_FILE=/run/secrets/bios_escrow_key no deploy/.env; depois:
+$(acl deploy/secrets/bios_escrow_key)
+MSG
+fi
+
 # 2b. Token das métricas (Aula 10.2): gerado aqui, nunca escolhido. O mesmo valor vai
 # para o Prometheus (credentials_file); trocar = gerar outro e atualizar os dois lados.
 if [ -s "$DIR/metrics_token" ]; then

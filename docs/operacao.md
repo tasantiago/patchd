@@ -754,3 +754,39 @@ as colunas `firmware_modo`, `secure_boot`, `tpm`, `senha_admin_bios` (sim, nao o
 O firmware fica em colunas do inventário (migration 0041), como o fabricante e o modelo desde a
 0025: a lista não relê o relatório inteiro de cada máquina. A migration preenche as colunas do
 inventário atual de cada máquina.
+
+## Guarda da senha da BIOS (Aula 21.4)
+
+O substituto do `.bat` de senha da BIOS começa pela guarda: o servidor sorteia a senha de
+cada máquina e guarda só o envelope cifrado. A gravação na BIOS é a Aula 21.5; o desenho e as
+decisões estão em `docs/bios-senha.md`.
+
+**Ligar (uma vez).** No host, com o repositório:
+
+```bash
+./deploy/gerar-segredos.sh                                   # cria deploy/secrets/bios_escrow_key vazio
+go run ./cmd/server bios keygen -out deploy/secrets/bios_escrow_key
+sudo setfacl -m u:65532:r deploy/secrets/bios_escrow_key     # o servidor (UID 65532) lê
+```
+
+O `keygen` imprime a impressão da chave (12 hexadecimais). No `deploy/.env`,
+`PATCHD_BIOS_ESCROW_KEY_FILE=/run/secrets/bios_escrow_key`, e suba de novo. O log da partida
+diz "guarda da senha da BIOS ligada" com a mesma impressão, e Configuração › Sistema mostra
+"Guarda da senha da BIOS: ligada". `patchd-server bios key` mostra a impressão da chave
+configurada.
+
+**Cópias da chave.** Sem a chave privada, nenhuma senha guardada pode ser revelada, e a saída
+passa a ser a assistência do fabricante. Guarde duas cópias fora do servidor (como a chave de
+release, Aula 20.7), **longe da cópia do banco**: o banco tem os envelopes; banco e chave juntos
+abrem todas as senhas.
+
+**Usar.** Na máquina, aba Hardware, cartão "Senha da BIOS":
+
+| Ação | Quem | O que acontece |
+|---|---|---|
+| Preparar senha nova | admin | sorteia 12 caracteres (minúsculas e números, sem ambíguos) e guarda o envelope, como `pendente`. Nada muda na máquina |
+| Revelar | admin, com motivo (10 a 200 caracteres) | a auditoria (`bios.senha.revelar`, com o motivo) é gravada antes; a senha aparece numa página fora do cache, em grupos de 4 (digite sem os espaços); a lista de notificações recebe um e-mail, sem a senha |
+
+O perfil leitura vê o cartão (estados, quem sorteou, quantas revelações), sem os botões. As
+senhas guardadas não entram na retenção: valem enquanto a placa existir, inclusive em máquina
+aposentada.

@@ -20,7 +20,8 @@ fronteira nova. A matriz de rotas (docs/rotas.md) é gerada pelo teste e não pr
 | A5 | **Token de enrollment** | Registra máquinas novas na frota | mostrado uma vez; servidor guarda o hash, com prazo e usos |
 | A6 | **Banco** | Inventário (usuários conectados, software: dado pessoal, LGPD), auditoria, aprovações, sessões | PostgreSQL; senha em arquivo |
 | A7 | **Segredos de integração** | Senha do SMTP, segredo do cliente OIDC, senha do banco, token de métricas | arquivos (segredos do compose), nunca no banco nem na tela |
-| A9 | **Chave da caixa de cada máquina** (HPKE, Aula 21.3) | Abre os segredos que o servidor manda só para aquela máquina (a senha da BIOS, 21.4) | agente: `chave-cifragem.key`, protegido como a credencial; o servidor guarda só a pública |
+| A9 | **Chave da caixa de cada máquina** (HPKE, Aula 21.3) | Abre os segredos que o servidor manda só para aquela máquina (a senha da BIOS, 21.5) | agente: `chave-cifragem.key`, protegido como a credencial; o servidor guarda só a pública |
+| A10 | **Chave da guarda da senha da BIOS** (HPKE, Aula 21.4) | Abre todas as senhas de BIOS guardadas | servidor: `PATCHD_BIOS_ESCROW_KEY_FILE` (segredo do compose); duas cópias fora do servidor, longe da cópia do banco |
 | A8 | **Disponibilidade das correções** | Sem o patchd, a frota fica sem atualização: o risco que ele existe para reduzir | servidor, catálogo e cache |
 
 ## 2. De quem (atores)
@@ -118,6 +119,7 @@ quem resolve.
 | I | Dump do banco com dado pessoal | Retenção (10.5, 19.2); cópia cifrada com age, chave privada fora do servidor (10.3) | Ligar a cifra em produção: F4 (seção 5f) |
 | T | Dependência vulnerável | Poucas dependências; Go na versão exata (Dockerfiles e go.mod); `scripts/seguranca.sh` e o CI semanal (20.2) | — |
 | D | Banco perdido sem cópia | `backup.sh` e timer (10.1); ensaio `restaurar.sh --testar` (10.3); **Configuração › Sistema › Cópias do banco** mostra a última cópia e o último ensaio (20.8) | Ligar em produção: **F4** (seção 5f) |
+| I | **Senha da BIOS guardada** (21.4) | O banco e as cópias só têm envelopes (HPKE, com o ID da máquina dentro); a chave de guarda em arquivo; revelar só admin, com motivo, auditoria gravada antes de mostrar e aviso por e-mail | Quem toma o processo do servidor lê as senhas: risco aceito (D1 em `docs/bios-senha.md`) |
 | E | Porta de métricas | Porta separada, com token (10.2) | — |
 | E | Proxy do cache de repositórios | Só as origens da lista, só GET/HEAD na porta 80, CONNECT recusado; testes do repocache (6.6) | — |
 
@@ -157,7 +159,10 @@ quem resolve.
   pública no estado) para receber a senha fechada, só para ele; o desenho do substituto do
   `.bat` (senha por máquina, guarda antes de aplicar, primeira troca com a senha da frota
   digitada uma vez, métodos HP/Dell/Lenovo, HP Sure Admin) e as decisões D1 a D6 estão em
-  `docs/bios-senha.md`.
+  `docs/bios-senha.md`. **Na 21.4**: a guarda no servidor (D1-a): sorteio de 12 caracteres por
+  máquina, só o envelope no banco, revelação só de admin, com motivo, auditoria gravada antes
+  de mostrar e aviso por e-mail. Risco aceito: quem toma o servidor lê as senhas guardadas
+  (ativo A10). Falta a gravação na BIOS (21.5).
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

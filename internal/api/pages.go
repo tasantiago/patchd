@@ -254,7 +254,8 @@ type machineView struct {
 	HasInventory  bool
 	OSParams      []paramRow
 	HWParams      []paramRow
-	FWParams      []fwRow // Aula 21.1
+	FWParams      []fwRow   // Aula 21.1
+	BIOS          *biosCard // Aula 21.4: a guarda da senha (só na aba Hardware)
 	HWSources     []string
 	Category      string
 	Model, Serial string
@@ -332,6 +333,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		v.Error = fmt.Sprintf("Escolha um anel de 0 a %d.", store.MaxRing)
 	case q.Get("erro") == "motivo":
 		v.Error = fmt.Sprintf("Informe o motivo da aposentadoria (de %d a %d caracteres).", minReasonLength, maxReasonLength)
+	case biosFlash(q, &v):
 	default:
 		jobFlash(q, &v.pageBase)
 	}
@@ -369,6 +371,12 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	if err := a.inventoryView(r, id, &v); err != nil {
 		a.internalError(w, r, "ler o inventário", err)
 		return
+	}
+	if v.Tab == "hardware" {
+		if v.BIOS, err = a.biosView(r, id, v.Admin); err != nil {
+			a.internalError(w, r, "ler a guarda da BIOS", err)
+			return
+		}
 	}
 	if err := a.tpUpdateView(r, id, &v); err != nil {
 		a.internalError(w, r, "montar o plano de terceiros", err)
@@ -1039,6 +1047,16 @@ var pages = template.Must(template.New("").Parse(`
 {{if .FWParams}}<div class="card"><div class="card-cab"><h2>Firmware</h2><span class="muted">só leitura</span></div>
 <dl class="dados">{{range .FWParams}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
 </div>{{end}}
+{{with .BIOS}}<div class="card" id="bios"><div class="card-cab"><h2>Senha da BIOS</h2>{{if .On}}<span class="muted">chave de guarda <code>{{.KeyID}}</code></span>{{end}}</div>
+{{if not .On}}<p class="muted">Guarda desligada: o servidor está sem a chave de guarda (<code>PATCHD_BIOS_ESCROW_KEY_FILE</code>; crie com <code>patchd-server bios keygen</code>).</p>{{end}}
+{{if .Rows}}<div class="tabela"><table>
+<thead><tr><th>#</th><th>Estado</th><th>Sorteada</th><th>Por</th><th>Revelações</th>{{if and .Admin .On}}<th>Revelar</th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.State}}</td><td>{{.Created}}</td><td>{{.By}}</td><td>{{.Reveals}}</td>
+{{if and $.BIOS.Admin $.BIOS.On}}<td>{{if .CanReveal}}<form class="inline" method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/{{.ID}}/revelar"><input name="motivo" required minlength="{{$.BIOS.MinReason}}" maxlength="{{$.BIOS.MaxReason}}" placeholder="motivo (chamado, OS...)" aria-label="motivo da revelação da senha #{{.ID}}"> <button class="sec" type="submit">Revelar</button></form>{{else if .OtherKey}}<span class="muted">outra chave de guarda (<code>{{.OtherKey}}</code>)</span>{{else}}—{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma senha guardada para esta máquina.</p>{{end}}
+{{if .CanPrepare}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/preparar"><p class="muted">Sorteia uma senha de 12 caracteres e a guarda cifrada. Nada muda na máquina até a gravação.</p><button class="sec" type="submit">Preparar senha nova</button></form>
+{{else if and .Admin .On .Pending}}<p class="muted">A senha #{{.Pending}} está pendente: é ela que a próxima gravação usa.</p>{{end}}
+</div>{{end}}
 <div class="card"><div class="card-cab"><h2>Rede e discos</h2>{{if .Host.Has}}<span class="muted">coletado {{.Host.Age}}</span>{{end}}</div>
 {{if .Host.Has}}<dl class="dados">
 <dt>IP principal</dt><dd>{{.Host.Primary}}</dd>
@@ -1287,6 +1305,17 @@ var pages = template.Must(template.New("").Parse(`
 {{if $.Admin}}<td><form method="post" action="/painel/maquinas/{{.ID}}/restaurar"><button class="sec" type="submit">Restaurar</button></form></td>{{end}}</tr>{{end}}
 </tbody></table></div>
 {{else}}<p class="muted">Nenhuma máquina aposentada.</p>{{end}}</div>
+{{template "fim"}}{{end}}
+
+{{define "bios-revelada"}}{{template "topo" .}}
+<p><a href="/painel/maquinas/{{.MachineID}}?aba=hardware#bios">← {{.Name}}</a></p>
+<h1>Senha da BIOS: {{.Name}}</h1>
+<div class="card"><dl class="dados">
+<dt>Senha</dt><dd><code class="senha-bios">{{.Grouped}}</code> <span class="muted">(digite sem os espaços; só letras minúsculas e números)</span></dd>
+<dt>Guarda</dt><dd>#{{.Guard}} · {{.State}}</dd>
+</dl>
+<p class="aviso atencao">Esta revelação foi registrada na auditoria{{if .Mailed}} e avisada por e-mail à lista de notificações{{end}}. A página não fica guardada: não copie a senha para chamado, e-mail ou planilha.</p>
+</div>
 {{template "fim"}}{{end}}
 
 {{define "nao-encontrada"}}{{template "topo" .}}

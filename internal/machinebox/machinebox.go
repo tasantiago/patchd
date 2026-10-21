@@ -1,6 +1,6 @@
 // Package machinebox é a "caixa" de cada máquina (Aula 21.3): um par de chaves que o agente
 // gera e guarda na pasta de dados, e cuja parte pública ele informa no estado. Com ela, o
-// servidor entrega um segredo a UMA máquina (a senha da BIOS, a partir da 21.4) sem que o
+// servidor entrega um segredo a UMA máquina (a senha da BIOS, a partir da 21.5) sem que o
 // segredo fique legível no banco, nas cópias, no job ou no caminho: só o agente daquela
 // máquina abre.
 //

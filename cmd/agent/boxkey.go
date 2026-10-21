@@ -15,7 +15,7 @@ import (
 
 // A caixa da máquina (Aula 21.3): a chave privada fica na pasta de dados, protegida como a
 // credencial (só SYSTEM e Administradores, ou root); a pública vai no estado de cada
-// check-in. O servidor fecha segredos para esta máquina com ela (a senha da BIOS, 21.4).
+// check-in. O servidor fecha segredos para esta máquina com ela (a senha da BIOS, 21.5).
 
 // loadBoxKey lê a chave privada; sem arquivo, cria. Arquivo ilegível: guardado à parte
 // (.ruim-<hora>) e trocado por uma chave nova, com aviso; o que tiver sido fechado para a

@@ -33,6 +33,7 @@ var cliAudited = map[string][]string{
 	"notify":   {"test"},          // Aula 18.5: uma mensagem sai para a lista
 	"settings": {"reset"},         // Aula 19.2: o valor da tela sai e o .env volta
 	"session":  {"create", "end"}, // Aula 20.4: sessão para a varredura do ZAP
+	"bios":     {"keygen"},        // Aula 21.4: a chave da guarda da senha da BIOS
 }
 
 // cliSource é a origem dos eventos da linha de comando.
