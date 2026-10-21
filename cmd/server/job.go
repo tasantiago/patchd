@@ -200,6 +200,9 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 		case *typ == jobs.TypeThirdParty:
 			fmt.Fprintln(stderr, "patchd-server: o job thirdparty sai do plano da máquina: use package install -machine ID -app PROGRAMA")
 			return exitConfig
+		case *typ == jobs.TypeBIOSPassword:
+			fmt.Fprintln(stderr, "patchd-server: a senha da BIOS é gravada pelo painel (aba Hardware da máquina), que a guarda antes")
+			return exitConfig
 		case !jobs.KnownType(*typ):
 			fmt.Fprintln(stderr, "patchd-server: -type deve ser rescan, update, windows_update, reboot ou server_url")
 			return exitConfig

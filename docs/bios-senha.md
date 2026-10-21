@@ -153,7 +153,7 @@ Respondidas antes da Aula 21.4:
 | D3 | **12 caracteres em todos** | o alfabeto da 3.1 |
 | D4 | **não se sabe** se há HP com Sure Admin | a Aula 21.5 lê esse modo no inventário antes de qualquer gravação, e a máquina nesse modo fica de fora |
 | D5 | não oferecer remoção (recomendação mantida) | — |
-| D6 | piloto | definido na Aula 21.5 |
+| D6 | piloto | proposta da Aula 21.5: uma HP de bancada, depois um grupo pequeno de HP, depois a frota HP; Dell e Lenovo só depois de conferidas no laboratório |
 
 O texto original das perguntas fica abaixo, para registro.
 
@@ -197,5 +197,60 @@ senhas guardadas. O banco sozinho, ou a cópia dele, não: só tem envelopes. Po
 guarda **não** vai junto da cópia do banco, e tem duas cópias fora do servidor (perder a chave
 é perder todas as senhas guardadas: a saída passa a ser a assistência do fabricante).
 
-A gravação (o job `bios_password`, a senha atual da frota na primeira troca, a leitura do HP
-Sure Admin e o piloto) é a Aula 21.5.
+A gravação é a Aula 21.5 (seção 8).
+
+## 8. A gravação (Aula 21.5)
+
+**Só HP, por enquanto.** É onde o `.bat` rodou e onde o laboratório confere. Dell e Lenovo
+entram na lista do job (`jobs.BIOSVendors`) depois de conferidas numa máquina de bancada.
+
+**No painel** (aba Hardware, cartão Senha da BIOS, só admin), a senha pendente ganha o botão
+**Gravar na BIOS**. Antes de criar o job, o servidor confere:
+
+| Conferência | De onde | Se falhar |
+|---|---|---|
+| interface HP respondendo | inventário (Aula 21.1) | "por enquanto o patchd grava só na BIOS da HP" |
+| HP Sure Admin desligado | inventário (`sure_admin`, Aula 21.5) | "esta BIOS só aceita mudanças por pacote assinado" |
+| o inventário diz se há senha | inventário | "o inventário não diz se a BIOS tem senha" |
+| chave da caixa no estado | estado (Aula 21.3) | "a máquina não informou a chave de cifragem" |
+| nenhuma senha incerta | guarda | "confira na BIOS qual vale e resolva antes" |
+
+**A senha atual.** BIOS sem senha: não há atual (é uma definição). BIOS com senha e uma ativa
+na guarda: a atual sai da guarda. BIOS com senha e nada na guarda (a primeira troca, depois do
+`.bat`): o admin digita a senha da frota no próprio formulário; ela vai fechada para a caixa e
+não é gravada em lugar nenhum (nem no banco, nem na trilha, que registra só "senha atual
+informada pelo admin").
+
+**O job `bios_password`** leva a linha da guarda, a interface (`hp`), a impressão da chave da
+caixa e os dois envelopes (propósitos `bios-senha` e `bios-senha-atual`). Assinado como todo
+job; prazo de 24 h; não entra em campanha nem na linha de comando.
+
+**No agente** (Windows), antes de tocar na BIOS: a chave da caixa é a mesma do pedido, os
+envelopes abrem, a senha nova tem o formato da guarda, a interface HP responde e o Sure Admin
+está desligado. Qualquer falha aqui volta como **rejeitado**, com "a BIOS não foi tocada", e a
+senha volta a pendente. Passando, uma chamada: `HP_BIOSSettingInterface.SetBIOSSetting("Setup
+Password", "<utf-16/>nova", "<utf-16/>atual")`. Depois, o inventário de depois vai antes do
+resultado.
+
+**A resposta decide a guarda:**
+
+| O que aconteceu | Job | Guarda |
+|---|---|---|
+| código 0 e o inventário mostra a senha definida | concluído | **ativa** (a ativa anterior vira substituída) |
+| código 0, mas o inventário não mostra a senha | falhou (incerto) | **incerta** |
+| código 1, 4, 5 ou 6 (6 = a senha atual não confere) | falhou | **falhou**; a anterior continua |
+| código 2, 3, desconhecido, ou o COM quebrou no meio | falhou (incerto) | **incerta** |
+| recusado antes da chamada; expirou sem entrega | rejeitado / expirado | volta a **pendente** |
+| entregue e sem resposta até expirar | expirado | **incerta** |
+
+**Incerta trava.** Enquanto houver uma senha incerta na máquina, nada mais é gravado nela. Um
+admin revela as duas (a nova e a anterior), confere qual a BIOS aceita na frente da máquina e
+clica em "A nova vale" ou "A anterior vale" (auditado em `bios.senha.resolver`).
+
+**Sem nova tentativa.** Senha atual errada repetida trava a BIOS da HP até reiniciar. O job
+chama o fabricante uma vez; o código 6 aparece no cartão com o aviso, e a próxima tentativa é
+uma decisão de alguém.
+
+**O que ainda não está conferido** (o laboratório da 21.5 confere): o nome exato da
+configuração do Sure Admin (`Enhanced BIOS Authentication Mode`) nos modelos da frota; que a
+troca vale sem reiniciar; que a máquina com BitLocker sobe sem pedir a chave de recuperação.

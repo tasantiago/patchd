@@ -88,6 +88,8 @@ func (c Campaign) Validate() error {
 		return errors.New("só a campanha de reinício leva aviso")
 	case c.Type == jobs.TypeServerURL:
 		return errors.New("campanha de troca de endereço ainda não existe: use job create -type server_url -ring N ou o painel")
+	case c.Type == jobs.TypeBIOSPassword:
+		return errors.New("a senha da BIOS é gravada máquina a máquina, pelo painel (aba Hardware)")
 	case c.Type == jobs.TypeUpdate && (len(c.Sources) == 0 || len(c.Sources) > MaxSources):
 		return fmt.Errorf("a campanha de update leva de 1 a %d fontes", MaxSources)
 	case c.Type == jobs.TypeWinUpdate && (len(c.Sources) == 0 || len(c.Sources) > jobs.MaxWinUpdates):

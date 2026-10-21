@@ -50,6 +50,9 @@ type Store interface {
 	BIOSPasswords(ctx context.Context, machineID string) ([]store.BIOSPassword, error)
 	BIOSPasswordByID(ctx context.Context, id int64) (store.BIOSPassword, bool, error)
 	MarkBIOSRevealed(ctx context.Context, id int64, by string, at time.Time) error
+	AttachBIOSJob(ctx context.Context, id, jobID int64, at time.Time) (bool, error)                            // Aula 21.5
+	SettleBIOSPassword(ctx context.Context, id, jobID int64, state, result string, at time.Time) (bool, error) // Aula 21.5
+	ResolveBIOSPassword(ctx context.Context, id int64, newValid bool, result string, at time.Time) (bool, error)
 	// KeyStats: as chaves de jobs e de release aceitas pela frota (Aula 20.7).
 	KeyStats(ctx context.Context, since time.Time) (store.KeyStats, error)
 	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
@@ -240,8 +243,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/windows/instalar", a.sameOrigin(a.adminAction(a.winUpdateAction))) // Aula 16.3
 	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
 	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
-	mux.Handle("POST /painel/maquinas/{id}/bios/preparar", a.sameOrigin(a.adminAction(a.prepareBIOSAction)))        // Aula 21.4
-	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/revelar", a.sameOrigin(a.adminAction(a.revealBIOSAction))) // Aula 21.4
+	mux.Handle("POST /painel/maquinas/{id}/bios/preparar", a.sameOrigin(a.adminAction(a.prepareBIOSAction)))          // Aula 21.4
+	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/revelar", a.sameOrigin(a.adminAction(a.revealBIOSAction)))   // Aula 21.4
+	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/gravar", a.sameOrigin(a.adminAction(a.writeBIOSAction)))     // Aula 21.5
+	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/resolver", a.sameOrigin(a.adminAction(a.resolveBIOSAction))) // Aula 21.5
 	// Configuração (Aula 15.2): só admin, inclusive para ver.
 	mux.Handle("GET /painel/configuracao", a.adminAction(a.settingsPage))
 	mux.Handle("GET /painel/configuracao/auditoria.csv", a.adminAction(a.auditCSV))

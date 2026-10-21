@@ -66,6 +66,10 @@ type Agent struct {
 	// nil: o agente recusa esses jobs (só o Windows). Erro com jobs.ErrNotPending vira
 	// "rejeitado"; com jobs.ErrRetry, "adiado". Nunca reinicia.
 	WinUpdate func(ctx context.Context, jobID int64, updates []jobs.WinUpdate) (string, error)
+	// BIOSPassword grava a senha de administrador da BIOS (job bios_password, Aula 21.5).
+	// nil: o agente recusa esses jobs. Erro com jobs.ErrRefused vira "rejeitado" (a BIOS não
+	// foi tocada); com bioswrite.ErrUncertain, "falhou" com o detalhe jobs.BIOSUncertain.
+	BIOSPassword func(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams) (string, error)
 
 	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
 	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
@@ -315,6 +319,22 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			return outcomeTransient
 		}
 		// Nenhum instalador rodou (download falhou, recusa): o inventário não mudou.
+		if ran {
+			a.resendInventory(ctx, &state)
+		}
+		a.saveStateOrLog(state)
+	}
+
+	// Senha da BIOS (Aula 21.5): depois das instalações; o inventário de depois (o firmware
+	// com a senha definida) vai antes do resultado, que o servidor confere por ele.
+	if len(accepted.bios) > 0 {
+		res, ran := a.runBIOS(ctx, accepted.bios)
+		state.PendingJobResults = append(state.PendingJobResults, res...)
+		if ctx.Err() != nil {
+			state.InventoryFirst = state.InventoryFirst || ran
+			a.saveStateOrLog(state)
+			return outcomeTransient
+		}
 		if ran {
 			a.resendInventory(ctx, &state)
 		}

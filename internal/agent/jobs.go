@@ -20,6 +20,12 @@ type acceptedJobs struct {
 	reboots    []acceptedReboot
 	thirdParty []acceptedThirdParty
 	winUpdates []acceptedWinUpdate
+	bios       []acceptedBIOS
+}
+
+type acceptedBIOS struct {
+	id int64
+	p  jobs.BIOSPasswordParams
 }
 
 type acceptedWinUpdate struct {
@@ -105,6 +111,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: instalar atualizações do Windows", "job_id", j.ID, "updates", strings.Join(p.Labels(), ","))
 			acc.winUpdates = append(acc.winUpdates, acceptedWinUpdate{id: j.ID, p: p})
+		case jobs.TypeBIOSPassword:
+			p, _ := jobs.ParseBIOSPasswordParams(j.Params) // o Verify já conferiu
+			if a.BIOSPassword == nil {
+				why := "este agente não grava a senha da BIOS (só o agente do Windows, com a caixa de cifragem)"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: gravar a senha de administrador da BIOS", "job_id", j.ID, "guarda", p.Guard, "fabricante", p.Vendor)
+			acc.bios = append(acc.bios, acceptedBIOS{id: j.ID, p: p})
 		case jobs.TypeServerURL:
 			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
 			reject := func(why string) {
@@ -208,6 +224,33 @@ func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) (o
 		default:
 			a.Logger.Info("instalação de terceiros concluída", "job_id", j.id, "app", j.p.App, "detail", detail,
 				"duration", a.now().Sub(start).Round(time.Second).String())
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out, ran
+}
+
+// runBIOS grava a senha da BIOS (Aula 21.5), um job por vez. ran diz se o fabricante chegou
+// a ser chamado: só então o inventário de depois interessa.
+func (a *Agent) runBIOS(ctx context.Context, list []acceptedBIOS) (out []PendingJobResult, ran bool) {
+	for _, j := range list {
+		detail, err := a.BIOSPassword(ctx, j.id, j.p)
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrRefused):
+			status, detail = protocol.JobResultRejected, err.Error()
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case errors.Is(err, jobs.ErrBIOSUncertain):
+			ran = true
+			status, detail = protocol.JobResultFailed, jobs.BIOSUncertain+err.Error()
+			a.Logger.Error("senha da BIOS: resultado incerto", "job_id", j.id, "error", err.Error())
+		case err != nil:
+			ran = true
+			status, detail = protocol.JobResultFailed, err.Error()
+			a.Logger.Error("senha da BIOS não gravada", "job_id", j.id, "error", detail)
+		default:
+			ran = true
+			a.Logger.Info("senha da BIOS gravada", "job_id", j.id, "guarda", j.p.Guard, "detail", detail)
 		}
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}

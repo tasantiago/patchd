@@ -341,6 +341,13 @@ func firmwareParams(hw protocol.Hardware) []fwRow {
 	add("Senha de administrador da BIOS", v, l)
 	v, _ = yesNo(f.PowerOnPassword, "definida", "não definida", "")
 	add("Senha de ligar", v, "")
+	// Aula 21.5: no HP Sure Admin, a BIOS só aceita mudança por pacote assinado.
+	v, _ = yesNo(f.SureAdmin, "ligado: o patchd não troca a senha desta BIOS", "desligado", "")
+	if f.SureAdmin != nil && *f.SureAdmin {
+		add("HP Sure Admin", v, "atencao")
+	} else {
+		add("HP Sure Admin", v, "")
+	}
 	add("Fonte das senhas", firmwareInterfaceLabel[f.Interface], "")
 	return rows
 }

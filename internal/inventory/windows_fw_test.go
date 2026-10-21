@@ -37,6 +37,14 @@ func TestWindowsFirmwareInfo(t *testing.T) {
 		{"legado, sem TPM, sem interface", wmiFirmware{FirmwareType: 1, TPMQueried: true, Interface: "hp"},
 			&protocol.Firmware{Mode: "legado", SecureBoot: &nao, TPM: "nenhum"}},
 		{"TPM estranho", wmiFirmware{TPMQueried: true, TPM: map[string]any{"SpecVersion": "9.9"}}, nil},
+		// Aula 21.5: o HP Sure Admin.
+		{"HP com Sure Admin", wmiFirmware{Interface: "hp", Passwords: []map[string]any{{"Name": "Setup Password", "IsSet": int32(1)}},
+			SureAdminQueried: true, SureAdmin: map[string]any{"CurrentValue": "Enable"}},
+			&protocol.Firmware{Interface: "hp", AdminPassword: &sim, SureAdmin: &sim}},
+		{"HP sem a configuração", wmiFirmware{Interface: "hp", Passwords: []map[string]any{{"Name": "Setup Password", "IsSet": int32(1)}},
+			SureAdminQueried: true}, &protocol.Firmware{Interface: "hp", AdminPassword: &sim, SureAdmin: &nao}},
+		{"HP, consulta não rodou", wmiFirmware{Interface: "hp", Passwords: []map[string]any{{"Name": "Setup Password", "IsSet": int32(0)}}},
+			&protocol.Firmware{Interface: "hp", AdminPassword: &nao}},
 	}
 	for _, c := range casos {
 		got := windowsFirmwareInfo(c.in)
@@ -65,5 +73,6 @@ func txt(f *protocol.Firmware) string {
 		}
 		return "n"
 	}
-	return f.Mode + "|" + b(f.SecureBoot) + "|" + f.TPM + "|" + f.Interface + "|" + b(f.AdminPassword) + "|" + b(f.PowerOnPassword)
+	return f.Mode + "|" + b(f.SecureBoot) + "|" + f.TPM + "|" + f.Interface + "|" + b(f.AdminPassword) + "|" + b(f.PowerOnPassword) +
+		"|" + b(f.SureAdmin)
 }

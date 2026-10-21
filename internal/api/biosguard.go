@@ -55,6 +55,11 @@ type biosCard struct {
 	Rows       []biosRow
 	MinReason  int
 	MaxReason  int
+	// Aula 21.5: a gravação.
+	Blocker     string // o que impede gravar nesta máquina ("" = pode)
+	NeedCurrent bool   // a BIOS tem senha e a guarda não tem a ativa: o admin digita a atual
+	MaxCurrent  int
+	Uncertain   bool // há uma senha incerta: nada é gravado até alguém conferir
 }
 
 type biosRow struct {
@@ -63,6 +68,8 @@ type biosRow struct {
 	Reveals                   string
 	CanReveal                 bool
 	OtherKey                  string // fechada com outra chave de guarda (não abre com a atual)
+	Result                    string // o que a máquina respondeu (Aula 21.5)
+	CanWrite, CanResolve      bool
 }
 
 var biosStateLabel = map[string]struct{ label, level string }{
@@ -75,11 +82,14 @@ var biosStateLabel = map[string]struct{ label, level string }{
 
 // biosView monta o cartão (só na aba Hardware).
 func (a *api) biosView(r *http.Request, id string, admin bool) (*biosCard, error) {
+	if err := a.settleBIOS(r.Context(), id); err != nil {
+		return nil, err
+	}
 	list, err := a.store.BIOSPasswords(r.Context(), id)
 	if err != nil {
 		return nil, err
 	}
-	c := &biosCard{On: a.escrow != nil, Admin: admin, MinReason: minRevealReason, MaxReason: maxRevealReason}
+	c := &biosCard{On: a.escrow != nil, Admin: admin, MinReason: minRevealReason, MaxReason: maxRevealReason, MaxCurrent: maxCurrentPassword}
 	if c.On {
 		c.KeyID = a.escrow.id
 	}
@@ -98,10 +108,40 @@ func (a *api) biosView(r *http.Request, id string, admin bool) (*biosCard, error
 		}
 		if b.State == store.BIOSPending {
 			c.Pending = b.ID
+			if b.JobID != 0 {
+				row.State = fmt.Sprintf("gravando: job %d enviado à máquina", b.JobID)
+			}
 		}
+		row.Result = b.Result
+		c.Uncertain = c.Uncertain || b.State == store.BIOSUncertain
+		row.CanResolve = admin && b.State == store.BIOSUncertain
 		c.Rows = append(c.Rows, row)
 	}
 	c.CanPrepare = c.On && admin && c.Pending == 0
+	// Aula 21.5: a gravação da pendente (só admin, guarda e jobs ligados, nada incerto).
+	if c.On && admin && c.Pending != 0 {
+		facts, err := a.biosFacts(r.Context(), id)
+		if err != nil {
+			return nil, err
+		}
+		c.Blocker = facts.blocker()
+		if a.jobKey == nil {
+			c.Blocker = "o servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE)"
+		}
+		if c.Uncertain {
+			c.Blocker = "há uma senha incerta: confira na BIOS qual vale e resolva antes de gravar outra"
+		}
+		hasActive := false
+		for _, b := range list {
+			hasActive = hasActive || (b.State == store.BIOSActive && b.EscrowKeyID == c.KeyID)
+		}
+		c.NeedCurrent = c.Blocker == "" && facts.Firmware.AdminPassword != nil && *facts.Firmware.AdminPassword && !hasActive
+		for i := range c.Rows {
+			if b := list[i]; b.ID == c.Pending && b.JobID == 0 && c.Blocker == "" && b.EscrowKeyID == c.KeyID {
+				c.Rows[i].CanWrite = true
+			}
+		}
+	}
 	return c, nil
 }
 
@@ -116,6 +156,11 @@ func (a *api) prepareBIOSAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	if a.escrow == nil {
 		http.Redirect(w, r, biosBack(id, "bios-erro=sem-chave"), http.StatusSeeOther)
+		return
+	}
+	// Aula 21.5: uma gravação que já terminou libera a pendente antes de sortear outra.
+	if err := a.settleBIOS(r.Context(), id); err != nil {
+		a.internalError(w, r, "fechar gravações da BIOS", err)
 		return
 	}
 	pw, err := biospw.Generate()
@@ -259,6 +304,12 @@ func biosFlash(q map[string][]string, v *machineView) bool {
 	case "existente":
 		v.Flash = "Esta máquina já tem uma senha pendente; ela é a que será gravada. Nenhuma senha nova foi sorteada."
 		return true
+	case "gravando":
+		v.Flash = fmt.Sprintf("Gravação pedida: job %s. A máquina grava no próximo check-in (até 1 h), e este cartão mostra a resposta.", get("job"))
+		return true
+	case "resolvida":
+		v.Flash = "Senha incerta resolvida e registrada na auditoria."
+		return true
 	}
 	msg, ok := map[string]string{
 		"sem-chave":   "A guarda está desligada: o servidor está sem PATCHD_BIOS_ESCROW_KEY_FILE.",
@@ -266,6 +317,13 @@ func biosFlash(q map[string][]string, v *machineView) bool {
 		"outra-chave": "Esta senha foi guardada com outra chave de guarda, que o servidor não tem mais.",
 		"envelope":    "O envelope desta senha não abre com a chave de guarda: ele foi alterado ou trocado no banco. Nada foi revelado; veja o log do servidor.",
 		"auditoria":   "A senha não foi revelada porque a auditoria não gravou o pedido. Tente de novo; se continuar, veja o log do servidor.",
+		// Aula 21.5: a gravação.
+		"sem-jobs":     "A gravação usa um job assinado, e o servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE).",
+		"incerta":      "Há uma senha incerta nesta máquina: confira na BIOS qual vale e resolva antes de gravar outra.",
+		"nao-pendente": "Esta senha não está mais esperando a gravação (outro pedido chegou antes?).",
+		"bloqueada":    "A gravação não pode seguir nesta máquina: o motivo está no cartão Senha da BIOS.",
+		"senha-atual":  fmt.Sprintf("A BIOS desta máquina já tem senha: informe a atual (a da frota, até %d caracteres) para a troca.", maxCurrentPassword),
+		"resolver":     "Escolha qual senha vale (a nova ou a anterior); só uma senha incerta pode ser resolvida.",
 	}[get("bios-erro")]
 	if ok {
 		v.Error = msg

@@ -134,3 +134,97 @@ func variantValue(v *ole.VARIANT) any {
 	}
 	return v.Value()
 }
+
+// Param é um parâmetro de entrada de um método WMI (Aula 21.5).
+type Param struct {
+	Name  string
+	Value any
+}
+
+// ErrNoInstance: a consulta do ExecMethod não devolveu nenhuma instância.
+var ErrNoInstance = errors.New("WMI: nenhuma instância para chamar o método")
+
+// ExecMethod chama um método WMI na primeira instância devolvida por wql (como o
+// $obj.Metodo(...) do PowerShell), com os parâmetros de entrada pelo nome, e devolve as
+// propriedades pedidas da saída. Deve ser chamada dentro de Do. called diz se o método chegou
+// a ser chamado: erro com called = false quer dizer que nada foi executado.
+func ExecMethod(namespace, wql, method string, in []Param, out []string) (row Row, called bool, err error) {
+	locator, err := CreateDispatch("WbemScripting.SWbemLocator")
+	if err != nil {
+		return nil, false, err
+	}
+	defer locator.Release()
+	svc, err := CallObject(locator, "ConnectServer", nil, namespace)
+	if err != nil {
+		return nil, false, fmt.Errorf("WMI %s: conectar: %w", namespace, err)
+	}
+	defer svc.Release()
+	res, err := CallObject(svc, "ExecQuery", wql)
+	if err != nil {
+		return nil, false, fmt.Errorf("WMI %q: %w", wql, err)
+	}
+	defer res.Release()
+	if n, err := GetInt(res, "Count"); err != nil || n == 0 {
+		if err == nil {
+			err = ErrNoInstance
+		}
+		return nil, false, err
+	}
+	inst, err := CallObject(res, "ItemIndex", 0)
+	if err != nil {
+		return nil, false, err
+	}
+	defer inst.Release()
+	// Os parâmetros: Methods_(nome).InParameters.SpawnInstance_(), e cada um em Properties_.
+	methods, err := GetObject(inst, "Methods_")
+	if err != nil {
+		return nil, false, err
+	}
+	defer methods.Release()
+	m, err := CallObject(methods, "Item", method)
+	if err != nil {
+		return nil, false, fmt.Errorf("WMI: método %s: %w", method, err)
+	}
+	defer m.Release()
+	def, err := GetObject(m, "InParameters")
+	if err != nil {
+		return nil, false, err
+	}
+	defer def.Release()
+	params, err := CallObject(def, "SpawnInstance_")
+	if err != nil {
+		return nil, false, err
+	}
+	defer params.Release()
+	props, err := GetObject(params, "Properties_")
+	if err != nil {
+		return nil, false, err
+	}
+	defer props.Release()
+	for _, p := range in {
+		item, err := CallObject(props, "Item", p.Name)
+		if err != nil {
+			return nil, false, fmt.Errorf("WMI: parâmetro %s: %w", p.Name, err)
+		}
+		err = Put(item, "Value", p.Value)
+		item.Release()
+		if err != nil {
+			// O valor pode ser um segredo: o erro leva só o nome do parâmetro.
+			return nil, false, fmt.Errorf("WMI: parâmetro %s: %w", p.Name, err)
+		}
+	}
+	result, err := CallObject(inst, "ExecMethod_", method, params)
+	if err != nil {
+		return nil, true, fmt.Errorf("WMI: %s: %w", method, err)
+	}
+	defer result.Release()
+	row = Row{}
+	for _, name := range out {
+		v, err := Get(result, name)
+		if err != nil {
+			return nil, true, err
+		}
+		row[name] = v
+	}
+	return row, true, nil
+}
