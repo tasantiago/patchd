@@ -221,6 +221,22 @@ Primeira passada (Go 1.27.1):
   `uint64` do WMI acima do `int64`, os dias da janela do anel, o `-` no começo de um nome de
   conta no macOS, os ícones da Central montados sem `template.HTML`.
 
+Segunda ocorrência (Aula 20.2c, 21/10/2026): o CI apontou a **GO-2026-6809**
+(CVE-2026-111943) no `crypto/x509` do Go 1.27.2, publicada no mesmo dia. A biblioteca passou
+a recusar, no `Certificate.Verify`, certificados intermediários comprometidos que os
+repositórios de raízes do sistema nem sempre deixam de aceitar. Onde pesa no patchd:
+
+| Quem | Verificação | Exposto? |
+|---|---|---|
+| Servidor (Linux, imagem sem SO) | as saídas TLS (catálogos, winget-pkgs e instaladores, SMTP, LDAPS, RHBK) usam o pacote de raízes da imagem | **sim**: quem tivesse a chave de um desses intermediários e ficasse no caminho da saída poderia trocar um manifesto do winget e o instalador junto. A assinatura Authenticode exigida pelo agente (F1, F2) segura os programas assinados; o 7-Zip, sem assinatura, ficaria só com a aprovação humana |
+| Agente com `-ca-file` | só a CA interna no conjunto de raízes | na prática, não: um intermediário público não chega à CA interna |
+| Agente do Windows e do macOS sem `-ca-file` | o verificador do próprio sistema, que a Microsoft e a Apple atualizam | não pelo Go |
+| Agente do Linux sem `-ca-file` | o pacote de raízes da distribuição | sim, como o servidor |
+
+Correção: Go 1.27.3 no go.mod e nos dois Dockerfiles (o container de desenvolvimento é
+reconstruído) e a release v0.18.6, de agente e servidor. Como da primeira vez, os agentes só
+recebem a correção pela release.
+
 Regras da casa para exceções:
 
 1. Toda exceção é `// #nosec Gxxx -- motivo` na linha (ou no comando de várias linhas). Sem a
