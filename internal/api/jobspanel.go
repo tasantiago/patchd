@@ -61,6 +61,8 @@ func typeLabel(t string) string {
 		return "instalar programa de terceiros"
 	case jobs.TypeWinUpdate:
 		return "instalar atualizações do Windows"
+	case jobs.TypeBIOSPassword:
+		return "gravar a senha da BIOS"
 	}
 	return t
 }

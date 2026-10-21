@@ -84,6 +84,10 @@ type Firmware struct {
 	Interface       string `json:"interface,omitempty"`
 	AdminPassword   *bool  `json:"admin_password,omitempty"`    // senha de administrador (setup/supervisor) definida
 	PowerOnPassword *bool  `json:"power_on_password,omitempty"` // senha de ligar definida
+	// SureAdmin (Aula 21.5, só HP): o modo de autenticação reforçado da BIOS (HP Sure Admin,
+	// "Enhanced BIOS Authentication Mode") está ligado. Nesse modo a BIOS recusa a troca de
+	// senha por senha (exige um pacote assinado), e o patchd não grava. nil: não se sabe.
+	SureAdmin *bool `json:"sure_admin,omitempty"`
 }
 
 // Valores do Firmware.
@@ -115,6 +119,9 @@ func (f Firmware) Check() error {
 	}
 	if f.Interface == "" && (f.AdminPassword != nil || f.PowerOnPassword != nil) {
 		return fmt.Errorf("senha informada sem a interface do fabricante")
+	}
+	if f.SureAdmin != nil && f.Interface != FirmwareHP {
+		return fmt.Errorf("sure_admin é só da interface da HP")
 	}
 	return nil
 }

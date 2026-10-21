@@ -60,6 +60,19 @@ func (c *windowsCollector) Hardware(ctx context.Context) (Hardware, error) {
 		switch vendor {
 		case protocol.FirmwareHP:
 			rows, err = wincom.Query(wmiHPNamespace, "SELECT Name, IsSet FROM HP_BIOSPassword", []string{"Name", "IsSet"})
+			if err == nil { // Aula 21.5: o HP Sure Admin, que impede a troca de senha pelo patchd
+				sa, saErr := wincom.Query(wmiHPNamespace, "SELECT Name, CurrentValue FROM HP_BIOSEnumeration WHERE Name = 'Enhanced BIOS Authentication Mode'",
+					[]string{"Name", "CurrentValue"})
+				switch {
+				case saErr == nil:
+					fw.SureAdminQueried = true
+					if len(sa) > 0 {
+						fw.SureAdmin = sa[0]
+					}
+				case !wmiMissing(saErr):
+					errs = append(errs, saErr)
+				}
+			}
 		case protocol.FirmwareDell:
 			rows, err = wincom.Query(wmiDellNamespace, "SELECT NameId, IsPasswordSet FROM PasswordObject", []string{"NameId", "IsPasswordSet"})
 		case protocol.FirmwareLenovo:
@@ -115,19 +128,8 @@ var firmwareSource = map[string]string{
 	protocol.FirmwareLenovo: `WMI ` + wmiLenovoNamespace + ` Lenovo_BiosPasswordSettings`,
 }
 
-// wmiMissing: o namespace ou a classe não existe nesta máquina (WBEM_E_INVALID_NAMESPACE,
-// WBEM_E_INVALID_CLASS, WBEM_E_NOT_FOUND).
-func wmiMissing(err error) bool {
-	var we *wincom.Error
-	if !errors.As(err, &we) {
-		return false
-	}
-	switch we.HResult {
-	case 0x8004100E, 0x80041010, 0x80041002:
-		return true
-	}
-	return false
-}
+// wmiMissing: o namespace ou a classe não existe nesta máquina (wincom.Missing).
+func wmiMissing(err error) bool { return wincom.Missing(err) }
 
 var procGetFirmwareType = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetFirmwareType")
 

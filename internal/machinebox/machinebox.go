@@ -34,6 +34,9 @@ const (
 // PurposeBIOS: a senha da BIOS (Aula 21.4).
 const PurposeBIOS = "bios-senha"
 
+// PurposeBIOSCurrent: a senha da BIOS em uso, que a troca exige (Aula 21.5).
+const PurposeBIOSCurrent = "bios-senha-atual"
+
 var purposePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
 
 func kem() hpke.KEM   { return hpke.MLKEM768X25519() }

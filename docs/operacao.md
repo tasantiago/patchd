@@ -790,3 +790,25 @@ abrem todas as senhas.
 O perfil leitura vê o cartão (estados, quem sorteou, quantas revelações), sem os botões. As
 senhas guardadas não entram na retenção: valem enquanto a placa existir, inclusive em máquina
 aposentada.
+
+### Gravar a senha na BIOS (Aula 21.5)
+
+Só HP, por enquanto, com o agente v0.18.4 ou mais novo (Windows). Antes da primeira gravação
+numa máquina, confira no inventário (`patchd-agent -inventory`, `hardware.firmware`) que
+`interface` é `hp` e `sure_admin` é `False`.
+
+1. Na aba Hardware da máquina, **Preparar senha nova** (se ainda não houver uma pendente).
+2. **Gravar na BIOS**. Na primeira troca (a BIOS tem a senha da frota e a guarda não), o
+   formulário pede a senha atual: digite a da frota. Ela vai cifrada para a máquina e não fica
+   guardada.
+3. A máquina grava no próximo check-in (até 1 h; `Restart-Service patchd-agent` antecipa).
+   O cartão mostra a resposta: **ativa**, **falhou** (com o código da HP), **incerta**, ou de
+   volta a pendente com o motivo da recusa.
+4. Confira na frente da máquina: entre na BIOS com a senha revelada (motivo: "conferência da
+   gravação").
+
+**Código 6** (acesso negado): a senha atual não confere. Não repita o pedido às cegas: a BIOS
+da HP pode travar novas tentativas até reiniciar. Confirme a senha da frota antes.
+
+**Incerta**: nada mais é gravado nessa máquina até alguém resolver. Revele a nova e a anterior,
+teste qual a BIOS aceita e clique em **A nova vale** ou **A anterior vale**.

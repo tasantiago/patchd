@@ -119,6 +119,7 @@ quem resolve.
 | I | Dump do banco com dado pessoal | Retenção (10.5, 19.2); cópia cifrada com age, chave privada fora do servidor (10.3) | Ligar a cifra em produção: F4 (seção 5f) |
 | T | Dependência vulnerável | Poucas dependências; Go na versão exata (Dockerfiles e go.mod); `scripts/seguranca.sh` e o CI semanal (20.2) | — |
 | D | Banco perdido sem cópia | `backup.sh` e timer (10.1); ensaio `restaurar.sh --testar` (10.3); **Configuração › Sistema › Cópias do banco** mostra a última cópia e o último ensaio (20.8) | Ligar em produção: **F4** (seção 5f) |
+| T | **Job que grava a senha da BIOS** (21.5) | Assinado como todo job; as senhas vão fechadas para a caixa da máquina (HPKE), nunca legíveis no banco, no caminho ou no log; o agente confere a chave da caixa, a interface e o Sure Admin antes de chamar o fabricante, uma vez só | Quem tem a chave de jobs e a de guarda (o servidor tomado) troca senhas de BIOS: dentro do risco aceito em D1 |
 | I | **Senha da BIOS guardada** (21.4) | O banco e as cópias só têm envelopes (HPKE, com o ID da máquina dentro); a chave de guarda em arquivo; revelar só admin, com motivo, auditoria gravada antes de mostrar e aviso por e-mail | Quem toma o processo do servidor lê as senhas: risco aceito (D1 em `docs/bios-senha.md`) |
 | E | Porta de métricas | Porta separada, com token (10.2) | — |
 | E | Proxy do cache de repositórios | Só as origens da lista, só GET/HEAD na porta 80, CONNECT recusado; testes do repocache (6.6) | — |
@@ -162,7 +163,10 @@ quem resolve.
   `docs/bios-senha.md`. **Na 21.4**: a guarda no servidor (D1-a): sorteio de 12 caracteres por
   máquina, só o envelope no banco, revelação só de admin, com motivo, auditoria gravada antes
   de mostrar e aviso por e-mail. Risco aceito: quem toma o servidor lê as senhas guardadas
-  (ativo A10). Falta a gravação na BIOS (21.5).
+  (ativo A10). **Na 21.5**: a gravação na HP pelo job `bios_password` (senhas fechadas para a
+  caixa da máquina; a da frota digitada uma vez na primeira troca; uma chamada ao fabricante,
+  sem nova tentativa; Sure Admin respeitado; incerta trava até alguém conferir). Falta aposentar
+  o `.bat` depois do piloto, e Dell e Lenovo (21.6).
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

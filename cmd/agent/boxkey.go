@@ -52,14 +52,21 @@ func loadBoxKey(logger *slog.Logger, dataDir string) ([]byte, error) {
 // boxPublic: a chave pública para o estado ("" se não deu para ter a chave: o resto do agente
 // segue, e o painel mostra a máquina sem a caixa).
 func boxPublic(logger *slog.Logger, dataDir string) string {
+	_, pub := machineBox(logger, dataDir)
+	return pub
+}
+
+// machineBox: a chave privada (para abrir os envelopes, Aula 21.5) e a pública em base64
+// (para o estado). nil e "" quando a chave não pôde ser lida nem criada.
+func machineBox(logger *slog.Logger, dataDir string) ([]byte, string) {
 	priv, err := loadBoxKey(logger, dataDir)
 	if err != nil {
 		logger.Error("chave da caixa indisponível: segredos não poderão ser entregues a esta máquina", "error", err)
-		return ""
+		return nil, ""
 	}
 	pub, err := machinebox.Public(priv)
 	if err != nil {
-		return ""
+		return nil, ""
 	}
-	return machinebox.EncodePublic(pub)
+	return priv, machinebox.EncodePublic(pub)
 }

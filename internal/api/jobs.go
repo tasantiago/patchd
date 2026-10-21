@@ -75,6 +75,11 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 	if changed {
 		a.count(jobsOf, job.Type, state)
 	}
+	if job.Type == jobs.TypeBIOSPassword { // Aula 21.5: a guarda segue o job
+		if err := a.settleBIOS(r.Context(), machineID); err != nil {
+			a.logger.Error("senha da BIOS: guarda não fechada (o cartão fecha depois)", "job_id", id, "error", err)
+		}
+	}
 	level := a.logger.Info
 	if state != jobs.StateDone {
 		level = a.logger.Warn
@@ -114,6 +119,9 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	}
 	if job.Type == jobs.TypeThirdParty {
 		return a.judgeThirdParty(r, job, res)
+	}
+	if job.Type == jobs.TypeBIOSPassword { // Aula 21.5
+		return a.judgeBIOS(r, job, res)
 	}
 	// Os outros tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
 	at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)

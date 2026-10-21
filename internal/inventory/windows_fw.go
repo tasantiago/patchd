@@ -14,6 +14,7 @@ import (
 //   - HP: root\HP\InstrumentedBIOS, HP_BIOSPassword (Name, IsSet)
 //   - Dell: root\dcim\sysman\wmisecurity, PasswordObject (NameId, IsPasswordSet)
 //   - Lenovo: root\WMI, Lenovo_BiosPasswordSettings (PasswordState, um campo de bits)
+//   - HP Sure Admin (Aula 21.5): HP_BIOSEnumeration, "Enhanced BIOS Authentication Mode"
 // Modelo sem a interface (antigo, ou sem o pacote do fabricante): as senhas ficam sem
 // informação, sem erro.
 
@@ -26,6 +27,10 @@ type wmiFirmware struct {
 	Interface    string           // a interface do fabricante que respondeu
 	Passwords    []map[string]any // HP_BIOSPassword ou PasswordObject (Dell)
 	LenovoState  map[string]any   // Lenovo_BiosPasswordSettings
+	// Aula 21.5: o HP Sure Admin (HP_BIOSEnumeration "Enhanced BIOS Authentication Mode").
+	// SureAdminQueried: a consulta rodou; SureAdmin nil: o modelo não tem a configuração.
+	SureAdminQueried bool
+	SureAdmin        map[string]any
 }
 
 // firmwareInterface: qual interface consultar, pelo fabricante do SMBIOS.
@@ -91,6 +96,10 @@ func windowsFirmwareInfo(w wmiFirmware) *protocol.Firmware {
 	}
 	if f.AdminPassword != nil || f.PowerOnPassword != nil {
 		f.Interface = w.Interface
+		if f.Interface == protocol.FirmwareHP && w.SureAdminQueried {
+			v, _ := w.SureAdmin["CurrentValue"].(string)
+			f.SureAdmin = boolPtr(strings.EqualFold(strings.TrimSpace(v), "Enable")) // sem a configuração: desligado
+		}
 	}
 	if f == (protocol.Firmware{}) {
 		return nil

@@ -112,7 +112,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	jobPub, jobNext := jobKey(logger), jobKeyNext(logger)
 	jobIDs := keyIDs(jobs.KeyID, jobPub, jobNext)
 	releaseIDs := keyIDs(release.KeyID, releaseKeys(logger)...)
-	boxKey := boxPublic(logger, opts.DataDir) // Aula 21.3: a caixa desta máquina
+	boxPriv, boxKey := machineBox(logger, opts.DataDir) // Aula 21.3: a caixa desta máquina
 	ag := &agent.Agent{
 		Client: client,
 		// O inventário passa pela mesma função do "-inventory": o check-in envia exatamente
@@ -151,6 +151,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Logger:    logger,
 	}
 
+	ag.BIOSPassword = biosRunner(logger, boxPriv) // Aula 21.5: nil fora do Windows ou sem a caixa
 	if cab != nil {
 		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {
 			if err := cab.Sync(ctx, adv); err != nil && ctx.Err() == nil {

@@ -16,6 +16,9 @@ type contratoGuardaBIOS interface {
 	BIOSPasswords(ctx context.Context, machineID string) ([]BIOSPassword, error)
 	BIOSPasswordByID(ctx context.Context, id int64) (BIOSPassword, bool, error)
 	MarkBIOSRevealed(ctx context.Context, id int64, by string, at time.Time) error
+	AttachBIOSJob(ctx context.Context, id, jobID int64, at time.Time) (bool, error)
+	SettleBIOSPassword(ctx context.Context, id, jobID int64, state, result string, at time.Time) (bool, error)
+	ResolveBIOSPassword(ctx context.Context, id int64, newValid bool, result string, at time.Time) (bool, error)
 }
 
 // Aula 21.4: a guarda guarda envelopes; uma pendente por máquina; máquina fora da frota não
@@ -69,6 +72,93 @@ func testarGuardaBIOS(t *testing.T, st contratoGuardaBIOS) {
 	if _, found, _ := st.BIOSPasswordByID(ctx, 9999); found {
 		t.Error("ID inexistente encontrado")
 	}
+}
+
+// Aula 21.5: a gravação. Job ligado uma vez; fechamento só com o job certo; a ativa nova
+// substitui a anterior; recusa devolve a pendente; incerta resolvida pelo admin.
+func testarGravacaoBIOS(t *testing.T, st contratoGuardaBIOS) {
+	ctx := context.Background()
+	t0 := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	if _, err := st.SaveInventory(ctx, "c-0003", protocol.InventoryReport{SchemaVersion: 1, Hash: "hc", OS: protocol.OSInfo{Hostname: "c"}}); err != nil {
+		t.Fatal(err)
+	}
+	nova := func() BIOSPassword {
+		b, _, err := st.CreateBIOSPassword(ctx, BIOSPassword{MachineID: "c-0003", Escrow: []byte{1}, EscrowKeyID: "0123456789ab", CreatedAt: t0, CreatedBy: "a"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	estado := func(id int64) BIOSPassword {
+		b, _, _ := st.BIOSPasswordByID(ctx, id)
+		return b
+	}
+	b1 := nova()
+	if ok, err := st.AttachBIOSJob(ctx, b1.ID, 50, t0); !ok || err != nil {
+		t.Fatalf("ligar: %v %v", ok, err)
+	}
+	if ok, _ := st.AttachBIOSJob(ctx, b1.ID, 51, t0); ok {
+		t.Error("ligou um segundo job")
+	}
+	if ok, _ := st.SettleBIOSPassword(ctx, b1.ID, 49, BIOSActive, "x", t0); ok {
+		t.Error("fechou com o job errado")
+	}
+	if _, err := st.SettleBIOSPassword(ctx, b1.ID, 50, BIOSReplaced, "x", t0); err == nil {
+		t.Error("fechamento como substituída aceito")
+	}
+	if ok, err := st.SettleBIOSPassword(ctx, b1.ID, 50, BIOSActive, "gravada (hp, código 0)", t0); !ok || err != nil {
+		t.Fatalf("ativar: %v %v", ok, err)
+	}
+	if b := estado(b1.ID); b.State != BIOSActive || b.Result != "gravada (hp, código 0)" || b.JobID != 50 {
+		t.Errorf("ativa: %+v", b)
+	}
+	if ok, _ := st.SettleBIOSPassword(ctx, b1.ID, 50, BIOSFailed, "x", t0); ok {
+		t.Error("fechou duas vezes")
+	}
+	// Recusa: volta a pendente, sem job, e pode ganhar outro.
+	b2 := nova()
+	_, _ = st.AttachBIOSJob(ctx, b2.ID, 60, t0)
+	if ok, _ := st.SettleBIOSPassword(ctx, b2.ID, 60, BIOSPending, "recusado: Sure Admin", t0); !ok {
+		t.Fatal("devolver")
+	}
+	if b := estado(b2.ID); b.State != BIOSPending || b.JobID != 0 || b.Result != "recusado: Sure Admin" {
+		t.Errorf("devolvida: %+v", b)
+	}
+	if ok, _ := st.AttachBIOSJob(ctx, b2.ID, 61, t0); !ok {
+		t.Error("a devolvida não ganhou job novo")
+	}
+	// Incerta: a anterior continua ativa até a decisão.
+	_, _ = st.SettleBIOSPassword(ctx, b2.ID, 61, BIOSUncertain, "resultado incerto", t0)
+	if b := estado(b1.ID); b.State != BIOSActive {
+		t.Errorf("a anterior durante a incerta: %+v", b)
+	}
+	if ok, _ := st.ResolveBIOSPassword(ctx, b1.ID, true, "x", t0); ok {
+		t.Error("resolveu uma linha que não está incerta")
+	}
+	if ok, err := st.ResolveBIOSPassword(ctx, b2.ID, true, "conferida na BIOS", t0); !ok || err != nil {
+		t.Fatalf("resolver: %v %v", ok, err)
+	}
+	if a, b := estado(b1.ID), estado(b2.ID); a.State != BIOSReplaced || b.State != BIOSActive || b.Result != "conferida na BIOS" {
+		t.Errorf("resolvida: %+v / %+v", a, b)
+	}
+	// Incerta resolvida como "a anterior vale": a nova falhou, a ativa continua.
+	b3 := nova()
+	_, _ = st.AttachBIOSJob(ctx, b3.ID, 70, t0)
+	_, _ = st.SettleBIOSPassword(ctx, b3.ID, 70, BIOSUncertain, "x", t0)
+	_, _ = st.ResolveBIOSPassword(ctx, b3.ID, false, "a anterior vale", t0)
+	if a, b := estado(b2.ID), estado(b3.ID); a.State != BIOSActive || b.State != BIOSFailed {
+		t.Errorf("anterior vale: %+v / %+v", a, b)
+	}
+}
+
+func TestGravacaoBIOSMemoria(t *testing.T) { testarGravacaoBIOS(t, NewMemory()) }
+
+func TestGravacaoBIOSPostgres(t *testing.T) {
+	pool := bancoDeTeste(t)
+	if err := Migrate(context.Background(), pool, silencioso()); err != nil {
+		t.Fatal(err)
+	}
+	testarGravacaoBIOS(t, NewPostgres(pool))
 }
 
 func TestGuardaBIOSMemoria(t *testing.T) { testarGuardaBIOS(t, NewMemory()) }
