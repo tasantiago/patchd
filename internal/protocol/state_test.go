@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/machinebox"
 )
 
 // Endereços de documentação (RFC 5737 e 3849): nenhum é de rede real.
@@ -21,6 +23,15 @@ func estadoValido() MachineState {
 		Users: []LoggedUser{{Account: `EXEMPLO\fulano`, DisplayName: "Fulano de Tal", Session: SessionConsole, Active: true},
 			{Account: "suporte", Session: SessionSSH, Active: true}},
 	}
+}
+
+func caixaValida(t *testing.T) string {
+	priv, err := machinebox.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, _ := machinebox.Public(priv)
+	return machinebox.EncodePublic(pub)
 }
 
 func TestCheckEstado(t *testing.T) {
@@ -62,10 +73,15 @@ func TestCheckEstado(t *testing.T) {
 		"impressão maiúscula":  func(s *MachineState) { s.ReleaseKeys = []string{"ABCDEF012345"} },
 		"impressão com espaço": func(s *MachineState) { s.JobKeys = []string{"abcdef01234 "} },
 		"impressões demais":    func(s *MachineState) { s.ReleaseKeys = make([]string, MaxKeyIDs+1) },
+		// Aula 21.3: a chave da caixa.
+		"caixa curta":      func(s *MachineState) { s.BoxKey = "AAAA" },
+		"caixa sem base64": func(s *MachineState) { s.BoxKey = strings.Repeat("!", 1624) },
+		"caixa com sobra":  func(s *MachineState) { s.BoxKey = caixaValida(t) + "AAAA" },
 	}
 	s := estadoValido()
 	s.AllowedSigners = []string{"Google LLC", "Mozilla Corporation"}
 	s.JobKeys, s.ReleaseKeys = []string{"0123456789ab", "ba9876543210"}, []string{"abcdef012345"}
+	s.BoxKey = caixaValida(t)
 	if err := s.Check(); err != nil {
 		t.Errorf("lista válida recusada: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/machinebox"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 )
@@ -179,5 +180,30 @@ func TestResumoMostraAListaDeAssinaturas(t *testing.T) {
 	}
 	if b := resumo([]string{"Google LLC", "Mozilla Corporation"}); !strings.Contains(b, "<dd>só os assinados por Google LLC, Mozilla Corporation</dd>") {
 		t.Error("lista: as organizações")
+	}
+}
+
+// Aula 21.3: o resumo mostra a impressão da chave da caixa (ou que o agente não informa).
+func TestResumoMostraAChaveDaCaixa(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	priv, _ := machinebox.Generate()
+	pub, _ := machinebox.Public(priv)
+	resumo := func(chave string) string {
+		e := estadoTeste()
+		e.BoxKey = chave
+		if err := st.SaveHostState(context.Background(), "60ef97e4-0001", e, "192.0.2.1"); err != nil {
+			t.Fatal(err)
+		}
+		return pagina(h, "GET", "/painel/maquinas/60ef97e4-0001", sessaoTeste, nil).Body.String()
+	}
+	if b := resumo(""); !strings.Contains(b, `<dt>Chave de cifragem</dt><dd class="muted">não informada`) {
+		t.Error("sem chave: o aviso")
+	}
+	b := resumo(machinebox.EncodePublic(pub))
+	if !strings.Contains(b, "<dd><code>"+machinebox.KeyID(pub)+"</code>") {
+		t.Error("com chave: a impressão")
+	}
+	if strings.Contains(b, machinebox.EncodePublic(pub)[:40]) {
+		t.Error("a chave inteira não vai para a página")
 	}
 }

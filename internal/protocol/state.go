@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/machinebox"
 )
 
 // MachineState é o estado volátil da máquina (Aula 12.1): interfaces de rede e espaço em
@@ -34,6 +36,10 @@ type MachineState struct {
 	// Ausentes: agente anterior à 20.7.
 	JobKeys     []string `json:"job_keys,omitempty"`
 	ReleaseKeys []string `json:"release_keys,omitempty"`
+	// BoxKey (Aula 21.3): a chave pública da caixa desta máquina (machinebox, base64). O
+	// servidor fecha para ela os segredos que só esta máquina pode abrir (a senha da BIOS).
+	// Ausente: agente anterior à 21.3, ou a chave não pôde ser criada.
+	BoxKey string `json:"box_key,omitempty"`
 }
 
 // keyIDPattern: a impressão curta de uma chave (jobs.KeyID, release.KeyID).
@@ -129,6 +135,11 @@ func (s MachineState) Check() error {
 			if !keyIDPattern.MatchString(k) {
 				return fmt.Errorf("impressão de chave fora do formato: %q", k)
 			}
+		}
+	}
+	if s.BoxKey != "" {
+		if _, err := machinebox.ParsePublic(s.BoxKey); err != nil {
+			return fmt.Errorf("chave da caixa: %w", err)
 		}
 	}
 	for _, o := range s.AllowedSigners {

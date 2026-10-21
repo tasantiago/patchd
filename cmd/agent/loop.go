@@ -112,6 +112,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	jobPub, jobNext := jobKey(logger), jobKeyNext(logger)
 	jobIDs := keyIDs(jobs.KeyID, jobPub, jobNext)
 	releaseIDs := keyIDs(release.KeyID, releaseKeys(logger)...)
+	boxKey := boxPublic(logger, opts.DataDir) // Aula 21.3: a caixa desta máquina
 	ag := &agent.Agent{
 		Client: client,
 		// O inventário passa pela mesma função do "-inventory": o check-in envia exatamente
@@ -141,6 +142,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 				s.AllowedSigners = append([]string{}, opts.AllowedSigners...)
 			}
 			s.JobKeys, s.ReleaseKeys = jobIDs, releaseIDs
+			s.BoxKey = boxKey
 			return s
 		},
 		DataDir:   opts.DataDir,
