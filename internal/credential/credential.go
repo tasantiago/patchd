@@ -81,31 +81,47 @@ func CheckWritable(dataDir string) error {
 // restrito ANTES de o segredo ser escrito, sincronizado no disco e só então renomeado.
 // Uma queda no meio deixa o arquivo antigo (ou nenhum), nunca um arquivo pela metade.
 func Save(dataDir string, c Credential) error {
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return fmt.Errorf("pasta de dados: %w", err)
-	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
+	return SaveSecret(dataDir, FileName, append(data, '\n'))
+}
 
-	tmp, err := os.CreateTemp(dataDir, ".credential-*.tmp") // 0600 no Unix
+// Secret diz se o arquivo da pasta de dados é um segredo: a credencial e, desde a Aula 21.3,
+// a chave da caixa da máquina. Esses ficam com a DACL própria (só SYSTEM e Administradores,
+// protegida) também na varredura da pasta (Aula 20.6).
+func Secret(name string) bool { return name == FileName || name == BoxKeyFile }
+
+// BoxKeyFile: o arquivo da chave privada da caixa (machinebox.FileName; repetido aqui para
+// este pacote não depender daquele).
+const BoxKeyFile = "chave-cifragem.key"
+
+// SaveSecret grava um segredo na pasta de dados do mesmo jeito que a credencial (Aula 21.3).
+func SaveSecret(dataDir, name string, data []byte) error {
+	if !Secret(name) {
+		return fmt.Errorf("%s não é um arquivo de segredo conhecido", name)
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return fmt.Errorf("pasta de dados: %w", err)
+	}
+	tmp, err := os.CreateTemp(dataDir, ".segredo-*.tmp") // 0600 no Unix
 	if err != nil {
 		return fmt.Errorf("arquivo temporário: %w", err)
 	}
-	name := tmp.Name()
+	tmpName := tmp.Name()
 	ok := false
 	defer func() {
 		if !ok {
 			_ = tmp.Close()
-			os.Remove(name)
+			os.Remove(tmpName)
 		}
 	}()
 
-	if err := restrict(name); err != nil {
-		return fmt.Errorf("restringir acesso a %s: %w", name, err)
+	if err := restrict(tmpName); err != nil {
+		return fmt.Errorf("restringir acesso a %s: %w", tmpName, err)
 	}
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
@@ -114,8 +130,9 @@ func Save(dataDir string, c Credential) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(name, Path(dataDir)); err != nil {
-		return fmt.Errorf("gravar %s: %w", Path(dataDir), err)
+	dest := filepath.Join(dataDir, name)
+	if err := os.Rename(tmpName, dest); err != nil {
+		return fmt.Errorf("gravar %s: %w", dest, err)
 	}
 	ok = true
 	return nil

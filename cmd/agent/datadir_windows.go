@@ -85,7 +85,7 @@ func protectDataDir(dir string, note func(string)) error {
 			note("link ou junção apagado: " + rel)
 			return nil
 		}
-		if rel == credential.FileName {
+		if credential.Secret(rel) { // a credencial e, desde a 21.3, a chave da caixa
 			return secure(p, credSD, true, note, rel)
 		}
 		return secure(p, inherit, false, note, rel)

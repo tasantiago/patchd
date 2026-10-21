@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/machinebox"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -28,6 +29,9 @@ type hostView struct {
 	// SignersKnown: o agente informa (Windows, v0.17.8 ou mais nova).
 	SignersKnown bool
 	Signers      string
+	// BoxKeyID (Aula 21.3): a impressão da chave da caixa da máquina; vazio = o agente não
+	// informa (anterior à 21.3) e não pode receber segredos (a senha da BIOS, 21.4).
+	BoxKeyID string
 }
 
 // userRow: uma sessão de usuário na máquina.
@@ -124,6 +128,9 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 	}
 	hv.Active = activeSessions(s.Users)
 	hv.SignersKnown, hv.Signers = s.AllowedSigners != nil, strings.Join(s.AllowedSigners, ", ")
+	if pub, err := machinebox.ParsePublic(s.BoxKey); err == nil {
+		hv.BoxKeyID = machinebox.KeyID(pub)
+	}
 	return nil
 }
 

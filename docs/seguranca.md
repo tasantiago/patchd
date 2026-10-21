@@ -20,6 +20,7 @@ fronteira nova. A matriz de rotas (docs/rotas.md) é gerada pelo teste e não pr
 | A5 | **Token de enrollment** | Registra máquinas novas na frota | mostrado uma vez; servidor guarda o hash, com prazo e usos |
 | A6 | **Banco** | Inventário (usuários conectados, software: dado pessoal, LGPD), auditoria, aprovações, sessões | PostgreSQL; senha em arquivo |
 | A7 | **Segredos de integração** | Senha do SMTP, segredo do cliente OIDC, senha do banco, token de métricas | arquivos (segredos do compose), nunca no banco nem na tela |
+| A9 | **Chave da caixa de cada máquina** (HPKE, Aula 21.3) | Abre os segredos que o servidor manda só para aquela máquina (a senha da BIOS, 21.4) | agente: `chave-cifragem.key`, protegido como a credencial; o servidor guarda só a pública |
 | A8 | **Disponibilidade das correções** | Sem o patchd, a frota fica sem atualização: o risco que ele existe para reduzir | servidor, catálogo e cache |
 
 ## 2. De quem (atores)
@@ -151,7 +152,12 @@ quem resolve.
   inventário passou a dizer, máquina a máquina, se a senha de administrador da BIOS está
   definida (HP, Dell e Lenovo, pela interface do fabricante); é como conferir o que o `.bat`
   fez e o que falta, antes de aposentá-lo. **Na 21.2**: o cartão "BIOS sem senha" em
-  Inventário conta a frota e filtra a lista (e o CSV); é a medida do F3.
+  Inventário conta a frota e filtra a lista (e o CSV); é a medida do F3. **Na 21.3**: cada
+  agente tem uma caixa (par HPKE ML-KEM-768+X25519, a privada protegida como a credencial e a
+  pública no estado) para receber a senha fechada, só para ele; o desenho do substituto do
+  `.bat` (senha por máquina, guarda antes de aplicar, primeira troca com a senha da frota
+  digitada uma vez, métodos HP/Dell/Lenovo, HP Sure Admin) e as decisões D1 a D6 estão em
+  `docs/bios-senha.md`.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

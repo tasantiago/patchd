@@ -30,7 +30,7 @@ func TestSaveLoad(t *testing.T) {
 			t.Errorf("permissões: arquivo %v, pasta %v", st.Mode().Perm(), dst.Mode().Perm())
 		}
 	}
-	sobras, _ := filepath.Glob(filepath.Join(dir, ".credential-*"))
+	sobras, _ := filepath.Glob(filepath.Join(dir, ".segredo-*"))
 	if len(sobras) != 0 {
 		t.Errorf("nenhum temporário deve sobrar: %v", sobras)
 	}
@@ -51,5 +51,22 @@ func TestCheckWritable(t *testing.T) {
 	}
 	if sobras, _ := filepath.Glob(filepath.Join(dir, ".write-check-*")); len(sobras) != 0 {
 		t.Errorf("o teste de escrita não deve deixar arquivo: %v", sobras)
+	}
+}
+
+// Aula 21.3: a chave da caixa é gravada como a credencial; um nome qualquer, não.
+func TestSaveSecret(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveSecret(dir, BoxKeyFile, []byte("patchd_mbox_x\n")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, BoxKeyFile)); string(b) != "patchd_mbox_x\n" {
+		t.Errorf("conteúdo: %q", b)
+	}
+	if err := SaveSecret(dir, "outro.txt", []byte("x")); err == nil {
+		t.Error("nome fora da lista aceito")
+	}
+	if !Secret(FileName) || !Secret(BoxKeyFile) || Secret("state.json") {
+		t.Error("Secret")
 	}
 }
