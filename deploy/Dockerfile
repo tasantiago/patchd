@@ -4,7 +4,7 @@
 
 # ---------- Estágio 1: compilação ----------
 # A mesma versão do Dockerfile.dev e do go.mod (Aula 20.2).
-FROM golang:1.27.2-trixie AS build
+FROM golang:1.27.3-trixie AS build
 
 # CA corporativa (opcional): necessária para baixar módulos atrás da inspeção TLS
 # e copiada para a imagem final, para o servidor buscar os catálogos.
