@@ -151,6 +151,41 @@ Mudou o `deploy/.env` (portas, LDAP, SMTP...)? `./deploy/podman/instalar.sh` de 
 A versão no ar é a imagem `localhost/patchd-server:atual`; o `atualizar.sh` troca essa tag
 e as versões ficam como `localhost/patchd-server:vX.Y.Z`, para a volta (`--voltar`).
 
+## Agente: compilar, assinar e publicar pelo servidor (Aula 23.2)
+
+O painel não compila o agente: ele distribui a versão publicada na pasta `releases/`
+(Configuração › Agente, com o token e o comando de instalação). O `deploy/agente.sh` faz a
+versão ali mesmo, sem o ambiente de desenvolvimento e sem Go no host:
+
+```sh
+# no seu computador, onde a chave de release fica guardada:
+scp release.key SEU_USUARIO@NOME_DO_SERVIDOR:/dev/shm/
+# no servidor, como root:
+chown patchd /dev/shm/release.key
+# como o usuário do serviço, na pasta do repositório:
+./deploy/agente.sh vX.Y.Z -key /dev/shm/release.key
+```
+
+1. Confere: árvore limpa, servidor no ar, versão não mais nova que a do servidor (atualize o
+   servidor antes, com o `atualizar.sh`), versão ainda não assinada.
+2. Pega a pública de jobs do servidor no ar (`patchd-server job pubkey`) e a de release da
+   própria chave; as seguintes e a organização, do `deploy/.env`.
+3. Num clone limpo do commit, num container da mesma imagem do Go do `deploy/Dockerfile`:
+   `scripts/build.sh` e `patchd-release sign`. As caches do Go ficam nos volumes
+   `patchd-gomod` e `patchd-gocache` (a segunda vez é bem mais rápida).
+4. Copia a versão assinada para `releases/` e publica (`release publish`). Os agentes
+   instalados a recebem no próximo check-in; o painel passa a oferecê-la para download.
+
+**A chave de release não mora no servidor.** Quem a tivesse aqui assinaria um "agente" para
+a frota inteira, passando por cima de toda conferência dos jobs. Em `/dev/shm` ela fica só na
+memória; o script a passa ao container pela entrada padrão (num tmpfs, nunca em disco) e a
+apaga no fim, mesmo se o build falhar. Fora de `/dev/shm`, o script assina, mas avisa.
+
+Voltar a oferecer uma versão anterior que ainda está em `releases/`:
+`./deploy/agente.sh --publicar vX.Y.Z` (os agentes não voltam de versão sozinhos; isso só
+muda o que o painel e as máquinas novas recebem). Retirar a oferta, sem versão nenhuma:
+`rm releases/current` (o servidor no ar só lê a pasta).
+
 ## Problemas comuns
 
 - **"short-name resolution enforced but cannot prompt without a TTY"**: uma imagem sem o

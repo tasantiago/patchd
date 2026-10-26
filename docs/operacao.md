@@ -4,7 +4,8 @@ Guia de operação do compose de produção (`deploy/compose.yaml`). Nada aqui t
 host, IP ou segredo do ambiente real: esses valores ficam em `deploy/.env` e
 `deploy/secrets`, fora do git.
 
-No RHEL, com Podman sem root e Quadlet (Aula 23.1): `docs/podman.md`. O `atualizar.sh`, o
+No RHEL, com Podman sem root e Quadlet (Aula 23.1): `docs/podman.md`. Lá, o agente também
+sai do próprio servidor, sem o ambiente de desenvolvimento: `./deploy/agente.sh` (Aula 23.2). O `atualizar.sh`, o
 `backup.sh`, o `restaurar.sh` e o `gerar-segredos.sh` são os mesmos (o `PATCHD_MOTOR=podman`
 do `.env` decide); no lugar do `compose.sh`, os comandos da tabela de lá.
 

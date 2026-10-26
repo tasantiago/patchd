@@ -378,3 +378,45 @@ func TestPrepararVMRecusaArgumentos(t *testing.T) {
 		}
 	}
 }
+
+// O agente.sh (Aula 23.2) usa a imagem do Go do deploy/Dockerfile: o agente e o servidor saem
+// do mesmo Go. A linha FROM tem de continuar no formato que ele lê.
+func TestAgenteUsaOGoDoDockerfile(t *testing.T) {
+	m := regexp.MustCompile(`(?m)^FROM (docker\.io/library/golang:\S+)`).FindStringSubmatch(readFile(t, "../Dockerfile"))
+	if m == nil {
+		t.Fatal("deploy/Dockerfile sem FROM docker.io/library/golang:VERSÃO: o agente.sh não acha a imagem do Go")
+	}
+	if !strings.Contains(readFile(t, "../agente.sh"), `s/^FROM \(docker\.io\/library\/golang:[^ ]*\).*/\1/p`) {
+		t.Error("o agente.sh não lê mais a imagem do Go do deploy/Dockerfile")
+	}
+}
+
+// Fora do Podman, o agente.sh para antes de tudo: no compose, o caminho é o de sempre.
+func TestAgenteSoNoPodman(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("sem bash")
+	}
+	dir := t.TempDir()
+	for src, dst := range map[string]string{"../agente.sh": "deploy/agente.sh", "../comum.sh": "deploy/comum.sh"} {
+		b, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(dst)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, dst), b, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "deploy/.env"), []byte("PATCHD_MOTOR=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bash, filepath.Join(dir, "deploy/agente.sh"), "v1.0.0", "-key", "/dev/null")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "scripts/build.sh") {
+		t.Fatalf("agente.sh no compose: err=%v\n%s", err, out)
+	}
+}

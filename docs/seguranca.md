@@ -132,6 +132,7 @@ quem resolve.
 |---|---|---|---|
 | T | Release adulterada | Chave de release fora do servidor; manifesto assinado conferido pelo agente; o agente só aceita versão mais nova (5.4, 15.x); a chave gira sem parar a frota (20.7) | — |
 | D | Chave de release perdida | **Chave seguinte** embutida nos agentes, com a privada só offline (20.7) | — |
+| T | **Agente feito no servidor** (23.2) | O `deploy/agente.sh` compila num container descartável a partir de um clone do commit; a chave de release chega só na hora, em `/dev/shm` (memória), entra no container pela entrada padrão para um tmpfs e é apagada no fim; o script recusa a chave dentro do repositório e avisa se ela estiver gravada em disco | Durante a assinatura, quem já controlasse o servidor leria a chave: assine com o servidor íntegro e gire a chave (20.7) se houver suspeita |
 
 ## 5. Achados desta revisão
 
