@@ -1,0 +1,25 @@
+# Pod do patchd no Podman sem root (Aula 23.1). MODELO: o deploy/podman/instalar.sh troca os
+# @…@ pelos valores do deploy/.env e grava em ~/.config/containers/systemd/. Mudou algo
+# aqui ou no .env? Rode o instalar.sh de novo; não edite o arquivo gerado.
+#
+# O servidor e o Postgres dividem a rede do pod: o servidor fala com o banco em 127.0.0.1,
+# que o AddHost chama de "postgres" (o nome da URL em deploy/secrets/database_url), e só as
+# portas daqui aparecem no host. O banco não tem porta publicada.
+#
+# Rede pasta, e não uma rede bridge: sem root, a bridge passa as conexões por um proxy que
+# troca o IP de origem, e todas as máquinas chegariam com o mesmo IP (o "último IP" de
+# cada uma, o Wake-on-LAN, a trava de login por IP e a auditoria dependem do IP de verdade).
+[Unit]
+Description=patchd: pod (servidor e banco)
+
+[Pod]
+PodName=patchd
+Network=pasta
+AddHost=postgres:127.0.0.1
+# O usuário do serviço vira o UID 65532 lá dentro, o do servidor: os segredos e o TLS são
+# arquivos dele, 600, lidos sem ACL nenhuma. O root do container é um UID sem poder no host.
+UserNS=keep-id:uid=65532,gid=65532
+PublishPort=@TLS_BIND@:@TLS_PORT@:8443
+PublishPort=@HTTP_BIND@:@HTTP_PORT@:8080
+# Métricas: só o próprio host por padrão (PATCHD_METRICS_BIND), como no compose.
+PublishPort=@METRICS_BIND@:@METRICS_PORT@:9090

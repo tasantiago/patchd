@@ -12,7 +12,8 @@ name: patchd
 
 services:
   postgres:
-    image: postgres:18-trixie
+    # Nome completo (Aula 23.1): o Podman do RHEL não completa nomes curtos sem perguntar.
+    image: docker.io/library/postgres:18-trixie
     environment:
       POSTGRES_DB: patchd
       POSTGRES_USER: patchd

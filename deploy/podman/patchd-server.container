@@ -1,0 +1,51 @@
+# patchd-server no Podman sem root (Aula 23.1). MODELO: o deploy/podman/instalar.sh troca os
+# @…@ e grava em ~/.config/containers/systemd/ (veja o patchd.pod).
+# O mesmo serviço do deploy/compose.yaml; as variáveis vêm do arquivo que o instalar.sh
+# gera a partir do deploy/.env, com os mesmos padrões do compose.
+[Unit]
+Description=patchd: servidor
+Requires=patchd-postgres.service
+After=patchd-postgres.service
+
+[Container]
+ContainerName=patchd-server
+Pod=patchd.pod
+# Sobe com o boot (Install, abaixo), não junto com o pod: o atualizar.sh e o restaurar.sh
+# sobem só o banco quando precisam.
+StartWithPod=false
+# Trocar de versão é mudar esta tag (./deploy/atualizar.sh): as versões ficam no host como
+# localhost/patchd-server:vX.Y.Z, para a volta.
+Image=localhost/patchd-server:atual
+EnvironmentFile=@ENV_FILE@
+Volume=@SECRETS@/database_url:/run/secrets/database_url:ro,Z
+Volume=@SECRETS@/job_signing_key:/run/secrets/job_signing_key:ro,Z
+Volume=@SECRETS@/bios_escrow_key:/run/secrets/bios_escrow_key:ro,Z
+Volume=@SECRETS@/oidc_client_secret:/run/secrets/oidc_client_secret:ro,Z
+Volume=@SECRETS@/metrics_token:/run/secrets/metrics_token:ro,Z
+Volume=@SECRETS@/smtp_password:/run/secrets/smtp_password:ro,Z
+# TLS: a pasta inteira (renovar = trocar os arquivos; o servidor relê em até 30 s).
+Volume=@TLS_DIR@:/run/patchd/tls:ro,Z
+Volume=@RELEASES_DIR@:/var/lib/patchd/releases:ro,Z
+Volume=patchd-conteudo.volume:/var/lib/patchd/conteudo
+Volume=patchd-repocache.volume:/var/lib/patchd/repocache
+# Endurecimento, como no compose: raiz somente leitura, nenhuma capability, sem escalada.
+ReadOnly=true
+Tmpfs=/tmp
+DropCapability=ALL
+NoNewPrivileges=true
+# O mesmo do HEALTHCHECK da imagem; em lista, para rodar sem shell (a imagem é scratch).
+HealthCmd=["/patchd-server","-healthcheck"]
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
+Notify=healthy
+# Maior que o shutdownTimeout do servidor (10 s).
+StopTimeout=15
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

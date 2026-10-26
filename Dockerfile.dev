@@ -3,7 +3,7 @@
 # Versão exata (Aula 20.2): o go.mod pede a versão sem as falhas da biblioteca padrão que o
 # govulncheck conhece (go1.27.3 desde a Aula 20.2c, GO-2026-6809). Subir de versão é mudar
 # aqui, no deploy/Dockerfile e no go.mod, e reconstruir este container.
-FROM golang:1.27.3-trixie
+FROM docker.io/library/golang:1.27.3-trixie
 
 # UID/GID do usuário do host, para os arquivos do bind mount terem o dono certo.
 ARG UID=1000

@@ -1,0 +1,13 @@
+# Cópia diária do banco no Podman sem root (Aulas 10.1 e 23.1): unidade do systemd do
+# usuário. MODELO: o deploy/podman/instalar.sh troca os @…@ e grava em ~/.config/systemd/user/.
+# Ligar depois da primeira subida:  systemctl --user enable --now patchd-backup.timer
+[Unit]
+Description=patchd: cópia do banco (pg_dump)
+Requires=patchd-postgres.service
+After=patchd-postgres.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+Environment=PATCHD_BACKUP_KEEP_DAYS=14
+ExecStart=@REPO@/deploy/backup.sh

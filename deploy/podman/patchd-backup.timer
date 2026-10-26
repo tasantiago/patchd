@@ -1,0 +1,14 @@
+# Dispara o patchd-backup.service todo dia de madrugada (Aulas 10.1 e 23.1), no systemd do
+# usuário do serviço. Copiado como está pelo deploy/podman/instalar.sh.
+#   systemctl --user enable --now patchd-backup.timer
+#   systemctl --user list-timers patchd-backup.timer
+[Unit]
+Description=patchd: cópia diária do banco
+
+[Timer]
+OnCalendar=*-*-* 02:30
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

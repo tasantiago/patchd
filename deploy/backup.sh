@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cópia do banco do compose de produção (Aulas 10.1 e 10.3).
+# Cópia do banco de produção, no compose ou no Podman (Aulas 10.1, 10.3 e 23.1).
 #
 #   ./deploy/backup.sh [PASTA]
 #
@@ -22,7 +22,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-. deploy/comum.sh   # dc e pg: o compose sem as PATCHD_* do shell (Aula 10.4)
+. deploy/comum.sh   # pg: o Postgres do motor do deploy/.env (Aulas 10.4 e 23.1)
 DEST="${1:-${PATCHD_BACKUP_DIR:-deploy/backups}}"
 RECIPIENTS="${PATCHD_BACKUP_RECIPIENTS_FILE:-deploy/secrets/backup_recipients}"
 KEEP_DAYS="${PATCHD_BACKUP_KEEP_DAYS:-14}"
@@ -36,7 +36,7 @@ if [ -s "$RECIPIENTS" ]; then
     echo "$RECIPIENTS tem uma chave PRIVADA do age: ela não fica no servidor. Deixe só a linha age1… (pública) e guarde a privada fora daqui." >&2
     exit 1
   fi
-  command -v age >/dev/null || { echo "$RECIPIENTS existe, mas o age não está instalado (Ubuntu/Debian: sudo apt install age)" >&2; exit 1; }
+  command -v age >/dev/null || { echo "$RECIPIENTS existe, mas o age não está instalado (Ubuntu/Debian: sudo apt install age; RHEL: pacote age do EPEL)" >&2; exit 1; }
   : | age -R "$RECIPIENTS" > /dev/null || { echo "$RECIPIENTS: destinatário inválido (use as linhas age1… do age-keygen -y)" >&2; exit 1; }
   encrypt=true
   nrec="$(grep -cvE '^[[:space:]]*(#|$)' "$RECIPIENTS")"

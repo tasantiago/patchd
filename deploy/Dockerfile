@@ -1,10 +1,12 @@
 # Imagem de PRODUÇÃO do patchd-server.
 # Build manual, a partir da raiz do repositório:
 #   docker build -f deploy/Dockerfile --build-arg VERSION=v0.1.0 --build-arg COMMIT=$(git rev-parse HEAD) -t patchd-server:v0.1.0 .
+# No Podman, com --format docker (o formato OCI descarta o HEALTHCHECK); o atualizar.sh já faz.
 
 # ---------- Estágio 1: compilação ----------
 # A mesma versão do Dockerfile.dev e do go.mod (Aula 20.2).
-FROM golang:1.27.3-trixie AS build
+# Nome completo da imagem (Aula 23.1): o Podman do RHEL não completa nomes curtos sem perguntar.
+FROM docker.io/library/golang:1.27.3-trixie AS build
 
 # CA corporativa (opcional): necessária para baixar módulos atrás da inspeção TLS
 # e copiada para a imagem final, para o servidor buscar os catálogos.

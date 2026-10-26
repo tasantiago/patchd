@@ -1,0 +1,4 @@
+# Volume do patchd no Podman sem root (Aula 23.1): catálogo offline do Windows.
+# Copiado como está pelo deploy/podman/instalar.sh para ~/.config/containers/systemd/.
+[Volume]
+VolumeName=patchd-conteudo

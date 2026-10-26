@@ -4,6 +4,10 @@ Guia de operação do compose de produção (`deploy/compose.yaml`). Nada aqui t
 host, IP ou segredo do ambiente real: esses valores ficam em `deploy/.env` e
 `deploy/secrets`, fora do git.
 
+No RHEL, com Podman sem root e Quadlet (Aula 23.1): `docs/podman.md`. O `atualizar.sh`, o
+`backup.sh`, o `restaurar.sh` e o `gerar-segredos.sh` são os mesmos (o `PATCHD_MOTOR=podman`
+do `.env` decide); no lugar do `compose.sh`, os comandos da tabela de lá.
+
 ## Comandos do compose e atualização (Aula 10.4)
 
 Variáveis `PATCHD_*` exportadas no shell valem mais que o `deploy/.env` na interpolação do
@@ -31,8 +35,9 @@ carregado sobe a produção com a configuração errada. Por isso, em produção
 
 A imagem leva a versão e o commit nos rótulos (`org.opencontainers.image.version` e
 `.revision`). Imagens antigas ficam no host até alguém apagar: sem a imagem anterior, não
-há volta rápida (`docker image ls patchd-server`; apague só as que não serão mais
-voltadas).
+há volta rápida (`docker image ls patchd-server`, ou `podman image ls patchd-server`;
+apague só as que não serão mais voltadas). Na primeira subida, com o banco vazio, não há
+cópia antes da troca, nem volta (Aula 23.1).
 
 ## Cópia do banco (Aula 10.1)
 

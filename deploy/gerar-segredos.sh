@@ -38,10 +38,32 @@ else
   echo "banco: segredos gerados."
 fi
 
+# Motor (Aula 23.1): no Podman sem root, o pod roda com keep-id (o dono destes arquivos é o
+# UID 65532 lá dentro): o servidor lê tudo como dono, e nenhuma ACL é preciso.
+MOTOR="$(sed -n 's/^PATCHD_MOTOR=//p' "$DEPLOY/.env" 2>/dev/null | tail -1)"
+
 # Arquivos que o servidor (UID 65532) lê. A ACL dá leitura só a ele e mantém o arquivo
 # seu: o servidor de desenvolvimento, que roda com o seu usuário, continua lendo o mesmo
 # arquivo (Aula 9.3). Sem o pacote acl: sudo chown 65532:65532 ARQUIVO && sudo chmod 400 ARQUIVO.
-acl() { echo "    sudo setfacl -m u:65532:r $1"; }
+acl() {
+  if [ "$MOTOR" = podman ]; then
+    echo "    (Podman: nada a fazer; o servidor lê o arquivo como dono dele)"
+  else
+    echo "    sudo setfacl -m u:65532:r $1"
+  fi
+}
+
+# keygen SUBCOMANDO ARQUIVO: como gerar uma chave em deploy/secrets. No Podman (RHEL, sem
+# Go instalado), com a imagem que o ./deploy/atualizar.sh construiu.
+keygen() {
+  if [ "$MOTOR" = podman ]; then
+    echo "    podman run --rm --userns keep-id:uid=65532,gid=65532 -v \"\$PWD/deploy/secrets:/segredos:Z\" \\"
+    echo "      localhost/patchd-server:VERSAO $1 keygen -out /segredos/$2"
+    echo "    (VERSAO: a imagem que o ./deploy/atualizar.sh construiu; podman image ls patchd-server)"
+  else
+    echo "    go run ./cmd/server $1 keygen -out deploy/secrets/$2"
+  fi
+}
 
 # 2. Segredo do cliente do RHBK (Aula 9.4): o compose monta o arquivo mesmo com o RHBK
 # desligado, então ele existe, vazio, até ser preenchido.
@@ -68,7 +90,7 @@ if [ -s "$DIR/bios_escrow_key" ]; then
 else
   cat <<MSG
 guarda da BIOS: desligada (opcional). Para ligar:
-    go run ./cmd/server bios keygen -out deploy/secrets/bios_escrow_key
+$(keygen bios bios_escrow_key)
     e PATCHD_BIOS_ESCROW_KEY_FILE=/run/secrets/bios_escrow_key no deploy/.env; depois:
 $(acl deploy/secrets/bios_escrow_key)
 MSG
@@ -81,8 +103,10 @@ if [ -s "$DIR/metrics_token" ]; then
 else
   ( umask 077; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$DIR/metrics_token"; echo >> "$DIR/metrics_token" )
   echo "métricas: token gerado em $DIR/metrics_token ($(wc -c < "$DIR/metrics_token" | tr -d ' ') bytes)."
-  # O dono do arquivo pode dar a ACL sem sudo.
-  if command -v setfacl >/dev/null 2>&1 && setfacl -m u:65532:r "$DIR/metrics_token" 2>/dev/null; then
+  # O dono do arquivo pode dar a ACL sem sudo. No Podman, nem isso (keep-id).
+  if [ "$MOTOR" = podman ]; then
+    echo "métricas: o servidor lê o token como dono do arquivo (Podman)."
+  elif command -v setfacl >/dev/null 2>&1 && setfacl -m u:65532:r "$DIR/metrics_token" 2>/dev/null; then
     echo "métricas: leitura liberada para o servidor (UID 65532) por ACL."
   else
     echo "métricas: libere a leitura para o servidor (UID 65532):"
@@ -99,7 +123,7 @@ if [ -s "$REC" ]; then
     echo "cópias: $REC tem uma chave PRIVADA do age. Deixe só a linha age1… e guarde a privada fora do servidor."
   elif ! command -v age >/dev/null 2>&1; then
     falta=1
-    echo "cópias: cifradas no deploy/secrets, mas FALTA o age neste host (Ubuntu/Debian: sudo apt install age)."
+    echo "cópias: cifradas no deploy/secrets, mas FALTA o age neste host (Ubuntu/Debian: sudo apt install age; RHEL: pacote age do EPEL)."
   else
     echo "cópias: cifradas com age para $(grep -cvE '^[[:space:]]*(#|$)' "$REC") destinatário(s)."
   fi
@@ -116,7 +140,8 @@ else
   cat <<MSG
 chave de jobs: FALTA $DIR/job_signing_key
   - frota existente: copie a chave privada que o servidor já usa (a do PATCHD_JOB_SIGNING_KEY_FILE);
-  - frota nova: go run ./cmd/server job keygen -out deploy/secrets/job_signing_key
+  - frota nova:
+$(keygen job job_signing_key)
     e compile os agentes com a pública que ele imprime (PATCHD_JOB_PUBKEY).
   Depois, para o servidor (UID 65532) ler:
 $(acl deploy/secrets/job_signing_key)
@@ -161,7 +186,7 @@ else
 fi
 
 if [ "$falta" -ne 0 ]; then
-  echo "Complete o que falta antes do docker compose up."
+  echo "Complete o que falta antes da primeira subida."
   exit 1
 fi
 echo "Pronto para: ./deploy/atualizar.sh vX.Y.Z (a primeira subida também: constrói, copia o banco e sobe)"

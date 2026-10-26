@@ -1,6 +1,7 @@
 # Cópia diária do banco do patchd (Aulas 10.1 e 10.3). Ajuste WorkingDirectory para a pasta
 # do repositório no servidor e copie para /etc/systemd/system/ junto com o .timer.
 # Com deploy/secrets/backup_recipients, a cópia sai cifrada (precisa do pacote age).
+# No Podman sem root (Aula 23.1), a cópia é do systemd do usuário: deploy/podman/patchd-backup.*.
 [Unit]
 Description=patchd: cópia do banco (pg_dump)
 Requires=docker.service

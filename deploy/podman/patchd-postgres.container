@@ -1,0 +1,40 @@
+# PostgreSQL do patchd no Podman sem root (Aula 23.1). MODELO: o deploy/podman/instalar.sh
+# troca os @…@ e grava em ~/.config/containers/systemd/ (veja o patchd.pod).
+# O mesmo serviço do deploy/compose.yaml: mesma imagem, mesmo volume, mesmo healthcheck.
+[Unit]
+Description=patchd: PostgreSQL
+
+[Container]
+ContainerName=patchd-postgres
+Pod=patchd.pod
+# Nome completo: o Podman do RHEL não completa nomes curtos sem perguntar (e num serviço
+# não há a quem perguntar).
+Image=docker.io/library/postgres:18-trixie
+# O keep-id do pod faria o processo nascer como 65532; a imagem precisa começar como root
+# (cria a pasta do banco e passa para o usuário postgres), como no compose. Esse root é um
+# UID sem poder nenhum no host.
+User=0
+Group=0
+Environment=POSTGRES_DB=patchd POSTGRES_USER=patchd POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+# A partir do Postgres 18, a imagem oficial declara o volume em /var/lib/postgresql.
+Volume=patchd-pgdata.volume:/var/lib/postgresql
+# Z: rótulo do SELinux só deste pod (sem ele, o SELinux do RHEL nega a leitura).
+Volume=@SECRETS@/db_password:/run/secrets/db_password:ro,Z
+# -h 127.0.0.1: só fica saudável quando o servidor definitivo aceita TCP.
+HealthCmd=pg_isready -h 127.0.0.1 -U patchd -d patchd
+HealthInterval=5s
+HealthTimeout=3s
+HealthRetries=20
+HealthStartPeriod=10s
+# O systemd só dá o serviço por iniciado quando o healthcheck passa: quem depende do banco
+# (o servidor, o atualizar.sh) espera por ele.
+Notify=healthy
+StopTimeout=30
+
+[Service]
+Restart=always
+# A primeira subida baixa e prepara a imagem para o keep-id e cria o banco.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target

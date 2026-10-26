@@ -4,6 +4,13 @@ bin/
 dist/
 .env
 deploy/secrets/
+# Aula 23.1: o estágio de compilação copia o contexto inteiro, e o que entra fica no cache de
+# build do host. A chave do TLS, a configuração e as cópias do banco não têm o que fazer lá.
+deploy/.env
+deploy/tls/
+deploy/backups/
+deploy/.atualizacao
+releases/
 
 # Ambiente de desenvolvimento (a pasta .docker/certs continua: a CA corporativa entra no build)
 .docker/zsh/

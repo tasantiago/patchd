@@ -122,6 +122,8 @@ quem resolve.
 | T | **Job que grava a senha da BIOS** (21.5) | Assinado como todo job; as senhas vão fechadas para a caixa da máquina (HPKE), nunca legíveis no banco, no caminho ou no log; o agente confere a chave da caixa, a interface e o Sure Admin antes de chamar o fabricante, uma vez só | Quem tem a chave de jobs e a de guarda (o servidor tomado) troca senhas de BIOS: dentro do risco aceito em D1 |
 | I | **Senha da BIOS guardada** (21.4) | O banco e as cópias só têm envelopes (HPKE, com o ID da máquina dentro); a chave de guarda em arquivo; revelar só admin, com motivo, auditoria gravada antes de mostrar e aviso por e-mail | Quem toma o processo do servidor lê as senhas: risco aceito (D1 em `docs/bios-senha.md`) |
 | E | Porta de métricas | Porta separada, com token (10.2) | — |
+| E | **Container tomado** (23.1, RHEL) | Podman sem root: o root e o 65532 dos containers são UIDs sem poder no host; SELinux (`container_t`, rótulo `:Z` por pod); o mesmo endurecimento do compose (raiz somente leitura, sem capabilities, `no-new-privileges`) | — |
+| I | **Segredos no contexto do build** (F9, 23.1) | O `.dockerignore` deixa de fora `deploy/secrets`, `deploy/tls`, `deploy/.env`, `deploy/backups` e `releases` | — |
 | E | Proxy do cache de repositórios | Só as origens da lista, só GET/HEAD na porta 80, CONNECT recusado; testes do repocache (6.6) | — |
 
 ### 4.6 Publicação ↔ frota
@@ -194,6 +196,13 @@ quem resolve.
   **Resolvido** (seção 5c).
 - **F8 — Texto inválido do pedido chegando ao banco**: tentativa negada fora da trilha e 500
   num formulário (Aula 20.4b, varredura complementar). **Resolvido** (seção 5c).
+- **F9 — A chave do TLS, o `.env` e as cópias do banco no contexto do build** (Aula 23.1,
+  revisão do deploy para o Podman). O `.dockerignore` só tirava `deploy/secrets`; o estágio de
+  compilação copia o contexto inteiro (`COPY . .`), e a chave do TLS, a configuração e as
+  cópias do banco do host ficavam numa camada do cache de build. Não chegavam à imagem final
+  (que só leva o binário), mas ficavam no disco do host fora das pastas `700`. **Resolvido**:
+  as pastas e arquivos entram no `.dockerignore`. No servidor do compose, depois de
+  atualizar, o cache antigo sai com `docker builder prune`.
 
 ## 5a. Análise estática (S2, Aula 20.2)
 

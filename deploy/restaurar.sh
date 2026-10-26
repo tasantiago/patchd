@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restauração do banco do compose de produção a partir de uma cópia do backup.sh (Aulas 10.1 e 10.3).
+# Restauração do banco de produção (compose ou Podman, Aula 23.1) a partir de uma cópia do backup.sh (Aulas 10.1 e 10.3).
 #
 #   ./deploy/restaurar.sh --testar  ARQUIVO.dump[.age]   restaura num banco temporário, compara
 #                                                        as contagens com as da cópia e apaga o banco
@@ -18,7 +18,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-. deploy/comum.sh   # dc e pg: o compose sem as PATCHD_* do shell (Aula 10.4)
+. deploy/comum.sh   # pg e o servidor, no motor do deploy/.env (Aulas 10.4 e 23.1)
 uso() { sed -n '4,7p' "$0" | sed 's/^# //' >&2; exit 2; }
 [ $# -eq 2 ] || uso
 mode="$1"; dump="$2"
@@ -30,7 +30,7 @@ case "$dump" in
     cifrada=true
     id="${PATCHD_BACKUP_IDENTITY_FILE:-}"
     [ -n "$id" ] && [ -r "$id" ] || { echo "cópia cifrada: defina PATCHD_BACKUP_IDENTITY_FILE com a chave privada do age (fora do servidor)" >&2; exit 1; }
-    command -v age >/dev/null || { echo "o age não está instalado (Ubuntu/Debian: sudo apt install age)" >&2; exit 1; }
+    command -v age >/dev/null || { echo "o age não está instalado (Ubuntu/Debian: sudo apt install age; RHEL: pacote age do EPEL)" >&2; exit 1; }
     ;;
 esac
 
@@ -45,7 +45,7 @@ else
   echo "aviso: sem $dump.sha256; seguindo sem a conferência do SHA-256" >&2
 fi
 
-dc up -d --wait postgres >/dev/null
+banco_subir >/dev/null
 # A cópia vai para dentro do container (arquivo, não pipe: o pg_restore pode pular no índice).
 limpa() { pg rm -f /tmp/patchd-restaurar.dump; }
 trap limpa EXIT
@@ -98,7 +98,7 @@ fi
 
 # --confirmo: substitui o banco em uso.
 echo "== parando o servidor"
-dc stop server >/dev/null
+servidor_parar >/dev/null
 echo "== apagando e recriando o banco patchd"
 psqlc postgres "DROP DATABASE IF EXISTS patchd WITH (FORCE)" >/dev/null
 psqlc postgres "CREATE DATABASE patchd OWNER patchd" >/dev/null
@@ -106,5 +106,5 @@ echo "== restaurando $(basename "$dump")"
 pg pg_restore -U patchd -d patchd --no-owner --exit-on-error --single-transaction /tmp/patchd-restaurar.dump
 pg psql -U patchd -d patchd -AtX -f - < deploy/contagens.sql | tabela
 echo "== subindo o servidor (ele aplica as migrations mais novas que a cópia, se houver)"
-dc up -d server >/dev/null
-echo "restauração concluída; confira o log: ./deploy/compose.sh logs --tail 20 server"
+servidor_iniciar >/dev/null
+echo "restauração concluída; confira o log: $DICA_LOG"
