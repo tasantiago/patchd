@@ -40,8 +40,14 @@ migration() {
 # Subir só o banco não muda nada no servidor.
 banco_no_ar() {
   if [ "$MOTOR" = podman ]; then
-    banco_subir >/dev/null 2>&1 ||
-      { echo "o Postgres não subiu: journalctl --user -u patchd-postgres -n 30" >&2; exit 1; }
+    # Aula 23.1b: o motivo quase sempre está no pod (uma porta ocupada, por exemplo), não
+    # no Postgres; o fim dos dois logs vai junto com o aviso.
+    if ! banco_subir >/dev/null 2>&1; then
+      echo "o Postgres não subiu. Fim do log do pod e do banco:" >&2
+      journalctl --user -u patchd-pod.service -u patchd-postgres.service -n 15 --no-pager -o cat >&2 || true
+      echo "(mais: journalctl --user -u patchd-pod -u patchd-postgres -n 60; docs/podman.md, \"Problemas comuns\")" >&2
+      exit 1
+    fi
   else
     banco_subir >/dev/null 2>&1 ||
       { echo "o Postgres do compose não subiu: ./deploy/compose.sh logs --tail 30 postgres" >&2; exit 1; }

@@ -128,7 +128,24 @@ systemctl --user show-environment >/dev/null 2>&1 ||
   { echo "o systemd deste usuário não responde (entre com sudo -iu USUARIO ou machinectl shell USUARIO@)" >&2; exit 1; }
 if [ "$(loginctl show-user "$(id -un)" --property=Linger --value 2>/dev/null)" != yes ]; then
   echo "AVISO: sem linger, os serviços param quando você sai e não sobem com o boot." >&2
-  echo "  como root: loginctl enable-linger $(id -un)" >&2
+  echo "  como root: loginctl enable-linger $(id -un) (ou deploy/podman/preparar-vm.sh)" >&2
+fi
+# Aula 23.1b: com o diário só em memória, o journalctl --user não lê nada ("insufficient
+# permissions"), e os logs que os scripts mostram somem.
+if [ ! -d /var/log/journal ]; then
+  echo "AVISO: o diário do systemd está só em memória; o journalctl --user não vai ler os logs do patchd." >&2
+  echo "  como root: mkdir -p /var/log/journal && systemd-tmpfiles --create --prefix /var/log/journal && systemctl restart systemd-journald" >&2
+fi
+# Aula 23.1b: imagens, cache do build e volumes (o banco) ficam no armazenamento do Podman,
+# por padrão no /home, que numa VM com partições separadas costuma ser pequeno.
+graph="$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
+if [ -n "$graph" ]; then
+  d="$graph"; while [ ! -d "$d" ] && [ "$d" != / ]; do d="$(dirname "$d")"; done
+  livre="$(df -Pk "$d" | awk 'NR==2 {print int($4/1048576)}')"
+  if [ "$livre" -lt 15 ]; then
+    echo "AVISO: só ${livre} GB livres no armazenamento do Podman ($graph); a primeira subida usa de 4 a 5 GB e o banco cresce." >&2
+    echo "  mude para outra partição antes da primeira subida: docs/podman.md, \"Disco\" (ou deploy/podman/preparar-vm.sh)" >&2
+  fi
 fi
 
 # Caminhos e endereços entram nas unidades: só caracteres que o systemd não interpreta.
@@ -162,6 +179,22 @@ TLS_BIND="$(endereco PATCHD_TLS_BIND 0.0.0.0)"; TLS_PORT="$(porta PATCHD_TLS_POR
 HTTP_BIND="$(endereco PATCHD_HTTP_BIND 0.0.0.0)"; HTTP_PORT="$(porta PATCHD_HTTP_PORT 8080)"
 METRICS_BIND="$(endereco PATCHD_METRICS_BIND 127.0.0.1)"; METRICS_PORT="$(porta PATCHD_METRICS_PORT 9090)"
 [[ "$CONF" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "XDG_CONFIG_HOME com caracteres que o systemd interpreta: $CONF" >&2; exit 1; }
+
+# Aula 23.1b: uma porta ocupada no host derruba o pod inteiro, e o que aparece é "o Postgres
+# não subiu". Com o pod no ar, as portas são dele: não há o que conferir.
+if command -v ss >/dev/null && ! systemctl --user is-active --quiet patchd-pod.service; then
+  ocupadas=""
+  for par in "PATCHD_TLS_PORT:$TLS_PORT" "PATCHD_HTTP_PORT:$HTTP_PORT" "PATCHD_METRICS_PORT:$METRICS_PORT"; do
+    if [ -n "$(ss -Hltn "( sport = :${par#*:} )" 2>/dev/null)" ]; then
+      ocupadas="$ocupadas ${par%%:*}=${par#*:}"
+    fi
+  done
+  if [ -n "$ocupadas" ]; then
+    echo "portas já em uso no host:$ocupadas" >&2
+    echo "  escolha outras no deploy/.env (no RHEL, a 9090 costuma ser o Cockpit: PATCHD_METRICS_PORT=9091) e rode de novo" >&2
+    exit 1
+  fi
+fi
 
 # O Podman não cria a origem de um bind mount (o Docker cria): as pastas existem antes.
 mkdir -p "$RELEASES_DIR" "$SECRETS" "$TLS_DIR"

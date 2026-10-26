@@ -351,3 +351,30 @@ func TestTemplateMarkersAreFilled(t *testing.T) {
 		}
 	}
 }
+
+// O preparar-vm.sh (Aula 23.1b) roda como root numa VM: os argumentos são conferidos antes
+// de qualquer coisa, e um caminho no /home ou uma porta baixa param ali, sem tocar no sistema.
+func TestPrepararVMRecusaArgumentos(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("sem bash")
+	}
+	for _, args := range [][]string{
+		{"-d", "/home/patchd/dados"},
+		{"-d", "relativo"},
+		{"-d", "/srv/com espaço"},
+		{"-p", "443"},
+		{"-p", "porta"},
+		{"-u", "Maiusculo"},
+		{"-u"},
+		{"--desconhecida"},
+	} {
+		cmd := exec.Command(bash, append([]string{"preparar-vm.sh"}, args...)...)
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+		out, err := cmd.CombinedOutput()
+		ee, ok := err.(*exec.ExitError)
+		if !ok || ee.ExitCode() != 2 {
+			t.Errorf("preparar-vm.sh %v: %v, esperado exit 2\n%s", args, err, out)
+		}
+	}
+}

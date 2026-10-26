@@ -12,6 +12,17 @@ mkdir -p "$DIR"
 # Só o dono entra na pasta: protege os arquivos no host.
 chmod 700 "$DIR"
 
+# Motor (Aula 23.1): no Podman sem root, o pod roda com keep-id (o dono destes arquivos é o
+# UID 65532 lá dentro): o servidor lê tudo como dono, e nenhuma ACL é preciso.
+MOTOR="$(sed -n 's/^PATCHD_MOTOR=//p' "$DEPLOY/.env" 2>/dev/null | tail -1)"
+# Aula 23.1b: num host só com Podman (o RHEL), sem o PATCHD_MOTOR anotado, este script
+# seguiria no modo compose (ACL para o UID 65532 do host, "go run" que não existe ali).
+if [ -z "$MOTOR" ] && command -v podman >/dev/null 2>&1 &&
+   { ! command -v docker >/dev/null 2>&1 || docker --version 2>&1 | grep -qi podman; }; then
+  echo "este host tem Podman e não tem Docker: rode antes ./deploy/podman/instalar.sh (ele anota PATCHD_MOTOR=podman no deploy/.env)" >&2
+  exit 1
+fi
+
 # 0. Variáveis PATCHD_* exportadas no shell valem mais que o deploy/.env no compose (Aula
 # 10.1: o servidor subiu com o RHBK do ambiente de desenvolvimento). Só os nomes, nunca os valores.
 # Desde a Aula 10.4 a versão também mora no deploy/.env (o atualizar.sh anota): nenhuma
@@ -38,9 +49,6 @@ else
   echo "banco: segredos gerados."
 fi
 
-# Motor (Aula 23.1): no Podman sem root, o pod roda com keep-id (o dono destes arquivos é o
-# UID 65532 lá dentro): o servidor lê tudo como dono, e nenhuma ACL é preciso.
-MOTOR="$(sed -n 's/^PATCHD_MOTOR=//p' "$DEPLOY/.env" 2>/dev/null | tail -1)"
 
 # Arquivos que o servidor (UID 65532) lê. A ACL dá leitura só a ele e mantém o arquivo
 # seu: o servidor de desenvolvimento, que roda com o seu usuário, continua lendo o mesmo

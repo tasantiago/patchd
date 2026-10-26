@@ -101,7 +101,12 @@ case "$MOTOR" in
     DICA_LOG="journalctl --user -u patchd-server -n 30"
     motor() { podman "$@"; }
     pg() { podman exec -i patchd-postgres "$@"; }
-    banco_subir() { systemctl --user start patchd-postgres.service; }
+    # reset-failed (Aula 23.1b): depois de algumas falhas seguidas, o systemd recusa novas
+    # tentativas ("Start request repeated too quickly") até alguém zerar a contagem.
+    banco_subir() {
+      systemctl --user reset-failed patchd-pod.service patchd-postgres.service 2>/dev/null || true
+      systemctl --user start patchd-postgres.service
+    }
     # A unidade do Quadlet sobe sempre IMAGEM:atual; trocar de versão é mudar essa tag.
     marcar_versao() {
       podman tag "$IMAGEM:$1" "$IMAGEM:atual"
@@ -109,8 +114,14 @@ case "$MOTOR" in
     }
     # Notify=healthy na unidade: o restart só volta quando o healthcheck passa (ou falha
     # pelo TimeoutStartSec).
-    servidor_trocar() { systemctl --user restart patchd-server.service; }
-    servidor_iniciar() { systemctl --user start patchd-server.service; }
+    servidor_trocar() {
+      systemctl --user reset-failed patchd-server.service 2>/dev/null || true
+      systemctl --user restart patchd-server.service
+    }
+    servidor_iniciar() {
+      systemctl --user reset-failed patchd-server.service 2>/dev/null || true
+      systemctl --user start patchd-server.service
+    }
     servidor_parar() { systemctl --user stop patchd-server.service; }
     servidor_container() {
       if podman container exists patchd-server; then echo patchd-server; fi

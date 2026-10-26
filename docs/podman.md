@@ -30,17 +30,64 @@ mesmos comandos. O `compose.sh` não se aplica (ele mostra os equivalentes).
 
 ## Preparação da VM (como root, uma vez)
 
+O `deploy/podman/preparar-vm.sh` (Aula 23.1b) faz tudo desta seção e confere o que já
+estava feito; rodar de novo não desfaz nada. Ele vem antes do clone do usuário do serviço:
+
 ```sh
-dnf install -y podman git openssl acl     # RHEL 10: Podman 5, com o Quadlet
+dnf install -y git
+git clone URL_DO_REPOSITORIO /tmp/patchd
+bash /tmp/patchd/deploy/podman/preparar-vm.sh            # -u patchd -d /srv/patchd -p 8443
+bash /tmp/patchd/deploy/podman/preparar-vm.sh --443      # idem, e o painel sem a porta na URL
+rm -rf /tmp/patchd
+```
+
+O que ele faz, para quem preferir à mão:
+
+```sh
+dnf install -y podman git openssl acl passt policycoreutils-python-utils
 useradd -m patchd                         # o usuário do serviço; o useradd já reserva os subuid/subgid
 grep patchd /etc/subuid /etc/subgid       # uma faixa de 65536 em cada
 loginctl enable-linger patchd             # serviços do usuário no boot, sem login
+mkdir -p /var/log/journal && systemd-tmpfiles --create --prefix /var/log/journal && systemctl restart systemd-journald
+#   armazenamento fora do /home: seção "Disco", abaixo
 firewall-cmd --permanent --add-port=8443/tcp   # HTTPS: painel e agentes
 firewall-cmd --permanent --add-port=8080/tcp   # HTTP de transição e cache (só se usar)
+firewall-cmd --permanent --add-forward-port=port=443:proto=tcp:toport=8443   # opcional: URL sem a porta
 firewall-cmd --reload
+ss -ltnp | grep -E ':(8443|8080|9090) '   # vazio: livres
 ```
 
 O nome `patchd` do usuário é um exemplo; o resto do guia chama de "usuário do serviço".
+
+O diário em disco não é enfeite: só em memória (o padrão de algumas VMs), ele não separa
+por usuário, o `journalctl --user` responde "insufficient permissions", e os logs que os
+scripts mostram quando algo falha somem.
+
+### Disco
+
+O Podman sem root guarda as imagens, o cache do build e os volumes (o banco também) em
+`~/.local/share/containers`, no `/home`. Numa VM com partições separadas, o `/home` costuma ser
+pequeno: só a primeira subida usa de 4 a 5 GB (a imagem do Go e o cache do build; a do
+Postgres duas vezes, por causa do keep-id), e o banco cresce. O `instalar.sh` avisa abaixo de
+15 GB livres. Antes do primeiro `podman` do usuário do serviço, mude para uma partição com
+espaço (o `preparar-vm.sh` usa `/srv/patchd`, que fica no `/`):
+
+```sh
+# como root
+install -d -m 700 -o patchd -g patchd /srv/patchd /srv/patchd/containers
+semanage fcontext -a -e /home/patchd/.local/share/containers /srv/patchd/containers
+restorecon -R /srv/patchd/containers
+# como o usuário do serviço
+mkdir -p ~/.config/containers
+printf '[storage]\ndriver = "overlay"\ngraphroot = "/srv/patchd/containers/storage"\n' > ~/.config/containers/storage.conf
+podman info --format '{{.Store.GraphRoot}}'    # /srv/patchd/containers/storage
+```
+
+O `semanage` dá à pasta nova os rótulos do SELinux da padrão (o tipo da pasta `storage` fica
+`data_home_t`); sem ele, os containers não leem as camadas. Se o usuário já rodou algum
+`podman`, `podman system reset` antes de conferir. Depois do banco criado, mudar a pasta
+exige migrar os volumes: decida antes. Para produção, o melhor é um volume lógico só do
+patchd, montado na mesma pasta.
 A porta das métricas (9090) fica só no próprio host; para um Prometheus de outra máquina,
 libere só o IP dele (regra rica do firewalld), não a porta para a rede inteira.
 
@@ -67,13 +114,18 @@ Entre com `sudo -iu patchd` (o `XDG_RUNTIME_DIR` é ajustado pelos scripts) ou
 
 ```sh
 git clone URL_DO_REPOSITORIO patchd && cd patchd     # ou de um git bundle, se o GitHub for bloqueado
-cp deploy/.env.exemplo deploy/.env && vi deploy/.env  # PATCHD_PUBLIC_URL, no mínimo
+ls deploy/podman                                     # sem a pasta, o clone não tem a Aula 23.1: falta o push
+cp deploy/.env.exemplo deploy/.env && vi deploy/.env  # PATCHD_PUBLIC_URL, no mínimo; 9090 ocupada: PATCHD_METRICS_PORT=9091
 ./deploy/podman/instalar.sh     # unidades do Quadlet, PATCHD_MOTOR=podman, imagem do Postgres
 ./deploy/gerar-segredos.sh      # banco, token das métricas; diz o que falta
 #   TLS: server.crt e server.key em deploy/tls (da CA interna)
 ./deploy/atualizar.sh vX.Y.Z    # constrói, sobe o banco e o servidor e confere
 systemctl --user enable --now patchd-backup.timer
 ```
+
+O usuário do serviço não tem senha: para levar um arquivo à VM (o certificado, o
+`lab-23.1-tls.sh`), copie com o seu usuário para `/tmp` e, como o usuário do serviço,
+`cp /tmp/ARQUIVO ~`.
 
 Na primeira subida de uma frota nova, o `atualizar.sh` constrói a imagem e para antes de
 subir, pedindo a chave de jobs: ele mostra o `podman run ... job keygen` com a imagem recém
@@ -107,11 +159,23 @@ e as versões ficam como `localhost/patchd-server:vX.Y.Z`, para a volta (`--volt
   `sudo -iu USUARIO` e os scripts do `deploy/`, ou `export XDG_RUNTIME_DIR=/run/user/$(id -u)`.
 - **Serviços param quando o usuário sai** ou não sobem no boot: falta o linger
   (`loginctl enable-linger USUARIO`, como root).
-- **Porta já em uso** (o pod não sobe; o log fala em `Failed to bind port`): outra coisa no
-  host usa a porta. Mude `PATCHD_TLS_PORT`/`PATCHD_HTTP_PORT` no `.env` e rode o `instalar.sh`.
+- **Porta já em uso** (o pod não sobe; o log fala em `Failed to bind port`, e o
+  `atualizar.sh`, em "o Postgres não subiu"): outra coisa no host usa a porta. No RHEL, a 9090
+  costuma ser o **Cockpit** (`ss -ltnp` mostra `systemd`, que ativa o `cockpit.socket`): use
+  `PATCHD_METRICS_PORT=9091`. Mude a porta no `.env` e rode o `instalar.sh`, que confere as
+  portas antes de gerar as unidades. Com o pod no ar, o `ss` mostra as portas dele: é normal.
+- **`Start request repeated too quickly`**: depois de algumas falhas seguidas, o systemd para
+  de tentar. Os scripts do `deploy/` zeram a contagem antes de subir; à mão,
+  `systemctl --user reset-failed patchd-pod patchd-postgres patchd-server`.
+- **`No journal files were opened due to insufficient permissions`** no `journalctl --user`:
+  o diário está só em memória. Como root, ponha-o em disco (seção "Preparação"); até lá,
+  como root, `journalctl _UID=$(id -u patchd) -n 60`.
 - **Permissão negada lendo um segredo**: confira o dono (o usuário do serviço) e o SELinux
   (`ausearch -m avc -ts recent`, como root). Os `:Z` das unidades rotulam a cada subida.
 - **O servidor não fica saudável**: `journalctl --user -u patchd-server -n 50`. O
   `atualizar.sh` para, mostra o fim do log e diz o comando da volta.
 - **Root não vê nada**: `podman ps` como root olha outro armazenamento. Tudo do patchd é do
-  usuário do serviço.
+  usuário do serviço. E o `podman pod ps` não tem `-a`: ele já lista todos.
+- **`gerar-segredos.sh` falando em `go run` e `setfacl`**: ele rodou antes do `instalar.sh` (que
+  anota `PATCHD_MOTOR=podman`). Desde a 23.1b ele para e avisa; se já tiver rodado, nada se
+  perde: `setfacl -b deploy/secrets/metrics_token` e siga.
