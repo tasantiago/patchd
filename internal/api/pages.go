@@ -841,7 +841,7 @@ var pages = template.Must(template.New("").Parse(`
 <li><div class="kpi"><span class="kpi-rot">Instalações fora de suporte</span><span class="kpi-val v-vermelho">{{.EOL}}</span><span class="kpi-sub">sem correção do fabricante</span></div></li>
 </ul>
 <div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="/painel/patch?aba=terceiros">só os com problema</a>{{else}}<a href="/painel/patch?aba=terceiros&amp;todos=1">mostrar todos os identificados</a>{{end}}</span></div>
-<p class="muted">O patchd não instala programas de terceiros: a lista diz o que distribuir e onde (a distribuição continua pelo ITOM). A referência vem do catálogo de terceiros (winget e feeds dos fabricantes, Aula 6.5).</p>
+<p class="muted">Os programas com regra de instalação o patchd atualiza: baixe e aprove a versão na página do programa, e crie a campanha ou o job. Os outros, a lista diz o que distribuir e onde. A referência vem do catálogo de terceiros (winget e feeds dos fabricantes).</p>
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Programa</th><th>Referência</th><th>Instalações</th><th>Desatualizadas</th><th>Fora de suporte</th><th>Versões instaladas</th><th>Origem</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Reference}}</code></td><td class="num">{{.Installs}}</td>

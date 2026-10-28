@@ -80,6 +80,17 @@ done
 feito "subuid e subgid com 65536 ou mais"
 loginctl enable-linger "$USUARIO"
 feito "linger: os serviços dele sobem no boot, sem login"
+# Aula 23.4: o sudo -iu não abre sessão, e sem XDG_RUNTIME_DIR o systemctl --user e o
+# journalctl --user digitados à mão não acham o systemd do usuário ("Failed to connect to
+# user scope bus"). Os scripts do deploy/ já ajustam; o login do usuário passa a ajustar.
+perfil="$(getent passwd "$USUARIO" | cut -d: -f6)/.bash_profile"
+if grep -qs 'XDG_RUNTIME_DIR' "$perfil"; then
+  feito "XDG_RUNTIME_DIR já no .bash_profile"
+else
+  printf '\n# patchd (preparar-vm.sh): o systemd do usuário também no sudo -iu\nexport XDG_RUNTIME_DIR=/run/user/$(id -u)\n' >> "$perfil"
+  chown "$USUARIO:$USUARIO" "$perfil"
+  feito "XDG_RUNTIME_DIR no .bash_profile (systemctl --user funciona no sudo -iu)"
+fi
 
 echo "== diário do systemd"
 # Só em memória (/run), o diário não separa por usuário, e o usuário do serviço não lê o

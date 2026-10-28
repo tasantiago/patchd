@@ -109,8 +109,15 @@ interno e configure-o em `/etc/containers/registries.conf.d/` (um `[[registry]]`
 
 ## Instalação (como o usuário do serviço)
 
-Entre com `sudo -iu patchd` (o `XDG_RUNTIME_DIR` é ajustado pelos scripts) ou
-`machinectl shell patchd@` (sessão completa; pacote `systemd-container`).
+Entre com `sudo -iu patchd` ou `machinectl shell patchd@` (sessão completa; pacote
+`systemd-container`). O `sudo -iu` não abre sessão: sem `XDG_RUNTIME_DIR`, o `systemctl --user`
+e o `journalctl --user` digitados à mão dizem "Failed to connect to user scope bus". Os
+scripts do `deploy/` ajustam sozinhos; para o resto, o `preparar-vm.sh` (desde a Aula 23.4)
+grava no `~/.bash_profile` do usuário do serviço:
+
+```sh
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+```
 
 ```sh
 git clone URL_DO_REPOSITORIO patchd && cd patchd     # ou de um git bundle, se o GitHub for bloqueado
@@ -134,7 +141,61 @@ construída (não há Go na VM). Gere, guarde a pública para o build dos agente
 troca (nem volta).
 
 Mudou o `deploy/.env` (portas, LDAP, SMTP...)? `./deploy/podman/instalar.sh` de novo e
-`systemctl --user restart patchd-server`. Mudou a versão? `./deploy/atualizar.sh`, como no compose.
+`systemctl --user restart patchd-server`. Portas: `systemctl --user restart patchd-pod` e
+`systemctl --user start patchd-server` (é o pod que publica). Mudou a versão?
+`./deploy/atualizar.sh`, como no compose. Os parâmetros que também mudam em Configuração ›
+Parâmetros (título, fuso, retenção, notificações, grupos) seguem o que a tela gravou: o `.env`
+só vale de novo com "restaurar o padrão".
+
+## Login pelo AD (LDAPS)
+
+O patchd fala com o AD só por LDAPS (porta 636): a senha da rede não passa aberta. No
+`deploy/.env`, o controlador de domínio, o domínio e os grupos (a base de busca pode ficar
+vazia: sai do domínio), e então `./deploy/podman/instalar.sh` e
+`systemctl --user restart patchd-server`.
+
+**A CA da instituição na imagem.** O certificado do DC é emitido pela CA interna, e a imagem
+do servidor só confia no que estiver em `.docker/certs/` na hora do build (fora do git; é a
+mesma pasta da CA de um proxy com inspeção TLS). Para exportar a cadeia exata que assina o
+DC, num Windows do domínio, no PowerShell:
+
+```powershell
+$dc = 'NOME_DO_DC'
+$c = New-Object Net.Sockets.TcpClient($dc, 636)
+$s = New-Object Net.Security.SslStream($c.GetStream(), $false, { $true }); $s.AuthenticateAsClient($dc)
+$ch = New-Object Security.Cryptography.X509Certificates.X509Chain
+[void]$ch.Build((New-Object Security.Cryptography.X509Certificates.X509Certificate2($s.RemoteCertificate)))
+$i = 0
+foreach ($e in ($ch.ChainElements | Select-Object -Skip 1)) {
+  $i++; $p = "$env:USERPROFILE\Desktop\ca-ad-$i.crt"
+  "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($e.Certificate.RawData, 'InsertLineBreaks') + "`n-----END CERTIFICATE-----" | Set-Content -Encoding ascii $p
+  "$p"
+}
+$c.Close()
+```
+
+Saem a intermediária e a raiz (`ca-ad-1.crt`, `ca-ad-2.crt`). Na VM, como o usuário do
+serviço (os arquivos chegam por `/tmp`, como os outros):
+
+```sh
+mkdir -p ~/patchd/.docker/certs && cp /tmp/ca-ad-*.crt ~/patchd/.docker/certs/
+cat ~/patchd/.docker/certs/*.crt > /tmp/cadeia.pem
+openssl s_client -connect NOME_DO_DC:636 -brief -tls1_2 -CAfile /tmp/cadeia.pem </dev/null 2>&1 | grep -E 'Protocol|Verification'
+#   esperado: Protocol version: TLSv1.2 e Verification: OK
+./deploy/atualizar.sh vX.Y.Z     # nova versão: a imagem é reconstruída com a CA ("2 added" no update-ca-certificates)
+read -rsp 'Senha: ' S; echo; printf '%s\n' "$S" | podman exec -i patchd-server /patchd-server ad check -user SEU_USUARIO; unset S
+```
+
+O `ad check` mostra cada etapa (LDAPS, senha, grupos, perfil) sem abrir sessão. Depois:
+
+- A **conta local** de administrador continua sendo a contingência (AD ou 636 fora do ar):
+  senha num cofre, sem uso no dia a dia.
+- Sem `PATCHD_LDAP_READ_GROUP`, só o grupo admin entra; a equipe que só consulta precisa de um
+  grupo de leitura (no `.env` ou em Configuração › Acesso).
+- Os `.crt` ficam só nesta VM: numa reinstalação, eles vão junto. Quando a CA da instituição
+  for renovada, exporte de novo e rode o `atualizar.sh` (até lá, o `ad check` diz "CA
+  desconhecida").
+- O `agente.sh` usa a mesma pasta no build do agente.
 
 ## Operação
 
@@ -147,6 +208,7 @@ Mudou o `deploy/.env` (portas, LDAP, SMTP...)? `./deploy/podman/instalar.sh` de 
 | `./deploy/compose.sh up -d` | `systemctl --user start patchd-server` |
 | `docker image ls patchd-server` | `podman image ls patchd-server` |
 | timer `patchd-backup` do sistema (`deploy/systemd`) | timer `patchd-backup` do usuário (`systemctl --user list-timers`) |
+| `patchd-server package fetch` (ainda vale) | botão Baixar na página do programa (Aula 23.3, `docs/operacao.md`) |
 
 A versão no ar é a imagem `localhost/patchd-server:atual`; o `atualizar.sh` troca essa tag
 e as versões ficam como `localhost/patchd-server:vX.Y.Z`, para a volta (`--voltar`).
@@ -211,6 +273,24 @@ muda o que o painel e as máquinas novas recebem). Retirar a oferta, sem versão
   `atualizar.sh` para, mostra o fim do log e diz o comando da volta.
 - **Root não vê nada**: `podman ps` como root olha outro armazenamento. Tudo do patchd é do
   usuário do serviço. E o `podman pod ps` não tem `-a`: ele já lista todos.
+- **Login no painel recusado como "conta local recusada"**, com o AD configurado: o servidor
+  ainda roda sem o AD (o `restart` não aconteceu, ou o `instalar.sh` não rodou depois do
+  `.env`). `grep PATCHD_LDAP_HOST ~/.config/patchd/servidor.env` e `systemctl --user restart
+  patchd-server`.
+- **`ad check`: "connection reset by peer"** na conexão LDAPS: a conexão abre e cai no
+  primeiro pacote do TLS. Separe as causas:
+  1. da VM, `openssl s_client -connect NOME_DO_DC:636 -brief -tls1_2 </dev/null`: `errno=104`
+     confirma que é antes do patchd;
+  2. de um Windows do domínio, o teste do PowerShell da seção do AD (só as quatro primeiras
+     linhas): passa com `Tls12`? Então o DC tem certificado e fala TLS 1.2;
+  3. quem manda o reset, como root:
+     `tcpdump -ni any -c 20 -w /tmp/ldaps.pcap 'port 636' &`, o `openssl` do passo 1, e
+     `tcpdump -nr /tmp/ldaps.pcap -v | grep -oE 'ttl [0-9]+|Flags \[[^]]*\]' | paste - -`.
+     O `[S.]` do DC (Windows) vem com TTL perto de 128; um `[R.]` com outro TTL (63, por
+     exemplo) foi injetado por um firewall ou IPS no caminho: peça a liberação da 636 da
+     VM para os DCs (a 389 aberta não basta).
+- **`ad check`: "certificado: emitido por CA desconhecida"**: falta a CA da instituição na
+  imagem (seção do AD).
 - **`gerar-segredos.sh` falando em `go run` e `setfacl`**: ele rodou antes do `instalar.sh` (que
   anota `PATCHD_MOTOR=podman`). Desde a 23.1b ele para e avisa; se já tiver rodado, nada se
   perde: `setfacl -b deploy/secrets/metrics_token` e siga.
