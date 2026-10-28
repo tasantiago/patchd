@@ -86,6 +86,10 @@ type Store interface {
 	RevokeThirdParty(ctx context.Context, app, version string) (bool, error)
 	// Aula 23.3: excluir uma versão guardada pelo painel.
 	DeleteThirdPartyVersion(ctx context.Context, app, version string) ([]store.ThirdPartyPackage, error)
+	// Aula 23.6: a localização do patrimônio.
+	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
+	AssetLocations(ctx context.Context) ([]store.AssetLocation, error)
+	AssetImports(ctx context.Context, limit int) ([]store.AssetImport, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -158,6 +162,7 @@ type api struct {
 	tpManifest  *thirdparty.Manifest       // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
 	tpFetch     PackageFetcher             // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
 	fetches     tpFetchBoard               // Aula 23.3: o download em andamento e o último de cada programa
+	assets      assetCache                 // Aula 23.6: o patrimônio, pelo tombo
 	jobKey      ed25519.PrivateKey         // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
 	escrow      *escrowKey                 // guarda da senha da BIOS (Aula 21.4); nil: desligada
 	publicURL   string                     // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
@@ -263,6 +268,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/configuracao/parametros", a.sameOrigin(a.adminAction(a.paramsAction)))                // Aula 19.2
 	mux.Handle("POST /painel/configuracao/parametros/restaurar", a.sameOrigin(a.adminAction(a.paramsResetAction))) // Aula 19.2
 	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction)))              // Aula 19.1
+	mux.Handle("POST /painel/configuracao/patrimonio", a.sameOrigin(a.adminAction(a.importAssetsAction)))          // Aula 23.6
 	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))

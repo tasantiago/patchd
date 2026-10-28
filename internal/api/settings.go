@@ -94,11 +94,12 @@ type settingsView struct {
 	NotifyOn    bool             // aba Sistema: notificações ligadas, com o botão de teste (Aula 18.5)
 	Appearance  *logoView        // aba Sistema: o cartão Aparência (Aula 19.1)
 	Params      []paramGroup     // aba Parâmetros (Aula 19.2)
+	Assets      *assetView       // aba Patrimônio (Aula 23.6)
 }
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
-	case "agente", "acesso", "auditoria", "autoatendimento":
+	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio":
 		return tab
 	case "parametros":
 		if a.params != nil {
@@ -131,6 +132,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		}
 	case "agente":
 		err = a.agentView(r, &v)
+	case "patrimonio":
+		assetsFlash(q, &v.pageBase)
+		err = a.assetsTab(r, &v)
 	case "acesso":
 		accessFlash(q, &v.pageBase)
 		err = a.accessView(r, s, &v)

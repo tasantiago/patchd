@@ -14,6 +14,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/export"
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/patrimonio"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
@@ -46,11 +47,13 @@ var searchFields = []struct{ Key, Label string }{
 	{"todos", "Todos os campos"}, {"nome", "Nome"}, {"ip", "IP"}, {"serial", "Serial"},
 	{"so", "Sistema"}, {"modelo", "Fabricante e modelo"}, {"agente", "Versão do agente"}, {"categoria", "Categoria"},
 	{"usuario", "Usuário conectado"},
+	{"tombo", "Tombo"}, {"local", "Prédio, sala e unidade"}, {"bem", "Descrição do bem"}, // Aula 23.6
 }
 
 // Colunas da tabela, na ordem; a chave vai na URL (?ordem=).
 var equipColumns = []struct{ Key, Label string }{
-	{"nome", "Nome"}, {"status", "Status"}, {"agente", "Agente"}, {"ip", "IP"}, {"usuario", "Usuário"},
+	{"nome", "Nome"}, {"tombo", "Tombo"}, {"local", "Local"}, // Aula 23.6
+	{"status", "Status"}, {"agente", "Agente"}, {"ip", "IP"}, {"usuario", "Usuário"},
 	{"inventario", "Inventário"}, {"contato", "Último contato"}, {"canal", "Canal"},
 	{"so", "Sistema"}, {"categoria", "Categoria"}, {"serial", "Serial"}, {"bios", "Senha da BIOS"}, {"anel", "Anel"},
 }
@@ -127,6 +130,31 @@ type equip struct {
 	// Aula 21.2: o firmware, das colunas do inventário.
 	FWMode, FWTPM, FWInterface string
 	FWSecureBoot, FWAdmin      *bool
+	// Aula 23.6: o bem do patrimônio, pelo tombo no nome (vazio: nenhum casou).
+	Asset store.AssetLocation
+}
+
+// withAssets liga cada máquina ao bem do patrimônio pelos dígitos do nome (Aula 23.6).
+func withAssets(list []equip, byTombo map[string]store.AssetLocation) {
+	if len(byTombo) == 0 {
+		return
+	}
+	for i := range list {
+		if a, ok := patrimonio.Match(list[i].Name, byTombo); ok {
+			list[i].Asset = a
+		}
+	}
+}
+
+// localText: prédio e sala, numa linha (a coluna Local e a ordem dela).
+func (e equip) localText() string {
+	switch {
+	case e.Asset.Building == "":
+		return e.Asset.Room
+	case e.Asset.Room == "":
+		return e.Asset.Building
+	}
+	return e.Asset.Building + " · " + e.Asset.Room
 }
 
 // fwMatch: a máquina entra no filtro do firmware.
@@ -206,6 +234,7 @@ func buildEquip(rows []store.InventoryRow, now time.Time) []equip {
 type equipQuery struct {
 	Field, Q, Status, Order string
 	Firmware                string // Aula 21.2
+	Building                string // Aula 23.6: o prédio do patrimônio (exato)
 	Desc                    bool
 	Per, Page               int
 }
@@ -223,6 +252,7 @@ func parseEquipQuery(v url.Values) equipQuery {
 	if f := v.Get("firmware"); slices.Contains(fwFilters, f) {
 		q.Firmware = f
 	}
+	q.Building = texto.Clip(strings.TrimSpace(v.Get("predio")), 200)
 	if o := v.Get("ordem"); slices.ContainsFunc(equipColumns, func(c struct{ Key, Label string }) bool { return c.Key == o }) {
 		q.Order = o
 	}
@@ -250,6 +280,9 @@ func (q equipQuery) values() url.Values {
 	}
 	if q.Firmware != "" {
 		v.Set("firmware", q.Firmware)
+	}
+	if q.Building != "" {
+		v.Set("predio", q.Building)
 	}
 	if q.Order != "nome" {
 		v.Set("ordem", q.Order)
@@ -292,8 +325,15 @@ func (e equip) texts(field string) []string {
 		return []string{e.Category}
 	case "usuario":
 		return e.userTexts()
+	case "tombo":
+		return []string{e.Asset.Tombo}
+	case "local":
+		return []string{e.Asset.Building, e.Asset.Room, e.Asset.Unit}
+	case "bem":
+		return []string{e.Asset.Description, e.Asset.Subgroup}
 	}
-	return append([]string{e.Name, e.ID, e.IP, e.Serial, e.OS, e.Manufacturer + " " + e.Model, e.Agent, e.Category}, e.userTexts()...)
+	return append([]string{e.Name, e.ID, e.IP, e.Serial, e.OS, e.Manufacturer + " " + e.Model, e.Agent, e.Category,
+		e.Asset.Tombo, e.Asset.Building, e.Asset.Room, e.Asset.Unit, e.Asset.Description}, e.userTexts()...)
 }
 
 // userTexts: a conta (com e sem o domínio) e o nome de cada usuário conectado.
@@ -325,6 +365,9 @@ func filterEquip(list []equip, q equipQuery) []equip {
 			}
 		}
 		if !e.fwMatch(q.Firmware) {
+			continue
+		}
+		if q.Building != "" && e.Asset.Building != q.Building {
 			continue
 		}
 		if needle != "" && !slices.ContainsFunc(e.texts(q.Field), func(s string) bool { return strings.Contains(strings.ToLower(s), needle) }) {
@@ -381,6 +424,13 @@ func compareEquip(a, b equip, order string) int {
 		return text(a.Serial, b.Serial)
 	case "anel":
 		return cmp.Compare(a.Ring, b.Ring)
+	case "tombo": // como número: 9999 antes de 10000
+		if c := cmp.Compare(len(a.Asset.Tombo), len(b.Asset.Tombo)); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Asset.Tombo, b.Asset.Tombo)
+	case "local":
+		return text(a.localText(), b.localText())
 	case "bios": // não definida antes de definida (o vazio já foi para o fim)
 		return cmp.Compare(btoi(*a.FWAdmin), btoi(*b.FWAdmin))
 	}
@@ -417,6 +467,10 @@ func (e equip) isEmpty(order string) bool {
 		return e.Serial == ""
 	case "bios":
 		return e.FWAdmin == nil
+	case "tombo":
+		return e.Asset.Tombo == ""
+	case "local":
+		return e.localText() == ""
 	}
 	return false
 }
@@ -446,6 +500,7 @@ type equipRow struct {
 	ID, Name, Agent, IP, Collected, Seen, Channel, OS, Category, Serial, Ring string
 	BIOS                                                                      string // Aula 21.2
 	BIOSMissing                                                               bool
+	Tombo, Building, Room, AssetHint                                          string // Aula 23.6
 	User, UserAll                                                             string // o primeiro usuário; todos, na dica
 	UserMore                                                                  int    // quantos além do primeiro
 	Online, HasState, IPFromCheckin                                           bool
@@ -471,6 +526,8 @@ type equipView struct {
 	Pages                            []pageLink
 	CSV                              string
 	HasFilter                        bool
+	Buildings                        []optView // Aula 23.6: os prédios do patrimônio com máquina
+	Building                         string
 }
 
 // fwCard: um cartão do firmware: a contagem e o link do filtro (que mantém a busca e o status).
@@ -528,7 +585,23 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 	}
 	now := a.now()
 	all := buildEquip(rows, now)
+	assets, err := a.assetMap(r.Context())
+	if err != nil {
+		a.internalError(w, r, "ler o patrimônio", err)
+		return
+	}
+	withAssets(all, assets)
 	v.Total = len(all)
+	// Aula 23.6: o filtro de prédio lista os prédios que têm máquina na frota.
+	v.Building = q.Building
+	seen := map[string]bool{}
+	for _, e := range all {
+		if b := e.Asset.Building; b != "" && !seen[b] {
+			seen[b] = true
+			v.Buildings = append(v.Buildings, optView{Value: b, Label: b, Selected: b == q.Building})
+		}
+	}
+	slices.SortFunc(v.Buildings, func(x, y optView) int { return cmp.Compare(x.Label, y.Label) })
 	for _, e := range all {
 		if e.Online {
 			v.Online++
@@ -595,7 +668,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 
 	found := filterEquip(all, q)
 	sortEquip(found, q.Order, q.Desc)
-	v.Found, v.HasFilter = len(found), q.Q != "" || q.Status != "" || q.Firmware != ""
+	v.Found, v.HasFilter = len(found), q.Q != "" || q.Status != "" || q.Firmware != "" || q.Building != ""
 	csvQ := q
 	csvQ.Page, csvQ.Per = 1, defaultPerPage
 	v.CSV = csvQ.href("/painel/inventario.csv")
@@ -626,7 +699,17 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		row := equipRow{ID: e.ID, Name: dash(e.Name), Agent: dash(e.Agent), IP: dash(e.IP), Channel: dash(e.Channel),
 			OS: dash(e.OS), Category: dash(e.Category), Serial: dash(e.Serial), Ring: strconv.Itoa(e.Ring),
 			Online: e.Online, HasState: e.HasState, IPFromCheckin: e.IPFromCheckin,
-			Seen: ago(now.Sub(e.LastSeen)), Collected: "—", BIOS: dash(e.biosText()), BIOSMissing: e.FWAdmin != nil && !*e.FWAdmin}
+			Seen: ago(now.Sub(e.LastSeen)), Collected: "—", BIOS: dash(e.biosText()), BIOSMissing: e.FWAdmin != nil && !*e.FWAdmin,
+			Tombo: e.Asset.Tombo, Building: e.Asset.Building, Room: e.Asset.Room}
+		if e.Asset.Tombo != "" {
+			var hint []string
+			for _, s := range []string{e.Asset.Unit, e.Asset.Description, e.Asset.Subgroup} {
+				if s != "" {
+					hint = append(hint, s)
+				}
+			}
+			row.AssetHint = strings.Join(hint, " · ")
+		}
 		if e.Collected != nil {
 			row.Collected = a.stamp(*e.Collected)
 		}
@@ -657,7 +740,14 @@ func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
 		a.internalError(w, r, "listar o inventário", err)
 		return
 	}
-	found := filterEquip(buildEquip(rows, a.now()), q)
+	all := buildEquip(rows, a.now())
+	assets, err := a.assetMap(r.Context())
+	if err != nil {
+		a.internalError(w, r, "ler o patrimônio", err)
+		return
+	}
+	withAssets(all, assets)
+	found := filterEquip(all, q)
 	sortEquip(found, q.Order, q.Desc)
 	out := make([][]string, 0, len(found))
 	for _, e := range found {
@@ -676,13 +766,15 @@ func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, []string{e.ID, e.Name, status, e.Agent, e.IP, ipSrc, collected, export.When(e.LastSeen),
 			e.Channel, e.OS, e.Category, e.Manufacturer, e.Model, e.Serial, strconv.Itoa(e.Ring), usersSummary(e.Users),
-			e.FWMode, yesNoCSV(e.FWSecureBoot), e.FWTPM, yesNoCSV(e.FWAdmin), e.FWInterface}) // Aula 21.2
+			e.FWMode, yesNoCSV(e.FWSecureBoot), e.FWTPM, yesNoCSV(e.FWAdmin), e.FWInterface, // Aula 21.2
+			e.Asset.Tombo, e.Asset.Building, e.Asset.Room, e.Asset.Unit, e.Asset.Description, e.Asset.Subgroup}) // Aula 23.6
 	}
 	name := "patchd-equipamentos-" + a.now().UTC().Format("20060102-1504") + ".csv"
 	a.sendCSV(w, r, name, len(out), func(b *bytes.Buffer) error {
 		return export.Table(b, []string{"maquina", "nome", "status", "agente", "ip", "ip_origem", "inventario_coletado_utc",
 			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "anel", "usuarios",
-			"firmware_modo", "secure_boot", "tpm", "senha_admin_bios", "senha_bios_fonte"}, out)
+			"firmware_modo", "secure_boot", "tpm", "senha_admin_bios", "senha_bios_fonte",
+			"tombo", "predio", "sala", "uo", "bem", "subgrupo_bem"}, out)
 	})
 }
 

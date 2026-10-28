@@ -54,6 +54,10 @@ type Memory struct {
 	settings map[string]Setting // parâmetros mudados pela tela (Aula 19.2)
 
 	biosPasswords []BIOSPassword // guarda da senha da BIOS (Aula 21.4), ID = posição + 1
+
+	locations    []AssetLocation // localização do patrimônio (Aula 23.6)
+	assetImports []AssetImport
+	assetSeq     int64
 }
 
 type memMachine struct {

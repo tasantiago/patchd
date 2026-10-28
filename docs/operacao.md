@@ -869,3 +869,24 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
 
 Na auditoria: `terceiros.baixar` (com a versão pedida) e `terceiros.excluir`. Sem pasta de
 conteúdo (`PATCHD_CONTENT_DIR`), o painel continua mostrando o comando da linha de comando.
+
+## Localização do patrimônio (Aula 23.6)
+
+**Configuração › Patrimônio** recebe o CSV que o sistema de patrimônio exporta, com o cabeçalho
+`DEPREDIO,DESALA,UO,TOMBO,DEBEM,DESUBGRUPOBEM` (as colunas em qualquer ordem; só `TOMBO` é
+obrigatória). Vale vírgula ou ponto e vírgula, UTF-8 com ou sem BOM, ou Windows-1252 (o "CSV" do
+Excel no Windows). Até 20 MB.
+
+- **Ligação pelo nome**: cada sequência de dígitos do nome da máquina, sem os zeros à esquerda,
+  é comparada com o tombo, também sem os zeros. `FJ088594` é o tombo `88594`; o prefixo e o
+  sufixo variam à vontade. Conta a sequência **inteira**: o tombo `1234` não liga `PC112345`.
+- **Substituição**: cada envio troca a localização inteira, numa transação só. O tombo que saiu
+  do arquivo some da tabela. Um arquivo sem nenhum tombo válido é recusado e não muda nada.
+- **Tombo repetido** no arquivo: vale a última linha. Linhas sem tombo numérico ficam de fora; a
+  tela mostra quantas e os números das primeiras.
+- **Inventário**: as colunas Tombo e Local (prédio e sala; passe o mouse para ver UO, bem e
+  subgrupo), o filtro de prédio, a busca por tombo, local ou descrição do bem, e as colunas
+  `tombo,predio,sala,uo,bem,subgrupo_bem` no CSV.
+- A aba lista as máquinas do inventário que não acharam tombo (o nome sem número, ou um número
+  fora do arquivo) e as últimas importações. Cada envio fica na auditoria como
+  `patrimonio.importar`; só o perfil admin envia.

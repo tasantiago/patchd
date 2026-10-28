@@ -632,6 +632,7 @@ var pages = template.Must(template.New("").Parse(`
 <div class="card"><div class="card-cab"><h2>Equipamentos</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
 <form class="busca" method="get" action="/painel/inventario">
 {{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Firmware}}<input type="hidden" name="firmware" value="{{.Firmware}}">{{end}}
+{{if .Buildings}}<select name="predio" aria-label="prédio"><option value="">Todos os prédios</option>{{range .Buildings}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{else if .Building}}<input type="hidden" name="predio" value="{{.Building}}">{{end}}
 {{if ne .Order "nome"}}<input type="hidden" name="ordem" value="{{.Order}}">{{end}}{{if .Dir}}<input type="hidden" name="dir" value="{{.Dir}}">{{end}}
 <select name="campo" aria-label="campo da busca">{{range .Fields}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Buscar" aria-label="texto da busca">
@@ -642,6 +643,8 @@ var pages = template.Must(template.New("").Parse(`
 <thead><tr>{{range .Cols}}<th{{if .Sort}} aria-sort="{{.Sort}}"{{end}}><a href="{{.Href}}">{{.Label}}{{if .Arrow}} {{.Arrow}}{{end}}</a></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr>
 <td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td>
+<td>{{if .Tombo}}<code>{{.Tombo}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+<td{{if .AssetHint}} title="{{.AssetHint}}"{{end}}>{{if .Building}}{{.Building}}{{if .Room}}<div class="muted nota">{{.Room}}</div>{{end}}{{else if .Room}}{{.Room}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if .Online}}<span class="estado em_dia">online</span>{{else}}<span class="estado sem_dado_recente">offline</span>{{end}}</td>
 <td>{{.Agent}}</td>
 <td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
@@ -663,7 +666,23 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a></nav>
+{{if eq .Tab "patrimonio"}}{{with .Assets}}
+<div class="card"><div class="card-cab"><h2>Localização física</h2><span class="muted">do sistema de patrimônio, para o Inventário</span></div>
+<p class="muted">O CSV que o sistema de patrimônio exporta, com o cabeçalho na primeira linha: <code>DEPREDIO</code>, <code>DESALA</code>, <code>UO</code>, <code>TOMBO</code>, <code>DEBEM</code>, <code>DESUBGRUPOBEM</code> (em qualquer ordem; só o <code>TOMBO</code> é obrigatório). Vírgula ou ponto e vírgula; UTF-8 ou o CSV do Excel. Cada importação <strong>substitui</strong> a anterior inteira. A máquina é ligada ao bem pelo nome: os dígitos do hostname, sem os zeros à esquerda, iguais ao tombo (FJ088594 é o tombo 88594; letras antes e depois variam).</p>
+<form class="acao" method="post" action="/painel/configuracao/patrimonio" enctype="multipart/form-data"><input type="file" name="arquivo" accept=".csv,text/csv" required aria-label="arquivo CSV do patrimônio"><button type="submit">Importar</button><span class="muted">até {{.MaxMB}} MB</span></form>
+</div>
+<div class="card"><div class="card-cab"><h2>Ligação com o inventário</h2></div>
+<dl class="dados"><dt>Bens no patrimônio</dt><dd>{{.Assets}}{{if .Assets}} <span class="muted">({{.AssetsWithMachine}} com máquina no inventário)</span>{{end}}</dd>
+<dt>Máquinas no inventário</dt><dd>{{.Machines}} <span class="muted">({{.Matched}} com tombo ligado)</span></dd></dl>
+{{if and .Assets .Unmatched}}<p class="muted">Máquinas sem tombo ligado (o nome não tem um número que esteja no patrimônio):</p>
+<p>{{range $i, $m := .Unmatched}}{{if $i}}, {{end}}<a href="/painel/maquinas/{{$m.ID}}">{{$m.Name}}</a>{{end}}{{if .UnmatchedMore}} <span class="muted">e mais {{.UnmatchedMore}}</span>{{end}}</p>{{end}}
+</div>
+<div class="card"><div class="card-cab"><h2>Importações</h2><span class="muted">as últimas 5</span></div>
+{{if .Imports}}<div class="tabela"><table><thead><tr><th>Quando</th><th>Quem</th><th>Arquivo</th><th>Bens</th><th>Sem tombo</th><th>Repetidos</th></tr></thead>
+<tbody>{{range .Imports}}<tr><td>{{.At}}</td><td>{{.By}}</td><td>{{.File}}</td><td class="num">{{.Kept}}</td><td class="num">{{.Skipped}}</td><td class="num">{{.Duplicates}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma importação ainda.</p>{{end}}</div>
+{{end}}{{end}}
 {{if eq .Tab "autoatendimento"}}{{with .SelfService}}
 {{if .NoManifest}}<p class="aviso atencao">O servidor está sem as regras de terceiros: o autoatendimento depende delas.</p>{{else}}
 <div class="card"><div class="card-cab"><h2>O que o usuário pode pedir</h2></div>
