@@ -852,7 +852,11 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
 
 - **Baixar**: a versão mais nova do winget-pkgs, ou a que for digitada (como o winget a
   escreve, ex.: `26.04`). É o mesmo caminho da linha de comando: o manifesto do winget-pkgs, o
-  instalador do tipo da regra (x64), o SHA-256 conferido e o registro. O download roda no
+  instalador do tipo da regra (x64), o SHA-256 conferido e o registro. **Tipo** (Aula 23.5):
+  uma instalação MSI só é atualizada por um MSI (msi ou wix), e uma exe por um exe; quando a
+  regra fixa um tipo (o 7-Zip, exe) e alguma máquina tem o outro, a "Atualização pelo patchd"
+  da máquina diz "sem pacote … com o tipo MSI": escolha MSI no Baixar. A aprovação é da versão
+  e vale para os instaladores dos dois tipos. O download roda no
   servidor, em segundo plano, **um por vez**; a página mostra o andamento e se atualiza
   sozinha até terminar (pode sair dela). Reiniciar o servidor interrompe o download; o que
   já foi registrado fica. O servidor precisa de saída para o GitHub e para o site do

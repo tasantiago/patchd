@@ -57,6 +57,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		Processes: strings.Join(rule.Install.Processes, ", ")}
 	v.MaxNote = maxNoteLen
 	v.CanFetch = v.Admin && a.tpFetch != nil
+	v.Kinds, v.RuleType = fetchKinds(*rule), rule.Install.Type
 	v.Fetch, v.OtherBusy = a.fetches.view(v.P.AppID)
 	if v.Fetch != nil && v.Fetch.Running {
 		v.Refresh = 5
@@ -184,6 +185,8 @@ func tpApprovalFlash(q url.Values) (flash, errMsg string) {
 		return "Versão excluída: os registros saíram, e os arquivos que nenhuma outra versão usa também.", ""
 	case q.Get("erro") == "baixando":
 		return "", "Já há um download em andamento (um por vez). Espere ele terminar."
+	case q.Get("erro") == "tipo":
+		return "", "Tipo de instalador inválido para este programa."
 	case q.Get("erro") == "versao":
 		return "", "Versão inválida: use a versão como aparece no winget (ex.: 26.04), ou deixe vazio para a mais nova."
 	case q.Get("erro") == "nada":

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpinstall"
 )
 
 // Instaladores de terceiros pelo painel (Aula 23.3): o admin baixa uma versão (a mais nova do
@@ -27,8 +29,26 @@ import (
 // segundo plano no servidor, um por vez, e a página mostra o andamento.
 
 // PackageFetcher baixa, confere e registra o instalador da regra (versão vazia: a mais nova),
-// escrevendo o andamento em out. O main liga o de verdade; os testes, um falso.
-type PackageFetcher func(ctx context.Context, rule thirdparty.App, version string, out io.Writer) bool
+// escrevendo o andamento em out. types (Aula 23.5): vazio, o tipo da regra; senão, o
+// primeiro desses tipos que o manifesto do winget tiver. O main liga o de verdade; os
+// testes, um falso.
+type PackageFetcher func(ctx context.Context, rule thirdparty.App, version string, types []string, out io.Writer) bool
+
+// tpKindOption: um tipo que o Baixar oferece além do da regra (Aula 23.5). A máquina com o
+// MSI instalado só é atualizada por um MSI (msi ou wix); a com o exe, por um exe.
+type tpKindOption struct{ Value, Label string }
+
+// fetchKinds: os tipos de instalação cuja família não tem o tipo da regra.
+func fetchKinds(rule thirdparty.App) []tpKindOption {
+	var out []tpKindOption
+	for _, k := range []string{tpinstall.KindMSI, tpinstall.KindExe} {
+		fam := tpinstall.Family(k)
+		if !slices.Contains(fam, rule.Install.Type) {
+			out = append(out, tpKindOption{k, tpinstall.KindLabel(k) + " (" + strings.Join(fam, ", ") + ")"})
+		}
+	}
+	return out
+}
 
 // WithPackageFetch liga o botão Baixar (Aula 23.3). Sem ele (sem pasta de conteúdo ou sem
 // PostgreSQL), o painel continua indicando a linha de comando.
@@ -46,6 +66,7 @@ var tpVersionPattern = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$`)
 // tpFetchStatus: um download, em andamento ou terminado.
 type tpFetchStatus struct {
 	App, Version, By  string // Version vazia: a mais nova
+	Kind              string // Aula 23.5: MSI ou EXE; vazio: o tipo da regra
 	Started, Finished time.Time
 	Running, OK       bool
 	Lines             []string
@@ -165,7 +186,18 @@ func (a *api) fetchThirdPartyAction(w http.ResponseWriter, r *http.Request, s pa
 		http.Redirect(w, r, back+"&erro=versao", http.StatusSeeOther)
 		return
 	}
-	st := &tpFetchStatus{App: app, Version: ver, By: s.Username, Started: a.now(), Running: true}
+	// O tipo: vazio (o da regra) ou um dos que a página oferece para esta regra.
+	var types []string
+	kind := r.PostFormValue("tipo")
+	if kind != "" {
+		if !slices.ContainsFunc(fetchKinds(*rule), func(o tpKindOption) bool { return o.Value == kind }) {
+			http.Redirect(w, r, back+"&erro=tipo", http.StatusSeeOther)
+			return
+		}
+		types = tpinstall.Family(kind)
+		kind = tpinstall.KindLabel(kind)
+	}
+	st := &tpFetchStatus{App: app, Version: ver, Kind: kind, By: s.Username, Started: a.now(), Running: true}
 	if !a.fetches.start(st) {
 		http.Redirect(w, r, back+"&erro=baixando", http.StatusSeeOther)
 		return
@@ -173,6 +205,9 @@ func (a *api) fetchThirdPartyAction(w http.ResponseWriter, r *http.Request, s pa
 	pedido := ver
 	if pedido == "" {
 		pedido = "a mais nova"
+	}
+	if kind != "" {
+		pedido += " (" + kind + ")"
 	}
 	a.logger.Info("download de instalador pedido pelo painel", "app", app, "version", pedido, "username", s.Username,
 		"request_id", RequestID(r.Context()))
@@ -183,7 +218,7 @@ func (a *api) fetchThirdPartyAction(w http.ResponseWriter, r *http.Request, s pa
 	go func(rule thirdparty.App) {
 		ctx, cancel := context.WithTimeout(base, fetchTimeout)
 		defer cancel()
-		ok := a.tpFetch(ctx, rule, ver, boardWriter{b: &a.fetches, st: st})
+		ok := a.tpFetch(ctx, rule, ver, types, boardWriter{b: &a.fetches, st: st})
 		a.fetches.finish(st, ok, a.now())
 		a.logger.Info("download de instalador pelo painel terminado", "app", rule.ID, "version", pedido, "ok", ok,
 			"username", st.By)

@@ -62,6 +62,13 @@ var families = map[string][]string{
 	KindExe: {"nullsoft", "inno", "exe"},
 }
 
+// Family (Aula 23.5): os tipos de instalador do winget que atualizam o tipo de instalação
+// (msi ou exe); nil para os outros. Uma cópia: quem chama pode mexer.
+func Family(kind string) []string { return slices.Clone(families[kind]) }
+
+// KindLabel: o nome do tipo de instalação para a tela (MSI, EXE).
+func KindLabel(kind string) string { return strings.ToUpper(kind) }
+
 // MachineArch converte a arquitetura do agente (GOARCH) para os nomes do winget.
 func MachineArch(goarch string) (string, bool) {
 	switch goarch {
@@ -184,13 +191,17 @@ func decide(d *Decision, pkgs []store.ThirdPartyPackage, arch string) {
 	if best == nil {
 		// Sem -type, o fetch leva o primeiro que serve no manifesto, que pode ser do outro
 		// tipo: a dica só dispensa o -type quando o da regra já é da família da máquina.
+		// Aula 23.5: o painel baixa também do outro tipo (Baixar, com o tipo); a linha de
+		// comando continua valendo.
 		hint := "package fetch -app " + d.App.ID
+		panel := "Baixar na página do programa"
 		if !slices.Contains(families[e.Kind], d.App.Install.Type) {
 			hint += fmt.Sprintf(" -type %s (o que o manifesto tiver: package show -app %s)",
 				strings.Join(families[e.Kind], " ou "), d.App.ID)
+			panel += " com o tipo " + KindLabel(e.Kind)
 		}
 		d.State = StateNoPackage
-		d.Reason = fmt.Sprintf("nenhum instalador %s guardado para %s; use %s", e.Kind, arch, hint)
+		d.Reason = fmt.Sprintf("nenhum instalador %s guardado para %s; use %s, ou %s", e.Kind, arch, panel, hint)
 		return
 	}
 	d.Package = best

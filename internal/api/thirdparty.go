@@ -253,6 +253,8 @@ type tpProgramView struct {
 	MaxNote  int
 	// Aula 23.3: baixar pelo painel e o andamento do download deste programa.
 	CanFetch  bool
+	Kinds     []tpKindOption // Aula 23.5: os tipos além do da regra
+	RuleType  string
 	Fetch     *tpFetchStatus
 	OtherBusy string // outro programa baixando agora (um download por vez)
 }

@@ -19,9 +19,12 @@ import (
 )
 
 // Options escolhe o instalador: a versão no winget-pkgs (vazia: a mais nova), a arquitetura
-// (vazia: a do winget.Want, x64) e o tipo (vazio: o da regra).
+// (vazia: a do winget.Want, x64) e o tipo (vazio: o da regra). Types (Aula 23.5), no lugar
+// de Type: tipos aceitos, na ordem; vale o primeiro que o manifesto tiver (msi ou wix, para
+// a máquina com o MSI instalado).
 type Options struct {
 	Version, Arch, Type string
+	Types               []string
 }
 
 // Store é o que o fetch grava: o registro do instalador.
@@ -50,6 +53,26 @@ func Want(a thirdparty.App, o Options) winget.Want {
 	return w
 }
 
+// Pick escolhe o instalador do manifesto: o tipo das opções (ou o da regra) ou, com Types, o
+// primeiro deles que o manifesto tiver.
+func Pick(m winget.Manifest, a thirdparty.App, o Options) (winget.Installer, error) {
+	if len(o.Types) == 0 {
+		in, _, err := m.Select(Want(a, o))
+		return in, err
+	}
+	var first error
+	for _, t := range o.Types {
+		in, _, err := m.Select(winget.Want{Arch: o.Arch, Type: t})
+		if err == nil {
+			return in, nil
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	return winget.Installer{}, fmt.Errorf("nenhum instalador %s serve: %w", strings.Join(o.Types, " ou "), first)
+}
+
 // One baixa, confere e registra o instalador da regra, escrevendo o andamento em out, uma
 // linha por etapa. Devolve se deu certo; um erro aparece em out (ERRO ou RECUSADO).
 func One(ctx context.Context, c *winget.Client, f *pkgcache.Fetcher, st Store, a thirdparty.App, o Options,
@@ -59,7 +82,7 @@ func One(ctx context.Context, c *winget.Client, f *pkgcache.Fetcher, st Store, a
 		fmt.Fprintf(out, "%s (%s) ← winget %s\n  ERRO        %v\n", a.Name, a.ID, a.Install.Winget, err)
 		return false
 	}
-	in, _, err := m.Select(Want(a, o))
+	in, err := Pick(m, a, o)
 	if err != nil {
 		fmt.Fprintf(out, "%s (%s) ← winget %s %s\n  ERRO        %v (veja package show)\n", a.Name, a.ID, m.PackageIdentifier, m.PackageVersion, err)
 		return false

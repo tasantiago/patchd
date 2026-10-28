@@ -61,8 +61,8 @@ func TestBaixarEExcluirPeloPainel(t *testing.T) {
 	// quebra) e registra a versão pedida.
 	libera := make(chan struct{})
 	pedidas := make(chan string, 4)
-	baixa := func(ctx context.Context, rule thirdparty.App, ver string, out io.Writer) bool {
-		pedidas <- rule.ID + " " + ver
+	baixa := func(ctx context.Context, rule thirdparty.App, ver string, types []string, out io.Writer) bool {
+		pedidas <- strings.TrimSpace(rule.ID + " " + ver + " " + strings.Join(types, "/"))
 		fmt.Fprintf(out, "%s (%s) ← winget %s %s · wix · x64\n", rule.Name, rule.ID, rule.Install.Winget, ver)
 		<-libera
 		fmt.Fprint(out, "  baixado     pacotes/cc.msi (3 B)\n  registrado  novo")
@@ -98,20 +98,29 @@ func TestBaixarEExcluirPeloPainel(t *testing.T) {
 		t.Errorf("admin:\n%s", b)
 	}
 
-	// Versão digitada inválida; depois, o download da versão pedida.
+	// Aula 23.5: a regra do Chrome não fixa o tipo (o primeiro do manifesto): a página oferece
+	// os dois. (A do 7-Zip, exe, ofereceria só o MSI: TestBaixarSemOServico não tem o botão.)
+	if !strings.Contains(b, `<option value="">o primeiro do manifesto</option><option value="msi">MSI (msi, wix)</option>`+
+		`<option value="exe">EXE (nullsoft, inno, exe)</option></select>`) {
+		t.Errorf("tipos oferecidos:\n%s", b)
+	}
+	// Versão digitada inválida, tipo que a regra não oferece; depois, o download pedido.
 	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"google-chrome"}, "versao": {"1 2"}})); l != prog+"&erro=versao" {
 		t.Errorf("versão inválida: %s", l)
 	}
-	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"google-chrome"}, "versao": {"156.0.1"}})); l != prog+"&baixando=1" {
+	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"google-chrome"}, "tipo": {"bundle"}})); l != prog+"&erro=tipo" {
+		t.Errorf("tipo que a página não oferece: %s", l)
+	}
+	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"google-chrome"}, "versao": {"156.0.1"}, "tipo": {"exe"}})); l != prog+"&baixando=1" {
 		t.Fatalf("baixar: %s", l)
 	}
-	if p := <-pedidas; p != "google-chrome 156.0.1" {
+	if p := <-pedidas; p != "google-chrome 156.0.1 nullsoft/inno/exe" {
 		t.Errorf("pedida: %q", p)
 	}
 	// Em andamento: a página se atualiza, mostra o andamento e não oferece outro download;
 	// um segundo pedido e a exclusão de uma versão do mesmo programa esperam.
 	b = pagina(h, "GET", prog+"&baixando=1", sessaoAdmin, nil).Body.String()
-	for _, tr := range []string{`<meta http-equiv="refresh" content="5">`, "Download iniciado", "<strong>Baixando</strong> · versão 156.0.1 · pedido por thyago",
+	for _, tr := range []string{`<meta http-equiv="refresh" content="5">`, "Download iniciado", "<strong>Baixando</strong> · versão 156.0.1 · EXE · pedido por thyago",
 		"Google Chrome (google-chrome) ← winget Google.Chrome 156.0.1"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("em andamento: faltou %q", tr)
@@ -183,7 +192,7 @@ func TestBaixarEExcluirPeloPainel(t *testing.T) {
 	if !strings.Contains(b, "Versão excluída") {
 		t.Error("mensagem da exclusão")
 	}
-	for _, tr := range []string{`msg="download de instalador pedido pelo painel" app=google-chrome version=156.0.1 username=thyago`,
+	for _, tr := range []string{`msg="download de instalador pedido pelo painel" app=google-chrome version="156.0.1 (EXE)" username=thyago`,
 		`msg="versão de instalador de terceiros excluída" app=google-chrome version=153.0.1 installers=1 bytes_freed=3 username=thyago`} {
 		if !strings.Contains(log.String(), tr) {
 			t.Errorf("log: faltou %q\n%s", tr, log)
@@ -216,10 +225,48 @@ func TestBaixarSemOServico(t *testing.T) {
 	m, _ := thirdparty.Default()
 	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m))
 	b := pagina(h, "GET", "/painel/patch/programa?app=7zip", sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, "<code>patchd-server package fetch -app 7zip</code>") || strings.Contains(b, `action="/painel/patch/terceiros/baixar"`) {
+	if !strings.Contains(b, "<code>patchd-server package fetch -app 7zip</code>") || strings.Contains(b, `action="/painel/patch/terceiros/baixar"`) || strings.Contains(b, `name="tipo"`) {
 		t.Errorf("sem o serviço:\n%s", b)
 	}
 	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"7zip"}})); l != "/painel/patch?aba=terceiros" {
 		t.Errorf("baixar sem o serviço: %s", l)
+	}
+}
+
+// Aula 23.5: a regra que fixa o tipo (7-Zip, exe) oferece só o tipo da outra família.
+func TestBaixarTiposDaRegra(t *testing.T) {
+	agora := time.Now().UTC()
+	src := &complianceFalso{
+		fleet: protocol.ComplianceFleet{EvaluatedAt: agora, Machines: []protocol.ComplianceStatus{{MachineID: "w1", Hostname: "pc-a"}}},
+		terceiros: map[string][]protocol.ThirdPartyItem{"w1": {
+			{AppID: "7zip", Program: "7-Zip", Name: "7-Zip 26.02 (x64 edition)", State: "DESATUALIZADO", Installed: "26.02.00.0", Reference: "26.05"},
+		}},
+	}
+	st := store.NewMemory()
+	ctx := context.Background()
+	st.CreatePanelSession(ctx, identity.Hash(sessaoAdmin), panel.Session{Username: "thyago", Role: panel.RoleAdmin,
+		Source: panel.SourceAD, CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora})
+	pedidas := make(chan []string, 1)
+	baixa := func(ctx context.Context, rule thirdparty.App, ver string, types []string, out io.Writer) bool {
+		pedidas <- types
+		return true
+	}
+	m, _ := thirdparty.Default()
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m),
+		api.WithContent(t.TempDir(), nil), api.WithPackageFetch(baixa))
+	prog := "/painel/patch/programa?app=7zip"
+	b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `<option value="">o da regra (exe)</option><option value="msi">MSI (msi, wix)</option></select>`) ||
+		strings.Contains(b, `<option value="exe">`) {
+		t.Errorf("tipos do 7-Zip:\n%s", b)
+	}
+	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"7zip"}, "tipo": {"exe"}})); l != prog+"&erro=tipo" {
+		t.Errorf("exe, que é o da regra, como tipo: %s", l)
+	}
+	if l := local(pagina(h, "POST", "/painel/patch/terceiros/baixar", sessaoAdmin, url.Values{"app": {"7zip"}, "tipo": {"msi"}})); l != prog+"&baixando=1" {
+		t.Fatalf("MSI: %s", l)
+	}
+	if got := <-pedidas; strings.Join(got, " ") != "msi wix" {
+		t.Errorf("tipos pedidos: %v", got)
 	}
 }

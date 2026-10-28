@@ -60,9 +60,10 @@ func TestPlanoDaMaquinaDoLab(t *testing.T) {
 	casos := map[string]struct{ estado, motivo string }{
 		"notepad-plus-plus": {StateUpdate, "8.9.7 → 8.9.8.1 · nullsoft · x64"},
 		"mozilla-firefox":   {StateUpdate, "156.0 → 157.0.1 · nullsoft · x64"},
-		"libreoffice": {StateNoPackage, "nenhum instalador msi guardado para x64; use package fetch -app libreoffice -type msi ou wix " +
-			"(o que o manifesto tiver: package show -app libreoffice)"},
-		"vscode":        {StateNoPackage, "nenhum instalador exe guardado para x64; use package fetch -app vscode -type nullsoft ou inno ou exe"},
+		"libreoffice": {StateNoPackage, "nenhum instalador msi guardado para x64; use Baixar na página do programa com o tipo MSI, ou " +
+			"package fetch -app libreoffice -type msi ou wix (o que o manifesto tiver: package show -app libreoffice)"},
+		"vscode": {StateNoPackage, "nenhum instalador exe guardado para x64; use Baixar na página do programa com o tipo EXE, ou " +
+			"package fetch -app vscode -type nullsoft ou inno ou exe"},
 		"7zip":          {StateDuplicate, "2 instalações visíveis (msi 26.02.00.0, exe 26.02): limpar antes"},
 		"powershell-7":  {StateBundle, "bundle (WiX Burn)"},
 		"google-chrome": {StateCurrent, "155.0.8059.40 instalado"},

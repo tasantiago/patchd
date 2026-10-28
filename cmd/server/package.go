@@ -459,7 +459,7 @@ func panelFetcher(st tpfetch.Store, dir, version string) api.PackageFetcher {
 	c := winget.NewClient(ua)
 	c.HTTP = retry.Wrap(c.HTTP, nil)
 	f := pkgcache.NewFetcher(ua)
-	return func(ctx context.Context, rule thirdparty.App, ver string, out io.Writer) bool {
-		return tpfetch.One(ctx, c, f, st, rule, tpfetch.Options{Version: ver, Arch: "x64"}, dir, out)
+	return func(ctx context.Context, rule thirdparty.App, ver string, types []string, out io.Writer) bool {
+		return tpfetch.One(ctx, c, f, st, rule, tpfetch.Options{Version: ver, Arch: "x64", Types: types}, dir, out)
 	}
 }
