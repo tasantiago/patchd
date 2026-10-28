@@ -43,7 +43,7 @@ func TestAprovacaoDeInstaladores(t *testing.T) {
 	// Leitura: o cartão, sem formulários.
 	b := pagina(h, "GET", prog, sessaoTeste, nil).Body.String()
 	for _, tr := range []string{"<h2>Instaladores guardados</h2>", "winget <code>Google.Chrome</code> · assinatura exigida: Google LLC",
-		"wix · x64 · 170,0 MiB · <code>111111111111</code>", "Aprovar exige o perfil admin"} {
+		"wix · x64 · 170,0 MiB · <code>111111111111</code>", "Aprovar, baixar e excluir exigem o perfil admin"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("leitura: faltou %q", tr)
 		}

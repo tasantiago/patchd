@@ -46,6 +46,7 @@ type pageBase struct {
 	ServerVersion string
 	AgentVersion  string // a versão publicada do agente
 	ParamsOn      bool   // Aula 19.2: a aba Parâmetros existe (servidor com o serviço de parâmetros)
+	Refresh       int    // Aula 23.3: recarrega a página a cada N segundos (sem JavaScript); 0: não
 }
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
@@ -534,7 +535,7 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 var pages = template.Must(template.New("").Parse(`
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Title}} · {{.Brand}}</title>` + faviconLink + `
+<title>{{.Title}} · {{.Brand}}</title>{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}` + faviconLink + `
 ` + styleLink + `</head><body>
 <input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
 <aside class="lado" aria-label="menu lateral">
@@ -865,9 +866,14 @@ var pages = template.Must(template.New("").Parse(`
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td>
 <td>{{range .Packages}}<div>{{.Type}} · {{.Arch}} · {{.Size}} · <code>{{.SHA}}</code> <span class="muted">{{.Fetched}}</span></div>{{end}}</td>
 <td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CampaignHref}} <a class="btn" href="{{.CampaignHref}}">Campanha por anel</a>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
-{{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhum instalador guardado. No servidor: <code>patchd-server package fetch -app {{.P.AppID}}</code>.</p>{{end}}
-{{if not .Admin}}<p class="muted">Aprovar exige o perfil admin.</p>{{end}}
+{{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}
+{{if .CanDelete}}<details class="excluir"><summary>Excluir esta versão</summary><form method="post" action="/painel/patch/terceiros/excluir"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Excluir os instaladores da {{.Version}}</button> <span class="muted">dá para baixar de novo depois</span></form></details>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum instalador guardado.{{if not .CanFetch}} No servidor: <code>patchd-server package fetch -app {{.P.AppID}}</code>.{{end}}</p>{{end}}
+{{with .Fetch}}<div class="aviso {{if .Running}}atencao{{else if .OK}}ok{{else}}erro{{end}}"><strong>{{if .Running}}Baixando{{else if .OK}}Download concluído{{else}}O download não deu certo{{end}}</strong> · {{if .Version}}versão {{.Version}}{{else}}a mais nova do winget{{end}} · pedido por {{.By}}{{if .Running}} · a página se atualiza sozinha{{end}}
+{{if .Lines}}<pre class="comando andamento">{{range .Lines}}{{.}}
+{{end}}</pre>{{end}}</div>{{end}}
+{{if .CanFetch}}{{if .OtherBusy}}<p class="muted">Baixando outro programa agora ({{.OtherBusy}}); um download por vez.</p>{{else if not (and .Fetch .Fetch.Running)}}<form class="acao" method="post" action="/painel/patch/terceiros/baixar"><input type="hidden" name="app" value="{{.P.AppID}}"><input name="versao" maxlength="64" placeholder="Versão do winget (vazio: a mais nova)" aria-label="versão a baixar"><button type="submit">Baixar</button></form>{{end}}{{end}}
+{{if not .Admin}}<p class="muted">Aprovar, baixar e excluir exigem o perfil admin.</p>{{end}}
 </div>{{end}}
 <div class="card"><div class="card-cab"><h2>Instalações</h2></div><div class="tabela"><table>
 <thead><tr><th>Máquina</th><th>Como aparece no inventário</th><th>Instalada</th><th>Situação</th><th>Escopo</th></tr></thead>

@@ -30,6 +30,7 @@ type tpVersionRow struct {
 	Approved                     bool
 	ApprovedBy, ApprovedAt, Note string
 	CanApprove, CanRevoke        bool
+	CanDelete                    bool   // Aula 23.3: admin e não aprovada
 	CampaignHref                 string // aprovada, admin e chave de jobs: o formulário da campanha já preenchido (Aula 14.8)
 }
 
@@ -55,6 +56,11 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
 		Processes: strings.Join(rule.Install.Processes, ", ")}
 	v.MaxNote = maxNoteLen
+	v.CanFetch = v.Admin && a.tpFetch != nil
+	v.Fetch, v.OtherBusy = a.fetches.view(v.P.AppID)
+	if v.Fetch != nil && v.Fetch.Running {
+		v.Refresh = 5
+	}
 	pkgs, err := a.store.ThirdPartyPackages(r.Context())
 	if err != nil {
 		return err
@@ -79,6 +85,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 				row.Approved, row.ApprovedBy, row.ApprovedAt, row.Note = true, ap.ApprovedBy, a.stamp(ap.ApprovedAt), ap.Note
 			}
 			row.CanApprove, row.CanRevoke = v.Admin && !row.Approved, v.Admin && row.Approved
+			row.CanDelete = v.Admin && !row.Approved && a.contentDir != ""
 			if row.Approved && v.Admin && a.jobKey != nil {
 				row.CampaignHref = "/painel/campanhas?" + url.Values{"tipo": {"thirdparty"}, "programa": {p.AppID + " " + p.Version}}.Encode() + "#nova"
 			}
@@ -171,6 +178,20 @@ func tpApprovalFlash(q url.Values) (flash, errMsg string) {
 		return "", "Esta versão não tem instalador guardado no servidor; nada foi aprovado."
 	case q.Get("erro") == "nota":
 		return "", fmt.Sprintf("A observação tem no máximo %d caracteres.", maxNoteLen)
+	case q.Has("baixando"):
+		return "Download iniciado. A página se atualiza sozinha até ele terminar; pode sair dela, o servidor continua.", ""
+	case q.Has("excluido"):
+		return "Versão excluída: os registros saíram, e os arquivos que nenhuma outra versão usa também.", ""
+	case q.Get("erro") == "baixando":
+		return "", "Já há um download em andamento (um por vez). Espere ele terminar."
+	case q.Get("erro") == "versao":
+		return "", "Versão inválida: use a versão como aparece no winget (ex.: 26.04), ou deixe vazio para a mais nova."
+	case q.Get("erro") == "nada":
+		return "", "Esta versão não tinha instalador guardado; nada foi excluído."
+	case q.Get("erro") == "aprovada":
+		return "", "Uma versão aprovada não é excluída: revogue a aprovação antes."
+	case q.Get("erro") == "em-uso":
+		return "", "Há jobs em aberto ou campanha não encerrada com esta versão: cancele (Jobs, Campanhas) ou espere terminar antes de excluir."
 	}
 	return "", ""
 }

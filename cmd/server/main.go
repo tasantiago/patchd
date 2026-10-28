@@ -379,6 +379,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 
 	// Estado de compliance (RF-23, Aula 7.4): avaliado contra o catálogo do mesmo banco.
+	var tpRules *thirdparty.Manifest // Aula 23.3: as mesmas regras para o download pelo painel
 	if pg, ok := st.(*store.Postgres); ok {
 		cs := newComplianceService(pg, logger)
 		// Programas de terceiros no painel (Aula 13.3): o mesmo manifesto da linha de comando.
@@ -392,6 +393,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		apiOpts = append(apiOpts, api.WithCompliance(cs))
 		// O mesmo manifesto confere, no inventário, o efeito do job thirdparty (Aula 14.4).
 		apiOpts = append(apiOpts, api.WithThirdPartyManifest(&manifest))
+		tpRules = &manifest
 	}
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
 	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).
@@ -402,6 +404,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		case dir != "":
 			apiOpts = append(apiOpts, api.WithContent(dir, pg))
 			logger.Info("catálogo offline do Windows distribuído aos agentes", "content_dir", dir)
+			// Aula 23.3: o painel baixa instaladores de terceiros, pelo mesmo caminho do
+			// package fetch (o mesmo winget, a mesma conferência do SHA-256, a mesma pasta).
+			if tpRules != nil {
+				apiOpts = append(apiOpts, api.WithPackageFetch(panelFetcher(pg, packagesDir(dir), info.Version)))
+			}
 		}
 	}
 	if cfg.ReleasesDir != "" {

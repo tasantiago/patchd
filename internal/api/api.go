@@ -84,6 +84,8 @@ type Store interface {
 	ThirdPartyApprovals(ctx context.Context) ([]store.ThirdPartyApproval, error)
 	ApproveThirdParty(ctx context.Context, a store.ThirdPartyApproval) (bool, error)
 	RevokeThirdParty(ctx context.Context, app, version string) (bool, error)
+	// Aula 23.3: excluir uma versão guardada pelo painel.
+	DeleteThirdPartyVersion(ctx context.Context, app, version string) ([]store.ThirdPartyPackage, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -154,6 +156,8 @@ type api struct {
 	directory   Directory                  // nil: só usuários locais
 	compliance  ComplianceSource           // nil: sem estado de compliance (armazenamento em memória)
 	tpManifest  *thirdparty.Manifest       // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
+	tpFetch     PackageFetcher             // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
+	fetches     tpFetchBoard               // Aula 23.3: o download em andamento e o último de cada programa
 	jobKey      ed25519.PrivateKey         // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
 	escrow      *escrowKey                 // guarda da senha da BIOS (Aula 21.4); nil: desligada
 	publicURL   string                     // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
@@ -214,6 +218,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/patch/programa", a.panelPage(a.thirdPartyProgramPage))
 	mux.Handle("POST /painel/patch/terceiros/aprovar", a.sameOrigin(a.adminAction(a.approveThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/baixar", a.sameOrigin(a.adminAction(a.fetchThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/excluir", a.sameOrigin(a.adminAction(a.deleteThirdPartyAction)))
 	mux.Handle("POST /painel/patch/aprovar", a.sameOrigin(a.adminAction(a.approvePatchAction)))
 	mux.Handle("POST /painel/patch/revogar", a.sameOrigin(a.adminAction(a.revokePatchAction)))
 	mux.Handle("POST /painel/patch/aprovar-lote", a.sameOrigin(a.adminAction(a.approveBatchAction)))

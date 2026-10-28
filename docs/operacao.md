@@ -844,3 +844,24 @@ Na aba Hardware, o cartão **Ligar pela rede (Wake on LAN)** mostra a situação
 bloqueada ou sem informação), o que impede, os avisos, as configurações da BIOS que pesaram
 (com o nome e o valor como o fabricante escreve) e as placas de rede físicas (cabo, Magic
 Packet, permissão para ligar o computador). O mapa do módulo está em `docs/wake-on-lan.md`.
+
+## Instaladores de terceiros pelo painel (Aula 23.3)
+
+Em **Patch › Programas de terceiros › (programa)**, o cartão "Instaladores guardados" deixa o
+admin fazer pela tela o que antes era só `patchd-server package fetch`:
+
+- **Baixar**: a versão mais nova do winget-pkgs, ou a que for digitada (como o winget a
+  escreve, ex.: `26.04`). É o mesmo caminho da linha de comando: o manifesto do winget-pkgs, o
+  instalador do tipo da regra (x64), o SHA-256 conferido e o registro. O download roda no
+  servidor, em segundo plano, **um por vez**; a página mostra o andamento e se atualiza
+  sozinha até terminar (pode sair dela). Reiniciar o servidor interrompe o download; o que
+  já foi registrado fica. O servidor precisa de saída para o GitHub e para o site do
+  fabricante (no Podman, o `HTTPS_PROXY` do `deploy/.env`, docs/podman.md).
+- **Excluir esta versão**: apaga os registros dos instaladores da versão e os arquivos da
+  pasta `pacotes/` que nenhuma outra versão usa. Recusa a versão **aprovada** (revogue antes:
+  a aprovação é uma decisão registrada), a que tem **job em aberto** com um dos instaladores
+  (o agente ainda vai baixá-lo; cancele em Jobs ou espere) e a de **campanha não encerrada**.
+  Excluir não muda nada nas máquinas; dá para baixar a mesma versão de novo depois.
+
+Na auditoria: `terceiros.baixar` (com a versão pedida) e `terceiros.excluir`. Sem pasta de
+conteúdo (`PATCHD_CONTENT_DIR`), o painel continua mostrando o comando da linha de comando.

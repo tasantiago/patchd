@@ -14,12 +14,14 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/catalog/retry"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpfetch"
 	"github.com/tasantiago/patchd/internal/winget"
 )
 
@@ -200,24 +202,17 @@ func rulesFor(manifest thirdparty.Manifest, o packageFlags, stderr io.Writer) []
 	return rules
 }
 
-// resolve lê o manifesto do winget da regra (a versão pedida ou a mais nova).
+// resolve e wantFor (Aula 23.3): a busca no winget e a escolha do instalador moraram aqui até
+// o painel também baixar; agora são do internal/tpfetch, para os dois usarem as mesmas.
 func resolve(ctx context.Context, c *winget.Client, a thirdparty.App, ver string) (winget.Manifest, error) {
-	if ver == "" {
-		versions, err := c.Versions(ctx, a.Install.Winget)
-		if err != nil {
-			return winget.Manifest{}, err
-		}
-		ver = versions[0]
-	}
-	return c.Installer(ctx, a.Install.Winget, ver)
+	return tpfetch.Resolve(ctx, c, a, ver)
 }
 
-func wantFor(a thirdparty.App, o packageFlags) winget.Want {
-	w := winget.Want{Arch: o.arch, Type: a.Install.Type}
-	if o.typ != "" {
-		w.Type = o.typ
-	}
-	return w
+func wantFor(a thirdparty.App, o packageFlags) winget.Want { return tpfetch.Want(a, o.options()) }
+
+// options: as opções do fetch no formato do internal/tpfetch.
+func (o packageFlags) options() tpfetch.Options {
+	return tpfetch.Options{Version: o.ver, Arch: o.arch, Type: o.typ}
 }
 
 // --- show ---------------------------------------------------------------------------
@@ -355,64 +350,7 @@ func packageFetch(ctx context.Context, c *winget.Client, f *pkgcache.Fetcher, st
 
 func fetchOne(ctx context.Context, c *winget.Client, f *pkgcache.Fetcher, st packageStore, a thirdparty.App, o packageFlags,
 	dir string, out io.Writer) bool {
-	m, err := resolve(ctx, c, a, o.ver)
-	if err != nil {
-		fmt.Fprintf(out, "%s (%s) ← winget %s\n  ERRO        %v\n", a.Name, a.ID, a.Install.Winget, err)
-		return false
-	}
-	in, _, err := m.Select(wantFor(a, o))
-	if err != nil {
-		fmt.Fprintf(out, "%s (%s) ← winget %s %s\n  ERRO        %v (veja package show)\n", a.Name, a.ID, m.PackageIdentifier, m.PackageVersion, err)
-		return false
-	}
-	fmt.Fprintf(out, "%s (%s) ← winget %s %s · %s · %s\n", a.Name, a.ID, m.PackageIdentifier, m.PackageVersion, in.Type, in.Architecture)
-	r, err := f.Fetch(ctx, dir, in.URL, in.SHA256, in.UsesMsiexec(), func(line string) { fmt.Fprintf(out, "              %s\n", line) })
-	var hm *pkgcache.HashMismatchError
-	switch {
-	case errors.As(err, &hm):
-		fmt.Fprintf(out, "  RECUSADO    %v\n", err)
-		if !urlHasVersion(in.URL, m.PackageVersion) {
-			fmt.Fprintf(out, "              o endereço não tem a versão (%s): o fabricante já publicou outra build e o\n"+
-				"              manifesto do winget-pkgs ainda não acompanhou. Nada foi guardado; tente de novo\n"+
-				"              quando o winget-pkgs publicar a versão nova.\n", m.PackageVersion)
-		} else {
-			fmt.Fprintf(out, "              o endereço tem a versão %s: um arquivo diferente num endereço versionado é\n"+
-				"              suspeito (troca no fabricante, espelho, interceptação). Nada foi guardado; confira\n"+
-				"              antes de tentar de novo.\n", m.PackageVersion)
-		}
-		return false
-	case err != nil:
-		fmt.Fprintf(out, "  ERRO        %v\n", err)
-		return false
-	}
-	name := filepath.Join("pacotes", filepath.Base(r.Path))
-	if r.Cached {
-		fmt.Fprintf(out, "  no cache    %s (%s), conferido\n", name, pkgcache.Bytes(r.Size))
-	} else {
-		fmt.Fprintf(out, "  baixado     %s (%s) em %s\n", name, pkgcache.Bytes(r.Size), r.Duration.Round(100*time.Millisecond))
-	}
-	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, WingetID: m.PackageIdentifier,
-		Version: m.PackageVersion, Architecture: in.Architecture, Type: in.Type, Scope: in.Scope, URL: in.URL,
-		SHA256: in.SHA256, Size: r.Size, Arguments: in.Arguments(), ReturnCodes: in.ReturnCodes})
-	var pc *store.PackageChangedError
-	switch {
-	case errors.As(err, &pc):
-		fmt.Fprintf(out, "  RECUSADO    %v\n", err)
-		return false
-	case err != nil:
-		fmt.Fprintf(out, "  ERRO        registrar: %v\n", err)
-		return false
-	case created:
-		fmt.Fprintln(out, "  registrado  novo")
-	default:
-		fmt.Fprintln(out, "  registrado  já estava")
-	}
-	return true
-}
-
-// urlHasVersion: o endereço traz a versão, com ou sem os pontos (7z2604 para 26.04).
-func urlHasVersion(u, v string) bool {
-	return strings.Contains(u, v) || strings.Contains(u, strings.ReplaceAll(v, ".", ""))
+	return tpfetch.One(ctx, c, f, st, a, o.options(), dir, out)
 }
 
 // --- list ---------------------------------------------------------------------------
@@ -512,4 +450,16 @@ func btoi(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// panelFetcher (Aula 23.3): o download do botão Baixar do painel, o mesmo do package fetch
+// de uma regra (x64 e o tipo da regra, como os padrões da linha de comando).
+func panelFetcher(st tpfetch.Store, dir, version string) api.PackageFetcher {
+	ua := "patchd-server/" + version
+	c := winget.NewClient(ua)
+	c.HTTP = retry.Wrap(c.HTTP, nil)
+	f := pkgcache.NewFetcher(ua)
+	return func(ctx context.Context, rule thirdparty.App, ver string, out io.Writer) bool {
+		return tpfetch.One(ctx, c, f, st, rule, tpfetch.Options{Version: ver, Arch: "x64"}, dir, out)
+	}
 }

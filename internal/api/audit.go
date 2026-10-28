@@ -63,6 +63,8 @@ var auditActions = []struct{ Key, Label string }{
 	{"patch.revogar", "Aprovação revogada"},
 	{"terceiros.aprovar", "Instalador aprovado"},
 	{"terceiros.revogar", "Aprovação de instalador revogada"},
+	{"terceiros.baixar", "Download de instalador pedido"},
+	{"terceiros.excluir", "Versão de instalador excluída"},
 	{"job.criar", "Job criado"},
 	{"job.cancelar", "Job cancelado"},
 	{"autoatendimento.oferta", "Oferta do autoatendimento gravada"},

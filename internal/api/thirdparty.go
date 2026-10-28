@@ -251,6 +251,10 @@ type tpProgramView struct {
 	Install  *tpInstallInfo
 	Versions []tpVersionRow
 	MaxNote  int
+	// Aula 23.3: baixar pelo painel e o andamento do download deste programa.
+	CanFetch  bool
+	Fetch     *tpFetchStatus
+	OtherBusy string // outro programa baixando agora (um download por vez)
 }
 
 func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {

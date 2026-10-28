@@ -91,7 +91,7 @@ input,select{font:inherit;font-size:.9rem;padding:.38rem .6rem;border:1px solid 
 input:focus,select:focus{outline:2px solid rgba(6,111,209,.25);border-color:var(--azul)}
 input[type=checkbox],input[type=radio]{padding:0}
 form.acao{margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form.acao input{flex:1 1 20rem}
-td form{margin:0}form.inline{display:inline;margin-left:.6rem}.dias label{margin-right:.7rem}
+td form{margin:0}form.inline{display:inline;margin-left:.6rem}details.excluir{margin-top:.4rem}details.excluir summary{cursor:pointer;color:var(--vermelho);font-size:.84rem}details.excluir form{margin-top:.4rem}pre.andamento{margin-top:.6rem;max-height:18rem;overflow-y:auto}.dias label{margin-right:.7rem}
 .lote{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:center}
 th.col-lote,td.col-lote{width:1%;text-align:center}div.acao{display:flex}div.acao input{flex:1 1 20rem}
 form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}
