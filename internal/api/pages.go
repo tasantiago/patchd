@@ -222,6 +222,7 @@ type linkView struct {
 }
 
 type machineView struct {
+	MergedRecords, MergedBIOS int
 	pageBase
 	D                                    protocol.ComplianceDetail
 	Name, Label, Seen, Collected, Reboot string
@@ -302,6 +303,23 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.D, v.Name, v.Label = d, dash(d.Hostname), compliance.State(d.State).Label()
+	members, err := a.store.MachineMergeMembers(ctx, id)
+	if err != nil {
+		a.internalError(w, r, "ler registros incorporados", err)
+		return
+	}
+	for _, member := range members {
+		if member.SourceID == id {
+			continue
+		}
+		v.MergedRecords++
+		guards, e := a.store.BIOSPasswords(ctx, member.SourceID)
+		if e != nil {
+			a.internalError(w, r, "ler guarda histórica", e)
+			return
+		}
+		v.MergedBIOS += len(guards)
+	}
 	v.Title = "Máquina " + short(d.MachineID)
 	if d.Hostname != "" {
 		v.Title = d.Hostname
@@ -1030,6 +1048,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "maquina"}}{{template "topo" .}}
 <p><a href="/painel/inventario">← Inventário</a> · <a href="/painel/">Frota</a></p>
 <h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
+{{if .Admin}}<div class="descoberta-acoes"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/mesclar">Mesclar registro duplicado</a><a class="btn sec" href="/painel/maquinas/{{.D.MachineID}}/historico">Histórico e registros incorporados</a></div>{{end}}
+{{if and .Admin .MergedRecords}}<p class="aviso atencao">{{.MergedRecords}} registro(s) anterior(es) incorporado(s), com {{.MergedBIOS}} senha(s) de BIOS preservada(s). <a href="/painel/maquinas/{{.D.MachineID}}/historico">Consultar histórico e senhas anteriores</a>.</p>{{end}}
 {{if .D.Reasons}}<ul class="motivos">{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
 {{range .SourceAlerts}}<p class="aviso {{.Level}}" role="alert">{{.Text}}</p>{{end}}
 <nav class="abas" aria-label="abas do equipamento">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="cont">{{.Count}}</span>{{end}}</a>{{end}}</nav>
@@ -1367,7 +1387,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "bios-revelada"}}{{template "topo" .}}
-<p><a href="/painel/maquinas/{{.MachineID}}?aba=hardware#bios">← {{.Name}}</a></p>
+<p><a href="/painel/maquinas/{{if .BackID}}{{.BackID}}/historico{{else}}{{.MachineID}}?aba=hardware#bios{{end}}">← {{.Name}}</a></p>
 <h1>Senha da BIOS: {{.Name}}</h1>
 <div class="card"><dl class="dados">
 <dt>Senha</dt><dd><code class="senha-bios">{{.Grouped}}</code> <span class="muted">(digite sem os espaços; só letras minúsculas e números)</span></dd>
@@ -1429,6 +1449,37 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="mt"><button type="submit"{{if $.NoJobKey}} disabled{{end}}>Executar nas máquinas marcadas</button></p>
 {{else}}<p class="muted">Nenhuma máquina do sistema deste bundle no inventário.</p>{{end}}
 </form></div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "mesclar-maquinas"}}{{template "topo" .}}
+<p><a href="/painel/maquinas/{{.Target.ID}}">← Voltar ao equipamento</a></p><h1>Mesclar registros de equipamento</h1>
+<div class="card"><div class="card-cab"><h2>Registro que continuará ativo</h2></div>
+<dl class="dados"><dt>Nome</dt><dd>{{.Target.Name}}</dd><dt>ID</dt><dd><code>{{.Target.ID}}</code></dd><dt>Serial</dt><dd>{{.Target.Serial}}</dd><dt>Agente</dt><dd>{{.Target.Agent}}</dd><dt>Último contato</dt><dd>{{.Target.LastSeen}}</dd><dt>Senhas de BIOS guardadas</dt><dd>{{.Target.BIOS}}</dd></dl>
+<p class="muted">Abra a tela a partir do registro da instalação atual, normalmente o de último contato mais recente. A credencial, as chaves e o estado atual desse agente serão mantidos.</p></div>
+<div class="card"><div class="card-cab"><h2>Registro duplicado a incorporar</h2></div>
+<form method="get" class="linha-faixa mescla-escolha"><select name="origem" required aria-label="Registro duplicado"><option value="">Selecione o registro antigo</option>{{range .Candidates}}<option value="{{.ID}}"{{if $.Source}}{{if eq $.Source.ID .ID}} selected{{end}}{{end}}>{{.Name}} · {{.ID}} · {{.Agent}} · {{.LastSeen}}</option>{{end}}</select><button class="sec" type="submit">Revisar mesclagem</button></form>
+{{with .Source}}<dl class="dados"><dt>Nome</dt><dd>{{.Name}}</dd><dt>ID</dt><dd><code>{{.ID}}</code></dd><dt>Serial</dt><dd>{{.Serial}}</dd><dt>Agente</dt><dd>{{.Agent}}</dd><dt>Último contato</dt><dd>{{.LastSeen}}</dd><dt>Senhas de BIOS guardadas</dt><dd>{{.BIOS}}</dd></dl>
+<p class="aviso atencao">Confirme que os dois registros representam o mesmo equipamento físico. Nome ou IP iguais, isoladamente, não comprovam isso. A credencial deste registro será revogada, e ele sairá da frota ativa.</p>
+<p>Os relatórios, jobs, solicitações, auditoria e senhas de BIOS permanecerão vinculados aos IDs originais e poderão ser consultados no histórico do equipamento ativo. Jobs ainda pendentes na origem serão cancelados; jobs já entregues precisam terminar antes da mesclagem. A operação não instala nem altera o agente.</p>
+<form method="post" action="/painel/maquinas/{{$.Target.ID}}/mesclar" class="descoberta-credencial">
+<input type="hidden" name="origem" value="{{.ID}}"><div class="descoberta-campo"><label for="mescla-motivo">Motivo da mesclagem</label><input id="mescla-motivo" name="motivo" minlength="10" maxlength="500" required placeholder="Ex.: reinstalação do agente no mesmo equipamento"></div>
+<label class="descoberta-opcao"><input type="checkbox" name="confirmo" value="sim" required><span>Conferi que é o mesmo equipamento e quero manter ativo o registro <code>{{$.Target.ID}}</code>.</span></label>
+<button type="submit">Mesclar e preservar histórico</button></form>{{end}}</div>
+{{template "fim"}}{{end}}
+
+{{define "historico-maquina"}}{{template "topo" .}}
+<p><a href="/painel/maquinas/{{.ID}}">← Voltar ao equipamento ativo</a></p><h1>Histórico e registros incorporados</h1>
+<div class="card"><div class="card-cab"><h2>Identidades preservadas</h2><a class="btn sec" href="/painel/maquinas/{{.ID}}/mesclar">Mesclar outro registro</a></div>
+<p class="muted">Nenhum histórico ou envelope cifrado foi transferido ou apagado. O registro ativo recebe novos dados; os registros incorporados conservam a origem dos dados antigos. A retenção normal dos relatórios continua valendo; as senhas de BIOS ficam fora dessa retenção.</p>
+<div class="tabela"><table><thead><tr><th>Nome / ID</th><th>Estado</th><th>Mesclado em</th><th>Por</th><th>Motivo</th></tr></thead><tbody>{{range .Members}}<tr><td><a href="/painel/maquinas/{{$.ID}}/historico?registro={{.ID}}">{{.Name}}</a><br><code>{{.ID}}</code></td><td>{{if .Active}}ativo{{else}}incorporado · credencial revogada{{end}}</td><td>{{.When}}</td><td>{{.By}}</td><td>{{.Reason}}</td></tr>{{end}}</tbody></table></div></div>
+<div class="card"><div class="card-cab"><h2>Relatórios do registro <code>{{.Selected}}</code></h2></div>
+<p>Selecione uma identidade na tabela acima para consultar seus relatórios e jobs originais.</p>
+<h3>Inventários</h3>{{if .Inventories}}<div class="tabela"><table><thead><tr><th>Recebido</th><th>Relatório</th></tr></thead><tbody>{{range .Inventories}}<tr><td>{{.At}}</td><td><a href="{{.Href}}">Ver inventário #{{.ID}} (JSON)</a></td></tr>{{end}}</tbody></table></div>{{else}}<p class="muted">Nenhum inventário retido para este registro.</p>{{end}}{{if .NextInv}}<p><a href="{{.NextInv}}">Inventários anteriores</a></p>{{end}}
+<h3>Buscas de atualizações</h3>{{if .Scans}}<div class="tabela"><table><thead><tr><th>Recebida</th><th>Relatório</th></tr></thead><tbody>{{range .Scans}}<tr><td>{{.At}}</td><td><a href="{{.Href}}">Ver busca #{{.ID}} (JSON)</a></td></tr>{{end}}</tbody></table></div>{{else}}<p class="muted">Nenhuma busca retida para este registro.</p>{{end}}{{if .NextScan}}<p><a href="{{.NextScan}}">Buscas anteriores</a></p>{{end}}
+<h3>Últimos 100 jobs</h3>{{if .Jobs}}<div class="tabela"><table><thead><tr><th>ID</th><th>Tipo</th><th>Estado</th><th>Resultado</th></tr></thead><tbody>{{range .Jobs}}<tr><td>{{.ID}}</td><td>{{.Type}}</td><td>{{.State}}</td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>{{else}}<p class="muted">Nenhum job retido.</p>{{end}}</div>
+<div class="card"><div class="card-cab"><h2>Senhas de BIOS de todos os registros</h2></div>
+<p class="muted">Cada estado é a última evidência registrada naquela identidade; uma senha antiga marcada como ativa não comprova que ainda seja a atual. As senhas continuam cifradas com a chave de guarda original. A revelação exige motivo e auditoria.</p>
+{{if .BIOS}}<div class="tabela"><table><thead><tr><th>Guarda</th><th>Registro de origem</th><th>Estado registrado</th><th>Criada</th><th>Ação</th></tr></thead><tbody>{{range .BIOS}}<tr><td>{{.ID}}</td><td><code>{{.Origin}}</code></td><td>{{.State}}</td><td>{{.When}}</td><td>{{if .CanReveal}}<form method="post" action="/painel/maquinas/{{.Origin}}/bios/{{.ID}}/revelar" class="inline"><input name="motivo" minlength="10" maxlength="200" required placeholder="Motivo / chamado" aria-label="Motivo para revelar a guarda {{.ID}}"><button class="sec" type="submit">Revelar</button></form>{{else}}<span class="muted">Revelação indisponível: confira a chave de guarda e o estado.</span>{{end}}</td></tr>{{end}}</tbody></table></div>{{else}}<p class="muted">Nenhuma senha de BIOS guardada nos registros.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "descoberta"}}{{template "topo" .}}

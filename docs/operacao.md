@@ -761,6 +761,39 @@ O firmware fica em colunas do inventário (migration 0041), como o fabricante e 
 0025: a lista não relê o relatório inteiro de cada máquina. A migration preenche as colunas do
 inventário atual de cada máquina.
 
+## Mesclar registros duplicados de um equipamento
+
+Quando uma reinstalação gera outra identidade para o mesmo equipamento, um administrador
+pode abrir **o registro que deve continuar ativo** e clicar em **Mesclar registro duplicado**.
+Escolha o registro anterior, revise nome, serial, versão do agente e último contato,
+informe o motivo e confirme que representam o mesmo equipamento físico. Nome e IP iguais,
+sozinhos, não comprovam essa identidade. Prefira o registro usado pela instalação atual.
+
+A mesclagem mantém a credencial, as chaves, o inventário atual e a configuração do registro
+escolhido. O duplicado sai da frota ativa e sua credencial é revogada. Seus relatórios, jobs,
+solicitações e evidências permanecem nos IDs originais. Não há cópia de credenciais para
+o agente novo nem alteração de envelopes assinados. Jobs pendentes na origem são cancelados,
+e solicitações ainda aguardando aprovação expiram com o motivo registrado. Um job já entregue
+precisa concluir ou expirar pelo fluxo normal antes da mesclagem, para não perder resultados.
+
+O botão **Histórico e registros incorporados** reúne as identidades preservadas. Selecione
+uma identidade para consultar inventários e buscas retidos (com paginação e acesso ao JSON
+original) e seus últimos 100 jobs. A auditoria registra origem, destino, administrador,
+motivo e data na mesma transação da mesclagem. Se a auditoria falhar, a mesclagem não é aplicada.
+Registros incorporados não podem ser restaurados isoladamente, o que recriaria a duplicidade.
+Se houver outra reinstalação, mesclar o registro ativo em um novo mantém todo o grupo anterior.
+
+**Senhas de BIOS não são apagadas nem recifradas.** Elas são vinculadas criptograficamente
+ao ID original: apenas trocar esse ID impediria a abertura do envelope. O histórico lista
+as senhas de todas as identidades, e a revelação continua exigindo a chave de guarda original,
+motivo, permissão de administrador e auditoria. Uma senha marcada como ativa em um registro
+antigo é a última evidência daquela identidade, não uma confirmação de que ainda seja a senha
+atual do equipamento. Confira antes de alterar a BIOS.
+
+A mesclagem não executa nada na estação e não substitui o backup da chave de guarda. A retenção
+normal de inventários, buscas e jobs continua valendo; as senhas de BIOS permanecem fora
+dessa retenção.
+
 ## Guarda da senha da BIOS (Aula 21.4)
 
 O substituto do `.bat` de senha da BIOS começa pela guarda: o servidor sorteia a senha de

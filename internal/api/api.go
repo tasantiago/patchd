@@ -12,6 +12,7 @@ package api
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -32,6 +33,10 @@ import (
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
 // tipo com estes métodos serve (a memória, o PostgreSQL, um fake de teste).
 type Store interface {
+	MergeMachines(context.Context, string, string, string, store.AuditEvent) error
+	MachineMergeMembers(context.Context, string) ([]store.MachineMerge, error)
+	MachineReportHistory(context.Context, string, string, int64) ([]store.MachineReportRecord, error)
+	MachineReportByID(context.Context, string, string, int64) (json.RawMessage, error)
 	SaveInventory(ctx context.Context, machineID string, rep protocol.InventoryReport) (stored bool, err error)
 	LatestInventory(ctx context.Context, machineID string) (protocol.InventoryReport, bool, error)
 	SaveScan(ctx context.Context, machineID string, rep protocol.PatchScanReport) error
@@ -259,6 +264,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
+	mux.Handle("GET /painel/maquinas/{id}/mesclar", a.adminAction(a.mergePage))
+	mux.Handle("POST /painel/maquinas/{id}/mesclar", a.sameOrigin(a.adminAction(a.mergeAction)))
+	mux.Handle("GET /painel/maquinas/{id}/historico", a.adminAction(a.mergedHistoryPage))
+	mux.Handle("GET /painel/maquinas/{id}/historico/{kind}/{report}", a.adminAction(a.mergedHistoryReport))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
 	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage))                                                        // Aula 17.7
 	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/aprovar", a.sameOrigin(a.adminAction(a.staleAfter(a.approveSelfServiceAction)))) // Aula 18.3

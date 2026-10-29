@@ -19,7 +19,7 @@ func (p *Postgres) RetireMachine(ctx context.Context, id, reason, by string) (bo
 
 // RestoreMachine devolve a máquina à frota. Devolve false se ela não está aposentada.
 func (p *Postgres) RestoreMachine(ctx context.Context, id string) (bool, error) {
-	tag, err := p.pool.Exec(ctx, `UPDATE machines SET retired_at = NULL, retired_reason = NULL, retired_by = NULL WHERE id = $1 AND retired_at IS NOT NULL`, id)
+	tag, err := p.pool.Exec(ctx, `UPDATE machines SET retired_at = NULL, retired_reason = NULL, retired_by = NULL WHERE id = $1 AND retired_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM machine_merges WHERE source_id=$1)`, id)
 	return tag.RowsAffected() == 1, err
 }
 
@@ -39,6 +39,9 @@ func (m *Memory) RetireMachine(ctx context.Context, id, reason, by string) (bool
 func (m *Memory) RestoreMachine(ctx context.Context, id string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, merged := m.merges[id]; merged {
+		return false, nil
+	}
 	mm := m.machines[id]
 	if mm == nil || mm.retiredAt.IsZero() {
 		return false, nil

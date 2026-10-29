@@ -17,6 +17,7 @@ import (
 // Memory guarda tudo na memória do processo. Serve para desenvolvimento e para os
 // testes da API; em produção, o armazenamento é o PostgreSQL (Aula 4.2).
 type Memory struct {
+	merges      map[string]MachineMerge
 	mu          sync.RWMutex
 	machines    map[string]*memMachine
 	tokens      []*memToken

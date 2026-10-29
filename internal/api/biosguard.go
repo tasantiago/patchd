@@ -195,6 +195,7 @@ func (a *api) prepareBIOSAction(w http.ResponseWriter, r *http.Request, s panel.
 
 // revealView: a página que mostra a senha, uma vez, para quem pediu.
 type revealView struct {
+	BackID string
 	pageBase
 	MachineID, Name string
 	Guard           int64
@@ -260,6 +261,14 @@ func (a *api) revealBIOSAction(w http.ResponseWriter, r *http.Request, s panel.S
 		"remote", ev.Remote, "request_id", ev.RequestID)
 	v := revealView{pageBase: a.baseFor(r.Context(), s, "Senha da BIOS", "inventario"), MachineID: id, Name: short(id), Guard: gid,
 		State: biosStateLabel[b.State].label, Grouped: biospw.Grouped(pw)}
+	members, mergeErr := a.store.MachineMergeMembers(r.Context(), id)
+	if mergeErr == nil {
+		for _, member := range members {
+			if member.SourceID == id && member.TargetID != id {
+				v.BackID = member.TargetID
+			}
+		}
+	}
 	if inv, ok, err := a.store.LatestInventory(r.Context(), id); err == nil && ok && inv.OS.Hostname != "" {
 		v.Name = inv.OS.Hostname
 	}

@@ -97,9 +97,10 @@ func (p *Postgres) ExpireJobs(ctx context.Context, now time.Time) (int64, error)
 func (p *Postgres) DeliverJobs(ctx context.Context, machineID string, now time.Time) ([]protocol.SignedJob, error) {
 	rows, err := p.pool.Query(ctx, `
 		UPDATE jobs SET state = 'entregue', delivered_at = $2
-		WHERE id IN (SELECT id FROM jobs WHERE machine_id = $1 AND state = 'pendente' AND not_after > $2
-		             AND (not_before IS NULL OR not_before <= $2)
-		             ORDER BY id LIMIT $3 FOR UPDATE SKIP LOCKED)
+  WHERE id IN (SELECT j.id FROM jobs j JOIN machines m ON m.id=j.machine_id
+               WHERE j.machine_id = $1 AND m.retired_at IS NULL AND j.state = 'pendente' AND j.not_after > $2
+               AND (j.not_before IS NULL OR j.not_before <= $2)
+               ORDER BY j.id LIMIT $3 FOR UPDATE OF j SKIP LOCKED)
 		RETURNING id, payload, signature`, machineID, now, maxJobsPerCheckin)
 	if err != nil {
 		return nil, err

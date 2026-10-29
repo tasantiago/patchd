@@ -59,6 +59,9 @@ func (m *Memory) ExpireJobs(ctx context.Context, now time.Time) (int64, error) {
 func (m *Memory) DeliverJobs(ctx context.Context, machineID string, now time.Time) ([]protocol.SignedJob, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if mm := m.machines[machineID]; mm == nil || !mm.retiredAt.IsZero() {
+		return nil, nil
+	}
 	sort.Slice(m.jobs, func(i, k int) bool { return m.jobs[i].ID < m.jobs[k].ID })
 	var out []protocol.SignedJob
 	for _, j := range m.jobs {

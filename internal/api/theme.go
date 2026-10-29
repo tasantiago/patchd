@@ -23,6 +23,7 @@ const shieldSVG = ui.ShieldSVG
 // themeCSS: as cores das aplicações do tribunal (marinho da barra lateral, lilás dos títulos
 // dos grupos, rosa dos contadores) e as do painel de conformidade nos indicadores.
 const themeCSS = `
+.mescla-escolha select{flex:1 1 20rem;min-width:0;max-width:100%}
 .descoberta-acoes{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin:.8rem 0 1.2rem}
 .descoberta-estado{display:inline-block;padding:.15rem .5rem;border:1px solid transparent;border-radius:999px;font-size:.8rem}
 .descoberta-credencial{max-width:52rem;margin-top:1.25rem}
