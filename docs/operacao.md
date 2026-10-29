@@ -890,3 +890,34 @@ Excel no Windows). Até 20 MB.
 - A aba lista as máquinas do inventário que não acharam tombo (o nome sem número, ou um número
   fora do arquivo) e as últimas importações. Cada envio fica na auditoria como
   `patrimonio.importar`; só o perfil admin envia.
+
+## Descoberta de rede (Aula 23.7)
+
+**Administração › Descoberta** acha máquinas na rede que ainda não têm o agente, para você
+instalar nelas.
+
+1. **Cadastre as faixas** de IP a varrer: CIDR (`10.0.0.0/24`) ou intervalo
+   (`10.0.0.10-60`, ou `10.0.0.10-10.0.0.60`). Até 64 faixas; cada uma no máximo um `/16`.
+   Dá para ligar e desligar uma faixa sem removê-la.
+2. **Varrer agora** sonda os endereços das faixas ligadas. A sondagem é **TCP** (portas 445 e
+   3389 do Windows, 22 do SSH) feita **pelo servidor**, sem ping — o container roda sem root e
+   não abre soquete bruto, e muita máquina ignora o ping mas atende essas portas. Só alcança
+   as sub-redes que a VM do servidor enxerga. A página se atualiza sozinha enquanto varre;
+   cada varredura sonda no máximo 16 384 endereços (o resto fica para a próxima, marcada
+   "parcial").
+3. **Sem agente**: o host vivo é cruzado com o inventário pelo **IP** (os endereços que o
+   agente reporta e o do check-in) e pelo **nome** (o reverse-DNS do host contra o hostname do
+   inventário). O que casa some da lista; o que sobra é o que não tem agente. O palpite de SO
+   sai das portas (445/3389 → Windows; 22 → Linux/SSH).
+4. Para cada host, **Instalar** abre o comando pronto conforme o SO: **PowerShell remoto
+   (WinRM)**, **PsExec** e **GPO** para Windows, **SSH** para Linux/macOS. O IP e o endereço
+   do servidor vão preenchidos; o usuário administrador e o token ficam a preencher — o patchd
+   **não guarda credencial**. Crie um token em Configuração › Agente e salve o
+   `patchd-token.txt` junto do instalador.
+
+A cada varredura os hosts são regravados por inteiro (uma foto da rede). As faixas e as
+últimas 50 varreduras ficam. Cada varredura e cada mudança de faixa entram na auditoria
+(`descoberta.varrer`, `descoberta.faixa`); tudo é do perfil admin.
+
+Um aviso: a varredura abre conexões TCP para toda a faixa. Avise a equipe de rede antes de
+varrer sub-redes grandes, para a sondagem não ser confundida com um ataque pelo IDS/IPS.

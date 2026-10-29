@@ -66,6 +66,8 @@ var auditActions = []struct{ Key, Label string }{
 	{"terceiros.baixar", "Download de instalador pedido"},
 	{"terceiros.excluir", "Versão de instalador excluída"},
 	{"patrimonio.importar", "Patrimônio importado"},
+	{"descoberta.faixa", "Faixa de descoberta alterada"},
+	{"descoberta.varrer", "Varredura de rede iniciada"},
 	{"job.criar", "Job criado"},
 	{"job.cancelar", "Job cancelado"},
 	{"autoatendimento.oferta", "Oferta do autoatendimento gravada"},

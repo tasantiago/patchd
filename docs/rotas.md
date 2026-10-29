@@ -81,7 +81,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 401.
 | GET | `/api/v1/machines/{id}/scan` |
 | GET | `/api/v1/machines` |
 
-## Admin (leitura) (4)
+## Admin (leitura) (5)
 
 Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria.
 
@@ -91,8 +91,9 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/configuracao/agente/ca.crt` |
 | GET | `/painel/configuracao/auditoria.csv` |
 | GET | `/painel/configuracao` |
+| GET | `/painel/descoberta` |
 
-## Admin (ação) (44)
+## Admin (ação) (47)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -120,6 +121,9 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/configuracao/parametros/restaurar` |
 | POST | `/painel/configuracao/parametros` |
 | POST | `/painel/configuracao/patrimonio` |
+| POST | `/painel/descoberta/faixas/{id}/{op}` |
+| POST | `/painel/descoberta/faixas` |
+| POST | `/painel/descoberta/varrer` |
 | POST | `/painel/jobs/{id}/cancelar` |
 | POST | `/painel/maquinas/{id}/anel` |
 | POST | `/painel/maquinas/{id}/aposentar` |

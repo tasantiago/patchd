@@ -58,6 +58,11 @@ type Memory struct {
 	locations    []AssetLocation // localização do patrimônio (Aula 23.6)
 	assetImports []AssetImport
 	assetSeq     int64
+
+	discRanges []DiscoveryRange // descoberta de rede (Aula 23.7)
+	discHosts  []DiscoveryHost
+	discRuns   []DiscoveryRun
+	discSeq    int64
 }
 
 type memMachine struct {

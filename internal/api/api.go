@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/descoberta"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/panel"
@@ -90,6 +91,14 @@ type Store interface {
 	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
 	AssetLocations(ctx context.Context) ([]store.AssetLocation, error)
 	AssetImports(ctx context.Context, limit int) ([]store.AssetImport, error)
+	// Descoberta de rede (Aula 23.7): faixas, hosts vivos e histórico de varreduras.
+	AddDiscoveryRange(ctx context.Context, spec, note, by string) (int64, error)
+	SetDiscoveryRangeEnabled(ctx context.Context, id int64, enabled bool) (bool, error)
+	DeleteDiscoveryRange(ctx context.Context, id int64) (bool, error)
+	DiscoveryRanges(ctx context.Context) ([]store.DiscoveryRange, error)
+	ReplaceDiscoveryHosts(ctx context.Context, hosts []store.DiscoveryHost, run store.DiscoveryRun) (int64, error)
+	DiscoveryHosts(ctx context.Context) ([]store.DiscoveryHost, error)
+	DiscoveryRuns(ctx context.Context, limit int) ([]store.DiscoveryRun, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -157,30 +166,33 @@ type api struct {
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 
-	directory   Directory                  // nil: só usuários locais
-	compliance  ComplianceSource           // nil: sem estado de compliance (armazenamento em memória)
-	tpManifest  *thirdparty.Manifest       // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
-	tpFetch     PackageFetcher             // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
-	fetches     tpFetchBoard               // Aula 23.3: o download em andamento e o último de cada programa
-	assets      assetCache                 // Aula 23.6: o patrimônio, pelo tombo
-	jobKey      ed25519.PrivateKey         // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
-	escrow      *escrowKey                 // guarda da senha da BIOS (Aula 21.4); nil: desligada
-	publicURL   string                     // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
-	timezone    string                     // fuso sugerido na janela dos anéis (Aula 11.1)
-	brand       string                     // nome no topo do painel (Aula 11.3)
-	oidc        *oidc.Provider             // login pelo RHBK (Aula 9.4); nil: desligado
-	oidcLogins  oidcPending                // logins pelo RHBK em andamento (state → nonce e PKCE)
-	metrics     *Metrics                   // contadores da Aula 10.2; nil: desligados
-	limiter     loginLimiter               // falhas de login por usuário+IP e por IP
-	agentLimits agentLimiter               // requisições por máquina (Aula 20.5)
-	hashSlots   chan struct{}              // conferências de senha simultâneas
-	system      *SystemInfo                // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
-	agentCA     []byte                     // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
-	adInfo      *ADInfo                    // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
-	notifier    *notifierState             // e-mail para a equipe (Aula 18.5); nil: desligado
-	chrome      chromeCache                // contadores do menu e logotipo (Aula 19.1)
-	params      Settings                   // parâmetros pela tela (Aula 19.2); nil: só o .env
-	repoCacheFn func() *protocol.RepoCache // anúncio do cache calculado a cada check-in (Aula 19.2)
+	directory   Directory                            // nil: só usuários locais
+	compliance  ComplianceSource                     // nil: sem estado de compliance (armazenamento em memória)
+	tpManifest  *thirdparty.Manifest                 // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
+	tpFetch     PackageFetcher                       // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
+	fetches     tpFetchBoard                         // Aula 23.3: o download em andamento e o último de cada programa
+	assets      assetCache                           // Aula 23.6: o patrimônio, pelo tombo
+	discovery   *scanState                           // Aula 23.7: a varredura em andamento
+	netDial     descoberta.Dial                      // Aula 23.7: a sondagem TCP; nil: o dialer padrão
+	netLookup   func(context.Context, string) string // Aula 23.7: reverse-DNS; nil: o DNS do sistema
+	jobKey      ed25519.PrivateKey                   // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
+	escrow      *escrowKey                           // guarda da senha da BIOS (Aula 21.4); nil: desligada
+	publicURL   string                               // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
+	timezone    string                               // fuso sugerido na janela dos anéis (Aula 11.1)
+	brand       string                               // nome no topo do painel (Aula 11.3)
+	oidc        *oidc.Provider                       // login pelo RHBK (Aula 9.4); nil: desligado
+	oidcLogins  oidcPending                          // logins pelo RHBK em andamento (state → nonce e PKCE)
+	metrics     *Metrics                             // contadores da Aula 10.2; nil: desligados
+	limiter     loginLimiter                         // falhas de login por usuário+IP e por IP
+	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
+	hashSlots   chan struct{}                        // conferências de senha simultâneas
+	system      *SystemInfo                          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
+	agentCA     []byte                               // PATCHD_AGENT_CA_FILE: a CA oferecida na aba Agente (Aula 15.2)
+	adInfo      *ADInfo                              // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
+	notifier    *notifierState                       // e-mail para a equipe (Aula 18.5); nil: desligado
+	chrome      chromeCache                          // contadores do menu e logotipo (Aula 19.1)
+	params      Settings                             // parâmetros pela tela (Aula 19.2); nil: só o .env
+	repoCacheFn func() *protocol.RepoCache           // anúncio do cache calculado a cada check-in (Aula 19.2)
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
@@ -269,6 +281,11 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/configuracao/parametros/restaurar", a.sameOrigin(a.adminAction(a.paramsResetAction))) // Aula 19.2
 	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction)))              // Aula 19.1
 	mux.Handle("POST /painel/configuracao/patrimonio", a.sameOrigin(a.adminAction(a.importAssetsAction)))          // Aula 23.6
+	// Descoberta de rede (Aula 23.7).
+	mux.Handle("GET /painel/descoberta", a.adminAction(a.discoveryPage))
+	mux.Handle("POST /painel/descoberta/faixas", a.sameOrigin(a.adminAction(a.addRangeAction)))
+	mux.Handle("POST /painel/descoberta/faixas/{id}/{op}", a.sameOrigin(a.adminAction(a.rangeOpAction)))
+	mux.Handle("POST /painel/descoberta/varrer", a.sameOrigin(a.adminAction(a.scanAction)))
 	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))

@@ -556,6 +556,7 @@ var pages = template.Must(template.New("").Parse(`
 <a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Anéis</span></a>
 <a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
 {{if .Admin}}<p class="grupo"><span class="rot">Administração</span></p>
+<a href="/painel/descoberta" title="Descoberta de rede" {{if eq .Nav "descoberta"}}class="ativo" aria-current="page"{{end}}>` + ui.IcDescoberta + `<span class="rot">Descoberta</span></a>
 <a href="/painel/configuracao" title="Configuração" {{if and (eq .Nav "configuracao") (ne .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Configuração</span></a>
 <a href="/painel/configuracao?aba=auditoria" title="Auditoria" {{if and (eq .Nav "configuracao") (eq .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcAuditoria + `<span class="rot">Auditoria</span></a>
 {{end}}
@@ -1366,5 +1367,38 @@ var pages = template.Must(template.New("").Parse(`
 {{define "proibido"}}{{template "topo" .}}
 <h1>Sem permissão</h1>
 <p class="card">Esta ação é do perfil admin. <a href="/painel/">Voltar à frota</a>.</p>
+{{template "fim"}}{{end}}
+
+{{define "descoberta"}}{{template "topo" .}}
+<h1>Descoberta de rede</h1>
+{{if .Scanning}}<div class="card"><div class="card-cab"><h2>Varrendo…</h2><span class="muted">{{.ScanDone}} de {{.ScanTotal}} endereços · a página se atualiza sozinha</span></div>
+<p class="muted">A sondagem é TCP (portas 445, 3389 e 22) a partir do servidor, sem ping. Ao terminar, os hosts sem agente aparecem abaixo.</p></div>{{end}}
+
+<div class="card"><div class="card-cab"><h2>Faixas de busca</h2><span class="muted">{{len .Ranges}} de {{.MaxRanges}}</span></div>
+<p class="muted">CIDR (<code>10.0.0.0/24</code>) ou intervalo (<code>10.0.0.10-60</code>). O servidor só alcança as sub-redes que a VM enxerga.</p>
+<form method="post" action="/painel/descoberta/faixas" class="linha-faixa">
+<input type="text" name="faixa" placeholder="10.0.0.0/24" required aria-label="faixa de IP">
+<input type="text" name="nota" placeholder="descrição (opcional)" maxlength="120" aria-label="descrição">
+<button type="submit">Cadastrar</button></form>
+{{if .Ranges}}<div class="tabela"><table>
+<thead><tr><th>Faixa</th><th>Descrição</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
+<tbody>{{range .Ranges}}<tr><td><code>{{.Spec}}</code></td><td>{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if .Enabled}}<span class="ok">ligada</span>{{else}}<span class="muted">desligada</span>{{end}}</td><td>{{.Created}}</td>
+<td class="acoes">{{if .Enabled}}<form method="post" action="/painel/descoberta/faixas/{{.ID}}/desligar" class="inline"><button class="sec" type="submit">Desligar</button></form>{{else}}<form method="post" action="/painel/descoberta/faixas/{{.ID}}/ligar" class="inline"><button class="sec" type="submit">Ligar</button></form>{{end}}
+<form method="post" action="/painel/descoberta/faixas/{{.ID}}/remover" class="inline"><button class="sec perigo" type="submit">Remover</button></form></td></tr>{{end}}</tbody></table></div>{{end}}
+<form method="post" action="/painel/descoberta/varrer" class="mt"><button type="submit"{{if .Scanning}} disabled{{end}}>Varrer agora</button>{{if .LastRun}} <span class="muted">última: {{.LastRun}}</span>{{end}}</form></div>
+
+<div class="card"><div class="card-cab"><h2>Sem agente</h2><span class="muted">{{len .Hosts}} host(s){{if .Alive}} · {{.WithAgent}} com agente de {{.Alive}} vivos{{end}}</span></div>
+{{if not .PublicURL}}<p class="aviso atencao">Sem PATCHD_PUBLIC_URL: os comandos saem com &lt;endereço-do-servidor&gt; a preencher.</p>{{end}}
+{{if .Hosts}}<p class="muted">Crie um token em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a> e salve o <code>patchd-token.txt</code> junto do instalador. Nenhuma senha fica no servidor.</p>
+<div class="tabela"><table><thead><tr><th>IP</th><th>Nome (DNS)</th><th>Portas</th><th>Palpite</th><th>Visto</th><th></th></tr></thead>
+<tbody>{{range .Hosts}}<tr><td><code>{{.IP}}</code></td><td>{{if .Hostname}}{{.Hostname}}{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{.Ports}}</td><td>{{.OSLabel}}</td><td>{{.LastSeen}}</td>
+<td><details class="host"><summary>Instalar</summary>{{range .Hints}}<div class="metodo"><p class="rot-metodo">{{.Label}}</p><pre class="comando">{{.Command}}</pre><p class="muted nota">{{.Note}}</p></div>{{end}}</details></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum host sem agente na última varredura.{{if not .LastRun}} Cadastre uma faixa e clique em Varrer agora.{{end}}</p>{{end}}</div>
+
+{{if .Runs}}<div class="card"><div class="card-cab"><h2>Últimas varreduras</h2></div>
+<div class="tabela"><table><thead><tr><th>Quando</th><th>Por</th><th>Endereços</th><th>Vivos</th><th>Sem agente</th></tr></thead>
+<tbody>{{range .Runs}}<tr><td>{{.When}}</td><td>{{.By}}</td><td>{{.Scanned}}{{if .Partial}} <span class="muted">(parcial)</span>{{end}}</td><td>{{.Alive}}</td><td>{{.SemAg}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{template "fim"}}{{end}}
 `))
