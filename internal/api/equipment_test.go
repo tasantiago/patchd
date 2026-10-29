@@ -43,7 +43,6 @@ func TestPaginaDeEquipamentos(t *testing.T) {
 	// A memória do ambiente já tem 2 máquinas: 32 no total, 25 por página.
 	for _, tr := range []string{
 		`<span class="kpi-rot">Equipamentos</span><span class="kpi-val">32</span>`,
-		`<span class="kpi-rot">Sem rede e discos</span><span class="kpi-val">17</span>`,
 		"1–25 de 32", `href="/painel/inventario?pagina=2"`, "próxima ›",
 		`aria-sort="ascending"><a href="/painel/inventario?dir=desc">Nome ▲</a>`,
 		`<a href="/painel/inventario?ordem=ip">IP</a>`,
@@ -56,6 +55,9 @@ func TestPaginaDeEquipamentos(t *testing.T) {
 	}
 	if strings.Contains(b, "<script>alert") {
 		t.Error("o nome tem de sair escapado")
+	}
+	if strings.Contains(b, `<span class="kpi-rot">Sem rede e discos</span>`) {
+		t.Error("indicador removido apareceu no inventário")
 	}
 
 	// Busca no campo IP, ordem decrescente, 15 por página.

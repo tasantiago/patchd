@@ -28,7 +28,6 @@ func TestFirmwareNaFrota(t *testing.T) {
 		`<span class="kpi-rot">BIOS sem senha</span><span class="kpi-val v-vermelho">1</span>`,
 		`<span class="kpi-rot">Secure Boot desligado</span><span class="kpi-val v-laranja">1</span>`,
 		`<span class="kpi-rot">TPM ausente ou 1.2</span><span class="kpi-val v-laranja">1</span>`,
-		`<span class="kpi-rot">Senha sem informação</span><span class="kpi-val">0</span>`,
 		`href="/painel/inventario?firmware=sem-senha"`, `>Senha da BIOS</a></th>`,
 		`<td class="nivel-erro">não definida</td>`, `<td>definida</td>`,
 	} {
@@ -37,6 +36,9 @@ func TestFirmwareNaFrota(t *testing.T) {
 		}
 	}
 	// O filtro: só a sem senha; o cartão ativo leva de volta sem o filtro.
+	if strings.Contains(b, `<span class="kpi-rot">Senha sem informação</span>`) {
+		t.Error("indicador removido apareceu no inventário")
+	}
 	b = pagina(h, "GET", "/painel/inventario?firmware=sem-senha", sessaoTeste, nil).Body.String()
 	if !strings.Contains(b, `href="/painel/maquinas/60ef97e4-0001"`) || strings.Contains(b, `href="/painel/maquinas/7aa604f7-0002"`) ||
 		!strings.Contains(b, `<a class="kpi ativo" href="/painel/inventario">`) || !strings.Contains(b, `name="firmware" value="sem-senha"`) {

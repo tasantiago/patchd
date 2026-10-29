@@ -508,26 +508,26 @@ type equipRow struct {
 
 type equipView struct {
 	pageBase
-	Total, Online, Offline, NoState int
-	Status                          string
+	Total, Online, Offline int
+	Status                 string
 	// Aula 21.2: a segunda linha de cartões, a do firmware.
-	Firmware                         string
-	FWCards                          []fwCard
-	KPIAll, KPIOnline, KPIOff, KPINo string // links dos cartões (mantêm a busca)
-	Fields                           []optView
-	Q                                string
-	Pers                             []optView
-	Order, Dir                       string // a ordem atual, para o formulário
-	Cols                             []colView
-	Rows                             []equipRow
-	Found                            int
-	Shown                            string // "1–25 de 132"
-	Prev, Next                       string
-	Pages                            []pageLink
-	CSV                              string
-	HasFilter                        bool
-	Buildings                        []optView // Aula 23.6: os prédios do patrimônio com máquina
-	Building                         string
+	Firmware                  string
+	FWCards                   []fwCard
+	KPIAll, KPIOnline, KPIOff string // links dos cartões (mantêm a busca)
+	Fields                    []optView
+	Q                         string
+	Pers                      []optView
+	Order, Dir                string // a ordem atual, para o formulário
+	Cols                      []colView
+	Rows                      []equipRow
+	Found                     int
+	Shown                     string // "1–25 de 132"
+	Prev, Next                string
+	Pages                     []pageLink
+	CSV                       string
+	HasFilter                 bool
+	Buildings                 []optView // Aula 23.6: os prédios do patrimônio com máquina
+	Building                  string
 }
 
 // fwCard: um cartão do firmware: a contagem e o link do filtro (que mantém a busca e o status).
@@ -606,9 +606,6 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		if e.Online {
 			v.Online++
 		}
-		if !e.HasState {
-			v.NoState++
-		}
 	}
 	v.Offline = v.Total - v.Online
 
@@ -618,7 +615,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		k.Status, k.Page = status, 1
 		return k.href("/painel/inventario")
 	}
-	v.KPIAll, v.KPIOnline, v.KPIOff, v.KPINo = kpi(""), kpi(statusOnline), kpi(statusOffline), kpi(statusNoState)
+	v.KPIAll, v.KPIOnline, v.KPIOff = kpi(""), kpi(statusOnline), kpi(statusOffline)
 
 	// Aula 21.2: os cartões do firmware contam a frota toda (como os de cima) e filtram;
 	// clicar no ativo tira o filtro.
@@ -627,7 +624,6 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		{Key: fwSemSenha, Label: "BIOS sem senha", Sub: "senha de administrador não definida", Class: "v-vermelho"},
 		{Key: fwSecureBootOff, Label: "Secure Boot desligado", Sub: "inclui o BIOS legado", Class: "v-laranja"},
 		{Key: fwTPM, Label: "TPM ausente ou 1.2", Sub: "o Windows 11 pede o 2.0", Class: "v-laranja"},
-		{Key: fwUnknown, Label: "Senha sem informação", Sub: "agente anterior à 21.1 ou modelo sem a interface"},
 	} {
 		for _, e := range all {
 			if e.fwMatch(c.Key) {

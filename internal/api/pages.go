@@ -644,7 +644,6 @@ var pages = template.Must(template.New("").Parse(`
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Equipamentos</span><span class="kpi-val">{{.Total}}</span></a></li>
 <li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val v-verde">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
 <li><a class="kpi{{if eq .Status "offline"}} ativo{{end}}" href="{{.KPIOff}}"><span class="kpi-rot">Offline</span><span class="kpi-val v-laranja">{{.Offline}}</span><span class="kpi-sub">sem check-in há mais de 2 h</span></a></li>
-<li><a class="kpi{{if eq .Status "sem-estado"}} ativo{{end}}" href="{{.KPINo}}"><span class="kpi-rot">Sem rede e discos</span><span class="kpi-val">{{.NoState}}</span><span class="kpi-sub">agente anterior à Aula 12.1</span></a></li>
 </ul>
 <ul class="kpis" aria-label="firmware">{{range .FWCards}}
 <li><a class="kpi{{if .Active}} ativo{{end}}" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val{{if .Class}} {{.Class}}{{end}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
