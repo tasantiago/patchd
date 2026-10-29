@@ -668,7 +668,20 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a><a href="/painel/configuracao?aba=descoberta"{{if eq .Tab "descoberta"}} class="ativa" aria-current="page"{{end}}>Descoberta</a></nav>
+{{if eq .Tab "descoberta"}}{{with .Discovery}}
+<div class="card"><h2>Instalação automática do agente Windows</h2>
+<p>Ao terminar cada varredura, o servidor tenta instalar o agente nas estações Windows sem agente das faixas habilitadas. A conta precisa de administração local e acesso ao WinRM HTTPS (5986), com certificado confiável para o IP da estação.</p>
+{{if not .KeyReady}}<p class="aviso atencao">Configure PATCHD_DISCOVERY_KEY_FILE no servidor para guardar a senha cifrada.</p>{{end}}
+<form method="post" action="/painel/configuracao/descoberta" autocomplete="off">
+<p><label>Usuário (DOMÍNIO\usuário ou conta local) <input name="usuario" value="{{.Username}}" maxlength="256" autocomplete="off" required></label></p>
+<p><label>Senha <input type="password" name="senha" maxlength="1024" autocomplete="new-password"></label>
+{{if .HasPassword}}<span class="muted">Senha cadastrada. Deixe vazio para manter a senha.</span>{{end}}</p>
+<p><label><input type="checkbox" name="automatico"{{if .Enabled}} checked{{end}}> Instalar automaticamente após a varredura</label></p>
+<button type="submit"{{if not .KeyReady}} disabled{{end}}>Salvar credencial</button>
+</form><p>A senha fica cifrada no banco e não é exibida. O agente Windows amd64 precisa estar publicado em Configuração › Agente e PATCHD_PUBLIC_URL deve ser HTTPS. Cada instalação usa um token de registro temporário, de uso único.</p>
+<p><a href="/painel/descoberta">Cadastrar faixas e varrer a rede</a></p></div>
+{{end}}{{end}}
 {{if eq .Tab "patrimonio"}}{{with .Assets}}
 <div class="card"><div class="card-cab"><h2>Localização física</h2><span class="muted">do sistema de patrimônio, para o Inventário</span></div>
 <p class="muted">O CSV que o sistema de patrimônio exporta, com o cabeçalho na primeira linha: <code>DEPREDIO</code>, <code>DESALA</code>, <code>UO</code>, <code>TOMBO</code>, <code>DEBEM</code>, <code>DESUBGRUPOBEM</code> (em qualquer ordem; só o <code>TOMBO</code> é obrigatório). Vírgula ou ponto e vírgula; UTF-8 ou o CSV do Excel. Cada importação <strong>substitui</strong> a anterior inteira. A máquina é ligada ao bem pelo nome: os dígitos do hostname, sem os zeros à esquerda, iguais ao tombo (FJ088594 é o tombo 88594; letras antes e depois variam).</p>
@@ -1416,6 +1429,8 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "descoberta"}}{{template "topo" .}}
 <h1>Descoberta de rede</h1>
+<p><a href="/painel/configuracao?aba=descoberta">Configurar credencial e instalação automática Windows</a></p>
+{{if .Installs}}<div class="card"><h2>Instalações automáticas</h2><p>Aguardando registro significa que o serviço foi verificado na estação. O registro e o inventário ainda precisam ser recebidos para confirmar a presença do agente.</p><div class="tabela"><table><thead><tr><th>IP</th><th>Resultado</th><th>Atualizado</th><th>Solicitado por</th></tr></thead><tbody>{{range .Installs}}<tr><td>{{.IP}}</td><td>{{.State}}</td><td>{{.At}}</td><td>{{.By}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{if .Scanning}}<div class="card"><div class="card-cab"><h2>Varrendo…</h2><span class="muted">{{.ScanDone}} de {{.ScanTotal}} endereços · a página se atualiza sozinha</span></div>
 <p class="muted">A sondagem é TCP (portas 445, 3389 e 22) a partir do servidor, sem ping. Ao terminar, os hosts sem agente aparecem abaixo.</p></div>{{end}}
 
@@ -1435,7 +1450,7 @@ var pages = template.Must(template.New("").Parse(`
 
 <div class="card"><div class="card-cab"><h2>Sem agente</h2><span class="muted">{{len .Hosts}} host(s){{if .Alive}} · {{.WithAgent}} com agente de {{.Alive}} vivos{{end}}</span></div>
 {{if not .PublicURL}}<p class="aviso atencao">Sem PATCHD_PUBLIC_URL: os comandos saem com &lt;endereço-do-servidor&gt; a preencher.</p>{{end}}
-{{if .Hosts}}<p class="muted">Crie um token em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a> e salve o <code>patchd-token.txt</code> junto do instalador. Nenhuma senha fica no servidor.</p>
+{{if .Hosts}}<p class="muted">A instalação automática usa a credencial de Configuração › Descoberta. Para instalação manual, crie um token em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a> e salve o <code>patchd-token.txt</code> junto do instalador.</p>
 <div class="tabela"><table><thead><tr><th>IP</th><th>Nome (DNS)</th><th>Portas</th><th>Palpite</th><th>Visto</th><th></th></tr></thead>
 <tbody>{{range .Hosts}}<tr><td><code>{{.IP}}</code></td><td>{{if .Hostname}}{{.Hostname}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{.Ports}}</td><td>{{.OSLabel}}</td><td>{{.LastSeen}}</td>

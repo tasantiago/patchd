@@ -80,6 +80,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if len(args) > 0 && args[0] == "release" {
 		return runRelease(args[1:], look, stdout, stderr, info.Version)
 	}
+	if len(args) >= 2 && args[0] == "discovery" && args[1] == "keygen" {
+		return discoveryKeygen(args[2:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "catalog" {
 		return runCatalog(args[1:], look, stdout, stderr)
 	}
@@ -301,6 +304,19 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			"key_id", jobs.KeyID(jobKey.Public().(ed25519.PublicKey)))
 	} else {
 		logger.Info("jobs pelo painel desligados (sem PATCHD_JOB_SIGNING_KEY_FILE): crie jobs com patchd-server job create")
+	}
+	discoverySecret, err := config.Secret(look, "PATCHD_DISCOVERY_KEY")
+	if err != nil {
+		logger.Error("ler chave de descoberta")
+		return exitConfig
+	}
+	if discoverySecret != "" {
+		key, keyErr := machinebox.ParsePrivate(discoverySecret)
+		if keyErr != nil {
+			logger.Error("chave de descoberta inválida")
+			return exitConfig
+		}
+		apiOpts = append(apiOpts, api.WithDiscoveryKey(key))
 	}
 	// Guarda da senha da BIOS (Aula 21.4): com a chave, o painel sorteia, guarda e revela.
 	// Chave configurada e ilegível: o servidor não sobe.

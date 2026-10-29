@@ -23,6 +23,7 @@ Volume=@SECRETS@/bios_escrow_key:/run/secrets/bios_escrow_key:ro,Z
 Volume=@SECRETS@/oidc_client_secret:/run/secrets/oidc_client_secret:ro,Z
 Volume=@SECRETS@/metrics_token:/run/secrets/metrics_token:ro,Z
 Volume=@SECRETS@/smtp_password:/run/secrets/smtp_password:ro,Z
+Volume=@DISCOVERY_KEY_FILE@:/run/patchd/discovery.key:ro
 # TLS: a pasta inteira (renovar = trocar os arquivos; o servidor relê em até 30 s).
 Volume=@TLS_DIR@:/run/patchd/tls:ro,Z
 Volume=@RELEASES_DIR@:/var/lib/patchd/releases:ro,Z

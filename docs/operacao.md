@@ -900,7 +900,7 @@ instalar nelas.
    (`10.0.0.10-60`, ou `10.0.0.10-10.0.0.60`). Até 64 faixas; cada uma no máximo um `/16`.
    Dá para ligar e desligar uma faixa sem removê-la.
 2. **Varrer agora** sonda os endereços das faixas ligadas. A sondagem é **TCP** (portas 445 e
-   3389 do Windows, 22 do SSH) feita **pelo servidor**, sem ping — o container roda sem root e
+   3389 do Windows, 5986 do WinRM HTTPS e 22 do SSH) feita **pelo servidor**, sem ping — o container roda sem root e
    não abre soquete bruto, e muita máquina ignora o ping mas atende essas portas. Só alcança
    as sub-redes que a VM do servidor enxerga. A página se atualiza sozinha enquanto varre;
    cada varredura sonda no máximo 16 384 endereços (o resto fica para a próxima, marcada
@@ -908,16 +908,64 @@ instalar nelas.
 3. **Sem agente**: o host vivo é cruzado com o inventário pelo **IP** (os endereços que o
    agente reporta e o do check-in) e pelo **nome** (o reverse-DNS do host contra o hostname do
    inventário). O que casa some da lista; o que sobra é o que não tem agente. O palpite de SO
-   sai das portas (445/3389 → Windows; 22 → Linux/SSH).
-4. Para cada host, **Instalar** abre o comando pronto conforme o SO: **PowerShell remoto
+   sai das portas (445/3389/5986 → Windows; 22 → Linux/SSH).
+4. **Configuração › Descoberta e instalação Windows** permite cadastrar uma conta
+   administrativa e habilitar **Instalar automaticamente após a varredura**. Ao terminar a
+   varredura, o servidor instala nas estações Windows sem agente das faixas ainda habilitadas.
+   Máquinas já conhecidas no inventário e hosts Linux/SSH ficam de fora.
+5. Para cada host, **Instalar** também abre o comando manual conforme o SO: **PowerShell remoto
    (WinRM)**, **PsExec** e **GPO** para Windows, **SSH** para Linux/macOS. O IP e o endereço
-   do servidor vão preenchidos; o usuário administrador e o token ficam a preencher — o patchd
-   **não guarda credencial**. Crie um token em Configuração › Agente e salve o
+   do servidor vão preenchidos; o usuário administrador e o token ficam a preencher. Crie um token em Configuração › Agente e salve o
    `patchd-token.txt` junto do instalador.
 
 A cada varredura os hosts são regravados por inteiro (uma foto da rede). As faixas e as
 últimas 50 varreduras ficam. Cada varredura e cada mudança de faixa entram na auditoria
 (`descoberta.varrer`, `descoberta.faixa`); tudo é do perfil admin.
+
+### Preparar a instalação automática Windows
+
+1. Gere uma chave exclusiva para cifrar a credencial:
+   `patchd-server discovery keygen -out /caminho/seguro/discovery.key`.
+   O arquivo é criado com permissão 0600 e nunca sobrescrito. Configure
+   `PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key` no processo do servidor.
+   Guarde a chave fora do banco e inclua-a no plano de backup; sem ela, cadastre a senha
+   novamente. Não reutilize a chave de jobs ou da guarda da BIOS.
+   No Compose de `deploy/`, configure no `.env`
+   `PATCHD_DISCOVERY_KEY_HOST_FILE=/caminho/absoluto/discovery.key` e
+   `PATCHD_DISCOVERY_KEY_FILE=/run/patchd/discovery.key`. Dê leitura do arquivo ao UID
+   do servidor, como para os demais segredos do deploy, e recrie o serviço.
+2. Publique uma versão contendo o agente **Windows amd64** em Configuração › Agente.
+   O executável é conferido pelo tamanho e SHA-256 antes do envio e novamente na estação.
+   Configure `PATCHD_PUBLIC_URL` com a URL HTTPS que as estações alcançam.
+3. Nas estações, habilite **WinRM HTTPS na porta 5986**, com certificado cujo SAN contenha
+   o IP varrido e cuja CA seja confiável no servidor. Libere o firewall apenas para o
+   servidor patchd. A conta cadastrada deve poder abrir a sessão WinRM e instalar serviços
+   como administrador local; permissões de domínio, restrições de UAC remoto e políticas
+   locais continuam sendo respeitadas. Só cadastrar a senha não habilita WinRM.
+4. Cadastre usuário e senha em Configuração › Descoberta e habilite a instalação automática.
+   Senha vazia mantém a anterior; trocar de usuário exige informar a senha.
+   A senha é cifrada com HPKE antes de ir ao banco, não volta ao HTML e não entra na auditoria.
+5. Cadastre as faixas e clique em **Varrer agora**. A instalação acontece automaticamente
+   ao final dessa varredura; isso não agenda varreduras periódicas. O histórico da página
+   mostra o último resultado por IP e a auditoria registra `descoberta.credencial` e
+   `descoberta.instalar`.
+
+A transferência usa NTLM sobre HTTPS com verificação de certificado, sem opções para ignorar
+TLS. O binário, a CA do servidor e o token seguem pelo stdin cifrado da sessão WinRM.
+O token é de uso único, vence em dez minutos e é revogado ao terminar a tentativa.
+Arquivos temporários na estação têm ACL restrita a SYSTEM e Administradores e são removidos
+no encerramento normal da sessão. Uma queda da conexão ou da estação pode impedir a limpeza;
+o token continua sujeito à validade.
+
+O serviço deve estar em execução para o resultado virar **aguardando registro**.
+Isso não confirma inventário: a próxima varredura cruza o registro recebido e passa a mostrar
+**agente identificado no inventário**. Falhas não interrompem as outras estações.
+Tentativas concorrentes para o mesmo IP são bloqueadas no banco; novas tentativas aguardam
+15 minutos após falhas ou 24 horas enquanto aguardam registro. A instalação tem limite
+de três minutos por estação e trinta minutos por lote; alvos ainda não tentados ficam para
+uma nova varredura. Desabilitar a instalação ou uma faixa interrompe novos envios; a tentativa
+em andamento pode terminar. Windows ARM64 e instalações automáticas por SMB/PsExec não fazem
+parte deste fluxo.
 
 Um aviso: a varredura abre conexões TCP para toda a faixa. Avise a equipe de rede antes de
 varrer sub-redes grandes, para a sondagem não ser confundida com um ataque pelo IDS/IPS.

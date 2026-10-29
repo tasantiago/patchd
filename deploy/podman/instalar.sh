@@ -71,6 +71,7 @@ servidor_env() {
   padrao PATCHD_AGENT_CA_FILE ""
   fixo PATCHD_JOB_SIGNING_KEY_FILE /run/secrets/job_signing_key
   padrao PATCHD_BIOS_ESCROW_KEY_FILE ""
+  padrao PATCHD_DISCOVERY_KEY_FILE ""
   fixo PATCHD_RELEASES_DIR /var/lib/patchd/releases
   fixo PATCHD_CONTENT_DIR /var/lib/patchd/conteudo
   fixo PATCHD_REPO_CACHE_DIR /var/lib/patchd/repocache
@@ -175,6 +176,7 @@ ENV_FILE="$CONF/patchd/servidor.env"
 SECRETS="$REPO/deploy/secrets"
 TLS_DIR="$(caminho PATCHD_TLS_DIR ./tls)"
 RELEASES_DIR="$(caminho PATCHD_RELEASES_HOST_DIR ../releases)"
+DISCOVERY_KEY_FILE="$(caminho PATCHD_DISCOVERY_KEY_HOST_FILE /dev/null)"
 TLS_BIND="$(endereco PATCHD_TLS_BIND 0.0.0.0)"; TLS_PORT="$(porta PATCHD_TLS_PORT 8443)"
 HTTP_BIND="$(endereco PATCHD_HTTP_BIND 0.0.0.0)"; HTTP_PORT="$(porta PATCHD_HTTP_PORT 8080)"
 METRICS_BIND="$(endereco PATCHD_METRICS_BIND 127.0.0.1)"; METRICS_PORT="$(porta PATCHD_METRICS_PORT 9090)"
@@ -205,6 +207,7 @@ mv "$ENV_FILE.novo" "$ENV_FILE"
 
 modelo() { # ARQUIVO DESTINO
   sed -e "s|@REPO@|$REPO|g" -e "s|@SECRETS@|$SECRETS|g" -e "s|@ENV_FILE@|$ENV_FILE|g" \
+      -e "s|@DISCOVERY_KEY_FILE@|$DISCOVERY_KEY_FILE|g" \
       -e "s|@TLS_DIR@|$TLS_DIR|g" -e "s|@RELEASES_DIR@|$RELEASES_DIR|g" \
       -e "s|@TLS_BIND@|$TLS_BIND|g" -e "s|@TLS_PORT@|$TLS_PORT|g" \
       -e "s|@HTTP_BIND@|$HTTP_BIND|g" -e "s|@HTTP_PORT@|$HTTP_PORT|g" \

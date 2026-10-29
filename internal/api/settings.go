@@ -76,6 +76,7 @@ type tokenRow struct {
 }
 
 type settingsView struct {
+	Discovery *discoveryConfigView
 	pageBase
 	Tab         string
 	System      []settingRow
@@ -99,7 +100,7 @@ type settingsView struct {
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
-	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio":
+	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio", "descoberta":
 		return tab
 	case "parametros":
 		if a.params != nil {
@@ -123,6 +124,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	var err error
 	switch v.Tab {
+	case "descoberta":
+		w.Header().Set("Cache-Control", "no-store")
+		v.Discovery, err = a.discoveryConfig(r.Context())
 	case "sistema":
 		notifyFlash(q, &v.pageBase)
 		logoFlash(q, &v.pageBase)

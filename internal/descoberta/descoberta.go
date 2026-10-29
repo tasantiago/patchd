@@ -8,8 +8,8 @@
 // sub-redes que a VM do servidor enxerga.
 //
 // O palpite de SO sai das portas abertas, e com ele o painel mostra o comando certo
-// (PowerShell/PsExec para Windows, SSH para Linux). Nenhuma credencial é guardada: o comando
-// sai com o usuário e o token a preencher.
+// (PowerShell/PsExec para Windows, SSH para Linux). A instalação automática Windows é
+// uma operação tipada separada dos comandos manuais.
 package descoberta
 
 import (
@@ -23,7 +23,7 @@ import (
 )
 
 // Portas sondadas, na ordem. 445 e 3389 marcam Windows; 22, SSH.
-var DefaultPorts = []int{445, 3389, 22}
+var DefaultPorts = []int{445, 3389, 22, 5986}
 
 // Limites da varredura.
 const (
@@ -38,6 +38,12 @@ const (
 type Spec struct {
 	Text     string // como foi cadastrada, normalizada
 	from, to netip.Addr
+}
+
+// Contains checks membership without expanding a range.
+func (s Spec) Contains(ip string) bool {
+	a, err := netip.ParseAddr(ip)
+	return err == nil && a.Is4() && !a.Less(s.from) && !s.to.Less(a)
 }
 
 // ParseSpec confere uma faixa e devolve a Spec normalizada.
@@ -253,7 +259,7 @@ func osGuess(ports []int) string {
 		return false
 	}
 	switch {
-	case has(445) || has(3389) || has(135):
+	case has(445) || has(3389) || has(135) || has(5986):
 		return "windows"
 	case has(22):
 		return "ssh"

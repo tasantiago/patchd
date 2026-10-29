@@ -20,8 +20,8 @@ import (
 
 // Descoberta de rede (Aula 23.7): o admin cadastra faixas de IP; o servidor varre (sondagem
 // TCP a partir do container) e, cruzando com o inventário pelo IP e pelo nome, mostra os
-// hosts SEM AGENTE, com o comando de instalação pronto (PowerShell/PsExec/SSH/GPO). Nenhuma
-// credencial é guardada: o comando sai com o usuário e o token a preencher.
+// hosts SEM AGENTE. A instalação automática Windows usa a credencial cifrada configurada;
+// comandos manuais continuam disponíveis para PowerShell/PsExec/SSH/GPO.
 
 // scanMaxRanges, scanTimeout: limites da varredura em segundo plano.
 const scanTimeout = 10 * time.Minute
@@ -98,6 +98,7 @@ func (a *api) dialer() descoberta.Dial {
 // --- Página ------------------------------------------------------------------------------
 
 type discoveryView struct {
+	Installs []store.DiscoveryInstall
 	pageBase
 	Ranges    []rangeRow
 	Hosts     []hostRow // só os sem agente
@@ -139,6 +140,12 @@ func (a *api) discoveryPage(w http.ResponseWriter, r *http.Request, s panel.Sess
 		MaxRanges: descoberta.MaxRanges, PublicURL: a.publicURL != ""}
 	q := r.URL.Query()
 	discoveryFlash(q, &v.pageBase)
+	var installErr error
+	v.Installs, installErr = a.store.DiscoveryInstalls(r.Context())
+	if installErr != nil {
+		a.internalError(w, r, "ler instalações", installErr)
+		return
+	}
 
 	ranges, err := a.store.DiscoveryRanges(r.Context())
 	if err != nil {
@@ -156,6 +163,17 @@ func (a *api) discoveryPage(w http.ResponseWriter, r *http.Request, s panel.Sess
 		return
 	}
 	v.Alive = len(hosts)
+	matched := map[string]bool{}
+	for _, h := range hosts {
+		if h.MatchID != "" {
+			matched[h.IP] = true
+		}
+	}
+	for i := range v.Installs {
+		if matched[v.Installs[i].IP] {
+			v.Installs[i].State = "agente identificado no inventário"
+		}
+	}
 	ca := len(a.agentCA) > 0
 	for _, h := range hosts {
 		if h.MatchID != "" {
@@ -343,7 +361,7 @@ func (a *api) runScan(ctx context.Context, specs []descoberta.Spec, by string) {
 	known, err := a.knownNetwork(ctx)
 	if err != nil {
 		a.logger.Error("descoberta: ler o inventário", "error", err)
-		known = networkIndex{}
+		return
 	}
 	hosts := make([]store.DiscoveryHost, 0, len(found))
 	sem := 0
@@ -373,6 +391,11 @@ func (a *api) runScan(ctx context.Context, specs []descoberta.Spec, by string) {
 		return
 	}
 	a.logger.Info("varredura de descoberta terminada", "scanned", scanned, "alive", len(found), "sem_agente", sem, "partial", partial)
+	if ctx.Err() == nil {
+		installCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+		defer stop()
+		a.installDiscovered(installCtx, hosts, by)
+	}
 }
 
 // networkIndex: o que o inventário sabe da rede, para cruzar com os hosts descobertos.

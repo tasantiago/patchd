@@ -104,6 +104,11 @@ type Store interface {
 	ReplaceDiscoveryHosts(ctx context.Context, hosts []store.DiscoveryHost, run store.DiscoveryRun) (int64, error)
 	DiscoveryHosts(ctx context.Context) ([]store.DiscoveryHost, error)
 	DiscoveryRuns(ctx context.Context, limit int) ([]store.DiscoveryRun, error)
+	DiscoveryCredential(context.Context) (store.DiscoveryCredential, error)
+	SetDiscoveryCredential(context.Context, store.DiscoveryCredential) error
+	DiscoveryInstalls(context.Context) ([]store.DiscoveryInstall, error)
+	SaveDiscoveryInstall(context.Context, store.DiscoveryInstall) error
+	ClaimDiscoveryInstall(context.Context, store.DiscoveryInstall) (bool, error)
 	// Usuários e sessões do painel.
 	PanelStore
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
@@ -159,9 +164,11 @@ var machineIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var hashPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 type api struct {
-	store  Store
-	logger *slog.Logger
-	now    func() time.Time
+	discoveryKey     []byte
+	windowsInstaller descoberta.WindowsInstaller
+	store            Store
+	logger           *slog.Logger
+	now              func() time.Time
 
 	releases      release.Dir // vazia: sem atualização automática
 	serverVersion string
@@ -203,7 +210,7 @@ type api struct {
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
 func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() }, brand: "patchd",
-		hashSlots: make(chan struct{}, loginConcurrent)}
+		hashSlots: make(chan struct{}, loginConcurrent), discovery: &scanState{}}
 	for _, o := range opts {
 		o(a)
 	}
@@ -297,6 +304,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/descoberta/faixas", a.sameOrigin(a.adminAction(a.addRangeAction)))
 	mux.Handle("POST /painel/descoberta/faixas/{id}/{op}", a.sameOrigin(a.adminAction(a.rangeOpAction)))
 	mux.Handle("POST /painel/descoberta/varrer", a.sameOrigin(a.adminAction(a.scanAction)))
+	mux.Handle("POST /painel/configuracao/descoberta", a.sameOrigin(a.adminAction(a.discoveryCredentialAction)))
 	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))

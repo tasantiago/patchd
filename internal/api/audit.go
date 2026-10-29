@@ -68,6 +68,8 @@ var auditActions = []struct{ Key, Label string }{
 	{"patrimonio.importar", "Patrimônio importado"},
 	{"descoberta.faixa", "Faixa de descoberta alterada"},
 	{"descoberta.varrer", "Varredura de rede iniciada"},
+	{"descoberta.credencial", "Credencial de instalação Windows alterada"},
+	{"descoberta.instalar", "Instalação automática do agente Windows"},
 	{"script.bundle", "Bundle de script alterado"},
 	{"script.executar", "Bundle de script executado"},
 	{"job.criar", "Job criado"},

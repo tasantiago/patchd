@@ -62,10 +62,12 @@ type Memory struct {
 	bundles   []ScriptBundle // bundles de script (Aula 23.8)
 	bundleSeq int64
 
-	discRanges []DiscoveryRange // descoberta de rede (Aula 23.7)
-	discHosts  []DiscoveryHost
-	discRuns   []DiscoveryRun
-	discSeq    int64
+	discCredential DiscoveryCredential
+	discInstalls   map[string]DiscoveryInstall
+	discRanges     []DiscoveryRange // descoberta de rede (Aula 23.7)
+	discHosts      []DiscoveryHost
+	discRuns       []DiscoveryRun
+	discSeq        int64
 }
 
 type memMachine struct {
