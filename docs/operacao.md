@@ -921,3 +921,48 @@ A cada varredura os hosts são regravados por inteiro (uma foto da rede). As fai
 
 Um aviso: a varredura abre conexões TCP para toda a faixa. Avise a equipe de rede antes de
 varrer sub-redes grandes, para a sondagem não ser confundida com um ataque pelo IDS/IPS.
+
+## Execução de scripts remotos (Aula 23.8)
+
+**Automação › Scripts** executa, nas máquinas da frota, um conjunto de arquivos que você sobe
+no painel — como as automações do ITOM.
+
+1. **Suba o bundle**: um ZIP com o que a execução precisa — o executável, o `.ini` e o script
+   que começa. O script de entrada pode ser `.ps1`, `.bat`, `.cmd` ou `.exe` (Windows) ou
+   `.sh` (Linux e macOS). Até 256 MiB; o servidor guarda o ZIP em
+   `$PATCHD_CONTENT_DIR/bundles/<sha256>.zip`.
+2. **Escolha por onde começa**: o seletor lista só os arquivos executáveis do ZIP. O script
+   roda **na pasta onde o bundle foi extraído**, com os outros arquivos ao lado — ele os
+   chama por caminho relativo (`.\agente.exe -c config.ini`, `./apoio.sh`).
+3. **Argumentos e prazo**: argumentos opcionais, separados por espaço, pelas mesmas regras do
+   job de terceiros (sem aspas, espaços dentro do token, caminhos ou barras invertidas). O
+   prazo vai de 30 a 3600 s; passando dele, o script é interrompido e o job falha.
+4. **Marque as máquinas** e execute. Sai um job por máquina; o script roda no próximo
+   check-in de cada uma. Acompanhe em **Automação › Jobs**: o resultado traz o código de
+   saída e a saída do script (as últimas ~4000 letras).
+
+O bundle só aparece para as máquinas do sistema dele: um ZIP só com `.ps1` não é oferecido a
+Linux, e vice-versa. O agente confere de novo na máquina e recusa o que não for do sistema.
+
+### O que protege a execução
+
+- **O job não leva linha de comando.** Leva o SHA-256 do ZIP, o nome do arquivo de dentro
+  dele por onde começar, e os argumentos conferidos — tudo dentro do payload assinado pela
+  chave de jobs. O agente monta o comando e passa o arquivo e os argumentos como `argv`,
+  nunca por um shell. Não há como apontar o ponto de entrada para `C:\Windows\System32`.
+- **Nada roda antes de o hash conferir.** O agente baixa o ZIP, compara tamanho e SHA-256 com
+  o que veio no job assinado, e só então extrai. Hash diferente: o job é *rejeitado*, e nada
+  foi tocado na máquina.
+- **A extração é conferida arquivo por arquivo** (Zip Slip): nome relativo, sem `..`, sem
+  barra invertida nem unidade, no máximo 4 pastas de fundura, só arquivo comum — link
+  simbólico e dispositivo não entram. Há teto de quantidade, de tamanho descompactado e de
+  taxa de compressão (zip bomb).
+- **O script roda com a conta do agente**: SYSTEM no Windows, root no Linux. É o que torna a
+  coisa útil e perigosa ao mesmo tempo — qualquer admin do painel pode rodar o que quiser na
+  frota. Tudo fica na auditoria (`script.bundle`, `script.executar`), e o bundle, o ponto de
+  entrada e as máquinas aparecem lá.
+- **Nada fica na máquina**: o ZIP e a pasta extraída são apagados quando o job termina.
+
+Um detalhe que custa caro quando falta: se o script deixar um processo em segundo plano, ele
+segura o cano da saída. O agente mata o processo no fim do prazo e espera no máximo mais 5 s
+pela saída — sem isso, o job ficaria preso até o processo em segundo plano morrer.

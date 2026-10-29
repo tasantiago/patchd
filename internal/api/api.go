@@ -91,6 +91,11 @@ type Store interface {
 	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
 	AssetLocations(ctx context.Context) ([]store.AssetLocation, error)
 	AssetImports(ctx context.Context, limit int) ([]store.AssetImport, error)
+	// Bundles de script (Aula 23.8).
+	AddScriptBundle(ctx context.Context, b store.ScriptBundle) (int64, error)
+	ScriptBundles(ctx context.Context) ([]store.ScriptBundle, error)
+	ScriptBundle(ctx context.Context, id int64) (store.ScriptBundle, bool, error)
+	DeleteScriptBundle(ctx context.Context, id int64) (store.ScriptBundle, bool, error)
 	// Descoberta de rede (Aula 23.7): faixas, hosts vivos e histórico de varreduras.
 	AddDiscoveryRange(ctx context.Context, spec, note, by string) (int64, error)
 	SetDiscoveryRangeEnabled(ctx context.Context, id int64, enabled bool) (bool, error)
@@ -212,6 +217,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
 	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
 	mux.Handle("GET "+protocol.PackagesPath+"{file}", a.machineAuth(a.packageFile))
+	mux.Handle("GET "+protocol.BundlesPath+"{file}", a.machineAuth(a.bundleFile)) // Aula 23.8
 	mux.Handle("POST "+protocol.JobResultPath+"{id}/result", a.machineAuth(a.jobResult))
 	// Autoatendimento (Aula 17.2).
 	mux.Handle("POST "+protocol.SelfServiceCatalogPath, a.machineAuth(a.selfServiceCatalog))
@@ -281,6 +287,11 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/configuracao/parametros/restaurar", a.sameOrigin(a.adminAction(a.paramsResetAction))) // Aula 19.2
 	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction)))              // Aula 19.1
 	mux.Handle("POST /painel/configuracao/patrimonio", a.sameOrigin(a.adminAction(a.importAssetsAction)))          // Aula 23.6
+	// Execução de scripts remotos (Aula 23.8).
+	mux.Handle("GET /painel/scripts", a.adminAction(a.scriptsPage))
+	mux.Handle("POST /painel/scripts", a.sameOrigin(a.adminAction(a.uploadBundleAction)))
+	mux.Handle("POST /painel/scripts/{id}/executar", a.sameOrigin(a.adminAction(a.runScriptAction)))
+	mux.Handle("POST /painel/scripts/{id}/excluir", a.sameOrigin(a.adminAction(a.deleteBundleAction)))
 	// Descoberta de rede (Aula 23.7).
 	mux.Handle("GET /painel/descoberta", a.adminAction(a.discoveryPage))
 	mux.Handle("POST /painel/descoberta/faixas", a.sameOrigin(a.adminAction(a.addRangeAction)))

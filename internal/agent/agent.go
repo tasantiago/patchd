@@ -66,6 +66,10 @@ type Agent struct {
 	// nil: o agente recusa esses jobs (só o Windows). Erro com jobs.ErrNotPending vira
 	// "rejeitado"; com jobs.ErrRetry, "adiado". Nunca reinicia.
 	WinUpdate func(ctx context.Context, jobID int64, updates []jobs.WinUpdate) (string, error)
+	// Script executa o job script (Aula 23.8): baixa o bundle (ZIP), confere o SHA-256,
+	// extrai e roda o ponto de entrada. nil: o agente recusa esses jobs. Erro com
+	// jobs.ErrRefused vira "rejeitado" (nada foi executado na máquina).
+	Script func(ctx context.Context, jobID int64, p jobs.ScriptParams) (string, error)
 	// BIOSPassword grava a senha de administrador da BIOS (job bios_password, Aula 21.5).
 	// nil: o agente recusa esses jobs. Erro com jobs.ErrRefused vira "rejeitado" (a BIOS não
 	// foi tocada); com bioswrite.ErrUncertain, "falhou" com o detalhe jobs.BIOSUncertain.
@@ -319,6 +323,22 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			return outcomeTransient
 		}
 		// Nenhum instalador rodou (download falhou, recusa): o inventário não mudou.
+		if ran {
+			a.resendInventory(ctx, &state)
+		}
+		a.saveStateOrLog(state)
+	}
+
+	// Bundles de script (Aula 23.8): depois das instalações. Um script pode ter instalado ou
+	// removido programa, então o inventário de depois vai antes dos resultados.
+	if len(accepted.scripts) > 0 {
+		res, ran := a.runScripts(ctx, accepted.scripts)
+		state.PendingJobResults = append(state.PendingJobResults, res...)
+		if ctx.Err() != nil {
+			state.InventoryFirst = state.InventoryFirst || ran
+			a.saveStateOrLog(state)
+			return outcomeTransient
+		}
 		if ran {
 			a.resendInventory(ctx, &state)
 		}

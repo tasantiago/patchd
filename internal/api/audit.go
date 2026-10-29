@@ -68,6 +68,8 @@ var auditActions = []struct{ Key, Label string }{
 	{"patrimonio.importar", "Patrimônio importado"},
 	{"descoberta.faixa", "Faixa de descoberta alterada"},
 	{"descoberta.varrer", "Varredura de rede iniciada"},
+	{"script.bundle", "Bundle de script alterado"},
+	{"script.executar", "Bundle de script executado"},
 	{"job.criar", "Job criado"},
 	{"job.cancelar", "Job cancelado"},
 	{"autoatendimento.oferta", "Oferta do autoatendimento gravada"},

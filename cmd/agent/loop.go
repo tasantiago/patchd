@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/tasantiago/patchd/internal/platform"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
+	"github.com/tasantiago/patchd/internal/scriptexec"
 )
 
 // loopOptions é o que o laço de check-in precisa da configuração.
@@ -199,6 +201,12 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	if tp := newThirdParty(client, opts.DataDir, opts.AllowedSigners); tp != nil {
 		ag.ThirdParty = tp
 	}
+	// Job script (Aula 23.8): em todos os sistemas. O bundle é baixado e extraído na pasta
+	// de dados do agente (só SYSTEM/root), e some ao fim do job.
+	ag.Script = (&scriptexec.Executor{
+		Download: client.Download,
+		Dir:      filepath.Join(opts.DataDir, "bundles"),
+	}).Execute
 	// Job windows_update (Aula 16.1): só no Windows, pelo WUA.
 	if wu := patch.NewWinUpdater(); wu != nil {
 		ag.WinUpdate = wu

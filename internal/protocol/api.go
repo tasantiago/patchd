@@ -78,6 +78,10 @@ type RepoCache struct {
 // do arquivo é o SHA-256 com a extensão (.msi ou .exe), como no cache do servidor.
 const PackagesPath = "/api/v1/agent/content/pacotes/"
 
+// BundlesPath é o caminho do download dos bundles de script (Aula 23.8): o nome do arquivo
+// é o SHA-256 do ZIP mais ".zip", o mesmo que vai no job assinado.
+const BundlesPath = "/api/v1/agent/content/bundles/"
+
 // OfflineCatalogPath é o caminho do download do catálogo offline; o SHA-256 vem no fim.
 const OfflineCatalogPath = "/api/v1/agent/content/wsusscn2/"
 

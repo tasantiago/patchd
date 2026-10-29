@@ -29,13 +29,14 @@ Quem pode: qualquer um, só da própria origem. Sem sessão: atende. De outra or
 | POST | `/painel/entrar` | login (conferência de origem, limite de tentativas) |
 | POST | `/painel/sair` | saída (conferência de origem) |
 
-## Agente (10)
+## Agente (11)
 
 Quem pode: máquina registrada (credencial). Sem sessão: 401.
 
 | Método | Caminho |
 |---|---|
 | POST | `/api/v1/agent/checkin` |
+| GET | `/api/v1/agent/content/bundles/{file}` |
 | GET | `/api/v1/agent/content/pacotes/{file}` |
 | GET | `/api/v1/agent/content/wsusscn2/{sha256}` |
 | POST | `/api/v1/agent/inventory` |
@@ -81,7 +82,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 401.
 | GET | `/api/v1/machines/{id}/scan` |
 | GET | `/api/v1/machines` |
 
-## Admin (leitura) (5)
+## Admin (leitura) (6)
 
 Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria.
 
@@ -92,8 +93,9 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/configuracao/auditoria.csv` |
 | GET | `/painel/configuracao` |
 | GET | `/painel/descoberta` |
+| GET | `/painel/scripts` |
 
-## Admin (ação) (47)
+## Admin (ação) (50)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -146,3 +148,6 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/patch/terceiros/baixar` |
 | POST | `/painel/patch/terceiros/excluir` |
 | POST | `/painel/patch/terceiros/revogar` |
+| POST | `/painel/scripts/{id}/excluir` |
+| POST | `/painel/scripts/{id}/executar` |
+| POST | `/painel/scripts` |

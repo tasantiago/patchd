@@ -66,6 +66,7 @@ type rota struct {
 var constantes = map[string]string{
 	"OfflineCatalogPath":     protocol.OfflineCatalogPath,
 	"PackagesPath":           protocol.PackagesPath,
+	"BundlesPath":            protocol.BundlesPath,
 	"JobResultPath":          protocol.JobResultPath,
 	"SelfServiceCatalogPath": protocol.SelfServiceCatalogPath,
 	"SelfServiceRequestPath": protocol.SelfServiceRequestPath,

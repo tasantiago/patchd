@@ -21,6 +21,12 @@ type acceptedJobs struct {
 	thirdParty []acceptedThirdParty
 	winUpdates []acceptedWinUpdate
 	bios       []acceptedBIOS
+	scripts    []acceptedScript
+}
+
+type acceptedScript struct {
+	id int64
+	p  jobs.ScriptParams
 }
 
 type acceptedBIOS struct {
@@ -101,6 +107,17 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			a.Logger.Info("job aceito: instalar programa de terceiros", "job_id", j.ID, "app", p.App, "version", p.Version,
 				"installer", p.Installer)
 			acc.thirdParty = append(acc.thirdParty, acceptedThirdParty{id: j.ID, p: p})
+		case jobs.TypeScript:
+			p, _ := jobs.ParseScriptParams(j.Params) // o Verify já conferiu
+			if a.Script == nil {
+				why := "este agente não executa bundles de script"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: executar bundle de script", "job_id", j.ID, "bundle", p.Bundle, "entry", p.Entry,
+				"runner", p.Runner)
+			acc.scripts = append(acc.scripts, acceptedScript{id: j.ID, p: p})
 		case jobs.TypeWinUpdate:
 			p, _ := jobs.ParseWinUpdateParams(j.Params) // o Verify já conferiu
 			if a.WinUpdate == nil {
@@ -223,6 +240,34 @@ func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) (o
 			a.Logger.Error("instalação de terceiros falhou", "job_id", j.id, "app", j.p.App, "error", detail)
 		default:
 			a.Logger.Info("instalação de terceiros concluída", "job_id", j.id, "app", j.p.App, "detail", detail,
+				"duration", a.now().Sub(start).Round(time.Second).String())
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out, ran
+}
+
+// runScripts executa os bundles de script (Aula 23.8), um por vez. ran diz se algum script
+// chegou a rodar: só então o inventário de depois interessa (um script pode ter instalado
+// ou removido programa).
+func (a *Agent) runScripts(ctx context.Context, list []acceptedScript) (out []PendingJobResult, ran bool) {
+	for _, j := range list {
+		a.Logger.Info("execução de script iniciada", "job_id", j.id, "bundle", j.p.Bundle, "entry", j.p.Entry)
+		start := a.now()
+		detail, err := a.Script(ctx, j.id, j.p)
+		if !errors.Is(err, jobs.ErrRefused) && !errors.Is(err, jobs.ErrNotStarted) {
+			ran = true
+		}
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrRefused):
+			status, detail = protocol.JobResultRejected, joinDetail(err.Error(), detail)
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case err != nil:
+			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
+			a.Logger.Error("execução de script falhou", "job_id", j.id, "bundle", j.p.Bundle, "error", detail)
+		default:
+			a.Logger.Info("execução de script concluída", "job_id", j.id, "bundle", j.p.Bundle,
 				"duration", a.now().Sub(start).Round(time.Second).String())
 		}
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})

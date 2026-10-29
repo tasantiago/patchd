@@ -555,6 +555,7 @@ var pages = template.Must(template.New("").Parse(`
 <a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Jobs</span></a>
 <a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Anéis</span></a>
 <a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
+{{if .Admin}}<a href="/painel/scripts" title="Scripts" {{if eq .Nav "scripts"}}class="ativo" aria-current="page"{{end}}>` + ui.IcScripts + `<span class="rot">Scripts</span></a>{{end}}
 {{if .Admin}}<p class="grupo"><span class="rot">Administração</span></p>
 <a href="/painel/descoberta" title="Descoberta de rede" {{if eq .Nav "descoberta"}}class="ativo" aria-current="page"{{end}}>` + ui.IcDescoberta + `<span class="rot">Descoberta</span></a>
 <a href="/painel/configuracao" title="Configuração" {{if and (eq .Nav "configuracao") (ne .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Configuração</span></a>
@@ -663,7 +664,7 @@ var pages = template.Must(template.New("").Parse(`
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
 
 {{/* Automação (Aula 15.11): campanhas, jobs e anéis numa entrada só do menu, em abas. */}}
-{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/aneis"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Anéis e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a></nav>{{end}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/aneis"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Anéis e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a></nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
@@ -1367,6 +1368,50 @@ var pages = template.Must(template.New("").Parse(`
 {{define "proibido"}}{{template "topo" .}}
 <h1>Sem permissão</h1>
 <p class="card">Esta ação é do perfil admin. <a href="/painel/">Voltar à frota</a>.</p>
+{{template "fim"}}{{end}}
+
+{{define "scripts"}}{{template "topo" .}}
+<h1>Automação</h1>
+{{template "automacao-abas" "scripts"}}
+{{if .NoStore}}<p class="aviso atencao">Sem PATCHD_CONTENT_DIR: o servidor não tem onde guardar os bundles.</p>{{end}}
+{{if .NoJobKey}}<p class="aviso atencao">Sem chave de jobs: dá para subir bundles, mas não para executar.</p>{{end}}
+
+<div class="card"><div class="card-cab"><h2>Novo bundle</h2><span class="muted">um ZIP com o script de entrada e os arquivos que ele usa</span></div>
+<p class="muted">O ZIP leva o que a execução precisa: o executável, o .ini e o script que começa (<code>.ps1</code>, <code>.bat</code>, <code>.cmd</code> ou <code>.exe</code> no Windows; <code>.sh</code> no Linux e macOS). O script roda na pasta onde o bundle foi extraído, então ele chama os outros arquivos por caminho relativo. Até {{.MaxMiB}} MiB.</p>
+<form method="post" action="/painel/scripts" enctype="multipart/form-data" class="linha-faixa">
+<input type="file" name="arquivo" accept=".zip,application/zip" required aria-label="arquivo ZIP">
+<input type="text" name="nome" placeholder="nome (opcional)" maxlength="64" aria-label="nome do bundle">
+<input type="text" name="nota" placeholder="descrição (opcional)" maxlength="200" aria-label="descrição">
+<button type="submit"{{if .NoStore}} disabled{{end}}>Subir</button></form></div>
+
+<div class="card"><div class="card-cab"><h2>Bundles</h2><span class="muted">{{len .Bundles}}</span></div>
+{{if .Bundles}}<div class="tabela"><table>
+<thead><tr><th>Nome</th><th>Sistema</th><th>Arquivos</th><th>Tamanho</th><th>SHA-256</th><th>Subido</th><th>Por</th><th></th></tr></thead>
+<tbody>{{range .Bundles}}<tr><td>{{.Name}}{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td>
+<td>{{.OSLabel}}</td><td>{{.Files}}</td><td>{{.Size}}</td><td><code>{{.SHA}}…</code></td><td>{{.Uploaded}}</td><td>{{.By}}</td>
+<td class="acoes"><a class="btn sec" href="/painel/scripts?bundle={{.ID}}">Executar</a>
+<details class="excluir"><summary>Excluir</summary><form method="post" action="/painel/scripts/{{.ID}}/excluir"><button class="sec perigo" type="submit">Excluir o bundle</button></form></details></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum bundle ainda. Suba um ZIP acima.</p>{{end}}</div>
+
+{{with .Chosen}}<div class="card" id="executar"><div class="card-cab"><h2>Executar: {{.Name}}</h2><span class="muted">{{.OSLabel}} · {{.Files}} arquivo(s)</span></div>
+<form method="post" action="/painel/scripts/{{.ID}}/executar">
+<div class="campo"><label for="entrada">Começar por</label>
+<select id="entrada" name="entrada" required>{{range .Entries}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+<span class="muted">o arquivo do ZIP por onde a execução começa; ele chama os outros</span></div>
+<div class="campo"><label for="argumentos">Argumentos</label>
+<input type="text" id="argumentos" name="argumentos" placeholder="/quiet MODO=1" maxlength="400">
+<span class="muted">opcional, separados por espaço; sem aspas, caminhos ou barras invertidas</span></div>
+<div class="campo"><label for="prazo">Prazo</label>
+<input type="number" id="prazo" name="prazo" value="{{$.Timeout}}" min="30" max="3600" required>
+<span class="muted">segundos; passando disso o script é interrompido e o job falha</span></div>
+<p class="muted">Marque as máquinas. O script roda com a conta do agente (SYSTEM no Windows, root no Linux), no próximo check-in de cada uma.</p>
+{{if $.Machines}}<div class="tabela"><table>
+<thead><tr><th></th><th>Máquina</th><th>Sistema</th><th>Anel</th><th>Último contato</th></tr></thead>
+<tbody>{{range $.Machines}}<tr><td><input type="checkbox" name="maquina" value="{{.ID}}" aria-label="{{.Name}}"></td>
+<td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td>{{.OS}}</td><td>{{.Ring}}</td><td>{{.LastSeen}}</td></tr>{{end}}</tbody></table></div>
+<p class="mt"><button type="submit"{{if $.NoJobKey}} disabled{{end}}>Executar nas máquinas marcadas</button></p>
+{{else}}<p class="muted">Nenhuma máquina do sistema deste bundle no inventário.</p>{{end}}
+</form></div>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "descoberta"}}{{template "topo" .}}

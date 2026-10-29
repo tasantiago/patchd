@@ -59,6 +59,9 @@ type Memory struct {
 	assetImports []AssetImport
 	assetSeq     int64
 
+	bundles   []ScriptBundle // bundles de script (Aula 23.8)
+	bundleSeq int64
+
 	discRanges []DiscoveryRange // descoberta de rede (Aula 23.7)
 	discHosts  []DiscoveryHost
 	discRuns   []DiscoveryRun
