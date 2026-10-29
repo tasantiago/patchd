@@ -18,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 )
 
+// #nosec G101 -- rótulo de uso do machinebox (entra no info do HPKE), não é credencial
 const discoveryPasswordPurpose = "descoberta-credencial"
 
 func WithDiscoveryKey(key []byte) Option {
@@ -45,8 +46,8 @@ func (a *api) discoveryConfig(ctx context.Context) (*discoveryConfigView, error)
 	case !v.Enabled:
 		v.Blocker = "Instalação automática desligada. A varredura continua funcionando."
 	default:
-		if e := a.discoveryPrerequisites(); e != nil {
-			v.Blocker = e.Error()
+		if msg := a.discoveryBlocker(); msg != "" {
+			v.Blocker = msg
 		} else {
 			plain, e := machinebox.Open(a.discoveryKey, discoveryPasswordPurpose, c.Password)
 			clear(plain)
@@ -108,8 +109,8 @@ func (a *api) discoveryCredentialAction(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	if enabled {
-		if err := a.discoveryPrerequisites(); err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		if msg := a.discoveryBlocker(); msg != "" {
+			http.Error(w, msg, http.StatusUnprocessableEntity)
 			return
 		}
 	}
@@ -122,23 +123,25 @@ func (a *api) discoveryCredentialAction(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, "/painel/configuracao?aba=descoberta", http.StatusSeeOther)
 }
 
-func (a *api) discoveryPrerequisites() error {
+// discoveryBlocker returns the panel message explaining why automatic
+// installation cannot run, or "" when the server is ready for it.
+func (a *api) discoveryBlocker() string {
 	u, err := url.Parse(a.publicURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || strings.ContainsAny(a.publicURL, "\"'\r\n\x00") {
-		return fmt.Errorf("Configure PATCHD_PUBLIC_URL com a URL HTTPS alcançável pelas estações.")
+		return "Configure PATCHD_PUBLIC_URL com a URL HTTPS alcançável pelas estações."
 	}
 	version, err := a.publishedVersion()
 	if err != nil || version == "" {
-		return fmt.Errorf("Publique uma versão do agente em Configuração › Agente.")
+		return "Publique uma versão do agente em Configuração › Agente."
 	}
 	m, err := a.releases.Manifest(version)
 	if err != nil {
-		return fmt.Errorf("O manifesto publicado não pôde ser lido.")
+		return "O manifesto publicado não pôde ser lido."
 	}
 	if _, ok := m.For("windows", "amd64"); !ok {
-		return fmt.Errorf("A versão publicada precisa conter o agente Windows amd64.")
+		return "A versão publicada precisa conter o agente Windows amd64."
 	}
-	return nil
+	return ""
 }
 
 // Runs inside the scan lifecycle: a second scan cannot duplicate installations.
@@ -170,9 +173,9 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 		return
 	}
 	defer clear(password)
-	if err := a.discoveryPrerequisites(); err != nil {
-		a.logger.Error("descoberta: instalação indisponível", "reason", err.Error())
-		report("Instalação bloqueada: " + err.Error())
+	if msg := a.discoveryBlocker(); msg != "" {
+		a.logger.Error("descoberta: instalação indisponível", "reason", msg)
+		report("Instalação bloqueada: " + msg)
 		return
 	}
 	version, _ := a.publishedVersion()
