@@ -23,6 +23,21 @@ const shieldSVG = ui.ShieldSVG
 // themeCSS: as cores das aplicações do tribunal (marinho da barra lateral, lilás dos títulos
 // dos grupos, rosa dos contadores) e as do painel de conformidade nos indicadores.
 const themeCSS = `
+.descoberta-acoes{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin:.8rem 0 1.2rem}
+.descoberta-estado{display:inline-block;padding:.15rem .5rem;border:1px solid transparent;border-radius:999px;font-size:.8rem}
+.descoberta-credencial{max-width:52rem;margin-top:1.25rem}
+.descoberta-campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.25rem}
+.descoberta-campo{display:flex;flex-direction:column;gap:.4rem}
+.descoberta-campo label{font-weight:600}.descoberta-campo input{width:100%;min-width:0}
+.descoberta-opcao{display:flex;align-items:flex-start;gap:.65rem;padding:1rem;margin:1.25rem 0;border:1px solid var(--borda);border-radius:6px}
+.descoberta-opcao input{margin-top:.3rem}.descoberta-opcao small{display:block;margin-top:.3rem}
+.descoberta-credencial input:disabled,.descoberta-credencial button:disabled{opacity:.55;cursor:not-allowed}
+.descoberta-ajuda{margin-top:1rem}.descoberta-ajuda summary{cursor:pointer;font-weight:600}
+.descoberta-status progress{display:block;width:100%;height:1rem;margin:.6rem 0;accent-color:var(--azul)}
+.descoberta-atividade{list-style:none;padding:0;margin:.75rem 0;max-height:22rem;overflow-y:auto}
+.descoberta-atividade li{display:grid;grid-template-columns:10rem minmax(0,1fr);gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--borda)}
+.descoberta-atividade time{color:var(--muted);font-size:.8rem}
+@media(max-width:700px){.descoberta-campos{grid-template-columns:1fr}.descoberta-atividade li{grid-template-columns:1fr;gap:.2rem}}
 ` + ui.LayoutCSS + `
 main{max-width:90rem;margin:0 auto;padding:1.5rem 1.5rem 3rem}
 @media (max-width:600px){main{padding:1rem .9rem 2rem}.barra-topo{padding:0 .8rem}}

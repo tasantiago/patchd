@@ -71,6 +71,16 @@ func TestScan(t *testing.T) {
 	}
 }
 
+func TestScanCanceledCountsCompletedAddresses(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	sp, _ := ParseSpec("192.0.2.0/24")
+	found, scanned, _ := Scan(ctx, []Spec{sp}, Options{Dial: func(context.Context, netip.Addr, int) bool { t.Error("canceled scan dialed"); return false }})
+	if len(found) != 0 || scanned != 0 {
+		t.Fatalf("canceled scan: %d findings, %d completed", len(found), scanned)
+	}
+}
+
 func TestScanTeto(t *testing.T) {
 	sp, _ := ParseSpec("10.0.0.0/16")
 	dialed := 0

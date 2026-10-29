@@ -172,10 +172,11 @@ type Dial func(ctx context.Context, ip netip.Addr, port int) bool
 
 // Options reúne o que a varredura usa de fora.
 type Options struct {
-	Ports       []int         // nil: DefaultPorts
-	Concurrency int           // 0: 512
-	Dial        Dial          // obrigatório
-	Progress    *atomic.Int64 // opcional: +1 a cada endereço sondado, para a página do painel
+ OnProbe     func(netip.Addr, bool) // opcional: chamado concorrentemente após cada endereço concluído
+	Ports       []int                  // nil: DefaultPorts
+	Concurrency int                    // 0: 512
+	Dial        Dial                   // obrigatório
+	Progress    *atomic.Int64          // opcional: +1 a cada endereço sondado, para a página do painel
 }
 
 // Scan sonda as faixas e devolve as máquinas vivas, em ordem de IP, mais quantos endereços
@@ -208,7 +209,7 @@ func Scan(ctx context.Context, specs []Spec, o Options) (found []Finding, scanne
 			break
 		}
 	}
-	scanned = len(queue)
+	var completed atomic.Int64
 
 	var (
 		mu  sync.Mutex
@@ -224,9 +225,6 @@ func Scan(ctx context.Context, specs []Spec, o Options) (found []Finding, scanne
 		go func(ip netip.Addr) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if o.Progress != nil {
-				defer o.Progress.Add(1)
-			}
 			var open []int
 			for _, p := range ports {
 				if ctx.Err() != nil {
@@ -235,6 +233,13 @@ func Scan(ctx context.Context, specs []Spec, o Options) (found []Finding, scanne
 				if o.Dial(ctx, ip, p) {
 					open = append(open, p)
 				}
+			}
+			completed.Add(1)
+			if o.Progress != nil {
+				o.Progress.Add(1)
+			}
+			if o.OnProbe != nil {
+				o.OnProbe(ip, len(open) > 0)
 			}
 			if len(open) == 0 {
 				return
@@ -245,6 +250,7 @@ func Scan(ctx context.Context, specs []Spec, o Options) (found []Finding, scanne
 		}(ip)
 	}
 	wg.Wait()
+	scanned = int(completed.Load())
 	sort.Slice(found, func(i, j int) bool { return found[i].IP.Less(found[j].IP) })
 	return found, scanned, partial
 }

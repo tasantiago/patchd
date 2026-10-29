@@ -670,17 +670,21 @@ var pages = template.Must(template.New("").Parse(`
 <h1>Configuração</h1>
 <nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a><a href="/painel/configuracao?aba=descoberta"{{if eq .Tab "descoberta"}} class="ativa" aria-current="page"{{end}}>Descoberta</a></nav>
 {{if eq .Tab "descoberta"}}{{with .Discovery}}
-<div class="card"><h2>Instalação automática do agente Windows</h2>
-<p>Ao terminar cada varredura, o servidor tenta instalar o agente nas estações Windows sem agente das faixas habilitadas. A conta precisa de administração local e acesso ao WinRM HTTPS (5986), com certificado confiável para o IP da estação.</p>
-{{if not .KeyReady}}<p class="aviso atencao">Configure PATCHD_DISCOVERY_KEY_FILE no servidor para guardar a senha cifrada.</p>{{end}}
-<form method="post" action="/painel/configuracao/descoberta" autocomplete="off">
-<p><label>Usuário (DOMÍNIO\usuário ou conta local) <input name="usuario" value="{{.Username}}" maxlength="256" autocomplete="off" required></label></p>
-<p><label>Senha <input type="password" name="senha" maxlength="1024" autocomplete="new-password"></label>
-{{if .HasPassword}}<span class="muted">Senha cadastrada. Deixe vazio para manter a senha.</span>{{end}}</p>
-<p><label><input type="checkbox" name="automatico"{{if .Enabled}} checked{{end}}> Instalar automaticamente após a varredura</label></p>
-<button type="submit"{{if not .KeyReady}} disabled{{end}}>Salvar credencial</button>
-</form><p>A senha fica cifrada no banco e não é exibida. O agente Windows amd64 precisa estar publicado em Configuração › Agente e PATCHD_PUBLIC_URL deve ser HTTPS. Cada instalação usa um token de registro temporário, de uso único.</p>
-<p><a href="/painel/descoberta">Cadastrar faixas e varrer a rede</a></p></div>
+<div class="card"><div class="card-cab"><h2>Instalação automática do agente Windows</h2><span class="muted">Após cada varredura</span></div>
+<p class="muted">Cadastre uma conta com administração local nas estações. O servidor usa WinRM HTTPS (porta 5986) para instalar nas máquinas Windows sem agente das faixas habilitadas.</p>
+{{if .Blocker}}<p class="aviso atencao" role="status">{{.Blocker}}</p>{{else}}<p class="aviso ok">Instalação automática habilitada. Inicie uma varredura para procurar estações.</p>{{end}}
+{{if not .KeyReady}}<details class="descoberta-ajuda"><summary>Como configurar a chave de cifragem</summary>
+<p>No servidor, gere uma chave em uma pasta segura e configure o arquivo antes de reiniciar o serviço:</p>
+<pre class="comando">patchd-server discovery keygen -out /caminho/seguro/discovery.key
+PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
+<p>No deploy Compose/Podman: PATCHD_DISCOVERY_KEY_HOST_FILE aponta para o arquivo no host e PATCHD_DISCOVERY_KEY_FILE=/run/patchd/discovery.key. O processo do servidor precisa de leitura. Guarde uma cópia segura da chave fora do banco.</p></details>{{end}}
+<form method="post" action="/painel/configuracao/descoberta" class="descoberta-credencial" autocomplete="off">
+<div class="descoberta-campos"><div class="descoberta-campo"><label for="descoberta-usuario">Usuário</label><input id="descoberta-usuario" name="usuario" value="{{.Username}}" maxlength="256" autocomplete="off" placeholder="DOMÍNIO\usuário" required{{if not .KeyReady}} disabled{{end}}><small class="muted">Conta de domínio ou conta administrativa local.</small></div>
+<div class="descoberta-campo"><label for="descoberta-senha">Senha</label><input id="descoberta-senha" type="password" name="senha" maxlength="1024" autocomplete="new-password"{{if not .KeyReady}} disabled{{end}}><small class="muted">{{if .HasPassword}}Senha cadastrada. Deixe vazio para manter a senha.{{else}}A senha será cifrada antes de ser salva.{{end}}</small></div></div>
+<label class="descoberta-opcao"><input type="checkbox" name="automatico"{{if .Enabled}} checked{{end}}{{if not .KeyReady}} disabled{{end}}><span>Instalar automaticamente após a varredura<small class="muted">Somente Windows sem agente, dentro das faixas habilitadas.</small></span></label>
+<div class="descoberta-acoes"><button type="submit"{{if not .KeyReady}} disabled{{end}}>Salvar credencial</button><a class="btn sec" href="/painel/descoberta">Ver descoberta de rede</a></div>
+</form>
+<details class="descoberta-ajuda"><summary>Requisitos nas estações e no servidor</summary><ul><li>WinRM HTTPS habilitado na porta 5986, firewall permitindo acesso a partir do servidor e certificado confiável para o IP da estação.</li><li>Conta com permissão para sessão WinRM e instalação de serviços.</li><li>Agente Windows amd64 publicado em Configuração › Agente e PATCHD_PUBLIC_URL com a URL HTTPS alcançável pelas estações.</li></ul><p>Cada instalação usa um token de registro temporário de uso único. A senha não é exibida nem registrada na auditoria.</p></details></div>
 {{end}}{{end}}
 {{if eq .Tab "patrimonio"}}{{with .Assets}}
 <div class="card"><div class="card-cab"><h2>Localização física</h2><span class="muted">do sistema de patrimônio, para o Inventário</span></div>
@@ -1429,10 +1433,15 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "descoberta"}}{{template "topo" .}}
 <h1>Descoberta de rede</h1>
-<p><a href="/painel/configuracao?aba=descoberta">Configurar credencial e instalação automática Windows</a></p>
-{{if .Installs}}<div class="card"><h2>Instalações automáticas</h2><p>Aguardando registro significa que o serviço foi verificado na estação. O registro e o inventário ainda precisam ser recebidos para confirmar a presença do agente.</p><div class="tabela"><table><thead><tr><th>IP</th><th>Resultado</th><th>Atualizado</th><th>Solicitado por</th></tr></thead><tbody>{{range .Installs}}<tr><td>{{.IP}}</td><td>{{.State}}</td><td>{{.At}}</td><td>{{.By}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
-{{if .Scanning}}<div class="card"><div class="card-cab"><h2>Varrendo…</h2><span class="muted">{{.ScanDone}} de {{.ScanTotal}} endereços · a página se atualiza sozinha</span></div>
-<p class="muted">A sondagem é TCP (portas 445, 3389 e 22) a partir do servidor, sem ping. Ao terminar, os hosts sem agente aparecem abaixo.</p></div>{{end}}
+<div class="descoberta-acoes"><a class="btn sec" href="/painel/configuracao?aba=descoberta">Configurar instalação Windows</a><span class="muted">A sondagem parte do servidor patchd.</span></div>
+{{with .Config}}{{if .Blocker}}<p class="aviso atencao" role="status">{{.Blocker}} <a href="/painel/configuracao?aba=descoberta">Ver configuração</a></p>{{end}}{{end}}
+{{if .Installs}}<div class="card"><div class="card-cab"><h2>Instalações automáticas</h2></div><p>Aguardando registro significa que o serviço foi verificado na estação. O registro e o inventário ainda precisam ser recebidos para confirmar a presença do agente.</p><div class="tabela"><table><thead><tr><th>IP</th><th>Resultado</th><th>Atualizado</th><th>Solicitado por</th></tr></thead><tbody>{{range .Installs}}<tr><td>{{.IP}}</td><td>{{.State}}</td><td>{{.At}}</td><td>{{.By}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+<div class="card descoberta-status" aria-live="polite"><div class="card-cab"><h2>{{if .Scanning}}Varrendo… · {{.Phase}}{{else if .Phase}}{{.Phase}}{{else if .LastRun}}Última varredura concluída{{else}}Aguardando varredura{{end}}</h2>{{if .Scanning}}<span class="muted">{{.Elapsed}} · atualização a cada 3 segundos</span>{{end}}</div>
+{{if .Scanning}}<label for="descoberta-progresso">{{.ScanDone}} de {{.ScanTotal}} endereços processados · {{.Found}} com portas abertas</label><progress id="descoberta-progresso" max="{{.ScanTotal}}" value="{{.ScanDone}}"></progress>{{if .LastIP}}<p class="muted">Último endereço sondado: <code>{{.LastIP}}</code></p>{{end}}{{end}}
+{{if .Diagnostics}}<p class="muted">{{.Diagnostics}}</p>{{end}}
+{{if .Detail}}<p>{{.Detail}}</p>{{else if .LastRun}}<p>A sondagem terminou. Consulte os totais e o diagnóstico em Últimas varreduras; não há varredura em andamento neste servidor.</p>{{else}}<p>Cadastre uma faixa e clique em Varrer agora. A tela mostrará a sondagem, a consulta ao inventário e cada tentativa de instalação.</p>{{end}}
+{{if and .LastRun (eq .Alive 0)}}<p class="aviso atencao">A última varredura não recebeu respostas nas portas 445, 3389, 5986 e 22. Isso não comprova que os equipamentos estejam desligados: pode haver bloqueio no firewall, falta de rota ou serviços desabilitados. Verifique a conectividade a partir da VM ou contêiner do servidor patchd.</p>{{end}}
+{{if .Events}}<details class="descoberta-ajuda" open><summary>Atividade desta execução</summary><ol class="descoberta-atividade">{{range .Events}}<li><time>{{.At}}</time><span>{{.Detail}}</span></li>{{end}}</ol><p class="muted">Últimos 30 eventos deste processo. Resultados por estação e histórico de varreduras permanecem no banco.</p></details>{{end}}</div>
 
 <div class="card"><div class="card-cab"><h2>Faixas de busca</h2><span class="muted">{{len .Ranges}} de {{.MaxRanges}}</span></div>
 <p class="muted">CIDR (<code>10.0.0.0/24</code>) ou intervalo (<code>10.0.0.10-60</code>). O servidor só alcança as sub-redes que a VM enxerga.</p>
@@ -1443,7 +1452,7 @@ var pages = template.Must(template.New("").Parse(`
 {{if .Ranges}}<div class="tabela"><table>
 <thead><tr><th>Faixa</th><th>Descrição</th><th>Estado</th><th>Criada</th><th></th></tr></thead>
 <tbody>{{range .Ranges}}<tr><td><code>{{.Spec}}</code></td><td>{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
-<td>{{if .Enabled}}<span class="ok">ligada</span>{{else}}<span class="muted">desligada</span>{{end}}</td><td>{{.Created}}</td>
+<td>{{if .Enabled}}<span class="descoberta-estado ok">ligada</span>{{else}}<span class="muted">desligada</span>{{end}}</td><td>{{.Created}}</td>
 <td class="acoes">{{if .Enabled}}<form method="post" action="/painel/descoberta/faixas/{{.ID}}/desligar" class="inline"><button class="sec" type="submit">Desligar</button></form>{{else}}<form method="post" action="/painel/descoberta/faixas/{{.ID}}/ligar" class="inline"><button class="sec" type="submit">Ligar</button></form>{{end}}
 <form method="post" action="/painel/descoberta/faixas/{{.ID}}/remover" class="inline"><button class="sec perigo" type="submit">Remover</button></form></td></tr>{{end}}</tbody></table></div>{{end}}
 <form method="post" action="/painel/descoberta/varrer" class="mt"><button type="submit"{{if .Scanning}} disabled{{end}}>Varrer agora</button>{{if .LastRun}} <span class="muted">última: {{.LastRun}}</span>{{end}}</form></div>
@@ -1458,7 +1467,7 @@ var pages = template.Must(template.New("").Parse(`
 {{else}}<p class="muted">Nenhum host sem agente na última varredura.{{if not .LastRun}} Cadastre uma faixa e clique em Varrer agora.{{end}}</p>{{end}}</div>
 
 {{if .Runs}}<div class="card"><div class="card-cab"><h2>Últimas varreduras</h2></div>
-<div class="tabela"><table><thead><tr><th>Quando</th><th>Por</th><th>Endereços</th><th>Vivos</th><th>Sem agente</th></tr></thead>
-<tbody>{{range .Runs}}<tr><td>{{.When}}</td><td>{{.By}}</td><td>{{.Scanned}}{{if .Partial}} <span class="muted">(parcial)</span>{{end}}</td><td>{{.Alive}}</td><td>{{.SemAg}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+<div class="tabela"><table><thead><tr><th>Quando</th><th>Por</th><th>Endereços</th><th>Com portas abertas</th><th>Sem agente</th><th>Diagnóstico</th></tr></thead>
+<tbody>{{range .Runs}}<tr><td>{{.When}}</td><td>{{.By}}</td><td>{{.Scanned}}{{if .Partial}} <span class="muted">(parcial)</span>{{end}}</td><td>{{.Alive}}</td><td>{{.SemAg}}</td><td>{{if .Note}}{{.Note}}{{else}}Concluída{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{template "fim"}}{{end}}
 `))

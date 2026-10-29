@@ -29,13 +29,33 @@ func WithWindowsInstaller(f descoberta.WindowsInstaller) Option {
 }
 
 type discoveryConfigView struct {
+	Blocker                        string
 	Username                       string
 	Enabled, HasPassword, KeyReady bool
 }
 
 func (a *api) discoveryConfig(ctx context.Context) (*discoveryConfigView, error) {
 	c, err := a.store.DiscoveryCredential(ctx)
-	return &discoveryConfigView{Username: c.Username, Enabled: c.Enabled, HasPassword: len(c.Password) > 0, KeyReady: len(a.discoveryKey) > 0}, err
+	v := &discoveryConfigView{Username: c.Username, Enabled: c.Enabled, HasPassword: len(c.Password) > 0, KeyReady: len(a.discoveryKey) > 0}
+	switch {
+	case !v.KeyReady:
+		v.Blocker = "Instalação bloqueada: a chave de cifragem da credencial não foi configurada no servidor."
+	case !v.HasPassword:
+		v.Blocker = "Instalação bloqueada: cadastre a conta administrativa e a senha."
+	case !v.Enabled:
+		v.Blocker = "Instalação automática desligada. A varredura continua funcionando."
+	default:
+		if e := a.discoveryPrerequisites(); e != nil {
+			v.Blocker = e.Error()
+		} else {
+			plain, e := machinebox.Open(a.discoveryKey, discoveryPasswordPurpose, c.Password)
+			clear(plain)
+			if e != nil {
+				v.Blocker = "A credencial não abre com a chave atual. Cadastre a senha novamente."
+			}
+		}
+	}
+	return v, err
 }
 
 func (a *api) discoveryCredentialAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
@@ -123,31 +143,52 @@ func (a *api) discoveryPrerequisites() error {
 
 // Runs inside the scan lifecycle: a second scan cannot duplicate installations.
 func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost, by string) {
+	report := func(detail string) { a.discovery.report("Concluída", detail) }
 	c, err := a.store.DiscoveryCredential(ctx)
-	if err != nil || !c.Enabled || len(a.discoveryKey) == 0 {
+	if err != nil {
+		a.discovery.report("Falha", "Não foi possível ler a credencial de instalação.")
+		return
+	}
+	if !c.Enabled || len(a.discoveryKey) == 0 {
+		report("Varredura concluída. A instalação automática não está habilitada ou falta a chave de cifragem.")
+		return
+	}
+	candidates := 0
+	for _, h := range hosts {
+		if h.MatchID == "" && h.OSGuess == "windows" {
+			candidates++
+		}
+	}
+	if candidates == 0 {
+		report("Varredura concluída. Nenhuma estação Windows sem agente foi encontrada para instalação.")
 		return
 	}
 	password, err := machinebox.Open(a.discoveryKey, discoveryPasswordPurpose, c.Password)
 	if err != nil {
 		a.logger.Error("descoberta: não foi possível abrir a credencial")
+		report("Instalação bloqueada: não foi possível abrir a senha. Cadastre a credencial novamente.")
 		return
 	}
 	defer clear(password)
 	if err := a.discoveryPrerequisites(); err != nil {
 		a.logger.Error("descoberta: instalação indisponível", "reason", err.Error())
+		report("Instalação bloqueada: " + err.Error())
 		return
 	}
 	version, _ := a.publishedVersion()
 	m, err := a.releases.Manifest(version)
 	if err != nil {
+		report("Instalação bloqueada: não foi possível ler o manifesto do agente.")
 		return
 	}
 	f, ok := m.For("windows", "amd64")
 	if !ok || f.Size <= 0 || f.Size > 100<<20 {
+		report("Instalação bloqueada: executável Windows ausente ou tamanho inválido.")
 		return
 	}
 	file, err := a.releases.Open(version, f.Name)
 	if err != nil {
+		report("Instalação bloqueada: não foi possível abrir o executável Windows.")
 		return
 	}
 	binary, err := io.ReadAll(io.LimitReader(file, (100<<20)+1))
@@ -155,6 +196,7 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 	sum := sha256.Sum256(binary)
 	if err != nil || int64(len(binary)) != f.Size || hex.EncodeToString(sum[:]) != f.SHA256 {
 		a.logger.Error("descoberta: executável não confere com o manifesto")
+		report("Instalação bloqueada: o executável não confere com o manifesto publicado.")
 		return
 	}
 	install := a.windowsInstaller
@@ -163,6 +205,7 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 	}
 	for _, h := range hosts {
 		if ctx.Err() != nil {
+			a.discovery.report("Interrompida", "Limite de tempo de instalação atingido. Alvos pendentes precisam de nova varredura.")
 			return
 		}
 		if h.MatchID != "" || h.OSGuess != "windows" {
@@ -171,10 +214,12 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 		// Respect a newly disabled range or a credential disabled while scanning.
 		current, err := a.store.DiscoveryCredential(ctx)
 		if err != nil || !current.Enabled || current.Username != c.Username || string(current.Password) != string(c.Password) {
+			report("Novas instalações interrompidas: credencial alterada, desligada ou indisponível.")
 			return
 		}
 		ranges, err := a.store.DiscoveryRanges(ctx)
 		if err != nil {
+			report("Não foi possível conferir as faixas habilitadas. Novas instalações interrompidas.")
 			return
 		}
 		allowed := false
@@ -188,11 +233,13 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 			}
 		}
 		if !allowed {
+			a.discovery.report("Instalando agentes", h.IP+": ignorado porque a faixa foi desligada ou removida.")
 			continue
 		}
 		// Refresh inventory immediately before dispatch, fail closed on errors.
 		known, err := a.knownNetwork(ctx)
 		if err != nil {
+			report("Não foi possível conferir o inventário. Novas instalações interrompidas.")
 			return
 		}
 		if _, ok := known.byIP[h.IP]; ok {
@@ -206,11 +253,14 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 		d := store.DiscoveryInstall{IP: h.IP, State: "instalando", At: a.now().UTC(), By: by}
 		claimed, err := a.store.ClaimDiscoveryInstall(ctx, d)
 		if err != nil {
+			report("Não foi possível reservar a instalação no banco.")
 			return
 		}
 		if !claimed {
+			a.discovery.report("Instalando agentes", h.IP+": aguardando intervalo de nova tentativa ou instalação em outro servidor.")
 			continue
 		}
+		a.discovery.report("Instalando agentes", h.IP+": conectando ao WinRM HTTPS e instalando o serviço (limite de 3 minutos).")
 		plain, hash := identity.NewSecret(identity.EnrollmentPrefix)
 		token, err := a.store.CreateEnrollmentToken(ctx, hash, "Descoberta "+h.IP, a.now().Add(10*time.Minute), 1)
 		if err != nil {
@@ -231,6 +281,7 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 			}
 		}
 		d.At = a.now().UTC()
+		a.discovery.report("Instalando agentes", h.IP+": "+d.State)
 		save, done := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		if err := a.store.SaveDiscoveryInstall(save, d); err != nil {
 			a.logger.Error("descoberta: gravar instalação")
@@ -240,4 +291,5 @@ func (a *api) installDiscovered(ctx context.Context, hosts []store.DiscoveryHost
 		}
 		done()
 	}
+	report("Processo concluído. Confira o resultado de cada estação em Instalações automáticas; falhas e intervalos de nova tentativa aparecem na atividade.")
 }

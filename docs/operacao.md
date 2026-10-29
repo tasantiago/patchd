@@ -970,6 +970,27 @@ parte deste fluxo.
 Um aviso: a varredura abre conexões TCP para toda a faixa. Avise a equipe de rede antes de
 varrer sub-redes grandes, para a sondagem não ser confundida com um ataque pelo IDS/IPS.
 
+### Acompanhar e diagnosticar a descoberta
+
+A página se atualiza a cada três segundos enquanto houver execução neste processo do servidor.
+O cartão de acompanhamento mostra a etapa (sondagem, inventário ou instalação), o tempo
+decorrido, os endereços processados, o último IP sondado e as respostas nas portas verificadas.
+Na instalação, a atividade identifica o IP em processamento, falhas e intervalos de nova
+tentativa. Os últimos 30 eventos ficam na memória do processo; reiniciar o servidor os apaga.
+O histórico de varreduras e os resultados de instalação por IP continuam no banco.
+
+**Zero respostas não significa varredura travada nem ausência de equipamentos.** A sondagem
+usa TCP 445, 3389, 5986 e 22, sem ping. A página diferencia conexões recusadas, tempo esgotado
+e falta de rota. Quando nenhum endereço responde, esse diagnóstico também fica salvo em
+Últimas varreduras. Verifique o caminho da VM/contêiner do servidor até a faixa, o firewall
+e se os serviços estão habilitados nas estações. Uma faixa cadastrada não cria uma rota
+até aquela rede.
+
+O aviso de chave de cifragem ausente bloqueia o cadastro da credencial e a instalação,
+mas não a sondagem de rede. Configuração › Descoberta mostra as instruções da chave e os
+demais requisitos. Ao terminar uma varredura, não há novas tentativas por simples passagem
+do tempo: é necessário iniciar outra varredura.
+
 ## Execução de scripts remotos (Aula 23.8)
 
 **Automação › Scripts** executa, nas máquinas da frota, um conjunto de arquivos que você sobe

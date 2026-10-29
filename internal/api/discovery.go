@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/descoberta"
@@ -44,25 +46,86 @@ func (a *api) lookup(ctx context.Context, ip string) string {
 
 // tcpDial: a sondagem padrão — abre a conexão TCP e fecha; quem aceitou está vivo naquela
 // porta. Sem ICMP (o container roda sem root).
-func tcpDial(ctx context.Context, ip netip.Addr, port int) bool {
+func tcpProbe(ctx context.Context, ip netip.Addr, port int) error {
 	d := net.Dialer{Timeout: 700 * time.Millisecond}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 	if err != nil {
-		return false
+		return err
 	}
 	_ = conn.Close()
-	return true
+	return nil
 }
 
 // scanState: a varredura em andamento (uma por vez). Só na memória: reiniciar o servidor
 // interrompe a varredura (o que já foi gravado fica).
 type scanState struct {
-	mu        sync.Mutex
-	running   bool
-	by        string
-	startedAt time.Time
-	total     int
-	done      atomic.Int64
+	mu                                    sync.Mutex
+	running                               bool
+	by                                    string
+	startedAt                             time.Time
+	total                                 int
+	done                                  atomic.Int64
+	phase, detail, lastIP                 string
+	alive                                 int
+	events                                []scanEvent
+	timeouts, refused, unreachable, other int
+}
+
+func (s *scanState) connectionError(err error) {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return
+	}
+	var ne net.Error
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case errors.As(err, &ne) && ne.Timeout():
+		s.timeouts++
+	case errors.Is(err, syscall.ECONNREFUSED):
+		s.refused++
+	case errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH):
+		s.unreachable++
+	default:
+		s.other++
+	}
+}
+func (s *scanState) diagnostics() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.timeouts+s.refused+s.unreachable+s.other == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Conexões TCP: %d sem resposta no prazo, %d recusadas, %d sem rota, %d outros erros.", s.timeouts, s.refused, s.unreachable, s.other)
+}
+
+type scanEvent struct {
+	At     time.Time
+	Detail string
+}
+
+func (s *scanState) report(phase, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.phase, s.detail = phase, detail
+	s.events = append(s.events, scanEvent{At: time.Now().UTC(), Detail: detail})
+	if len(s.events) > 30 {
+		s.events = s.events[len(s.events)-30:]
+	}
+}
+
+func (s *scanState) probe(ip netip.Addr, alive bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastIP = ip.String()
+	if alive {
+		s.alive++
+	}
+}
+
+func (s *scanState) view() (phase, detail, lastIP string, alive int, events []scanEvent, started time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.phase, s.detail, s.lastIP, s.alive, append([]scanEvent(nil), s.events...), s.startedAt
 }
 
 func (s *scanState) begin(by string, total int) bool {
@@ -73,6 +136,8 @@ func (s *scanState) begin(by string, total int) bool {
 	}
 	s.running, s.by, s.startedAt, s.total = true, by, time.Now(), total
 	s.done.Store(0)
+	s.phase, s.detail, s.lastIP, s.alive, s.events = "Sondando a rede", "Verificando portas TCP nas faixas habilitadas.", "", 0, nil
+	s.timeouts, s.refused, s.unreachable, s.other = 0, 0, 0, 0
 	return true
 }
 
@@ -92,13 +157,22 @@ func (a *api) dialer() descoberta.Dial {
 	if a.netDial != nil {
 		return a.netDial
 	}
-	return tcpDial
+	return func(ctx context.Context, ip netip.Addr, port int) bool {
+		err := tcpProbe(ctx, ip, port)
+		a.discovery.connectionError(err)
+		return err == nil
+	}
 }
 
 // --- Página ------------------------------------------------------------------------------
 
 type discoveryView struct {
-	Installs []store.DiscoveryInstall
+	Diagnostics                    string
+	Phase, Detail, LastIP, Elapsed string
+	Found                          int
+	Events                         []discoveryEventRow
+	Config                         *discoveryConfigView
+	Installs                       []discoveryInstallRow
 	pageBase
 	Ranges    []rangeRow
 	Hosts     []hostRow // só os sem agente
@@ -112,6 +186,9 @@ type discoveryView struct {
 	PublicURL bool // há PATCHD_PUBLIC_URL (o comando sai com o endereço real)
 	MaxRanges int
 }
+
+type discoveryEventRow struct{ At, Detail string }
+type discoveryInstallRow struct{ IP, State, At, By string }
 
 type rangeRow struct {
 	ID             int64
@@ -140,11 +217,19 @@ func (a *api) discoveryPage(w http.ResponseWriter, r *http.Request, s panel.Sess
 		MaxRanges: descoberta.MaxRanges, PublicURL: a.publicURL != ""}
 	q := r.URL.Query()
 	discoveryFlash(q, &v.pageBase)
-	var installErr error
-	v.Installs, installErr = a.store.DiscoveryInstalls(r.Context())
+	var configErr error
+	v.Config, configErr = a.discoveryConfig(r.Context())
+	if configErr != nil {
+		a.internalError(w, r, "ler configuração de descoberta", configErr)
+		return
+	}
+	installs, installErr := a.store.DiscoveryInstalls(r.Context())
 	if installErr != nil {
 		a.internalError(w, r, "ler instalações", installErr)
 		return
+	}
+	for _, d := range installs {
+		v.Installs = append(v.Installs, discoveryInstallRow{IP: d.IP, State: d.State, At: a.stamp(d.At), By: d.By})
 	}
 
 	ranges, err := a.store.DiscoveryRanges(r.Context())
@@ -202,6 +287,16 @@ func (a *api) discoveryPage(w http.ResponseWriter, r *http.Request, s panel.Sess
 	}
 
 	if a.discovery != nil {
+		v.Diagnostics = a.discovery.diagnostics()
+		var started time.Time
+		var events []scanEvent
+		v.Phase, v.Detail, v.LastIP, v.Found, events, started = a.discovery.view()
+		if !started.IsZero() {
+			v.Elapsed = time.Since(started).Round(time.Second).String()
+		}
+		for _, e := range events {
+			v.Events = append(v.Events, discoveryEventRow{At: a.stamp(e.At), Detail: e.Detail})
+		}
 		if running, total, done := a.discovery.snapshot(); running {
 			v.Scanning, v.ScanTotal, v.ScanDone, v.Refresh = true, total, done, 3
 		}
@@ -351,16 +446,20 @@ func (a *api) scanAction(w http.ResponseWriter, r *http.Request, s panel.Session
 // runScan sonda as faixas, cruza com o inventário e grava o resultado.
 func (a *api) runScan(ctx context.Context, specs []descoberta.Spec, by string) {
 	defer a.discovery.end()
+	a.discovery.report("Sondando a rede", "Varredura iniciada. Verificando TCP 445, 3389, 5986 e 22 a partir do servidor.")
 	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
 	defer cancel()
 	started := a.now()
 
 	found, scanned, partial := descoberta.Scan(ctx, specs, descoberta.Options{
-		Dial: a.dialer(), Progress: &a.discovery.done})
+		Dial: a.dialer(), Progress: &a.discovery.done, OnProbe: a.discovery.probe})
+
+	a.discovery.report("Conferindo inventário", fmt.Sprintf("Sondagem finalizada: %d endereços, %d com portas abertas. Conferindo nomes e inventário.", scanned, len(found)))
 
 	known, err := a.knownNetwork(ctx)
 	if err != nil {
 		a.logger.Error("descoberta: ler o inventário", "error", err)
+		a.discovery.report("Falha", "Não foi possível consultar o inventário. Nenhuma instalação foi iniciada; consulte os logs do servidor.")
 		return
 	}
 	hosts := make([]store.DiscoveryHost, 0, len(found))
@@ -381,13 +480,26 @@ func (a *api) runScan(ctx context.Context, specs []descoberta.Spec, by string) {
 	}
 	finished := a.now()
 	note := ""
+	if len(found) == 0 {
+		note = "Nenhuma resposta nas portas TCP 445, 3389, 5986 e 22. Verifique rota, firewall e serviços nas estações a partir do servidor; isso não comprova que os IPs estejam desligados."
+		if d := a.discovery.diagnostics(); d != "" {
+			note += " " + d
+		}
+	}
+	if ctx.Err() != nil {
+		note = "Varredura interrompida pelo limite de tempo; resultado parcial."
+		partial = true
+	}
 	if partial {
-		note = fmt.Sprintf("parcial: o teto de %d endereços por varredura foi atingido", descoberta.MaxScanHosts)
+		if note == "" {
+			note = fmt.Sprintf("parcial: o teto de %d endereços por varredura foi atingido", descoberta.MaxScanHosts)
+		}
 	}
 	run := store.DiscoveryRun{StartedAt: started, FinishedAt: &finished, Scanned: scanned, Alive: len(found),
 		WithoutAgent: sem, Partial: partial, StartedBy: by, Note: note}
 	if _, err := a.store.ReplaceDiscoveryHosts(ctx, hosts, run); err != nil {
 		a.logger.Error("descoberta: gravar o resultado", "error", err)
+		a.discovery.report("Falha", "Não foi possível salvar o resultado da varredura. Consulte os logs do servidor.")
 		return
 	}
 	a.logger.Info("varredura de descoberta terminada", "scanned", scanned, "alive", len(found), "sem_agente", sem, "partial", partial)
@@ -395,6 +507,8 @@ func (a *api) runScan(ctx context.Context, specs []descoberta.Spec, by string) {
 		installCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
 		defer stop()
 		a.installDiscovered(installCtx, hosts, by)
+	} else {
+		a.discovery.report("Interrompida", note)
 	}
 }
 
