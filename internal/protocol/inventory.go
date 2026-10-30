@@ -90,6 +90,81 @@ type Firmware struct {
 	// "Enhanced BIOS Authentication Mode") está ligado. Nesse modo a BIOS recusa a troca de
 	// senha por senha (exige um pacote assinado), e o patchd não grava. nil: não se sabe.
 	SureAdmin *bool `json:"sure_admin,omitempty"`
+	// Settings (docs/bios-config.md, só HP): as configurações da BIOS como a interface do
+	// fabricante informa, sem as senhas. nil: não lidas.
+	Settings []BIOSSetting `json:"settings,omitempty"`
+}
+
+// BIOSSetting é uma configuração da BIOS. Valores crus da interface do fabricante: o que pode
+// ser alterado pelo patchd é decidido pelo servidor e pelo agente (internal/biosconfig).
+type BIOSSetting struct {
+	Name     string   `json:"name"`
+	Path     string   `json:"path,omitempty"` // o caminho no menu da BIOS, ex.: \Advanced\Boot Options
+	Kind     string   `json:"kind"`           // BIOSKindEnum, BIOSKindString, BIOSKindInteger ou BIOSKindList
+	Value    string   `json:"value"`
+	Possible []string `json:"possible,omitempty"` // os valores aceitos (só BIOSKindEnum)
+	ReadOnly bool     `json:"read_only,omitempty"`
+}
+
+// Tipos de configuração da BIOS.
+const (
+	BIOSKindEnum    = "escolha"
+	BIOSKindString  = "texto"
+	BIOSKindInteger = "numero"
+	BIOSKindList    = "lista"
+)
+
+// Limites das configurações da BIOS: uma BIOS estranha não infla o relatório.
+const (
+	MaxBIOSSettings = 600
+	MaxBIOSPossible = 64
+	MaxBIOSName     = 120
+	MaxBIOSValue    = 256
+)
+
+// checkBIOSSettings confere tamanhos, tipos e nomes repetidos.
+func checkBIOSSettings(list []BIOSSetting) error {
+	if len(list) > MaxBIOSSettings {
+		return fmt.Errorf("configurações da BIOS demais: %d", len(list))
+	}
+	bad := func(v string, max int) bool {
+		return len(v) > max || strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f })
+	}
+	seen := make(map[string]bool, len(list))
+	for _, s := range list {
+		switch {
+		case s.Name == "" || bad(s.Name, MaxBIOSName):
+			return fmt.Errorf("configuração da BIOS com nome vazio, longo demais ou com caractere de controle")
+		case seen[s.Name]:
+			return fmt.Errorf("configuração da BIOS repetida %q", s.Name)
+		case bad(s.Path, MaxBIOSValue) || bad(s.Value, MaxBIOSValue):
+			return fmt.Errorf("configuração da BIOS %q: caminho ou valor longo demais ou com caractere de controle", s.Name)
+		case len(s.Possible) > MaxBIOSPossible:
+			return fmt.Errorf("configuração da BIOS %q: valores possíveis demais", s.Name)
+		}
+		seen[s.Name] = true
+		switch s.Kind {
+		case BIOSKindEnum:
+		case BIOSKindString, BIOSKindInteger, BIOSKindList:
+			if len(s.Possible) > 0 {
+				return fmt.Errorf("configuração da BIOS %q: valores possíveis só valem para escolha", s.Name)
+			}
+		default:
+			return fmt.Errorf("configuração da BIOS %q: tipo desconhecido %q", s.Name, s.Kind)
+		}
+		for _, v := range s.Possible {
+			if v == "" || bad(v, MaxBIOSValue) {
+				return fmt.Errorf("configuração da BIOS %q: valor possível vazio ou inválido", s.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// Empty diz se nada do firmware foi informado.
+func (f Firmware) Empty() bool {
+	return f.Mode == "" && f.SecureBoot == nil && f.TPM == "" && f.Interface == "" && f.AdminPassword == nil &&
+		f.PowerOnPassword == nil && f.SureAdmin == nil && f.Settings == nil
 }
 
 // Valores do Firmware.
@@ -125,7 +200,10 @@ func (f Firmware) Check() error {
 	if f.SureAdmin != nil && f.Interface != FirmwareHP {
 		return fmt.Errorf("sure_admin é só da interface da HP")
 	}
-	return nil
+	if f.Settings != nil && f.Interface != FirmwareHP {
+		return fmt.Errorf("configurações da BIOS são só da interface da HP")
+	}
+	return checkBIOSSettings(f.Settings)
 }
 
 // InventoryReport é o relatório de inventário enviado pelo agente ao servidor.

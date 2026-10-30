@@ -175,6 +175,15 @@ func ExecMethod(namespace, wql, method string, in []Param, out []string) (row Ro
 		return nil, false, err
 	}
 	defer inst.Release()
+	if len(in) == 0 {
+		// Método sem parâmetros de entrada (ex.: EnableKeyProtectors): InParameters é nulo.
+		result, err := CallObject(inst, "ExecMethod_", method)
+		if err != nil {
+			return nil, true, fmt.Errorf("WMI: %s: %w", method, err)
+		}
+		defer result.Release()
+		return readOut(result, out)
+	}
 	// Os parâmetros: Methods_(nome).InParameters.SpawnInstance_(), e cada um em Properties_.
 	methods, err := GetObject(inst, "Methods_")
 	if err != nil {
@@ -218,7 +227,12 @@ func ExecMethod(namespace, wql, method string, in []Param, out []string) (row Ro
 		return nil, true, fmt.Errorf("WMI: %s: %w", method, err)
 	}
 	defer result.Release()
-	row = Row{}
+	return readOut(result, out)
+}
+
+// readOut lê as propriedades pedidas da saída de um método já chamado.
+func readOut(result *ole.IDispatch, out []string) (Row, bool, error) {
+	row := Row{}
 	for _, name := range out {
 		v, err := Get(result, name)
 		if err != nil {

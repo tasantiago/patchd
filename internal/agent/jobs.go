@@ -22,6 +22,13 @@ type acceptedJobs struct {
 	winUpdates []acceptedWinUpdate
 	bios       []acceptedBIOS
 	scripts    []acceptedScript
+	// docs/bios-config.md
+	biosSettings []acceptedBIOSSettings
+}
+
+type acceptedBIOSSettings struct {
+	id int64
+	p  jobs.BIOSSettingsParams
 }
 
 type acceptedScript struct {
@@ -138,6 +145,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: gravar a senha de administrador da BIOS", "job_id", j.ID, "guarda", p.Guard, "fabricante", p.Vendor)
 			acc.bios = append(acc.bios, acceptedBIOS{id: j.ID, p: p})
+		case jobs.TypeBIOSSettings:
+			p, _ := jobs.ParseBIOSSettingsParams(j.Params) // o Verify já conferiu
+			if a.BIOSSettings == nil {
+				why := "este agente não altera configurações da BIOS (só o agente do Windows, com a caixa de cifragem)"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: alterar configurações da BIOS", "job_id", j.ID, "fabricante", p.Vendor, "alteracoes", len(p.Changes))
+			acc.biosSettings = append(acc.biosSettings, acceptedBIOSSettings{id: j.ID, p: p})
 		case jobs.TypeServerURL:
 			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
 			reject := func(why string) {
@@ -296,6 +313,29 @@ func (a *Agent) runBIOS(ctx context.Context, list []acceptedBIOS) (out []Pending
 		default:
 			ran = true
 			a.Logger.Info("senha da BIOS gravada", "job_id", j.id, "guarda", j.p.Guard, "detail", detail)
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out, ran
+}
+
+// runBIOSSettings altera configurações da BIOS (docs/bios-config.md), um job por vez. ran diz
+// se alguma escrita pode ter acontecido: só então o inventário de depois interessa.
+func (a *Agent) runBIOSSettings(ctx context.Context, list []acceptedBIOSSettings) (out []PendingJobResult, ran bool) {
+	for _, j := range list {
+		detail, err := a.BIOSSettings(ctx, j.id, j.p)
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrRefused):
+			status, detail = protocol.JobResultRejected, err.Error()
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case err != nil:
+			ran = true
+			status, detail = protocol.JobResultFailed, err.Error()
+			a.Logger.Error("configurações da BIOS: nem todas gravadas", "job_id", j.id, "detail", detail)
+		default:
+			ran = true
+			a.Logger.Info("configurações da BIOS alteradas", "job_id", j.id, "detail", detail)
 		}
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}

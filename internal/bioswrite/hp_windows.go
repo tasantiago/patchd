@@ -3,8 +3,9 @@ package bioswrite
 import (
 	"context"
 	"fmt"
-	"math"
+	"strings"
 
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/wincom"
 )
 
@@ -16,7 +17,12 @@ const (
 )
 
 // Detect devolve a interface do fabricante desta máquina (só a HP, por enquanto).
-func Detect(ctx context.Context) (Vendor, error) {
+func Detect(ctx context.Context) (Vendor, error) { return detectHP(ctx) }
+
+// DetectSettings é o Detect do job bios_settings.
+func DetectSettings(ctx context.Context) (SettingsVendor, error) { return detectHP(ctx) }
+
+func detectHP(ctx context.Context) (hpVendor, error) {
 	var vendor string
 	err := wincom.Do(ctx, func() error {
 		rows, err := wincom.Query(`root\cimv2`, "SELECT Vendor FROM Win32_ComputerSystemProduct", []string{"Vendor"})
@@ -31,11 +37,11 @@ func Detect(ctx context.Context) (Vendor, error) {
 	})
 	switch {
 	case err != nil:
-		return nil, err
+		return hpVendor{}, err
 	case vendor == "hp":
 		return hpVendor{}, nil
 	}
-	return nil, ErrNoVendor
+	return hpVendor{}, ErrNoVendor
 }
 
 type hpVendor struct{}
@@ -75,32 +81,43 @@ func (hpVendor) SetAdminPassword(ctx context.Context, newPW, current []byte) (ui
 	return code, called, err
 }
 
-// asCode: o Return do WMI vem como inteiro de algum tamanho.
-func asCode(v any) (uint32, error) {
-	var n int64
-	switch x := v.(type) {
-	case int32:
-		n = int64(x)
-	case uint32:
-		n = int64(x)
-	case int64:
-		n = x
-	case uint64:
-		if x > math.MaxUint32 {
-			return 0, fmt.Errorf("código de retorno fora da faixa: %d", x)
+// Settings lê as configurações de escolha como estão agora (o job bios_settings confere
+// contra elas, não contra o inventário do servidor).
+func (hpVendor) Settings(ctx context.Context) ([]protocol.BIOSSetting, error) {
+	var out []protocol.BIOSSetting
+	err := wincom.Do(ctx, func() error {
+		props := []string{"Name", "Path", "CurrentValue", "PossibleValues", "IsReadOnly"}
+		rows, err := wincom.Query(hpNamespace, "SELECT "+strings.Join(props, ", ")+" FROM HP_BIOSEnumeration", props)
+		if err != nil {
+			return fmt.Errorf("interface da HP: %w", err)
 		}
-		n = int64(x)
-	case int16:
-		n = int64(x)
-	case uint16:
-		n = int64(x)
-	case uint8:
-		n = int64(x)
-	default:
-		return 0, fmt.Errorf("código de retorno de tipo inesperado %T", v)
-	}
-	if n < 0 || n > math.MaxUint32 {
-		return 0, fmt.Errorf("código de retorno fora da faixa: %d", n)
-	}
-	return uint32(n), nil
+		list := make([]map[string]any, 0, len(rows))
+		for _, r := range rows {
+			list = append(list, r)
+		}
+		out = hpEnumSettings(list)
+		return nil
+	})
+	return out, err
+}
+
+// SetSetting grava uma configuração (SetBIOSSetting) com a senha em uso (só o prefixo, se a
+// BIOS estiver sem senha).
+func (hpVendor) SetSetting(ctx context.Context, name, value string, password []byte) (uint32, bool, error) {
+	var (
+		code   uint32
+		called bool
+	)
+	err := wincom.Do(ctx, func() error {
+		row, c, err := wincom.ExecMethod(hpNamespace, "SELECT * FROM HP_BIOSSettingInterface", "SetBIOSSetting",
+			[]wincom.Param{{Name: "Name", Value: name}, {Name: "Value", Value: value}, {Name: "Password", Value: hpPassword(password)}},
+			[]string{"Return"})
+		called = c
+		if err != nil {
+			return err
+		}
+		code, err = asCode(row["Return"])
+		return err
+	})
+	return code, called, err
 }

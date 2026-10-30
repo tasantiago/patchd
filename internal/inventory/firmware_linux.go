@@ -42,7 +42,7 @@ func (c *linuxCollector) firmware() *protocol.Firmware {
 	} else if _, err := c.readFile(tpmDevice); err != nil && f.Mode != "" {
 		f.TPM = protocol.TPMNone
 	}
-	if f == (protocol.Firmware{}) {
+	if f.Empty() {
 		return nil
 	}
 	return &f

@@ -256,9 +256,10 @@ type machineView struct {
 	HasInventory  bool
 	OSParams      []paramRow
 	HWParams      []paramRow
-	FWParams      []fwRow   // Aula 21.1
-	BIOS          *biosCard // Aula 21.4: a guarda da senha (só na aba Hardware)
-	Wake          *wakeCard // Aula 22.1: ligar pela rede
+	FWParams      []fwRow         // Aula 21.1
+	BIOS          *biosCard       // Aula 21.4: a guarda da senha (só na aba Hardware)
+	BIOSConfig    *biosConfigCard // as configurações da BIOS (só na aba BIOS; docs/bios-config.md)
+	Wake          *wakeCard       // Aula 22.1: ligar pela rede
 	HWSources     []string
 	Category      string
 	Model, Serial string
@@ -354,6 +355,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	case q.Get("erro") == "motivo":
 		v.Error = fmt.Sprintf("Informe o motivo da aposentadoria (de %d a %d caracteres).", minReasonLength, maxReasonLength)
 	case biosFlash(q, &v):
+	case biosConfigFlash(q, &v):
 	default:
 		jobFlash(q, &v.pageBase)
 	}
@@ -395,6 +397,12 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	if v.Tab == "hardware" {
 		if v.BIOS, err = a.biosView(r, id, v.Admin); err != nil {
 			a.internalError(w, r, "ler a guarda da BIOS", err)
+			return
+		}
+	}
+	if v.Tab == "bios" {
+		if v.BIOSConfig, err = a.biosConfigView(r, id, v.Admin); err != nil {
+			a.internalError(w, r, "ler as configurações da BIOS", err)
 			return
 		}
 	}
@@ -1153,6 +1161,34 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted">O agente desta máquina ainda não manda rede e discos: a coleta chegou na Aula 12.1. Atualize o agente.</p>{{end}}
 </div>
 {{end}}
+
+{{if eq .Tab "bios"}}{{with .BIOSConfig}}
+<div class="card" id="bios-config"><div class="card-cab"><h2>Configurações da BIOS</h2>{{if .Has}}<span class="muted">{{.Total}} lidas · {{.EditableCount}} alteráveis pelo patchd</span>{{end}}</div>
+{{if not .Has}}<p class="muted">{{.Reason}}</p>
+{{else}}
+{{if and .Admin .EditableCount (not .CanEdit)}}<p class="aviso atencao">Alteração indisponível: {{.Blocker}}.</p>{{end}}
+{{if .Groups}}{{if .CanEdit}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/configurar">{{end}}
+{{range .Groups}}<h3>{{.Title}}</h3><div class="tabela"><table>
+<thead><tr><th>Configuração</th><th>Atual</th>{{if $.BIOSConfig.CanEdit}}<th>Novo valor</th>{{end}}<th>Observação</th></tr></thead>
+<tbody>{{range $row := .Rows}}<tr><td>{{$row.Name}}{{if $row.Path}}<br><span class="muted">{{$row.Path}}</span>{{end}}</td><td><code>{{$row.Value}}</code></td>
+{{if $.BIOSConfig.CanEdit}}<td><input type="hidden" name="n{{$row.Index}}" value="{{$row.Name}}"><select name="v{{$row.Index}}" aria-label="novo valor de {{$row.Name}}">{{range $row.Choices}}<option value="{{.}}"{{if eq . $row.Value}} selected{{end}}>{{.}}</option>{{end}}</select></td>{{end}}
+<td>{{if $row.Risk}}<span class="nivel-atencao">risco alto</span>{{if $row.Note}}: {{$row.Note}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td></tr>{{end}}</tbody></table></div>{{end}}
+{{if .CanEdit}}<div class="lote">
+<input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (chamado, OS...)" aria-label="motivo da alteração">
+{{if .HasRisk}}<label><input type="checkbox" name="confirmo" value="1"> confirmo as alterações de risco alto</label>{{end}}
+<button type="submit">Pedir alteração</button>
+<span class="muted">Só vai o que mudou (até 20 por vez). Vira um job assinado: a máquina confere de novo na BIOS, suspende o BitLocker por um reinício se ele estiver ligado, grava uma configuração por chamada com a senha da guarda e nunca repete uma senha recusada. As mudanças valem no próximo reinício, que não é feito pelo patchd.</span>
+</div></form>{{end}}
+{{else}}<p class="muted">Nenhuma configuração desta BIOS está na lista do patchd (energia e Wake on LAN, boot, virtualização e segurança, portas e dispositivos), ou estão todas só leitura.</p>{{end}}
+{{if .Others}}<details><summary>As outras {{len .Others}} configurações (só leitura no patchd)</summary><div class="tabela"><table>
+<thead><tr><th>Configuração</th><th>Valor</th><th>Tipo</th><th>Possíveis</th></tr></thead>
+<tbody>{{range .Others}}<tr><td>{{.Name}}{{if .Path}}<br><span class="muted">{{.Path}}</span>{{end}}{{if .ReadOnly}} <span class="muted">· só leitura na BIOS</span>{{end}}</td><td><code>{{.Value}}</code></td><td>{{.Kind}}</td><td class="muted">{{.Possible}}</td></tr>{{end}}</tbody></table></div></details>{{end}}
+{{end}}
+</div>
+{{if .Recent}}<div class="card"><div class="card-cab"><h2>Alterações pedidas</h2><a href="/painel/maquinas/{{$.D.MachineID}}?aba=tarefas">todas as tarefas</a></div><div class="tabela"><table>
+<thead><tr><th>Job</th><th>Estado</th><th>Pedido</th><th>Por</th><th>Alterações</th><th>Resultado</th></tr></thead>
+<tbody>{{range .Recent}}<tr><td class="num">{{.ID}}</td><td><span class="estado {{.State}}">{{.StateLabel}}</span></td><td>{{.Created}}</td><td>{{.By}}</td><td>{{range $i, $c := .Changes}}{{if $i}}<br>{{end}}{{$c}}{{end}}</td><td class="muted">{{.Detail}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+{{end}}{{end}}
 
 {{if eq .Tab "software"}}
 <div class="card"><div class="card-cab"><h2>Software instalado</h2>{{if .Software.Collected}}<span class="muted">inventário coletado em {{.Software.Collected}}</span>{{end}}</div>

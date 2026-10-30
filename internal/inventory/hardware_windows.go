@@ -72,6 +72,20 @@ func (c *windowsCollector) Hardware(ctx context.Context) (Hardware, error) {
 				case !wmiMissing(saErr):
 					errs = append(errs, saErr)
 				}
+				// docs/bios-config.md: as configurações, uma classe por consulta (uma
+				// propriedade ausente num modelo tira só aquele tipo).
+				for _, q := range hpSettingQueries {
+					set, sErr := wincom.Query(wmiHPNamespace, "SELECT "+strings.Join(q.props, ", ")+" FROM "+q.class, q.props)
+					switch {
+					case sErr == nil:
+						fw.SettingsQueried = true
+						for _, r := range set {
+							fw.Settings = append(fw.Settings, hpSettingRow{Kind: q.kind, Row: r})
+						}
+					case !wmiMissing(sErr):
+						errs = append(errs, sErr)
+					}
+				}
 			}
 		case protocol.FirmwareDell:
 			rows, err = wincom.Query(wmiDellNamespace, "SELECT NameId, IsPasswordSet FROM PasswordObject", []string{"NameId", "IsPasswordSet"})
@@ -168,4 +182,16 @@ func secureBootEnabled() *bool {
 		return nil
 	}
 	return boolPtr(v != 0)
+}
+
+// hpSettingQueries: as classes de configuração da HP (root\HP\InstrumentedBIOS) e o que se lê
+// de cada uma. HP_BIOSPassword fica de fora: o inventário só diz se a senha existe.
+var hpSettingQueries = []struct {
+	class, kind string
+	props       []string
+}{
+	{"HP_BIOSEnumeration", protocol.BIOSKindEnum, []string{"Name", "Path", "CurrentValue", "PossibleValues", "IsReadOnly"}},
+	{"HP_BIOSString", protocol.BIOSKindString, []string{"Name", "Path", "Value", "IsReadOnly"}},
+	{"HP_BIOSInteger", protocol.BIOSKindInteger, []string{"Name", "Path", "IntegerValue", "IsReadOnly"}},
+	{"HP_BIOSOrderedList", protocol.BIOSKindList, []string{"Name", "Path", "Value", "IsReadOnly"}},
 }

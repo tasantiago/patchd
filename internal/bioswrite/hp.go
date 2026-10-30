@@ -1,6 +1,12 @@
 package bioswrite
 
-import "strings"
+import (
+	"fmt"
+	"math"
+	"strings"
+
+	"github.com/tasantiago/patchd/internal/protocol"
+)
 
 // A interface da HP (HP Client Management Interface, namespace root\HP\InstrumentedBIOS):
 //   - a senha de administrador é a configuração "Setup Password", trocada pelo método
@@ -27,4 +33,66 @@ func vendorOf(manufacturer string) string {
 		return "hp"
 	}
 	return ""
+}
+
+// hpEnumSettings converte as linhas de HP_BIOSEnumeration (Name, Path, CurrentValue,
+// PossibleValues, IsReadOnly) nas configurações de escolha, como o agente as confere antes de
+// gravar. Nomes repetidos ficam com a primeira linha.
+func hpEnumSettings(rows []map[string]any) []protocol.BIOSSetting {
+	var out []protocol.BIOSSetting
+	seen := map[string]bool{}
+	for _, r := range rows {
+		name, _ := r["Name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		s := protocol.BIOSSetting{Name: name, Kind: protocol.BIOSKindEnum}
+		s.Path, _ = r["Path"].(string)
+		cur, _ := r["CurrentValue"].(string)
+		s.Value = strings.TrimSpace(cur)
+		if l, ok := r["PossibleValues"].([]any); ok {
+			for _, v := range l {
+				if pv, ok := v.(string); ok && strings.TrimSpace(pv) != "" {
+					s.Possible = append(s.Possible, strings.TrimSpace(pv))
+				}
+			}
+		}
+		if ro, err := asCode(r["IsReadOnly"]); err == nil {
+			s.ReadOnly = ro != 0
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// asCode: o Return do WMI vem como inteiro de algum tamanho.
+func asCode(v any) (uint32, error) {
+	var n int64
+	switch x := v.(type) {
+	case int32:
+		n = int64(x)
+	case uint32:
+		n = int64(x)
+	case int64:
+		n = x
+	case uint64:
+		if x > math.MaxUint32 {
+			return 0, fmt.Errorf("código de retorno fora da faixa: %d", x)
+		}
+		n = int64(x)
+	case int16:
+		n = int64(x)
+	case uint16:
+		n = int64(x)
+	case uint8:
+		n = int64(x)
+	default:
+		return 0, fmt.Errorf("código de retorno de tipo inesperado %T", v)
+	}
+	if n < 0 || n > math.MaxUint32 {
+		return 0, fmt.Errorf("código de retorno fora da faixa: %d", n)
+	}
+	return uint32(n), nil
 }

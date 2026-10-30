@@ -37,6 +37,10 @@ const PurposeBIOS = "bios-senha"
 // PurposeBIOSCurrent: a senha da BIOS em uso, que a troca exige (Aula 21.5).
 const PurposeBIOSCurrent = "bios-senha-atual"
 
+// PurposeBIOSConfig: a senha da BIOS em uso, levada pelo job que altera configurações
+// (docs/bios-config.md). Rótulo próprio: o envelope de um job não serve no outro.
+const PurposeBIOSConfig = "bios-config"
+
 var purposePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
 
 func kem() hpke.KEM   { return hpke.MLKEM768X25519() }

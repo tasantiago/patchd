@@ -169,7 +169,14 @@ quem resolve.
   (ativo A10). **Na 21.5**: a gravação na HP pelo job `bios_password` (senhas fechadas para a
   caixa da máquina; a da frota digitada uma vez na primeira troca; uma chamada ao fabricante,
   sem nova tentativa; Sure Admin respeitado; incerta trava até alguém conferir). Falta aposentar
-  o `.bat` depois do piloto, e Dell e Lenovo (21.6).
+  o `.bat` depois do piloto, e Dell e Lenovo (21.6). **Configurações da BIOS**
+  (`docs/bios-config.md`): o job `bios_settings` altera só a lista fechada de
+  `internal/biosconfig` (senhas, TPM, modo de boot, ordem de boot, atualização de firmware e a
+  placa cabeada ficam de fora; ligar o suporte legado é recusado), conferida no servidor e de
+  novo no agente; a senha em uso sai da guarda fechada para a caixa com rótulo próprio; o
+  BitLocker é suspenso por um reinício antes da gravação; risco alto pede confirmação, motivo é
+  obrigatório e a trilha guarda o antes e o depois, nunca a senha. Em aberto (R1): a cópia da
+  senha no registro da máquina não foi feita.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

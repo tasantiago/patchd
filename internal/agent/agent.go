@@ -74,6 +74,10 @@ type Agent struct {
 	// nil: o agente recusa esses jobs. Erro com jobs.ErrRefused vira "rejeitado" (a BIOS não
 	// foi tocada); com bioswrite.ErrUncertain, "falhou" com o detalhe jobs.BIOSUncertain.
 	BIOSPassword func(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams) (string, error)
+	// BIOSSettings altera configurações da BIOS da lista fechada (job bios_settings,
+	// docs/bios-config.md). nil: o agente recusa esses jobs. Erro com jobs.ErrRefused vira
+	// "rejeitado" (a BIOS não foi tocada); outro erro, "falhou", com uma linha por configuração.
+	BIOSSettings func(ctx context.Context, jobID int64, p jobs.BIOSSettingsParams) (string, error)
 
 	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
 	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
@@ -349,6 +353,22 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// com a senha definida) vai antes do resultado, que o servidor confere por ele.
 	if len(accepted.bios) > 0 {
 		res, ran := a.runBIOS(ctx, accepted.bios)
+		state.PendingJobResults = append(state.PendingJobResults, res...)
+		if ctx.Err() != nil {
+			state.InventoryFirst = state.InventoryFirst || ran
+			a.saveStateOrLog(state)
+			return outcomeTransient
+		}
+		if ran {
+			a.resendInventory(ctx, &state)
+		}
+		a.saveStateOrLog(state)
+	}
+
+	// Configurações da BIOS (docs/bios-config.md): depois da senha; o inventário de depois
+	// (as configurações com os valores novos) vai antes do resultado, que o servidor confere.
+	if len(accepted.biosSettings) > 0 {
+		res, ran := a.runBIOSSettings(ctx, accepted.biosSettings)
 		state.PendingJobResults = append(state.PendingJobResults, res...)
 		if ctx.Err() != nil {
 			state.InventoryFirst = state.InventoryFirst || ran

@@ -1,9 +1,13 @@
 package inventory
 
 import (
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // O firmware no Windows (Aula 21.1), só leitura. Fica fora do arquivo _windows.go para ser
@@ -31,6 +35,77 @@ type wmiFirmware struct {
 	// SureAdminQueried: a consulta rodou; SureAdmin nil: o modelo não tem a configuração.
 	SureAdminQueried bool
 	SureAdmin        map[string]any
+	// docs/bios-config.md: as configurações da BIOS da HP, como vieram de cada classe.
+	SettingsQueried bool
+	Settings        []hpSettingRow
+}
+
+// hpSettingRow é uma linha de uma das classes de configuração da HP.
+type hpSettingRow struct {
+	Kind string // protocol.BIOSKind*
+	Row  map[string]any
+}
+
+// hpBIOSSettings monta as configurações: cortadas nos limites do protocolo, sem nomes
+// repetidos, em ordem estável (o hash do inventário não muda à toa) e, por garantia, sem nada
+// que pareça senha.
+func hpBIOSSettings(rows []hpSettingRow) []protocol.BIOSSetting {
+	out := []protocol.BIOSSetting{}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		name := texto.Clip(strings.TrimSpace(asString(r.Row["Name"])), protocol.MaxBIOSName)
+		if name == "" || seen[name] || strings.Contains(strings.ToLower(name), "password") || hasControl(name) {
+			continue
+		}
+		s := protocol.BIOSSetting{Name: name, Kind: r.Kind, Path: clipValue(asString(r.Row["Path"]))}
+		ro, _ := asUint64(r.Row["IsReadOnly"])
+		s.ReadOnly = ro != 0
+		switch r.Kind {
+		case protocol.BIOSKindEnum:
+			s.Value = clipValue(asString(r.Row["CurrentValue"]))
+			if l, ok := r.Row["PossibleValues"].([]any); ok {
+				for _, v := range l {
+					if pv := clipValue(asString(v)); pv != "" && len(s.Possible) < protocol.MaxBIOSPossible && !slices.Contains(s.Possible, pv) {
+						s.Possible = append(s.Possible, pv)
+					}
+				}
+			}
+		case protocol.BIOSKindInteger:
+			if n, ok := asUint64(r.Row["IntegerValue"]); ok {
+				s.Value = strconv.FormatUint(n, 10)
+			}
+		default:
+			s.Value = clipValue(asString(r.Row["Value"]))
+		}
+		seen[name] = true
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, k int) bool {
+		if out[i].Path != out[k].Path {
+			return out[i].Path < out[k].Path
+		}
+		return out[i].Name < out[k].Name
+	})
+	if len(out) > protocol.MaxBIOSSettings {
+		out = out[:protocol.MaxBIOSSettings]
+	}
+	return out
+}
+
+// clipValue: o valor cortado no limite, sem caracteres de controle (o protocolo os recusa e
+// derrubaria o firmware inteiro do relatório).
+func clipValue(v string) string {
+	v = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, strings.TrimSpace(v))
+	return texto.Clip(strings.TrimSpace(v), protocol.MaxBIOSValue)
+}
+
+func hasControl(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f })
 }
 
 // firmwareInterface: qual interface consultar, pelo fabricante do SMBIOS.
@@ -100,8 +175,11 @@ func windowsFirmwareInfo(w wmiFirmware) *protocol.Firmware {
 			v, _ := w.SureAdmin["CurrentValue"].(string)
 			f.SureAdmin = boolPtr(strings.EqualFold(strings.TrimSpace(v), "Enable")) // sem a configuração: desligado
 		}
+		if f.Interface == protocol.FirmwareHP && w.SettingsQueried {
+			f.Settings = hpBIOSSettings(w.Settings)
+		}
 	}
-	if f == (protocol.Firmware{}) {
+	if f.Empty() {
 		return nil
 	}
 	return &f

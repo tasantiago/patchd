@@ -27,3 +27,23 @@ func biosRunner(logger *slog.Logger, boxPriv []byte) func(context.Context, int64
 	}
 	return r.Run
 }
+
+// biosSettingsRunner: o executor do job bios_settings (docs/bios-config.md), com a caixa desta
+// máquina e o BitLocker do Windows. Sem a caixa, nil: o agente recusa esses jobs.
+func biosSettingsRunner(logger *slog.Logger, boxPriv []byte) func(context.Context, int64, jobs.BIOSSettingsParams) (string, error) {
+	if boxPriv == nil {
+		return nil
+	}
+	pub, err := machinebox.Public(boxPriv)
+	if err != nil {
+		return nil
+	}
+	r := bioswrite.SettingsRunner{
+		BoxKeyID:  machinebox.KeyID(pub),
+		Open:      func(purpose string, sealed []byte) ([]byte, error) { return machinebox.Open(boxPriv, purpose, sealed) },
+		Detect:    bioswrite.DetectSettings,
+		BitLocker: bioswrite.WindowsBitLocker{},
+		Logger:    logger,
+	}
+	return r.Run
+}

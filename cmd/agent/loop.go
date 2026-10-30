@@ -164,7 +164,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Logger:    logger,
 	}
 
-	ag.BIOSPassword = biosRunner(logger, boxPriv) // Aula 21.5: nil fora do Windows ou sem a caixa
+	ag.BIOSPassword = biosRunner(logger, boxPriv)         // Aula 21.5: nil fora do Windows ou sem a caixa
+	ag.BIOSSettings = biosSettingsRunner(logger, boxPriv) // docs/bios-config.md: nil fora do Windows ou sem a caixa
 	if cab != nil {
 		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {
 			if err := cab.Sync(ctx, adv); err != nil && ctx.Err() == nil {

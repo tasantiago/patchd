@@ -42,7 +42,7 @@ const (
 // KnownType diz se o tipo existe.
 func KnownType(t string) bool {
 	return t == TypeRescan || t == TypeUpdate || t == TypeReboot || t == TypeServerURL || t == TypeThirdParty || t == TypeWinUpdate ||
-		t == TypeBIOSPassword || t == TypeScript
+		t == TypeBIOSPassword || t == TypeScript || t == TypeBIOSSettings
 }
 
 // Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado |
@@ -191,6 +191,9 @@ func checkParams(j Job) error {
 		return err
 	case TypeBIOSPassword:
 		_, err := ParseBIOSPasswordParams(j.Params)
+		return err
+	case TypeBIOSSettings:
+		_, err := ParseBIOSSettingsParams(j.Params)
 		return err
 	case TypeScript:
 		_, err := ParseScriptParams(j.Params)

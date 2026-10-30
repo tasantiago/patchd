@@ -292,6 +292,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/revelar", a.sameOrigin(a.adminAction(a.revealBIOSAction)))   // Aula 21.4
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/gravar", a.sameOrigin(a.adminAction(a.writeBIOSAction)))     // Aula 21.5
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/resolver", a.sameOrigin(a.adminAction(a.resolveBIOSAction))) // Aula 21.5
+	mux.Handle("POST /painel/maquinas/{id}/bios/configurar", a.sameOrigin(a.adminAction(a.configureBIOSAction)))      // docs/bios-config.md
 	// Configuração (Aula 15.2): só admin, inclusive para ver.
 	mux.Handle("GET /painel/configuracao", a.adminAction(a.settingsPage))
 	mux.Handle("GET /painel/configuracao/auditoria.csv", a.adminAction(a.auditCSV))

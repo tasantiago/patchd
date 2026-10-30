@@ -123,6 +123,9 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	if job.Type == jobs.TypeBIOSPassword { // Aula 21.5
 		return a.judgeBIOS(r, job, res)
 	}
+	if job.Type == jobs.TypeBIOSSettings { // docs/bios-config.md
+		return a.judgeBIOSSettings(r, job, res)
+	}
 	// Os outros tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
 	at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)
 	if err != nil {
