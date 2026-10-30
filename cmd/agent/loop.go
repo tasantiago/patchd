@@ -125,7 +125,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	jobPub, jobNext := jobKey(logger), jobKeyNext(logger)
 	jobIDs := keyIDs(jobs.KeyID, jobPub, jobNext)
 	releaseIDs := keyIDs(release.KeyID, releaseKeys(logger)...)
-	boxPriv, boxKey := machineBox(logger, opts.DataDir) // Aula 21.3: a caixa desta máquina
+	boxPriv, boxKey := machineBox(logger, opts.DataDir)   // Aula 21.3: a caixa desta máquina
+	biosPW := biosRunner(logger, boxPriv, cred.MachineID) // Aula 21.5: nil fora do Windows ou sem a caixa
 	ag := &agent.Agent{
 		Client: client,
 		// O inventário passa pela mesma função do "-inventory": o check-in envia exatamente
@@ -156,6 +157,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			}
 			s.JobKeys, s.ReleaseKeys = jobIDs, releaseIDs
 			s.BoxKey = boxKey
+			s.BIOSCopy = biosPW != nil // docs/bios-senha.md, seção 9: guarda a cópia no Registro
 			return s
 		},
 		DataDir:   opts.DataDir,
@@ -164,7 +166,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Logger:    logger,
 	}
 
-	ag.BIOSPassword = biosRunner(logger, boxPriv)         // Aula 21.5: nil fora do Windows ou sem a caixa
+	ag.BIOSPassword = biosPW
 	ag.BIOSSettings = biosSettingsRunner(logger, boxPriv) // docs/bios-config.md: nil fora do Windows ou sem a caixa
 	if cab != nil {
 		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {

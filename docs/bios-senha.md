@@ -254,3 +254,49 @@ uma decisão de alguém.
 **O que ainda não está conferido** (o laboratório da 21.5 confere): o nome exato da
 configuração do Sure Admin (`Enhanced BIOS Authentication Mode`) nos modelos da frota; que a
 troca vale sem reiniciar; que a máquina com BitLocker sobe sem pedir a chave de recuperação.
+
+## 9. A cópia de emergência fora do servidor (decisão R1 de `docs/bios-config.md`)
+
+O pedido: se o servidor cair (ou o banco se perder), a equipe N1/N2 precisa entrar na BIOS.
+A senha legível na máquina foi recusada (é o problema do `.bat`); a cópia é **o envelope da
+guarda**, que só a chave privada de guarda abre. São três peças, e só quem junta a chave com
+uma das cópias vê a senha:
+
+| Peça | Onde fica | Quem lê |
+|---|---|---|
+| A chave privada de guarda | duas cópias offline: o cofre de senhas da N1/N2 e um envelope lacrado no cofre físico, longe do backup do banco | quem tem acesso ao cofre |
+| `patchd-server bios export -out ARQUIVO` | qualquer backup (agendado; o arquivo é trocado inteiro, nunca fica pela metade) | ninguém, sem a chave |
+| O Registro da máquina: `HKLM\SOFTWARE\patchd\BIOS`, valor `Copia` | a própria máquina | ninguém, sem a chave |
+
+**O formato** (`internal/biospw/copy.go`) é uma linha:
+`patchd-bios-1:<máquina>:<guarda>:<impressão da chave>:<envelope>`. O envelope é preso ao ID
+da máquina: trocar o ID na linha não abre a senha de outra.
+
+**O export** leva as senhas ativas, incertas e pendentes (uma pendente pode estar sendo
+gravada agora), de máquinas ativas e aposentadas, com o nome de cada uma. Não precisa da chave
+de guarda: dá para agendar no servidor sem mais um segredo por perto.
+
+**O Registro.** O job `bios_password` leva a cópia da senha nova (campo `copy`), e o agente a
+grava depois do código 0 (`Copia`, `CopiaEm`), apagando a incerta. Numa gravação incerta, a
+nova vai para `CopiaIncerta` e a anterior fica em `Copia`: quem estiver na frente da máquina
+tenta as duas. Falha ao gravar o Registro não desfaz nada (a BIOS já mudou): fica anotada no
+resultado do job. O agente recusa, antes de tocar a BIOS, uma cópia de outra máquina. O
+servidor só manda a cópia para agentes que avisam que a entendem (`bios_copy` no estado da
+máquina); um agente anterior recusaria o campo novo. A máquina que já tinha senha antes desta
+versão ganha a cópia na próxima troca pela guarda.
+
+**A revelação offline**, num computador qualquer, sem servidor e sem banco:
+
+```
+patchd-server bios reveal -key guarda.key -copia "patchd-bios-1:..."           # valor lido no Registro
+patchd-server bios reveal -key - -file bios-export.json -machine pc-lab-01        # chave colada do cofre
+```
+
+Ela **não entra na trilha** do patchd (não há banco). A regra: anotar no chamado e, com o
+servidor de volta, trocar a senha pela guarda (Preparar senha nova), o que também renova as
+cópias.
+
+**O que isto não cobre:** quem tem a chave de guarda e uma cópia lê a senha sem deixar
+rastro no patchd; por isso a chave fica em cofre com acesso registrado, não num notebook. E a
+senha da frota que o `.bat` deixou legível na máquina continua lá até alguém apagar: depois da
+primeira troca pela guarda, ela já não vale na BIOS, mas deve sair do Registro.

@@ -40,6 +40,10 @@ type MachineState struct {
 	// servidor fecha para ela os segredos que só esta máquina pode abrir (a senha da BIOS).
 	// Ausente: agente anterior à 21.3, ou a chave não pôde ser criada.
 	BoxKey string `json:"box_key,omitempty"`
+	// BIOSCopy (docs/bios-senha.md, seção 9): o agente guarda no Registro a cópia de emergência
+	// que vem no job bios_password. Ausente: o servidor não manda a cópia (um agente anterior
+	// recusaria o campo novo).
+	BIOSCopy bool `json:"bios_copy,omitempty"`
 }
 
 // keyIDPattern: a impressão curta de uma chave (jobs.KeyID, release.KeyID).

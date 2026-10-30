@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+
+	"github.com/tasantiago/patchd/internal/biospw"
 )
 
 // TypeBIOSPassword (Aula 21.5; desenho em docs/bios-senha.md) grava a senha de administrador
@@ -23,6 +25,9 @@ type BIOSPasswordParams struct {
 	BoxKey  string `json:"box_key"`           // a impressão da chave da caixa que fechou os envelopes
 	New     string `json:"new"`               // a senha nova, fechada (machinebox, PurposeBIOS), base64
 	Current string `json:"current,omitempty"` // a senha em uso, fechada (PurposeBIOSCurrent); vazio: a BIOS está sem senha
+	// Copy: a senha nova fechada para a chave de guarda (biospw.Copy), que o agente deixa no
+	// Registro da máquina depois de gravar (docs/bios-senha.md, seção 9). Vazio: sem cópia.
+	Copy string `json:"copy,omitempty"`
 }
 
 // BIOSVendors: as interfaces que o job aceita. A HP primeiro (é onde o .bat rodou); Dell e
@@ -66,6 +71,15 @@ func ParseBIOSPasswordParams(raw json.RawMessage) (BIOSPasswordParams, error) {
 		return p, errors.New("bios_password: envelope da senha nova inválido")
 	case p.Current != "" && !sealedOK(p.Current):
 		return p, errors.New("bios_password: envelope da senha atual inválido")
+	}
+	if p.Copy != "" {
+		c, err := biospw.ParseCopy(p.Copy)
+		switch {
+		case err != nil:
+			return p, fmt.Errorf("bios_password: %w", err)
+		case c.Guard != p.Guard:
+			return p, fmt.Errorf("bios_password: a cópia é da guarda #%d, e o job grava a #%d", c.Guard, p.Guard)
+		}
 	}
 	return p, nil
 }

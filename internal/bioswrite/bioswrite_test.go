@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tasantiago/patchd/internal/biospw"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/machinebox"
 )
@@ -133,5 +134,77 @@ func TestHP(t *testing.T) {
 		if vendorOf(m) != quer {
 			t.Errorf("%s", m)
 		}
+	}
+}
+
+// TestCopiaNoRegistro: a cópia de emergência vai para o Registro depois do código 0; numa
+// gravação incerta, vai como incerta (a anterior fica); recusa ou falha clara não mexem nela;
+// a cópia de outra máquina faz recusar o job antes de tocar a BIOS.
+func TestCopiaNoRegistro(t *testing.T) {
+	priv, _ := machinebox.Generate()
+	pub, _ := machinebox.Public(priv)
+	kid := machinebox.KeyID(pub)
+	guardaPriv, _ := machinebox.Generate()
+	guardaPub, _ := machinebox.Public(guardaPriv)
+	const maq, nova = "60ef97e4-0001", "abcd2345efgh"
+	copia := func(id string) string {
+		env, _ := biospw.Seal(guardaPub, id, nova)
+		s, _ := biospw.Copy{MachineID: id, Guard: 1, KeyID: machinebox.KeyID(guardaPub), Escrow: env}.Format()
+		return s
+	}
+	sealed, _ := machinebox.Seal(pub, machinebox.PurposeBIOS, []byte(nova))
+	p := jobs.BIOSPasswordParams{Guard: 1, Vendor: "hp", BoxKey: kid, New: base64.StdEncoding.EncodeToString(sealed), Copy: copia(maq)}
+	type gravada struct {
+		copia   string
+		incerta bool
+	}
+	run := func(f *fabricante, p jobs.BIOSPasswordParams, saveErr error) (string, []gravada, error) {
+		var got []gravada
+		r := Runner{BoxKeyID: kid, MachineID: maq, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+			Open:   func(purpose string, s []byte) ([]byte, error) { return machinebox.Open(priv, purpose, s) },
+			Detect: func(context.Context) (Vendor, error) { return f, nil },
+			SaveCopy: func(c string, u bool) error {
+				got = append(got, gravada{c, u})
+				return saveErr
+			}}
+		det, err := r.Run(context.Background(), 1, p)
+		return det, got, err
+	}
+
+	det, got, err := run(&fabricante{nome: "hp", called: true}, p, nil)
+	if err != nil || len(got) != 1 || got[0].copia != p.Copy || got[0].incerta || !strings.Contains(det, "cópia cifrada no Registro") {
+		t.Fatalf("código 0: %q %v %+v", det, err, got)
+	}
+	if c, _ := biospw.ParseCopy(got[0].copia); func() string { s, _ := c.Reveal(guardaPriv); return s }() != nova {
+		t.Error("a cópia gravada não revela a senha nova")
+	}
+	_, got, err = run(&fabricante{nome: "hp", called: true, code: 3}, p, nil)
+	if !errors.Is(err, ErrUncertain) || len(got) != 1 || !got[0].incerta || !strings.Contains(err.Error(), "ao lado da anterior") {
+		t.Errorf("incerta: %v %+v", err, got)
+	}
+	_, got, err = run(&fabricante{nome: "hp", called: true, err: errors.New("RPC")}, p, nil)
+	if !errors.Is(err, ErrUncertain) || len(got) != 1 || !got[0].incerta {
+		t.Errorf("quebrou no meio: %v %+v", err, got)
+	}
+	if _, got, err = run(&fabricante{nome: "hp", called: true, code: 6}, p, nil); err == nil || len(got) != 0 {
+		t.Errorf("falha clara não mexe na cópia: %v %+v", err, got)
+	}
+	// O Registro falhou: a BIOS já mudou, o job é sucesso com a nota.
+	det, _, err = run(&fabricante{nome: "hp", called: true}, p, errors.New("acesso negado"))
+	if err != nil || !strings.Contains(det, "não foi para o Registro (acesso negado)") {
+		t.Errorf("Registro falhou: %q %v", det, err)
+	}
+	// Cópia de outra máquina: recusa, nada chega ao fabricante.
+	outra := p
+	outra.Copy = copia("7aa604f7-0002")
+	f := &fabricante{nome: "hp", called: true}
+	if _, got, err := run(f, outra, nil); !errors.Is(err, jobs.ErrRefused) || f.chamadas != 0 || len(got) != 0 {
+		t.Errorf("outra máquina: %v %d %+v", err, f.chamadas, got)
+	}
+	// Job sem cópia (servidor anterior): grava, sem Registro.
+	sem := p
+	sem.Copy = ""
+	if det, got, err := run(&fabricante{nome: "hp", called: true}, sem, nil); err != nil || len(got) != 0 || strings.Contains(det, "Registro") {
+		t.Errorf("sem cópia: %q %v %+v", det, err, got)
 	}
 }

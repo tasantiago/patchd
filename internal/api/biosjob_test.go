@@ -34,6 +34,7 @@ func TestGravacaoDaSenhaDaBIOS(t *testing.T) {
 	h, st, _ := ambientePaginas(t, api.WithBIOSEscrow(guardaPriv), api.WithJobKey(jobPriv))
 
 	sim, nao := true, false
+	comCopia := true // o agente guarda a cópia de emergência (docs/bios-senha.md, seção 9)
 	firmware := func(fw protocol.Firmware) {
 		t.Helper()
 		_, err := st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "fw" + time.Now().Format("150405.000000000"),
@@ -47,6 +48,7 @@ func TestGravacaoDaSenhaDaBIOS(t *testing.T) {
 		if pub != nil {
 			e.BoxKey = machinebox.EncodePublic(pub)
 		}
+		e.BIOSCopy = comCopia
 		if err := st.SaveHostState(ctx, id, e, "192.0.2.1"); err != nil {
 			t.Fatal(err)
 		}
@@ -139,6 +141,12 @@ func TestGravacaoDaSenhaDaBIOS(t *testing.T) {
 	if strings.Contains(j1.Payload, senhaDa(b1)) || strings.Contains(j1.Payload, "Frota#2024") {
 		t.Fatal("senha legível no job")
 	}
+	// A cópia de emergência para o Registro: a da guarda, que só a chave de guarda abre.
+	if c, err := biospw.ParseCopy(p.Copy); err != nil || c.MachineID != id || c.Guard != b1.ID {
+		t.Errorf("cópia: %q %v", p.Copy, err)
+	} else if pw, err := c.Reveal(guardaPriv); err != nil || pw != senhaDa(b1) {
+		t.Errorf("a cópia não revela a senha nova: %v", err)
+	}
 	ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "bios.senha.gravar"})
 	if len(ev) != 1 || !strings.Contains(ev[0].Detail, "troca (senha atual informada pelo admin)") || strings.Contains(ev[0].Detail, "Frota#2024") {
 		t.Errorf("trilha: %+v", ev)
@@ -156,9 +164,17 @@ func TestGravacaoDaSenhaDaBIOS(t *testing.T) {
 		!strings.Contains(b, "/bios/"+itoa(b1.ID)+"/gravar") {
 		t.Error("recusa: de volta a pendente, com o motivo")
 	}
-	// Agora vai: concluído → ativa.
+	// Agora vai: concluído → ativa. Agente anterior à cópia de emergência: o job vai sem ela
+	// (o agente recusaria o campo novo).
+	comCopia = false
+	caixa(caixaPub)
 	gravar(b1.ID, url.Values{"senha_atual": {"Frota#2024"}})
-	j2, _ := ultimoJob()
+	j2, p2 := ultimoJob()
+	if p2.Copy != "" {
+		t.Error("cópia para um agente que não a entende")
+	}
+	comCopia = true
+	caixa(caixaPub)
 	_, _ = st.FinishJob(ctx, j2.ID, jobs.StateDone, "o inventário mostra a senha de administrador definida; agente: trocada (hp, código 0)", time.Now())
 	if b := pagina(h, "GET", hw, sessaoAdmin, nil).Body.String(); !strings.Contains(b, ">ativa</span>") || !strings.Contains(b, "Preparar senha nova") {
 		t.Errorf("ativa:\n%s", b)

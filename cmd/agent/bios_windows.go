@@ -11,7 +11,7 @@ import (
 
 // biosRunner: o executor do job bios_password (Aula 21.5), com a caixa desta máquina. Sem a
 // caixa, nil: o agente recusa esses jobs, e o servidor não os cria (o painel não vê a chave).
-func biosRunner(logger *slog.Logger, boxPriv []byte) func(context.Context, int64, jobs.BIOSPasswordParams) (string, error) {
+func biosRunner(logger *slog.Logger, boxPriv []byte, machineID string) func(context.Context, int64, jobs.BIOSPasswordParams) (string, error) {
 	if boxPriv == nil {
 		return nil
 	}
@@ -24,6 +24,9 @@ func biosRunner(logger *slog.Logger, boxPriv []byte) func(context.Context, int64
 		Open:     func(purpose string, sealed []byte) ([]byte, error) { return machinebox.Open(boxPriv, purpose, sealed) },
 		Detect:   bioswrite.Detect,
 		Logger:   logger,
+		// A cópia de emergência no Registro (docs/bios-senha.md, seção 9).
+		MachineID: machineID,
+		SaveCopy:  bioswrite.SaveRegistryCopy,
 	}
 	return r.Run
 }

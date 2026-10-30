@@ -16,10 +16,16 @@ comandos:
   keygen  cria a chave da guarda da senha da BIOS: -out ARQUIVO grava a privada (0600).
           Ela vai para o servidor como PATCHD_BIOS_ESCROW_KEY_FILE (segredo do compose)
   key     mostra a impressão da chave de guarda configurada (a mesma do painel e dos logs)
+  export  -out ARQUIVO: grava as senhas que podem estar valendo, ainda cifradas para a chave de
+          guarda (a cópia de emergência; pode ir para qualquer backup, agendada)
+  reveal  -key CHAVE (arquivo, ou - para colar) com -copia TEXTO (lida no Registro da máquina,
+          HKLM\SOFTWARE\patchd\BIOS) ou com -file EXPORT -machine ID_OU_NOME: mostra a senha
+          sem servidor e sem banco (fora da trilha: registre no chamado e troque depois)
 
 A guarda (Aula 21.4, docs/bios-senha.md): o servidor sorteia a senha de administrador da
 BIOS de cada máquina e guarda só o envelope cifrado para esta chave. Sem a privada, nenhuma
 senha guardada pode ser revelada: guarde duas cópias fora do servidor, longe da cópia do banco.
+A cópia de emergência: docs/bios-senha.md, seção 9.
 `
 
 func runBios(args []string, look config.Lookup, stdout, stderr io.Writer) int {
@@ -30,6 +36,10 @@ func runBios(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "keygen":
 		return biosKeygen(args[1:], stdout, stderr)
+	case "export":
+		return runBiosExport(args[1:], look, stdout, stderr)
+	case "reveal":
+		return runBiosReveal(args[1:], stdout, stderr)
 	case "key":
 		priv, err := biosEscrowKey(look)
 		if err == nil && priv == nil {

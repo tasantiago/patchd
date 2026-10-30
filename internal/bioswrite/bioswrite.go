@@ -50,6 +50,11 @@ type Runner struct {
 	Open     func(purpose string, sealed []byte) ([]byte, error) // abre um envelope da caixa
 	Detect   func(ctx context.Context) (Vendor, error)           // a interface do fabricante (ErrNoVendor: nenhuma)
 	Logger   *slog.Logger
+	// MachineID e SaveCopy: a cópia de emergência no Registro (docs/bios-senha.md, seção 9).
+	// SaveCopy nil: o agente não guarda cópia. uncertain: a gravação saiu sem resposta, e a
+	// cópia da senha anterior fica ao lado da nova.
+	MachineID string
+	SaveCopy  func(copy string, uncertain bool) error
 }
 
 // hpCodes: os códigos de retorno do SetBIOSSetting da HP (HP Client Management Interface).
@@ -90,6 +95,12 @@ func (r Runner) Run(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams)
 		}
 		defer clear(current)
 	}
+	if p.Copy != "" {
+		// A cópia tem de ser desta máquina: guardar a de outra deixaria a emergência sem senha.
+		if c, err := biospw.ParseCopy(p.Copy); err != nil || c.MachineID != r.MachineID {
+			return refuse("a cópia de emergência do job não é desta máquina")
+		}
+	}
 	v, err := r.Detect(ctx)
 	switch {
 	case errors.Is(err, ErrNoVendor):
@@ -113,20 +124,20 @@ func (r Runner) Run(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams)
 	case err != nil && !called:
 		return refuse("a chamada ao fabricante não chegou a ser feita (%v)", err)
 	case err != nil:
-		return "", fmt.Errorf("%w: a chamada ao fabricante quebrou no meio (%v)", ErrUncertain, err)
+		return "", fmt.Errorf("%w: a chamada ao fabricante quebrou no meio (%v)%s", ErrUncertain, err, r.saveCopy(p.Copy, true))
 	case code == 0:
 		what := "definida"
 		if current != nil {
 			what = "trocada"
 		}
-		return fmt.Sprintf("senha de administrador da BIOS %s (%s, código 0)", what, v.Name()), nil
+		return fmt.Sprintf("senha de administrador da BIOS %s (%s, código 0)%s", what, v.Name(), r.saveCopy(p.Copy, false)), nil
 	}
 	c, known := hpCodes[code]
 	if !known {
 		c.text, c.uncertain = "código desconhecido", true
 	}
 	if c.uncertain {
-		return "", fmt.Errorf("%w: %s respondeu %d (%s)", ErrUncertain, v.Name(), code, c.text)
+		return "", fmt.Errorf("%w: %s respondeu %d (%s)%s", ErrUncertain, v.Name(), code, c.text, r.saveCopy(p.Copy, true))
 	}
 	return "", fmt.Errorf("%s respondeu %d (%s); a senha anterior continua valendo", v.Name(), code, c.text)
 }
@@ -137,4 +148,20 @@ func (r Runner) openPassword(purpose, b64 string) ([]byte, error) {
 		return nil, err
 	}
 	return r.Open(purpose, sealed)
+}
+
+// saveCopy guarda a cópia de emergência e devolve o que vai no fim do detalhe. A BIOS já
+// mudou: uma falha aqui não desfaz nada, só fica anotada.
+func (r Runner) saveCopy(copy string, uncertain bool) string {
+	if copy == "" || r.SaveCopy == nil {
+		return ""
+	}
+	if err := r.SaveCopy(copy, uncertain); err != nil {
+		r.Logger.Warn("cópia de emergência da senha da BIOS não gravada no Registro", "error", err)
+		return fmt.Sprintf("; a cópia cifrada não foi para o Registro (%v)", err)
+	}
+	if uncertain {
+		return "; cópia cifrada da senha nova no Registro, ao lado da anterior"
+	}
+	return "; cópia cifrada no Registro"
 }

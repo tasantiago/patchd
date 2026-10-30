@@ -119,6 +119,7 @@ type biosFacts struct {
 	Firmware *protocol.Firmware
 	BoxKey   []byte
 	BoxKeyID string
+	CopyOK   bool // o agente guarda a cópia de emergência no Registro
 }
 
 func (a *api) biosFacts(ctx context.Context, id string) (biosFacts, error) {
@@ -138,6 +139,7 @@ func (a *api) biosFacts(ctx context.Context, id string) (biosFacts, error) {
 		if pub, err := machinebox.ParsePublic(h.State.BoxKey); err == nil {
 			f.BoxKey, f.BoxKeyID = pub, machinebox.KeyID(pub)
 		}
+		f.CopyOK = h.State.BIOSCopy
 	}
 	return f, nil
 }
@@ -255,6 +257,14 @@ func (a *api) writeBIOSAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	if err != nil {
 		a.internalError(w, r, "fechar a senha para a caixa", err)
 		return
+	}
+	// A cópia de emergência que a máquina guarda no Registro (docs/bios-senha.md, seção 9): o
+	// mesmo envelope da guarda, que só a chave de guarda abre. Só para o agente que a entende.
+	if facts.CopyOK {
+		if p.Copy, err = (biospw.Copy{MachineID: id, Guard: gid, KeyID: target.EscrowKeyID, Escrow: target.Escrow}).Format(); err != nil {
+			a.internalError(w, r, "montar a cópia de emergência", err)
+			return
+		}
 	}
 	raw, err := jobs.BIOSPasswordParamsJSON(p)
 	if err != nil {

@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+
+	"github.com/tasantiago/patchd/internal/biospw"
+	"github.com/tasantiago/patchd/internal/machinebox"
 )
 
 func TestParametrosDaSenhaDaBIOS(t *testing.T) {
@@ -42,5 +45,31 @@ func TestParametrosDaSenhaDaBIOS(t *testing.T) {
 	}
 	if !KnownType(TypeBIOSPassword) {
 		t.Error("tipo desconhecido")
+	}
+}
+
+func TestCopiaNoJobDaSenha(t *testing.T) {
+	priv, _ := machinebox.Generate()
+	pub, _ := machinebox.Public(priv)
+	envGuarda, _ := biospw.Seal(pub, "60ef97e4-0001", "abcd2345efgh")
+	copia := func(guard int64) string {
+		s, _ := biospw.Copy{MachineID: "60ef97e4-0001", Guard: guard, KeyID: machinebox.KeyID(pub), Escrow: envGuarda}.Format()
+		return s
+	}
+	env := base64.StdEncoding.EncodeToString([]byte("envelope"))
+	p := BIOSPasswordParams{Guard: 3, Vendor: "hp", BoxKey: "0123456789ab", New: env, Copy: copia(3)}
+	raw, err := BIOSPasswordParamsJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ParseBIOSPasswordParams(raw); err != nil || got.Copy != p.Copy {
+		t.Fatalf("%+v %v", got, err)
+	}
+	for nome, c := range map[string]string{"outra guarda": copia(4), "fora do formato": "patchd-bios-1:x", "senha em texto": "abcd2345efgh"} {
+		q := p
+		q.Copy = c
+		if _, err := BIOSPasswordParamsJSON(q); err == nil {
+			t.Errorf("%s: aceita", nome)
+		}
 	}
 }

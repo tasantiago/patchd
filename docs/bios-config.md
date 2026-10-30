@@ -101,29 +101,18 @@ reinício").
 | C2 | categorias: energia/WoL, boot, virtualização/segurança, portas/dispositivos | TPM, modo de boot e placa cabeada ficam fora mesmo assim (seção 3) |
 | B1 | BitLocker suspenso por um reinício | volta sozinho depois do reinício; sem gravação, volta na hora |
 | S1 | a senha atual vem da guarda | máquina sem senha ativa na guarda: o painel pede para gravar uma pela guarda antes |
-| R1 | **em aberto**: cópia da senha no Registro da máquina, para quando o servidor não responde | ver seção 7 |
+| R1 | cópia **cifrada** da guarda no Registro da máquina e no `bios export`, aberta só com a chave de guarda offline; a senha legível na máquina, não | ver seção 7 e `docs/bios-senha.md`, seção 9 |
 
-## 7. A senha também no Registro da máquina (R1, em aberto)
+## 7. A senha também no Registro da máquina (R1, decidida)
 
 O pedido: além da guarda, deixar a senha registrada na própria máquina, para a equipe N1/N2
 (as únicas com administrador local) entrar na BIOS quando o servidor não responder.
 
-É o problema número 1 do `.bat` (`docs/bios-senha.md`, seção 1): **a senha legível na
-máquina**. No Registro, qualquer conta com administrador local, ou qualquer programa rodando
-como administrador ou SYSTEM (malware incluído), lê a senha. Com ela, esse programa troca
-qualquer configuração da BIOS pelo mesmo WMI que o patchd usa: desligar o Secure Boot, ligar o
-boot por USB, desligar o TPM. Uma ACL só para administradores não muda isso, porque é
-exatamente quem ataca com administrador local que a senha da BIOS deveria barrar. O alcance é
-de uma máquina (a senha é por máquina, D2), não da frota.
+A senha **legível** no Registro foi recusada: é o problema número 1 do `.bat`
+(`docs/bios-senha.md`, seção 1). Qualquer conta com administrador local, ou qualquer programa
+rodando como administrador ou SYSTEM (malware incluído), leria a senha e trocaria qualquer
+configuração da BIOS pelo mesmo WMI que o patchd usa.
 
-Alternativas que atendem "o servidor caiu e preciso entrar na BIOS":
-
-- **Cópia de emergência da guarda fora do servidor**: exportar periodicamente as senhas
-  fechadas para a chave de guarda (que já existe) e guardar a chave privada offline (cofre,
-  envelope lacrado). Com o servidor fora, quem tem a chave revela num host qualquer. Exige
-  dois comandos novos (`patchd-server bios export` e `bios reveal`): hoje o `bios` só tem
-  `keygen` e `key`.
-- **Cofre de senhas da equipe** (o que N1/N2 já usam para outras contas), alimentado pela
-  revelação auditada do painel.
-
-Até a decisão, nada é gravado no Registro.
+**Decisão (30/10/2026):** a máquina guarda no Registro a **cópia cifrada** da guarda, e o
+servidor exporta as mesmas cópias para fora dele; só a chave privada de guarda, guardada
+offline, abre qualquer uma delas. Desenho em `docs/bios-senha.md`, seção 9.
