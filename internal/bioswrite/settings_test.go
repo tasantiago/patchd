@@ -23,6 +23,8 @@ type biosFalsa struct {
 	quebra   map[string]bool   // a chamada quebra no meio
 	gravadas []string
 	senhas   []string
+	commit   *Reply // a resposta do salvar (nil: o fabricante não precisa)
+	salvos   int
 }
 
 func (b *biosFalsa) Name() string                            { return "hp" }
@@ -30,13 +32,20 @@ func (b *biosFalsa) SureAdmin(context.Context) (bool, error) { return b.sure, ni
 func (b *biosFalsa) Settings(context.Context) ([]protocol.BIOSSetting, error) {
 	return b.settings, nil
 }
-func (b *biosFalsa) SetSetting(_ context.Context, name, value string, pw []byte) (uint32, bool, error) {
+func (b *biosFalsa) SetSetting(_ context.Context, name, value string, pw []byte) (Reply, bool, error) {
 	b.gravadas = append(b.gravadas, name+"="+value)
 	b.senhas = append(b.senhas, string(pw))
 	if b.quebra[name] {
-		return 0, true, errors.New("RPC_E_DISCONNECTED")
+		return Reply{}, true, errors.New("RPC_E_DISCONNECTED")
 	}
-	return b.codes[name], true, nil
+	return hpReply(b.codes[name]), true, nil
+}
+func (b *biosFalsa) Commit(context.Context, []byte) (Reply, bool, error) {
+	if b.commit == nil {
+		return Reply{Code: "-", OK: true}, false, nil
+	}
+	b.salvos++
+	return *b.commit, true, nil
 }
 
 // bitlockerFalso conta as chamadas.
@@ -195,6 +204,40 @@ func TestBIOSSettings(t *testing.T) {
 		_, err := run(b, bl, params(wol, biosconfig.Change{Name: "Fast Boot", Value: "Turbo"}))
 		if err == nil || len(b.gravadas) != 0 || bl.suspensos != 0 || !strings.Contains(err.Error(), "recusada pelo agente") {
 			t.Fatalf("err %v, gravadas %v, suspensos %d", err, b.gravadas, bl.suspensos)
+		}
+	})
+
+	// Lenovo: nada vale sem o salvar.
+	t.Run("salvar confirmado", func(t *testing.T) {
+		ok := lenovoReply("Success")
+		b, bl := &biosFalsa{settings: base(), commit: &ok}, &bitlockerFalso{on: true}
+		detail, err := run(b, bl, params(wol, vtx))
+		if err != nil || b.salvos != 1 || !strings.Contains(detail, "valem no próximo reinício") {
+			t.Fatalf("err %v, salvos %d: %s", err, b.salvos, detail)
+		}
+	})
+	t.Run("salvar recusado: nada gravado e BitLocker religado", func(t *testing.T) {
+		negado := lenovoReply("Access Denied")
+		b, bl := &biosFalsa{settings: base(), commit: &negado}, &bitlockerFalso{on: true}
+		_, err := run(b, bl, params(wol, vtx))
+		if err == nil || !strings.Contains(err.Error(), "Wake On LAN: recusada pela BIOS (a confirmação (salvar) respondeu código Access Denied") ||
+			bl.religado != 1 || strings.Contains(err.Error(), "valem no próximo reinício") {
+			t.Fatalf("religado %d: %v", bl.religado, err)
+		}
+	})
+	t.Run("salvar sem resposta conhecida: incerto, BitLocker fica suspenso", func(t *testing.T) {
+		estranho := lenovoReply("Weird")
+		b, bl := &biosFalsa{settings: base(), commit: &estranho}, &bitlockerFalso{on: true}
+		_, err := run(b, bl, params(wol))
+		if err == nil || !strings.Contains(err.Error(), "resultado incerto") || bl.religado != 0 {
+			t.Fatalf("religado %d: %v", bl.religado, err)
+		}
+	})
+	t.Run("nada gravado: não salva", func(t *testing.T) {
+		ok := lenovoReply("Success")
+		b := &biosFalsa{settings: base(), commit: &ok, codes: map[string]uint32{"Wake On LAN": 5}}
+		if _, err := run(b, &bitlockerFalso{}, params(wol)); err == nil || b.salvos != 0 {
+			t.Fatalf("salvos %d: %v", b.salvos, err)
 		}
 	})
 

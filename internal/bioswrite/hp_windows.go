@@ -16,13 +16,33 @@ const (
 	hpSureAdminSetting = "Enhanced BIOS Authentication Mode"
 )
 
-// Detect devolve a interface do fabricante desta máquina (só a HP, por enquanto).
-func Detect(ctx context.Context) (Vendor, error) { return detectHP(ctx) }
+// Detect devolve a interface do fabricante desta máquina (HP, Dell ou Lenovo; docs/bios-config.md,
+// seção 8). Um modelo sem a interface WMI do fabricante passa aqui e falha na primeira
+// consulta, antes de qualquer escrita.
+func Detect(ctx context.Context) (Vendor, error) {
+	v, err := detect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
 
 // DetectSettings é o Detect do job bios_settings.
-func DetectSettings(ctx context.Context) (SettingsVendor, error) { return detectHP(ctx) }
+func DetectSettings(ctx context.Context) (SettingsVendor, error) {
+	v, err := detect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
 
-func detectHP(ctx context.Context) (hpVendor, error) {
+// vendorImpl: o que cada fabricante implementa.
+type vendorImpl interface {
+	Vendor
+	SettingsVendor
+}
+
+func detect(ctx context.Context) (vendorImpl, error) {
 	var vendor string
 	err := wincom.Do(ctx, func() error {
 		rows, err := wincom.Query(`root\cimv2`, "SELECT Vendor FROM Win32_ComputerSystemProduct", []string{"Vendor"})
@@ -35,13 +55,18 @@ func detectHP(ctx context.Context) (hpVendor, error) {
 		}
 		return nil
 	})
-	switch {
-	case err != nil:
-		return hpVendor{}, err
-	case vendor == "hp":
-		return hpVendor{}, nil
+	if err != nil {
+		return nil, err
 	}
-	return hpVendor{}, ErrNoVendor
+	switch vendor {
+	case "hp":
+		return hpVendor{}, nil
+	case "dell":
+		return dellVendor{}, nil
+	case "lenovo":
+		return lenovoVendor{}, nil
+	}
+	return nil, ErrNoVendor
 }
 
 type hpVendor struct{}
@@ -62,9 +87,9 @@ func (hpVendor) SureAdmin(ctx context.Context) (bool, error) {
 	return on, err
 }
 
-func (hpVendor) SetAdminPassword(ctx context.Context, newPW, current []byte) (uint32, bool, error) {
+func (hpVendor) SetAdminPassword(ctx context.Context, newPW, current []byte) (Reply, bool, error) {
 	var (
-		code   uint32
+		reply  Reply
 		called bool
 	)
 	err := wincom.Do(ctx, func() error {
@@ -75,10 +100,11 @@ func (hpVendor) SetAdminPassword(ctx context.Context, newPW, current []byte) (ui
 		if err != nil {
 			return err
 		}
-		code, err = asCode(row["Return"])
+		code, err := asCode(row["Return"])
+		reply = hpReply(code)
 		return err
 	})
-	return code, called, err
+	return reply, called, err
 }
 
 // Settings lê as configurações de escolha como estão agora (o job bios_settings confere
@@ -103,9 +129,9 @@ func (hpVendor) Settings(ctx context.Context) ([]protocol.BIOSSetting, error) {
 
 // SetSetting grava uma configuração (SetBIOSSetting) com a senha em uso (só o prefixo, se a
 // BIOS estiver sem senha).
-func (hpVendor) SetSetting(ctx context.Context, name, value string, password []byte) (uint32, bool, error) {
+func (hpVendor) SetSetting(ctx context.Context, name, value string, password []byte) (Reply, bool, error) {
 	var (
-		code   uint32
+		reply  Reply
 		called bool
 	)
 	err := wincom.Do(ctx, func() error {
@@ -116,8 +142,14 @@ func (hpVendor) SetSetting(ctx context.Context, name, value string, password []b
 		if err != nil {
 			return err
 		}
-		code, err = asCode(row["Return"])
+		code, err := asCode(row["Return"])
+		reply = hpReply(code)
 		return err
 	})
-	return code, called, err
+	return reply, called, err
+}
+
+// Commit: a HP aplica cada SetBIOSSetting sozinho.
+func (hpVendor) Commit(context.Context, []byte) (Reply, bool, error) {
+	return Reply{Code: "-", OK: true}, false, nil
 }

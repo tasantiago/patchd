@@ -31,8 +31,8 @@ type BIOSPasswordParams struct {
 }
 
 // BIOSVendors: as interfaces que o job aceita. A HP primeiro (é onde o .bat rodou); Dell e
-// Lenovo entram quando forem conferidas no laboratório.
-var BIOSVendors = []string{"hp"}
+// Lenovo desde docs/bios-config.md, seção 8 (o piloto de cada uma começa por uma máquina).
+var BIOSVendors = []string{"hp", "dell", "lenovo"}
 
 // BIOSUncertain: o começo do detalhe do resultado quando o agente não sabe se a BIOS gravou
 // (a chamada ao fabricante quebrou no meio). O servidor marca a senha como "incerta".

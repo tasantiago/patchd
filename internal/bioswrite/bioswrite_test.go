@@ -29,10 +29,10 @@ type fabricante struct {
 
 func (f *fabricante) Name() string                            { return f.nome }
 func (f *fabricante) SureAdmin(context.Context) (bool, error) { return f.sure, f.sureErr }
-func (f *fabricante) SetAdminPassword(_ context.Context, n, c []byte) (uint32, bool, error) {
+func (f *fabricante) SetAdminPassword(_ context.Context, n, c []byte) (Reply, bool, error) {
 	f.chamadas++
 	f.novaVista, f.atual, f.temAtual = string(n), string(c), c != nil
-	return f.code, f.called, f.err
+	return hpReply(f.code), f.called, f.err
 }
 
 func TestGravacao(t *testing.T) {
@@ -130,7 +130,7 @@ func TestHP(t *testing.T) {
 			t.Errorf("%v", v)
 		}
 	}
-	for m, quer := range map[string]string{"HP": "hp", "Hewlett-Packard": "hp", "HP Inc.": "hp", "LENOVO": "", "Dell Inc.": ""} {
+	for m, quer := range map[string]string{"HP": "hp", "Hewlett-Packard": "hp", "HP Inc.": "hp", "LENOVO": "lenovo", "Dell Inc.": "dell", "ASUSTeK": ""} {
 		if vendorOf(m) != quer {
 			t.Errorf("%s", m)
 		}

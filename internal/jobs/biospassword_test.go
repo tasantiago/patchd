@@ -25,13 +25,13 @@ func TestParametrosDaSenhaDaBIOS(t *testing.T) {
 		t.Errorf("sem a atual (BIOS sem senha): %v", err)
 	}
 	for nome, muda := range map[string]func(*BIOSPasswordParams){
-		"sem guarda":       func(p *BIOSPasswordParams) { p.Guard = 0 },
-		"dell (ainda não)": func(p *BIOSPasswordParams) { p.Vendor = "dell" },
-		"chave curta":      func(p *BIOSPasswordParams) { p.BoxKey = "0123" },
-		"sem a nova":       func(p *BIOSPasswordParams) { p.New = "" },
-		"nova sem base64":  func(p *BIOSPasswordParams) { p.New = "senha123!" },
-		"atual sem base64": func(p *BIOSPasswordParams) { p.Current = "!!" },
-		"envelope enorme":  func(p *BIOSPasswordParams) { p.New = strings.Repeat("A", maxSealed+4) },
+		"sem guarda":           func(p *BIOSPasswordParams) { p.Guard = 0 },
+		"asus (sem interface)": func(p *BIOSPasswordParams) { p.Vendor = "asus" },
+		"chave curta":          func(p *BIOSPasswordParams) { p.BoxKey = "0123" },
+		"sem a nova":           func(p *BIOSPasswordParams) { p.New = "" },
+		"nova sem base64":      func(p *BIOSPasswordParams) { p.New = "senha123!" },
+		"atual sem base64":     func(p *BIOSPasswordParams) { p.Current = "!!" },
+		"envelope enorme":      func(p *BIOSPasswordParams) { p.New = strings.Repeat("A", maxSealed+4) },
 	} {
 		p := ok
 		muda(&p)

@@ -169,7 +169,8 @@ quem resolve.
   (ativo A10). **Na 21.5**: a gravação na HP pelo job `bios_password` (senhas fechadas para a
   caixa da máquina; a da frota digitada uma vez na primeira troca; uma chamada ao fabricante,
   sem nova tentativa; Sure Admin respeitado; incerta trava até alguém conferir). Falta aposentar
-  o `.bat` depois do piloto, e Dell e Lenovo (21.6). **Configurações da BIOS**
+  o `.bat` depois do piloto. Dell e Lenovo: mesmos jobs e regras (`docs/bios-config.md`,
+  seção 8), ainda sem máquina de bancada conferida. **Configurações da BIOS**
   (`docs/bios-config.md`): o job `bios_settings` altera só a lista fechada de
   `internal/biosconfig` (senhas, TPM, modo de boot, ordem de boot, atualização de firmware e a
   placa cabeada ficam de fora; ligar o suporte legado é recusado), conferida no servidor e de

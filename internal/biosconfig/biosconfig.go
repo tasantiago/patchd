@@ -50,6 +50,9 @@ var excluded = []string{
 	"absolute", "computrace", "lojack",
 	// A placa cabeada: desligar tira a máquina do patchd.
 	"networkinterfacecontroller", "integratednic", "embeddednic", "onboardnic", "lancontroller", "integratedlan",
+	"ethernetlan", "embnic", // Lenovo EthernetLANAccess, Dell EmbNic1
+	// Lenovo "Security Chip" é o TPM; Dell SecureBootMode (Audit desliga a conferência).
+	"securitychip", "securebootmode",
 }
 
 // rules, na ordem de busca: a primeira que casa decide.
@@ -57,24 +60,32 @@ var rules = []Rule{
 	{Category: CatPower, contains: []string{
 		"wakeonlan", "wakeonwlan", "wakeonusb", "deepsleep", "maximumpowersaving", "maxpowersaving",
 		"afterpowerloss", "poweronwhenacdetected", "poweronwhenlidisopened", "wakeunitfromsleep",
+		// Dell (docs/bios-config.md, seção 8): AcPwrRcvry, UsbWake, BlockSleep, AutoOn.
+		"acpwrrcvry", "acpowerrecovery", "usbwake", "blocksleep", "autoon",
 	}},
 	{Category: CatBoot, contains: []string{
 		"fastboot", "usbstorageboot", "usbboot", "networkpxeboot", "pxeboot", "networkboot",
 		"startupdelay", "audioalertsduringboot", "numlockonatboot", "promptonmemorysizechange",
+		// Lenovo: QuickBoot, USBBIOSSupport, BootUpNumLockStatus, IPv4NetworkStack; Dell: UefiNwStack.
+		"quickboot", "usbbiossupport", "numlock", "networkstack", "uefinwstack",
 	}},
 	{Category: CatVirtSec, Risk: true,
-		Note:       "muda o que o TPM mede na partida: o BitLocker é suspenso por um reinício antes da gravação",
-		exact:      []string{"configurelegacysupportandsecureboot"},
-		contains:   []string{"virtualizationtechnology", "vtx", "vtd", "svmcpuvirtualization", "secureboot"},
+		Note: "muda o que o TPM mede na partida: o BitLocker é suspenso por um reinício antes da gravação",
+		// Dell: Virtualization (o nome inteiro: um "contains" pegaria "Virtualization Based BIOS
+		// Protection") e VtForDirectIo; Lenovo: VirtualizationTechnology e VTdFeature.
+		exact:      []string{"configurelegacysupportandsecureboot", "virtualization"},
+		contains:   []string{"virtualizationtechnology", "vtx", "vtd", "svmcpuvirtualization", "secureboot", "vtfordirectio"},
 		denyValues: []string{"legacysupportenable"},
 	},
 	{Category: CatDevices, Risk: true,
-		Note:     "pode tirar a máquina da rede (Wi-Fi) ou desligar teclado e mouse (USB, Bluetooth)",
-		contains: []string{"wirelessnetworkdevice", "wlan", "bluetooth", "usbport"},
+		Note: "pode tirar a máquina da rede (Wi-Fi) ou desligar teclado e mouse (USB, Bluetooth)",
+		contains: []string{"wirelessnetworkdevice", "wlan", "bluetooth", "usbport",
+			"wirelesslan", "wirelesswan", "wwan"}, // Lenovo WirelessLANAccess, Dell WirelessLan e WirelessWwan
 	},
 	{Category: CatDevices, contains: []string{
 		"integratedcamera", "camera", "microphone", "internalspeaker", "fingerprint", "mediacardreader",
 		"smartcard", "cardreader",
+		"memorycardslot", "mediacard", "sdcard", // Lenovo MemoryCardSlotAccess, Dell MediaCard e SdCard
 	}},
 }
 

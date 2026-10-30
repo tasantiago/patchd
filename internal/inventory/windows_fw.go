@@ -38,6 +38,8 @@ type wmiFirmware struct {
 	// docs/bios-config.md: as configurações da BIOS da HP, como vieram de cada classe.
 	SettingsQueried bool
 	Settings        []hpSettingRow
+	// docs/bios-config.md, seção 8: as da Dell e da Lenovo, já traduzidas (internal/biosvendor).
+	VendorSettings []protocol.BIOSSetting
 }
 
 // hpSettingRow é uma linha de uma das classes de configuração da HP.
@@ -175,8 +177,12 @@ func windowsFirmwareInfo(w wmiFirmware) *protocol.Firmware {
 			v, _ := w.SureAdmin["CurrentValue"].(string)
 			f.SureAdmin = boolPtr(strings.EqualFold(strings.TrimSpace(v), "Enable")) // sem a configuração: desligado
 		}
-		if f.Interface == protocol.FirmwareHP && w.SettingsQueried {
+		switch {
+		case !w.SettingsQueried:
+		case f.Interface == protocol.FirmwareHP:
 			f.Settings = hpBIOSSettings(w.Settings)
+		default:
+			f.Settings = append([]protocol.BIOSSetting{}, w.VendorSettings...)
 		}
 	}
 	if f.Empty() {

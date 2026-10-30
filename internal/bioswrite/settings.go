@@ -25,7 +25,10 @@ type SettingsVendor interface {
 	Settings(ctx context.Context) ([]protocol.BIOSSetting, error)
 	// SetSetting grava uma configuração e devolve o código do fabricante. called = false: a
 	// chamada nem chegou a ser feita.
-	SetSetting(ctx context.Context, name, value string, password []byte) (code uint32, called bool, err error)
+	SetSetting(ctx context.Context, name, value string, password []byte) (reply Reply, called bool, err error)
+	// Commit confirma as gravações, nos fabricantes que pedem (a Lenovo só aplica depois do
+	// SaveBiosSettings). Nos outros: Reply{OK: true}, sem chamada.
+	Commit(ctx context.Context, password []byte) (reply Reply, called bool, err error)
 }
 
 // BitLocker é a proteção do disco do sistema.
@@ -159,7 +162,7 @@ func (r SettingsRunner) Run(ctx context.Context, jobID int64, p jobs.BIOSSetting
 			continue
 		}
 		c := p.Changes[i]
-		code, called, err := v.SetSetting(ctx, c.Name, c.Value, password)
+		reply, called, err := v.SetSetting(ctx, c.Name, c.Value, password)
 		switch {
 		case err != nil && !called:
 			outs[i].status, outs[i].why = outNotTried, fmt.Sprintf("a chamada não chegou a ser feita: %v", err)
@@ -167,27 +170,22 @@ func (r SettingsRunner) Run(ctx context.Context, jobID int64, p jobs.BIOSSetting
 		case err != nil:
 			outs[i].status, outs[i].why = outUncertain, fmt.Sprintf("a chamada quebrou no meio: %v", err)
 			stopped, uncertain = "resultado incerto na anterior", true
-		case code == 0:
+		case reply.OK:
 			outs[i].status = outWritten
 			written++
+		case reply.Uncertain:
+			outs[i].status, outs[i].why = outUncertain, reply.String()
+			stopped, uncertain = "resultado incerto na anterior", true
+		case reply.WrongPassword:
+			// Senha não confere: outra tentativa pode travar a BIOS.
+			outs[i].status, outs[i].why = outRefused, reply.String()
+			stopped = "a senha não conferiu; nenhuma outra chamada para não travar a BIOS"
 		default:
-			hc, known := hpCodes[code]
-			if !known {
-				hc.text, hc.uncertain = "código desconhecido", true
-			}
-			why := fmt.Sprintf("código %d: %s", code, hc.text)
-			switch {
-			case hc.uncertain:
-				outs[i].status, outs[i].why = outUncertain, why
-				stopped, uncertain = "resultado incerto na anterior", true
-			case code == 6:
-				// Senha não confere: outra tentativa pode travar a BIOS.
-				outs[i].status, outs[i].why = outRefused, why
-				stopped = "a senha não conferiu; nenhuma outra chamada para não travar a BIOS"
-			default:
-				outs[i].status, outs[i].why = outRefused, why
-			}
+			outs[i].status, outs[i].why = outRefused, reply.String()
 		}
+	}
+	if written > 0 {
+		written, uncertain = r.commit(ctx, v, password, outs, written, uncertain)
 	}
 
 	var tail []string
@@ -208,6 +206,32 @@ func (r SettingsRunner) Run(ctx context.Context, jobID int64, p jobs.BIOSSetting
 		tail = append(tail, "BitLocker continua suspenso até o próximo reinício (resultado incerto)")
 	}
 	return finish(outs, tail)
+}
+
+// commit confirma as gravações (Lenovo: SaveBiosSettings). Se a confirmação não sai, as
+// gravadas viram recusadas (nada foi salvo) ou incertas; devolve o que ficou gravado.
+func (r SettingsRunner) commit(ctx context.Context, v SettingsVendor, password []byte, outs []outcome, written int, uncertain bool) (int, bool) {
+	reply, called, err := v.Commit(ctx, password)
+	status, why := "", ""
+	switch {
+	case err != nil && !called:
+		status, why = outRefused, fmt.Sprintf("a confirmação (salvar) não chegou a ser feita: %v", err)
+	case err != nil:
+		status, why = outUncertain, fmt.Sprintf("a confirmação (salvar) quebrou no meio: %v", err)
+	case reply.OK:
+		return written, uncertain
+	case reply.Uncertain:
+		status, why = outUncertain, "a confirmação (salvar) respondeu "+reply.String()
+	default:
+		status, why = outRefused, "a confirmação (salvar) respondeu "+reply.String()
+	}
+	for i := range outs {
+		if outs[i].status == outWritten {
+			outs[i].status, outs[i].why = status, why
+		}
+	}
+	r.Logger.Warn("a BIOS não confirmou as gravações", "fabricante", v.Name(), "resultado", why)
+	return 0, uncertain || status == outUncertain
 }
 
 // finish monta o detalhe e decide o erro: qualquer configuração não gravada (fora as que já

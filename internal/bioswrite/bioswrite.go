@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/tasantiago/patchd/internal/biospw"
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -35,11 +36,45 @@ type Vendor interface {
 	SureAdmin(ctx context.Context) (bool, error)
 	// SetAdminPassword troca (ou define, com current vazio) a senha de administrador e
 	// devolve o código do fabricante. called = false: a chamada nem chegou a ser feita.
-	SetAdminPassword(ctx context.Context, newPW, current []byte) (code uint32, called bool, err error)
+	SetAdminPassword(ctx context.Context, newPW, current []byte) (reply Reply, called bool, err error)
 }
 
 // ErrNoVendor: a máquina não tem a interface de nenhum fabricante conhecido.
 var ErrNoVendor = errors.New("nenhuma interface de fabricante respondeu nesta máquina")
+
+// Reply é a resposta do fabricante, já traduzida (cada um tem os seus códigos: números na HP e
+// na Dell, texto na Lenovo).
+type Reply struct {
+	Code string // como veio ("0", "6", "Access Denied")
+	Text string // o que quer dizer
+	OK   bool
+	// WrongPassword: a senha não conferiu. Nenhuma outra chamada no mesmo job: repetir a senha
+	// errada trava a BIOS até reiniciar.
+	WrongPassword bool
+	// Uncertain: não se sabe se a BIOS gravou.
+	Uncertain bool
+}
+
+func (r Reply) String() string {
+	if r.Text == "" {
+		return "código " + r.Code
+	}
+	return fmt.Sprintf("código %s: %s", r.Code, r.Text)
+}
+
+// hpReply traduz o código da HP.
+func hpReply(code uint32) Reply {
+	r := Reply{Code: strconv.FormatUint(uint64(code), 10), OK: code == 0}
+	if r.OK {
+		return r
+	}
+	c, known := hpCodes[code]
+	if !known {
+		c.text, c.uncertain = "código desconhecido", true
+	}
+	r.Text, r.Uncertain, r.WrongPassword = c.text, c.uncertain, code == 6
+	return r
+}
 
 // ErrUncertain: a chamada quebrou no meio; não se sabe se a BIOS gravou.
 var ErrUncertain = jobs.ErrBIOSUncertain
@@ -119,27 +154,22 @@ func (r Runner) Run(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams)
 	}
 	r.Logger.Warn("gravando a senha de administrador da BIOS", "job_id", jobID, "guarda", p.Guard, "fabricante", v.Name(),
 		"troca", current != nil)
-	code, called, err := v.SetAdminPassword(ctx, newPW, current)
+	reply, called, err := v.SetAdminPassword(ctx, newPW, current)
 	switch {
 	case err != nil && !called:
 		return refuse("a chamada ao fabricante não chegou a ser feita (%v)", err)
 	case err != nil:
 		return "", fmt.Errorf("%w: a chamada ao fabricante quebrou no meio (%v)%s", ErrUncertain, err, r.saveCopy(p.Copy, true))
-	case code == 0:
+	case reply.OK:
 		what := "definida"
 		if current != nil {
 			what = "trocada"
 		}
-		return fmt.Sprintf("senha de administrador da BIOS %s (%s, código 0)%s", what, v.Name(), r.saveCopy(p.Copy, false)), nil
+		return fmt.Sprintf("senha de administrador da BIOS %s (%s, código %s)%s", what, v.Name(), reply.Code, r.saveCopy(p.Copy, false)), nil
+	case reply.Uncertain:
+		return "", fmt.Errorf("%w: %s respondeu %s (%s)%s", ErrUncertain, v.Name(), reply.Code, reply.Text, r.saveCopy(p.Copy, true))
 	}
-	c, known := hpCodes[code]
-	if !known {
-		c.text, c.uncertain = "código desconhecido", true
-	}
-	if c.uncertain {
-		return "", fmt.Errorf("%w: %s respondeu %d (%s)%s", ErrUncertain, v.Name(), code, c.text, r.saveCopy(p.Copy, true))
-	}
-	return "", fmt.Errorf("%s respondeu %d (%s); a senha anterior continua valendo", v.Name(), code, c.text)
+	return "", fmt.Errorf("%s respondeu %s (%s); a senha anterior continua valendo", v.Name(), reply.Code, reply.Text)
 }
 
 func (r Runner) openPassword(purpose, b64 string) ([]byte, error) {

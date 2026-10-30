@@ -90,16 +90,16 @@ func TestGravacaoDaSenhaDaBIOS(t *testing.T) {
 		return local(pagina(h, "POST", maq+"/bios/"+itoa(gid)+"/gravar", sessaoAdmin, form))
 	}
 
-	// Bloqueios: Lenovo, Sure Admin, sem a caixa.
+	// Bloqueios: sem a interface do fabricante, Sure Admin, sem a caixa.
 	b1 := prepara()
-	firmware(protocol.Firmware{Interface: "lenovo", AdminPassword: &nao})
+	firmware(protocol.Firmware{Mode: protocol.FirmwareUEFI})
 	caixa(caixaPub)
-	if b := pagina(h, "GET", hw, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Gravação indisponível: por enquanto o patchd grava só na BIOS da HP") ||
+	if b := pagina(h, "GET", hw, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Gravação indisponível: o inventário não mostra a interface do fabricante") ||
 		strings.Contains(b, "/gravar") {
-		t.Error("Lenovo: o motivo, sem o botão")
+		t.Error("sem interface: o motivo, sem o botão")
 	}
 	if r := gravar(b1.ID, nil); r != hw+"&bios-erro=bloqueada" {
-		t.Errorf("Lenovo: %s", r)
+		t.Errorf("sem interface: %s", r)
 	}
 	firmware(protocol.Firmware{Interface: "hp", AdminPassword: &sim, SureAdmin: &sim})
 	if b := pagina(h, "GET", hw, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "HP Sure Admin ligado") {

@@ -90,7 +90,7 @@ type Firmware struct {
 	// "Enhanced BIOS Authentication Mode") está ligado. Nesse modo a BIOS recusa a troca de
 	// senha por senha (exige um pacote assinado), e o patchd não grava. nil: não se sabe.
 	SureAdmin *bool `json:"sure_admin,omitempty"`
-	// Settings (docs/bios-config.md, só HP): as configurações da BIOS como a interface do
+	// Settings (docs/bios-config.md: HP, Dell e Lenovo): as configurações da BIOS como a interface do
 	// fabricante informa, sem as senhas. nil: não lidas.
 	Settings []BIOSSetting `json:"settings,omitempty"`
 }
@@ -200,8 +200,8 @@ func (f Firmware) Check() error {
 	if f.SureAdmin != nil && f.Interface != FirmwareHP {
 		return fmt.Errorf("sure_admin é só da interface da HP")
 	}
-	if f.Settings != nil && f.Interface != FirmwareHP {
-		return fmt.Errorf("configurações da BIOS são só da interface da HP")
+	if f.Settings != nil && f.Interface == "" {
+		return fmt.Errorf("configurações da BIOS sem a interface do fabricante")
 	}
 	return checkBIOSSettings(f.Settings)
 }

@@ -153,7 +153,7 @@ Respondidas antes da Aula 21.4:
 | D3 | **12 caracteres em todos** | o alfabeto da 3.1 |
 | D4 | **não se sabe** se há HP com Sure Admin | a Aula 21.5 lê esse modo no inventário antes de qualquer gravação, e a máquina nesse modo fica de fora |
 | D5 | não oferecer remoção (recomendação mantida) | — |
-| D6 | piloto | proposta da Aula 21.5: uma HP de bancada, depois um grupo pequeno de HP, depois a frota HP; Dell e Lenovo só depois de conferidas no laboratório |
+| D6 | piloto | proposta da Aula 21.5: uma HP de bancada, depois um grupo pequeno de HP, depois a frota HP; Dell e Lenovo (desde `docs/bios-config.md`, seção 8) pelo mesmo caminho, uma máquina de bancada de cada |
 
 O texto original das perguntas fica abaixo, para registro.
 
@@ -201,8 +201,9 @@ A gravação é a Aula 21.5 (seção 8).
 
 ## 8. A gravação (Aula 21.5)
 
-**Só HP, por enquanto.** É onde o `.bat` rodou e onde o laboratório confere. Dell e Lenovo
-entram na lista do job (`jobs.BIOSVendors`) depois de conferidas numa máquina de bancada.
+**HP primeiro.** É onde o `.bat` rodou e onde o laboratório confere. Dell e Lenovo entraram
+na lista do job (`jobs.BIOSVendors`) depois (`docs/bios-config.md`, seção 8), com o mesmo
+fluxo e o piloto começando por uma máquina de bancada de cada.
 
 **No painel** (aba Hardware, cartão Senha da BIOS, só admin), a senha pendente ganha o botão
 **Gravar na BIOS**. Antes de criar o job, o servidor confere:

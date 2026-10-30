@@ -89,9 +89,9 @@ func TestConfiguracoesDaBIOS(t *testing.T) {
 	}
 
 	// Sem as configurações no inventário: o motivo, nada de formulário.
-	firmware(protocol.Firmware{Interface: "lenovo", AdminPassword: &nao})
-	if b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "só da BIOS da HP") || strings.Contains(b, "/bios/configurar") {
-		t.Error("Lenovo: o motivo, sem o formulário")
+	firmware(protocol.Firmware{Mode: protocol.FirmwareUEFI})
+	if b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "não mostra a interface do fabricante") || strings.Contains(b, "/bios/configurar") {
+		t.Error("sem interface: o motivo, sem o formulário")
 	}
 	firmware(protocol.Firmware{Interface: "hp", AdminPassword: &nao, SureAdmin: &nao})
 	if b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "não trouxe as configurações") {
@@ -203,5 +203,23 @@ func TestConfiguracoesDaBIOS(t *testing.T) {
 	ev, _ = st.AuditEvents(ctx, store.AuditFilter{Action: "bios.config.job"})
 	if strings.Contains(j2.Payload, senha) || strings.Contains(ev[0].Detail, senha) || !strings.Contains(ev[0].Detail, "senha da guarda #"+itoa(gl[0].ID)) {
 		t.Errorf("senha legível ou trilha sem a origem: %+v", ev[0])
+	}
+
+	_, _ = st.FinishJob(ctx, j2.ID, jobs.StateDone, "Fast Boot: gravada", time.Now())
+
+	// Dell (docs/bios-config.md, seção 8): os nomes da Dell, o job com a interface "dell".
+	dell := []protocol.BIOSSetting{
+		{Name: "WakeOnLan", Kind: protocol.BIOSKindEnum, Value: "Disabled", Possible: []string{"Disabled", "LanOnly", "LanWlan"}},
+		{Name: "EmbNic1", Kind: protocol.BIOSKindEnum, Value: "EnabledPxe", Possible: []string{"Disabled", "Enabled", "EnabledPxe"}},
+	}
+	firmware(protocol.Firmware{Interface: "dell", AdminPassword: &sim, Settings: dell})
+	b = pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `name="n0" value="WakeOnLan"`) || strings.Contains(b, `name="n1"`) || !strings.Contains(b, "2 lidas · 1 alteráveis") {
+		t.Errorf("Dell: só o WakeOnLan editável (a placa cabeada não)")
+	}
+	r = local(pagina(h, "POST", maq+"/bios/configurar", sessaoAdmin, url.Values{"motivo": {"chamado 4516"}, "n0": {"WakeOnLan"}, "v0": {"LanOnly"}}))
+	j3, p3 := ultimoJob()
+	if r != aba+"&bios-config=pedida&job="+itoa(j3.ID) || p3.Vendor != "dell" || p3.Changes[0].Value != "LanOnly" || p3.Password == "" {
+		t.Fatalf("Dell: %s %+v", r, p3)
 	}
 }

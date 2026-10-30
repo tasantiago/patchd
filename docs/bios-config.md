@@ -7,15 +7,15 @@ nome de máquina, modelo exato do parque) entra neste arquivo.
 
 ## 1. O que entra
 
-- **Leitura**: o agente do Windows lê as configurações da BIOS pela interface da HP e as manda
+- **Leitura**: o agente do Windows lê as configurações da BIOS pela interface do fabricante
+  (HP; Dell e Lenovo na seção 8) e as manda
   no inventário. O painel mostra todas, na aba **BIOS** do equipamento, com o valor atual e os
   valores possíveis.
 - **Gravação restrita**: só as configurações da lista fechada (seção 3) aparecem com um
   seletor. O admin escolhe os valores novos, informa o motivo, e o servidor cria o job
   `bios_settings`, assinado.
-- Fora do escopo: Dell e Lenovo (entram quando forem conferidas no laboratório, como na
-  senha), ordem de boot (lista ordenada, outro formato), e qualquer configuração que não seja
-  de escolha entre valores (texto, número).
+- Fora do escopo: ordem de boot (lista ordenada, outro formato) e qualquer configuração que
+  não seja de escolha entre valores (texto, número).
 
 ## 2. A leitura
 
@@ -116,3 +116,42 @@ configuração da BIOS pelo mesmo WMI que o patchd usa.
 **Decisão (30/10/2026):** a máquina guarda no Registro a **cópia cifrada** da guarda, e o
 servidor exporta as mesmas cópias para fora dele; só a chave privada de guarda, guardada
 offline, abre qualquer uma delas. Desenho em `docs/bios-senha.md`, seção 9.
+
+## 8. Dell e Lenovo
+
+Pedido de 30/10/2026: o mesmo painel, a mesma lista fechada e os mesmos jobs (`bios_settings`
+e `bios_password`) para Dell e Lenovo. O que muda é só a conversa com o firmware
+(`internal/biosvendor` para ler, `internal/bioswrite` para gravar):
+
+| | Dell | Lenovo |
+|---|---|---|
+| Ler | `root\dcim\sysman\biosattributes`: `EnumerationAttribute`, `IntegerAttribute`, `StringAttribute` (o valor atual vem como lista de um item) | `root\WMI`: `Lenovo_BiosSetting.CurrentSetting` ("Nome,Valor;[Optional:...]"); sem o `[Optional:...]`, `Lenovo_GetBiosSelections`, só para a lista fechada |
+| Alterar | `BIOSAttributeInterface.SetAttribute`, um por configuração | `Lenovo_SetBiosSetting.SetBiosSetting` por configuração e, no fim, `Lenovo_SaveBiosSettings`: **sem o salvar, nada vale** |
+| Senha | `SecurityInterface.SetNewPassword("Admin", atual, nova)`; com senha, a atual vai também como "handle" (bytes) | `Lenovo_SetBiosPassword.SetBiosPassword("pap,atual,nova,ascii,us;")` |
+| Respostas | números: 0 ok, 3 senha não confere (para tudo), 2 e 4 recusa, 1, 5, 6 incerto | texto: `Success`, `Access Denied` (para tudo), `Not Supported`, `Invalid Parameter`, `System Busy`; outro, incerto |
+| Sure Admin | não há equivalente lido; a Dell sem o provedor WMI de fábrica (só Dell Command \| Monitor) não tem as classes e fica sem configurações | não lido; a Lenovo com autenticação por certificado recusa as chamadas, e o job falha sem gravar |
+
+**As respostas viram uma só** (`bioswrite.Reply`): ok, senha não confere (nenhuma outra
+chamada no mesmo job), recusa clara, ou incerta. O resto do job não muda: BitLocker suspenso
+por um reinício, uma chamada por configuração, nada de senha em log ou resultado.
+
+**Salvar (Lenovo).** Depois das gravações, o agente chama o salvar. Se ele recusa, as gravadas
+viram "recusada pela BIOS" (nada foi salvo) e o BitLocker volta; se quebra no meio, viram
+incertas e o BitLocker fica suspenso até o reinício.
+
+**Vírgula e ponto e vírgula** separam os campos da Lenovo: nome, valor ou senha com eles são
+recusados pelo agente antes da chamada. As senhas da guarda não têm; a senha da frota digitada
+na primeira troca pode ter, e aí a troca precisa ser feita na BIOS.
+
+**A lista fechada** ganhou os nomes da Dell (`WakeOnLan`, `AcPwrRcvry`, `UefiNwStack`,
+`Virtualization`, `VtForDirectIo`, `WirelessLan`, `UsbPortsExternal`...) e da Lenovo
+(`WakeOnLAN`, `QuickBoot`, `USBBIOSSupport`, `VirtualizationTechnology`, `WirelessLANAccess`,
+`USBPortAccess`...). Ficam de fora, além das exclusões da seção 3: a placa cabeada
+(`EthernetLANAccess`, `EmbNic1`), o TPM da Lenovo (`SecurityChip`) e o modo do Secure Boot da
+Dell (`SecureBootMode`: o modo Audit desliga a conferência).
+
+**O que não está conferido** (sem Dell nem Lenovo no laboratório desta versão): os nomes dos
+parâmetros dos métodos da Dell em cada geração; se a Lenovo aceita a **primeira** senha de
+supervisor pelo WMI (em vários modelos não: o job volta "acesso negado" e a primeira senha é
+definida na BIOS); e os nomes das configurações nos modelos da frota. O piloto de cada
+fabricante começa por uma máquina de bancada, como foi com a HP.

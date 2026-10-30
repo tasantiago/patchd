@@ -99,3 +99,23 @@ func TestWindowsFirmwareInfoSettingsOnlyHP(t *testing.T) {
 		t.Fatalf("sem interface: %+v", none)
 	}
 }
+
+// Dell e Lenovo (docs/bios-config.md, seção 8): as configurações já vêm traduzidas e só vão
+// com a interface confirmada pelas senhas.
+func TestWindowsFirmwareInfoSettingsDellLenovo(t *testing.T) {
+	set := []protocol.BIOSSetting{{Name: "WakeOnLan", Kind: protocol.BIOSKindEnum, Value: "Disabled", Possible: []string{"Disabled", "LanOnly"}}}
+	dell := windowsFirmwareInfo(wmiFirmware{Interface: "dell", Passwords: []map[string]any{{"NameId": "Admin", "IsPasswordSet": int32(1)}},
+		SettingsQueried: true, VendorSettings: set})
+	if dell == nil || len(dell.Settings) != 1 || dell.Check() != nil {
+		t.Fatalf("Dell: %+v", dell)
+	}
+	lenovo := windowsFirmwareInfo(wmiFirmware{Interface: "lenovo", LenovoState: map[string]any{"PasswordState": uint32(2)},
+		SettingsQueried: true, VendorSettings: set})
+	if lenovo == nil || len(lenovo.Settings) != 1 || !*lenovo.AdminPassword || lenovo.Check() != nil {
+		t.Fatalf("Lenovo: %+v", lenovo)
+	}
+	semSenhas := windowsFirmwareInfo(wmiFirmware{Interface: "dell", SettingsQueried: true, VendorSettings: set})
+	if semSenhas != nil && semSenhas.Settings != nil {
+		t.Fatalf("sem interface: %+v", semSenhas)
+	}
+}

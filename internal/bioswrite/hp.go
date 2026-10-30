@@ -29,8 +29,13 @@ func hpSureAdminOn(current any) bool {
 // vendorOf: a interface pelo fabricante do SMBIOS (o mesmo critério do inventário, Aula 21.1).
 func vendorOf(manufacturer string) string {
 	m := strings.ToLower(strings.TrimSpace(manufacturer))
-	if strings.HasPrefix(m, "hp") || strings.Contains(m, "hewlett") {
+	switch {
+	case strings.HasPrefix(m, "hp") || strings.Contains(m, "hewlett"):
 		return "hp"
+	case strings.HasPrefix(m, "dell"):
+		return "dell"
+	case strings.HasPrefix(m, "lenovo"):
+		return "lenovo"
 	}
 	return ""
 }

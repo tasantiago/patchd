@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -150,8 +151,8 @@ func (f biosFacts) blocker() string {
 	switch {
 	case fw == nil || fw.Interface == "":
 		return "o inventário não mostra a interface do fabricante na BIOS desta máquina"
-	case fw.Interface != protocol.FirmwareHP:
-		return "por enquanto o patchd grava só na BIOS da HP; " + firmwareInterfaceLabel[fw.Interface] + " entra quando for conferida no laboratório"
+	case !slices.Contains(jobs.BIOSVendors, fw.Interface):
+		return "o patchd não grava na BIOS de " + firmwareInterfaceLabel[fw.Interface]
 	case fw.SureAdmin != nil && *fw.SureAdmin:
 		return "HP Sure Admin ligado: esta BIOS só aceita mudanças por pacote assinado"
 	case fw.AdminPassword == nil:

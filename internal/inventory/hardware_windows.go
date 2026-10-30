@@ -9,6 +9,8 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
+	"github.com/tasantiago/patchd/internal/biosconfig"
+	"github.com/tasantiago/patchd/internal/biosvendor"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/wincom"
 )
@@ -89,8 +91,26 @@ func (c *windowsCollector) Hardware(ctx context.Context) (Hardware, error) {
 			}
 		case protocol.FirmwareDell:
 			rows, err = wincom.Query(wmiDellNamespace, "SELECT NameId, IsPasswordSet FROM PasswordObject", []string{"NameId", "IsPasswordSet"})
+			if err == nil { // docs/bios-config.md, seção 8
+				set, sErr := biosvendor.ReadDell()
+				switch {
+				case sErr == nil:
+					fw.SettingsQueried, fw.VendorSettings = true, set
+				case !wmiMissing(sErr):
+					errs = append(errs, sErr)
+				}
+			}
 		case protocol.FirmwareLenovo:
 			rows, err = wincom.Query(wmiLenovoNamespace, "SELECT PasswordState FROM Lenovo_BiosPasswordSettings", []string{"PasswordState"})
+			if err == nil { // docs/bios-config.md, seção 8: os valores possíveis só da lista fechada
+				set, sErr := biosvendor.ReadLenovo(func(name string) bool { _, ok := biosconfig.Lookup(name); return ok })
+				switch {
+				case sErr == nil:
+					fw.SettingsQueried, fw.VendorSettings = true, set
+				case !wmiMissing(sErr):
+					errs = append(errs, sErr)
+				}
+			}
 		}
 		for _, r := range rows {
 			fw.Passwords = append(fw.Passwords, r)

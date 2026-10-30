@@ -81,8 +81,6 @@ func (a *api) biosConfigView(r *http.Request, id string, admin bool) (*biosConfi
 	switch {
 	case fw == nil || fw.Interface == "":
 		c.Reason = "O inventário desta máquina não mostra a interface do fabricante na BIOS."
-	case fw.Interface != protocol.FirmwareHP:
-		c.Reason = "Por enquanto o patchd lê as configurações só da BIOS da HP; " + firmwareInterfaceLabel[fw.Interface] + " entra quando for conferida no laboratório."
 	case fw.Settings == nil:
 		c.Reason = "O inventário não trouxe as configurações da BIOS: o agente é anterior a esta versão (atualize) ou a BIOS não respondeu à leitura (veja os avisos da coleta)."
 	}

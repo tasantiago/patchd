@@ -107,6 +107,48 @@ func Query(namespace, wql string, props []string) ([]Row, error) {
 	return rows, nil
 }
 
+// QueryLoose é o Query que tolera propriedade ausente num modelo (docs/bios-config.md, seção
+// 8): a consulta é SELECT *, e a propriedade que a linha não tem fica fora da Row. Use só onde
+// os nomes das propriedades variam entre modelos.
+func QueryLoose(namespace, class string, props []string) ([]Row, error) {
+	locator, err := CreateDispatch("WbemScripting.SWbemLocator")
+	if err != nil {
+		return nil, err
+	}
+	defer locator.Release()
+	svc, err := CallObject(locator, "ConnectServer", nil, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("WMI %s: conectar: %w", namespace, err)
+	}
+	defer svc.Release()
+	wql := "SELECT * FROM " + class
+	res, err := CallObject(svc, "ExecQuery", wql)
+	if err != nil {
+		return nil, fmt.Errorf("WMI %q: %w", wql, err)
+	}
+	defer res.Release()
+	count, err := GetInt(res, "Count")
+	if err != nil {
+		return nil, fmt.Errorf("WMI %q: contar resultados: %w", wql, err)
+	}
+	rows := make([]Row, 0, count)
+	for i := 0; i < int(count); i++ {
+		item, err := CallObject(res, "ItemIndex", i)
+		if err != nil {
+			return rows, fmt.Errorf("WMI %q: item %d: %w", wql, i, err)
+		}
+		row := Row{}
+		for _, p := range props {
+			if v, err := Get(item, p); err == nil {
+				row[p] = v
+			}
+		}
+		item.Release()
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
 // readItem lê as propriedades de um objeto do resultado e o libera.
 func readItem(res *ole.IDispatch, i int, props []string) (Row, error) {
 	item, err := CallObject(res, "ItemIndex", i)

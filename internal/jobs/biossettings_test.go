@@ -19,6 +19,13 @@ func TestParametrosDasConfiguracoesDaBIOS(t *testing.T) {
 	if p, err := ParseBIOSSettingsParams(raw); err != nil || p.Password != env || len(p.Changes) != 1 || p.Changes[0] != wol {
 		t.Fatalf("%+v %v", p, err)
 	}
+	for _, v := range []string{"dell", "lenovo"} {
+		q := ok
+		q.Vendor = v
+		if _, err := BIOSSettingsParamsJSON(q); err != nil {
+			t.Errorf("%s: %v", v, err)
+		}
+	}
 	if !KnownType(TypeBIOSSettings) {
 		t.Error("bios_settings fora dos tipos conhecidos")
 	}
@@ -32,14 +39,14 @@ func TestParametrosDasConfiguracoesDaBIOS(t *testing.T) {
 		muitas[i] = biosconfig.Change{Name: "Wake On LAN " + strings.Repeat("x", i), Value: "Disable"}
 	}
 	for nome, muda := range map[string]func(*BIOSSettingsParams){
-		"dell (ainda não)": func(p *BIOSSettingsParams) { p.Vendor = "dell" },
-		"chave curta":      func(p *BIOSSettingsParams) { p.BoxKey = "0123" },
-		"senha em texto":   func(p *BIOSSettingsParams) { p.Password = "senha123!" },
-		"nenhuma":          func(p *BIOSSettingsParams) { p.Changes = nil },
-		"muitas":           func(p *BIOSSettingsParams) { p.Changes = muitas },
-		"repetida":         func(p *BIOSSettingsParams) { p.Changes = []biosconfig.Change{wol, wol} },
-		"fora da lista":    func(p *BIOSSettingsParams) { p.Changes = []biosconfig.Change{{Name: "TPM State", Value: "Disable"}} },
-		"senha da BIOS":    func(p *BIOSSettingsParams) { p.Changes = []biosconfig.Change{{Name: "Setup Password", Value: "x"}} },
+		"asus (sem interface)": func(p *BIOSSettingsParams) { p.Vendor = "asus" },
+		"chave curta":          func(p *BIOSSettingsParams) { p.BoxKey = "0123" },
+		"senha em texto":       func(p *BIOSSettingsParams) { p.Password = "senha123!" },
+		"nenhuma":              func(p *BIOSSettingsParams) { p.Changes = nil },
+		"muitas":               func(p *BIOSSettingsParams) { p.Changes = muitas },
+		"repetida":             func(p *BIOSSettingsParams) { p.Changes = []biosconfig.Change{wol, wol} },
+		"fora da lista":        func(p *BIOSSettingsParams) { p.Changes = []biosconfig.Change{{Name: "TPM State", Value: "Disable"}} },
+		"senha da BIOS":        func(p *BIOSSettingsParams) { p.Changes = []biosconfig.Change{{Name: "Setup Password", Value: "x"}} },
 		"legado": func(p *BIOSSettingsParams) {
 			p.Changes = []biosconfig.Change{{Name: "Configure Legacy Support and Secure Boot", Value: "Legacy Support Enable and Secure Boot Disable"}}
 		},
