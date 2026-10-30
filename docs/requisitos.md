@@ -54,6 +54,8 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - **RF-37** Duas instâncias ativas: uma na rede interna e uma na nuvem, para quem está fora da rede (home office, viagem). O agente conhece os dois endereços e usa o disponível; os dados convergem para a instância interna, dona das decisões (P-01). A credencial vale para a implantação do patchd, não para um endereço. **futuro**
 - **RF-38** Login do painel com dois perfis, admin e leitura. Na v1: usuários do AD por LDAPS, com o perfil vindo de grupos (Aula 7.3), e usuários locais de contingência, com senha em PBKDF2 (Aula 7.2). Em produção: RHBK (Red Hat build of Keycloak) por OIDC (Aula 9.4: botão "Entrar com o RHBK" ao lado do formulário; perfil pelo claim de grupos, como os grupos do AD; a saída encerra só a sessão do painel, e a do RHBK continua, como num login único; encerrar as duas e a contingência local quando só o RHBK estiver ligado: **pendentes**). Grupos e papéis além dos do `.env` em Configuração › Parâmetros (Aula 19.4). Sessão no servidor, com cookie `HttpOnly` e `SameSite=Strict`, prazo de 8 h e 30 min de inatividade; as rotas de leitura da API exigem a sessão. **decidido**
 
+- **RF-39** Monitoramento de desempenho e alertas (desenho em `docs/monitoramento.md`): o agente mede CPU, memória e disco livre a cada minuto e manda as amostras no check-in; o check-in vem antes da hora quando muda o usuário conectado, o IP, a lista de software ou o desempenho passa do limite (no máximo um antecipado a cada 5 minutos, com sorteio de até 2). Os limites da frota ficam em Configuração › Parâmetros › Monitoramento (padrão: CPU ou memória acima de 90%, disco com menos de 10% livre, por 10 minutos seguidos); o servidor abre e fecha os alertas pela mesma regra que o agente usa para antecipar. Alertas só no painel (tela Alertas, contador no menu, reconhecer com nota e auditoria) e a aba Desempenho do equipamento com as curvas de 24 horas, 7 e 90 dias. Amostras por 7 dias, médias e picos por hora por 90. **decidido** Disponibilidade, serviços, saúde do disco, limites por grupo e envio por e-mail, Teams ou webhook: **futuro**.
+
 ## Não funcionais
 
 - **RNF-01** Plataformas: Windows 10/11 amd64 (arm64 apenas compila); Ubuntu 26.04 e Fedora 44, amd64 e arm64; macOS 13 ou superior, arm64 e amd64 (piso imposto pelo Go 1.27).
@@ -89,7 +91,7 @@ Regra deste repositório: nenhum nome de host, IP, domínio interno, serial ou c
 - ITAM financeiro: licenças, contratos, custos.
 - MDM e perfis de configuração do macOS.
 - Upgrades de versão principal (feature update do Windows, major do macOS); o patchd apenas mostra que existem. **padrão**
-- Monitoramento de desempenho.
+- Monitoramento de desempenho além de CPU, memória e disco (RF-39): disponibilidade, serviços, saúde do disco, APM.
 - Espelho completo de repositórios Linux.
 - Replicar o WSUS na v1.
 

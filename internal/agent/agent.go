@@ -79,6 +79,14 @@ type Agent struct {
 	// "rejeitado" (a BIOS não foi tocada); outro erro, "falhou", com uma linha por configuração.
 	BIOSSettings func(ctx context.Context, jobID int64, p jobs.BIOSSettingsParams) (string, error)
 
+	// Watch: a sentinela de desempenho e de mudanças (docs/monitoramento.md). nil: sem
+	// amostras de desempenho e sem check-in antecipado por mudança.
+	Watch     *Watch
+	watchOnce sync.Once
+	ws        *watchState
+	// wakeReason: o motivo do check-in antecipado (vai no check-in, para o log do servidor).
+	wakeReason atomic.Value
+
 	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
 	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
 	wakeOnce sync.Once
@@ -139,7 +147,11 @@ func (a *Agent) wakeChan() chan struct{} {
 // Wake pede o próximo check-in agora (Aula 17.3). Não bloqueia; pode ser chamado de
 // qualquer goroutine, antes ou durante o Run. Se um check-in estiver em andamento, o
 // seguinte vem logo depois dele (respeitando o MinWakeGap).
-func (a *Agent) Wake() {
+func (a *Agent) Wake() { a.wakeFor(ReasonSelfService) }
+
+// wakeFor é o Wake com o motivo.
+func (a *Agent) wakeFor(reason string) {
+	a.wakeReason.Store(reason)
 	select {
 	case a.wakeChan() <- struct{}{}:
 	default:
@@ -175,6 +187,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.Logger.Info("laço de check-in iniciado", "first_checkin_in", wait.Round(time.Second).String(),
 		"interval", a.Interval.String(), "scan_every", a.ScanEvery.String())
 
+	if a.Watch != nil {
+		go a.watchLoop(ctx)
+	}
 	failures := 0
 	var last time.Time
 	for {
@@ -188,7 +203,10 @@ func (a *Agent) Run(ctx context.Context) error {
 					return nil
 				}
 			}
-			a.Logger.Info("check-in antecipado: pedido do autoatendimento")
+			reason, _ := a.wakeReason.Load().(string)
+			a.Logger.Info("check-in antecipado", "motivo", reason)
+		} else {
+			a.wakeReason.Store("")
 		}
 		out := a.CheckIn(ctx)
 		last = a.now()
@@ -259,10 +277,14 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			a.Logger.Warn("coleta de rede e discos incompleta", "errors", s.Errors)
 		}
 	}
-	resp, err := a.Client.CheckIn(ctx, inv.Hash, host)
+	perf := a.perfBatch()
+	reason, _ := a.wakeReason.Load().(string)
+	resp, err := a.Client.CheckInWith(ctx, inv.Hash, host, perf, reason)
 	if out := a.classify(err, "check-in"); out != outcomeOK {
 		return out
 	}
+	a.wakeReason.Store("")
+	a.perfSent(len(perf), resp.Monitor)
 	a.checkClock(resp.ServerTime)
 	inventorySent := false
 	if !resp.InventoryKnown && inv.Hash != "" {

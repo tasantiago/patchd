@@ -20,6 +20,7 @@ import (
 	"github.com/tasantiago/patchd/internal/inventory"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/patch"
+	"github.com/tasantiago/patchd/internal/perf"
 	"github.com/tasantiago/patchd/internal/platform"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
@@ -168,6 +169,13 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 
 	ag.BIOSPassword = biosPW
 	ag.BIOSSettings = biosSettingsRunner(logger, boxPriv) // docs/bios-config.md: nil fora do Windows ou sem a caixa
+	// A sentinela (docs/monitoramento.md): desempenho a cada minuto e check-in antecipado por
+	// mudança. A lista de software é vigiada no Windows e no Linux; no macOS ela é cara.
+	sampler := perf.New()
+	ag.Watch = &agent.Watch{Sample: sampler.Sample, State: hoststate.Collect}
+	if runtime.GOOS != "darwin" {
+		ag.Watch.Software = collector.Software
+	}
 	if cab != nil {
 		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {
 			if err := cab.Sync(ctx, adv); err != nil && ctx.Err() == nil {

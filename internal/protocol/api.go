@@ -48,6 +48,11 @@ type CheckinRequest struct {
 	// State: rede e discos agora (Aula 12.1). Ausente nos agentes anteriores; o servidor
 	// anterior ignora o campo (o decodificador do check-in aceita campos desconhecidos).
 	State *MachineState `json:"state,omitempty"`
+	// Perf: as amostras de desempenho desde o último check-in aceito (docs/monitoramento.md).
+	Perf []PerfSample `json:"perf,omitempty"`
+	// Reason: por que o check-in veio antes da hora ("usuario", "rede", "software",
+	// "desempenho", "autoatendimento"); vazio: o de hora em hora. Só para o log.
+	Reason string `json:"reason,omitempty"`
 }
 
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
@@ -66,6 +71,8 @@ type CheckinResponse struct {
 	RepoCache *RepoCache `json:"repo_cache,omitempty"`
 	// Jobs: os jobs pendentes desta máquina, assinados (Aula 8.1). Agentes antigos ignoram.
 	Jobs []SignedJob `json:"jobs,omitempty"`
+	// Monitor: os limites de desempenho da frota (docs/monitoramento.md). Ausente: os padrões.
+	Monitor *MonitorPolicy `json:"monitor,omitempty"`
 }
 
 // RepoCache diz onde as máquinas Linux alcançam o cache de repositórios do servidor.

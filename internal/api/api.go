@@ -23,6 +23,7 @@ import (
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/perfeval"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/store"
@@ -59,6 +60,13 @@ type Store interface {
 	AttachBIOSJob(ctx context.Context, id, jobID int64, at time.Time) (bool, error)                            // Aula 21.5
 	SettleBIOSPassword(ctx context.Context, id, jobID int64, state, result string, at time.Time) (bool, error) // Aula 21.5
 	ResolveBIOSPassword(ctx context.Context, id int64, newValid bool, result string, at time.Time) (bool, error)
+	// Desempenho e alertas (docs/monitoramento.md).
+	SavePerf(ctx context.Context, machineID string, samples []protocol.PerfSample, policy protocol.MonitorPolicy, now time.Time) ([]perfeval.Change, error)
+	PerfSamples(ctx context.Context, machineID string, since time.Time) ([]protocol.PerfSample, error)
+	PerfHourly(ctx context.Context, machineID string, since time.Time) ([]store.PerfHour, error)
+	PerfAlerts(ctx context.Context, f store.PerfAlertFilter) ([]store.PerfAlert, error)
+	AckPerfAlert(ctx context.Context, id int64, by, note string, at time.Time) (bool, error)
+	PerfAlertCounts(ctx context.Context) (open, unacked int, err error)
 	// A senha padrão de cada fabricante (docs/bios-senha.md, seção 10).
 	BIOSFleetPasswords(ctx context.Context) ([]store.BIOSFleetPassword, error)
 	SetBIOSFleetPassword(ctx context.Context, b store.BIOSFleetPassword) error
@@ -273,6 +281,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/maquinas/{id}/historico", a.adminAction(a.mergedHistoryPage))
 	mux.Handle("GET /painel/maquinas/{id}/historico/{kind}/{report}", a.adminAction(a.mergedHistoryReport))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
+	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
+	mux.Handle("POST /painel/alertas/{id}/reconhecer", a.sameOrigin(a.adminAction(a.staleAfter(a.ackAlertAction))))                        // docs/monitoramento.md
 	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage))                                                        // Aula 17.7
 	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/aprovar", a.sameOrigin(a.adminAction(a.staleAfter(a.approveSelfServiceAction)))) // Aula 18.3
 	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/recusar", a.sameOrigin(a.adminAction(a.staleAfter(a.refuseSelfServiceAction))))

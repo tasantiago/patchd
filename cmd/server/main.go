@@ -364,6 +364,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if pg, ok := st.(*store.Postgres); ok {
 		go notifyLoop(ctx, logger, pg, live, &alerts.Watcher{Store: pg, PublicURL: cfg.PublicURL, Logger: logger, Now: time.Now})
 	}
+	if k, ok := st.(perfKeeper); ok { // docs/monitoramento.md
+		go perfLoop(ctx, logger, k)
+	}
 	retention := liveRetention(params, cfg.Retention)
 	if p, ok := st.(pruner); ok {
 		logger.Info("retenção: " + describeRetention(retention()) + "; aplicada de hora em hora (patchd-server retention mostra antes)")

@@ -101,6 +101,26 @@ func settingDefs(look config.Lookup) []settings.Def {
 		{Key: "PATCHD_RETENTION_AUDIT_DAYS", Group: "Retenção", Label: "Trilha de auditoria", Kind: settings.Number, Unit: "dias",
 			Default: strconv.Itoa(defaultAuditDays), Help: "0 guarda sempre; senão, de 365 a 3650. Encurtar apaga eventos antigos de vez.",
 			Effect: "na próxima passada da retenção (em até 1 hora)", Check: days("PATCHD_RETENTION_AUDIT_DAYS", 365, true), Show: showDays},
+		// docs/monitoramento.md: os limites dos alertas de desempenho, para a frota toda.
+		{Key: "PATCHD_MONITOR_CPU_PCT", Group: "Monitoramento", Label: "CPU acima de", Kind: settings.Number, Unit: "%",
+			Default: "90", Help: "Abre o alerta quando a CPU passa disso pelos minutos seguidos abaixo. De 10 a 100.",
+			Effect: "no próximo check-in de cada máquina", Check: pctCheck(10, 100)},
+		{Key: "PATCHD_MONITOR_MEM_PCT", Group: "Monitoramento", Label: "Memória acima de", Kind: settings.Number, Unit: "%",
+			Default: "90", Help: "Abre o alerta quando a memória em uso passa disso pelos minutos seguidos. De 10 a 100.",
+			Effect: "no próximo check-in de cada máquina", Check: pctCheck(10, 100)},
+		{Key: "PATCHD_MONITOR_DISK_FREE_PCT", Group: "Monitoramento", Label: "Disco livre abaixo de", Kind: settings.Number, Unit: "%",
+			Default: "10", Help: "Abre o alerta quando um volume fica com menos que isso livre pelos minutos seguidos. De 1 a 50.",
+			Effect: "no próximo check-in de cada máquina", Check: pctCheck(1, 50)},
+		{Key: "PATCHD_MONITOR_MINUTES", Group: "Monitoramento", Label: "Minutos seguidos", Kind: settings.Number, Unit: "min",
+			Default: "10", Help: fmt.Sprintf("Quantas medidas seguidas além do limite abrem o alerta (e dentro do limite o fecham). De %d a %d.",
+				protocol.MinPolicyMins, protocol.MaxPolicyMins),
+			Effect: "no próximo check-in de cada máquina", Check: func(v string) (string, error) {
+				n, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || n < protocol.MinPolicyMins || n > protocol.MaxPolicyMins {
+					return "", fmt.Errorf("use um número de %d a %d", protocol.MinPolicyMins, protocol.MaxPolicyMins)
+				}
+				return strconv.Itoa(n), nil
+			}},
 		{Key: "PATCHD_CATALOG_INTERVAL", Group: "Catálogo", Label: "Sincronização automática", Kind: settings.Select, Options: catalogChoices,
 			Default: "6h", Help: "De quanto em quanto tempo o servidor busca as fontes do catálogo (Microsoft, Ubuntu, Fedora, Apple, KEV, terceiros).",
 			Effect: "na hora: a próxima sincronização é recalculada", Check: func(v string) (string, error) {
@@ -663,4 +683,15 @@ func settingsCommand(ctx context.Context, st settings.Store, look config.Lookup,
 	}
 	fmt.Fprintln(stdout, "o servidor percebe em até 30 segundos")
 	return exitOK
+}
+
+// pctCheck: um número inteiro de min a max (os limites de desempenho).
+func pctCheck(min, max int) func(string) (string, error) {
+	return func(v string) (string, error) {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < min || n > max {
+			return "", fmt.Errorf("use um número de %d a %d", min, max)
+		}
+		return strconv.Itoa(n), nil
+	}
 }

@@ -22,7 +22,7 @@ import (
 // continua sem script nenhum.
 
 var machineTabs = []struct{ Key, Label string }{
-	{"resumo", "Resumo"}, {"hardware", "Hardware"}, {"bios", "BIOS"}, {"software", "Software"},
+	{"resumo", "Resumo"}, {"hardware", "Hardware"}, {"bios", "BIOS"}, {"desempenho", "Desempenho"}, {"software", "Software"},
 	{"pendencias", "Pendências"}, {"tarefas", "Tarefas"},
 }
 

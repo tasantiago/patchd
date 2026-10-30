@@ -47,12 +47,13 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | GET | `/api/v1/agent/selfservice/logo` |
 | POST | `/api/v1/agent/selfservice/request` |
 
-## Sessão (página) (15)
+## Sessão (página) (16)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
 | Método | Caminho |
 |---|---|
+| GET | `/painel/alertas` |
 | GET | `/painel/aneis` |
 | GET | `/painel/aposentadas` |
 | GET | `/painel/autoatendimento` |
@@ -98,12 +99,13 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/maquinas/{id}/mesclar` |
 | GET | `/painel/scripts` |
 
-## Admin (ação) (55)
+## Admin (ação) (56)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
 | Método | Caminho |
 |---|---|
+| POST | `/painel/alertas/{id}/reconhecer` |
 | POST | `/painel/aneis/janela` |
 | POST | `/painel/aneis/maquinas` |
 | POST | `/painel/aneis/{ring}/remover-janela` |

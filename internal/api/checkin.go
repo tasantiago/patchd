@@ -6,6 +6,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // checkin é o contato periódico da máquina (Aula 4.4): atualiza o último contato e diz se
@@ -27,12 +28,17 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	a.checkClock(r, id, req.SentAt)
 	a.saveHostState(r, id, req.State)
+	policy := a.monitorPolicy()
+	a.savePerf(r, id, req.Perf, policy)
+	if req.Reason != "" {
+		a.logger.Info("check-in antecipado", "machine_id", id, "motivo", texto.Clip(req.Reason, 40), "request_id", RequestID(r.Context()))
+	}
 	canal := "http"
 	if r.TLS != nil {
 		canal = "https"
 	}
 	a.count(checkinsOf, canal)
-	resp := protocol.CheckinResponse{InventoryKnown: known && req.InventoryHash != "", ServerTime: a.now()}
+	resp := protocol.CheckinResponse{InventoryKnown: known && req.InventoryHash != "", ServerTime: a.now(), Monitor: &policy}
 	// A oferta vai quando a versão publicada é outra. Se ela serve, quem decide é o agente:
 	// ele confere a assinatura e recusa qualquer versão que não seja mais nova que a sua.
 	if v := a.offeredVersion(r); v != "" && v != req.AgentVersion {

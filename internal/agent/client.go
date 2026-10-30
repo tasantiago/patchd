@@ -140,10 +140,17 @@ func (c *Client) post(ctx context.Context, path string, v, out any) (string, err
 // CheckIn faz o contato periódico e diz se o servidor já tem o inventário com esse hash.
 // state (pode ser nil) é a rede e os discos de agora (Aula 12.1).
 func (c *Client) CheckIn(ctx context.Context, inventoryHash string, state *protocol.MachineState) (protocol.CheckinResponse, error) {
+	return c.CheckInWith(ctx, inventoryHash, state, nil, "")
+}
+
+// CheckInWith é o check-in com as amostras de desempenho e o motivo do check-in antecipado
+// (docs/monitoramento.md).
+func (c *Client) CheckInWith(ctx context.Context, inventoryHash string, state *protocol.MachineState, perf []protocol.PerfSample,
+	reason string) (protocol.CheckinResponse, error) {
 	var out protocol.CheckinResponse
 	_, err := c.post(ctx, "/api/v1/agent/checkin", protocol.CheckinRequest{
 		AgentVersion: c.AgentVersion, InventoryHash: inventoryHash, SentAt: time.Now().UTC(), Capabilities: c.Capabilities,
-		State: state,
+		State: state, Perf: perf, Reason: reason,
 	}, &out)
 	return out, err
 }

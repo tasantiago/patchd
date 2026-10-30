@@ -259,6 +259,7 @@ type machineView struct {
 	FWParams      []fwRow         // Aula 21.1
 	BIOS          *biosCard       // Aula 21.4: a guarda da senha (só na aba Hardware)
 	BIOSConfig    *biosConfigCard // as configurações da BIOS (só na aba BIOS; docs/bios-config.md)
+	Perf          *perfCard       // o desempenho (só na aba Desempenho; docs/monitoramento.md)
 	Wake          *wakeCard       // Aula 22.1: ligar pela rede
 	HWSources     []string
 	Category      string
@@ -397,6 +398,12 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	if v.Tab == "hardware" {
 		if v.BIOS, err = a.biosView(r, id, v.Admin); err != nil {
 			a.internalError(w, r, "ler a guarda da BIOS", err)
+			return
+		}
+	}
+	if v.Tab == "desempenho" {
+		if v.Perf, err = a.perfView(r, id, v.Admin); err != nil {
+			a.internalError(w, r, "ler o desempenho", err)
 			return
 		}
 	}
@@ -572,6 +579,7 @@ var pages = template.Must(template.New("").Parse(`
 <a href="/painel/" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Frota</span></a>
 <a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + ui.IcInventario + `<span class="rot">Inventário</span></a>
 <a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAposentadas + `<span class="rot">Aposentadas</span></a>
+<a href="/painel/alertas" title="Alertas de desempenho" {{if eq .Nav "alertas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAlertas + `<span class="rot">Alertas</span>{{with .Badges.Alerts}}<span class="cont" title="alertas de desempenho abertos e não reconhecidos">{{.}}</span>{{end}}</a>
 <p class="grupo"><span class="rot">Patch</span></p>
 <a href="/painel/patch?aba=geral" title="Patch › Visão geral" {{if and (eq .Nav "patch") (eq .Sub "geral")}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Visão geral</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}</a>
 <a href="/painel/patch" title="Patch › Sistema operacional" {{if and (eq .Nav "patch") (ne .Sub "geral") (ne .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + ui.IcSistema + `<span class="rot">Sistema</span></a>
@@ -1208,6 +1216,28 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <tbody>{{range .Recent}}<tr><td class="num">{{.ID}}</td><td><span class="estado {{.State}}">{{.StateLabel}}</span></td><td>{{.Created}}</td><td>{{.By}}</td><td>{{range $i, $c := .Changes}}{{if $i}}<br>{{end}}{{$c}}{{end}}</td><td class="muted">{{.Detail}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{end}}{{end}}
 
+{{if eq .Tab "desempenho"}}{{with .Perf}}
+<div class="card"><div class="card-cab"><h2>Desempenho</h2>{{if .At}}<span class="muted">última medida {{.At}}</span>{{end}}</div>
+{{if not .Has}}<p class="muted">Nenhuma medida desta máquina ainda: o agente manda o desempenho a partir desta versão (atualize o agente), no check-in seguinte.</p>
+{{else}}
+{{if .CPU}}<dl class="dados"><dt>CPU</dt><dd>{{.CPU}}</dd><dt>Memória em uso</dt><dd>{{.Mem}}</dd>{{range .Disks}}<dt>Disco {{.Mount}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Free}}</dd>{{end}}</dl>{{end}}
+<nav class="abas" aria-label="período">{{range .Periods}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
+{{with .Chart}}<svg class="grafico" viewBox="0 0 {{.W}} {{.H}}" role="img" aria-label="{{.Label}}">
+{{range .Grid}}<line class="grade" x1="{{$.Perf.Chart.Left}}" x2="{{$.Perf.Chart.Right}}" y1="{{.Y}}" y2="{{.Y}}"/><text x="0" y="{{.Y}}" dy="3">{{.Label}}</text>{{end}}
+{{range .Ticks}}<text x="{{.X}}" y="{{$.Perf.Chart.H}}" text-anchor="{{.Anchor}}">{{.Label}}</text>{{end}}
+<line class="limite" x1="{{.Left}}" x2="{{.Right}}" y1="{{.UseLimit}}" y2="{{.UseLimit}}"/><line class="limite limite-disco" x1="{{.Left}}" x2="{{.Right}}" y1="{{.DiskLimit}}" y2="{{.DiskLimit}}"/>
+{{range .Disk}}<polyline class="l-disco" points="{{.}}"/>{{end}}{{range .Mem}}<polyline class="l-mem" points="{{.}}"/>{{end}}{{range .CPU}}<polyline class="l-cpu" points="{{.}}"/>{{end}}
+</svg>{{else}}<p class="muted">Sem medidas neste período.</p>{{end}}
+<p class="legenda muted"><span class="m-cpu">CPU</span> <span class="m-mem">memória em uso</span> <span class="m-disco">disco livre (o volume com menos espaço)</span> <span class="m-limite">limites</span>{{if .Hourly}} · média por hora{{else}} · por minuto{{end}}</p>
+{{end}}
+</div>
+<div class="card"><div class="card-cab"><h2>Alertas desta máquina</h2><a href="/painel/alertas">todos os alertas</a></div>
+{{if .Alerts}}<div class="tabela"><table><thead><tr><th>Medida</th><th>Aberto em</th><th>Duração</th><th>Pico</th><th>Último</th><th>Estado</th></tr></thead>
+<tbody>{{range .Alerts}}<tr><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td><td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum alerta nos últimos 90 dias.</p>{{end}}
+<p class="muted">Abre com: {{.Policy}}.</p></div>
+{{end}}{{end}}
+
 {{if eq .Tab "software"}}
 <div class="card"><div class="card-cab"><h2>Software instalado</h2>{{if .Software.Collected}}<span class="muted">inventário coletado em {{.Software.Collected}}</span>{{end}}</div>
 {{if .Software.Total}}<form class="busca" method="get" action="/painel/maquinas/{{.D.MachineID}}">
@@ -1428,6 +1458,21 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <span></span><span><button type="submit">Gravar janela</button></span>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
+
+{{define "alertas"}}{{template "topo" .}}
+<h1>Alertas de desempenho</h1>
+<div class="card"><div class="card-cab"><h2>{{if .All}}Todos{{else}}Abertos{{end}}</h2><span class="muted">{{.Open}} abertos · {{.Unacked}} sem reconhecimento</span></div>
+<nav class="abas" aria-label="filtro dos alertas"><a href="/painel/alertas"{{if and (not .All) (eq .Metric "")}} class="ativa" aria-current="page"{{end}}>Abertos</a><a href="/painel/alertas?estado=todos"{{if and .All (eq .Metric "")}} class="ativa" aria-current="page"{{end}}>Todos (90 dias)</a><a href="/painel/alertas?medida=cpu{{if .All}}&amp;estado=todos{{end}}"{{if eq .Metric "cpu"}} class="ativa" aria-current="page"{{end}}>CPU</a><a href="/painel/alertas?medida=mem{{if .All}}&amp;estado=todos{{end}}"{{if eq .Metric "mem"}} class="ativa" aria-current="page"{{end}}>Memória</a><a href="/painel/alertas?medida=disk{{if .All}}&amp;estado=todos{{end}}"{{if eq .Metric "disk"}} class="ativa" aria-current="page"{{end}}>Disco</a></nav>
+{{if .Rows}}{{template "alertas-tabela" .}}{{else}}<p class="muted">{{if .All}}Nenhum alerta nos últimos 90 dias.{{else}}Nenhum alerta aberto.{{end}}</p>{{end}}
+<p class="muted">Abre com: {{.Policy}}. Fecha quando a medida fica dentro do limite pelo mesmo tempo. Reconhecer tira do contador do menu, sem fechar.</p>
+</div>
+{{template "fim"}}{{end}}
+
+{{define "alertas-tabela"}}<div class="tabela"><table>
+<thead><tr><th>Máquina</th><th>Medida</th><th>Aberto em</th><th>Duração</th><th>Pico</th><th>Último</th><th>Estado</th>{{if $.Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=desempenho">{{if .Name}}{{.Name}}{{else}}<code>{{.Short}}</code>{{end}}</a></td><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td>
+<td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td>
+{{if $.Admin}}<td>{{if .CanAck}}<form class="inline" method="post" action="/painel/alertas/{{.ID}}/reconhecer"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do reconhecimento do alerta {{.ID}}"> <button class="sec" type="submit">Reconhecer</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}
 <h1>Máquinas aposentadas</h1>
