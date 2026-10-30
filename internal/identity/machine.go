@@ -31,9 +31,9 @@ func (t EnrollmentToken) Status(now time.Time) string {
 	switch {
 	case t.RevokedAt != nil:
 		return "revogado"
-	case !now.Before(t.ExpiresAt):
+	case !t.ExpiresAt.IsZero() && !now.Before(t.ExpiresAt):
 		return "expirado"
-	case t.Uses >= t.MaxUses:
+	case t.MaxUses > 0 && t.Uses >= t.MaxUses:
 		return "esgotado"
 	default:
 		return "válido"

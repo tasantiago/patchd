@@ -788,11 +788,11 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="grade" method="post" action="/painel/configuracao/agente/token">
 <label for="nota">Descrição</label><input id="nota" name="nota" maxlength="{{.MaxNote}}" placeholder="ex.: laboratório da SEAT, outubro">
 <label for="validade">Validade</label><select id="validade" name="validade">{{range .TTLs}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
-<label for="usos">Máquinas</label><input id="usos" name="usos" type="number" min="1" max="{{.MaxUses}}" value="1">
-<span></span><span><button type="submit">Criar token</button> <span class="muted">O token aparece uma única vez, com o comando de instalação. Prazo curto e poucos usos limitam o estrago de um vazamento.</span></span>
+<label for="usos">Máquinas</label><input id="usos" name="usos" type="number" min="0" max="{{.MaxUses}}" value="1">
+<span></span><span><button type="submit">Criar token</button> <span class="muted">O token aparece uma única vez, com o comando de instalação. Máquinas: 0 permite usos ilimitados. Escolha Sem vencimento para um token permanente.</span></span>
 </form>
 {{if .Tokens}}<div class="tabela"><table><thead><tr><th>ID</th><th>Descrição</th><th>Criado</th><th>Vence</th><th>Usos</th><th>Estado</th><th></th></tr></thead>
-<tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{.MaxUses}}</td><td>{{.Status}}</td>
+<tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{if .MaxUses}}{{.MaxUses}}{{else}}ilimitados{{end}}</td><td>{{.Status}}</td>
 <td>{{if .CanRevoke}}<form class="inline" method="post" action="/painel/configuracao/agente/token/{{.ID}}/revogar"><button class="perigo" type="submit">Revogar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum token criado.</p>{{end}}</div>{{end}}
 {{if eq .Tab "acesso"}}{{with .Access}}
@@ -844,7 +844,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "token-criado"}}{{template "topo" .}}
 <p><a href="/painel/configuracao?aba=agente">← Configuração › Agente</a></p>
 <h1>Token de registro {{.ID}}</h1>
-<p class="aviso atencao">Guarde agora: o token não será mostrado de novo. Vale até {{.Expires}}, para {{.Uses}} máquina(s){{if .Note}} ({{.Note}}){{end}}.</p>
+<p class="aviso atencao">Guarde agora: o token não será mostrado de novo. Validade: {{.Expires}}, para {{if .Uses}}{{.Uses}} máquina(s){{else}}usos ilimitados{{end}}{{if .Note}} ({{.Note}}){{end}}.</p>
 <div class="card"><div class="card-cab"><h2>Token</h2></div><pre class="comando">{{.Token}}</pre></div>
 <div class="card"><div class="card-cab"><h2>Windows</h2><span class="muted">{{if .Version}}patchd-agent {{.Version}} · {{end}}baixe o executável{{if .CA}} e o ca.crt{{end}} em Configuração › Agente</span></div><pre class="comando">{{.WinCommand}}</pre></div>
 <div class="card"><div class="card-cab"><h2>Linux</h2></div><pre class="comando">{{.LinCommand}}</pre></div>

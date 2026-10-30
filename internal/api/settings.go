@@ -58,7 +58,7 @@ const (
 )
 
 // tokenTTLs: as validades oferecidas, em horas.
-var tokenTTLs = []int{1, 24, 72, 168, 720}
+var tokenTTLs = []int{0, 1, 24, 72, 168, 720}
 
 type settingRow struct {
 	Label, Value, Level string // Level: "", "atencao", "erro"
@@ -114,7 +114,7 @@ func (a *api) settingsTabs(tab string) string {
 func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	q := r.URL.Query()
 	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: a.settingsTabs(q.Get("aba")),
-		MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: hourOptions(tokenTTLs, 24)}
+		MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: tokenHourOptions(24)}
 	v.Sub = v.Tab
 	switch {
 	case q.Has("revogado"):
@@ -315,7 +315,7 @@ func (a *api) agentView(r *http.Request, v *settingsView) error {
 	for _, t := range list {
 		st := t.Status(now)
 		v.Tokens = append(v.Tokens, tokenRow{ID: t.ID, Note: dash(t.Note), Created: a.stamp(t.CreatedAt),
-			Expires: a.stamp(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido"})
+			Expires: tokenExpiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido"})
 	}
 	slices.SortFunc(v.Tokens, func(x, y tokenRow) int { return int(y.ID - x.ID) })
 	return nil
@@ -390,14 +390,14 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	switch {
 	case !slices.Contains(tokenTTLs, hours):
 		problem = "Escolha a validade da lista."
-	case err != nil || uses < 1 || uses > panelTokenMaxUses:
-		problem = fmt.Sprintf("Usos: de 1 a %d.", panelTokenMaxUses)
+	case err != nil || uses < 0 || uses > panelTokenMaxUses:
+		problem = fmt.Sprintf("Usos: de 0 (ilimitado) a %d.", panelTokenMaxUses)
 	case len([]rune(note)) > panelTokenMaxNote || strings.ContainsAny(note, "\r\n\t"):
 		problem = fmt.Sprintf("Descrição: até %d caracteres, numa linha.", panelTokenMaxNote)
 	}
 	if problem != "" {
 		v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: "agente",
-			MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: hourOptions(tokenTTLs, 24)}
+			MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: tokenHourOptions(24)}
 		v.Error = problem
 		if err := a.agentView(r, &v); err != nil {
 			a.internalError(w, r, "montar a configuração", err)
@@ -407,7 +407,10 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 		return
 	}
 	plain, hash := identity.NewSecret(identity.EnrollmentPrefix)
-	expires := a.now().Add(time.Duration(hours) * time.Hour).UTC()
+	expires := time.Time{}
+	if hours > 0 {
+		expires = a.now().Add(time.Duration(hours) * time.Hour).UTC()
+	}
 	id, err := a.store.CreateEnrollmentToken(r.Context(), hash, note, expires, uses)
 	if err != nil {
 		a.internalError(w, r, "criar token", err)
@@ -415,9 +418,9 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "expires_at", expires.Format(time.RFC3339),
 		"username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), fmt.Sprintf("%d uso(s), vence %s", uses, expires.Format(time.RFC3339)))
+	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), fmt.Sprintf("%d uso(s) (0 = ilimitado), validade: %s", uses, tokenExpiry(expires)))
 	v := tokenCreatedView{pageBase: a.baseFor(r.Context(), s, "Token de registro", "configuracao"), ID: id, Token: plain,
-		Expires: expires.Format("02/01/2006 15:04") + " UTC", Note: note, Uses: uses, CA: len(a.agentCA) > 0}
+		Expires: tokenExpiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0}
 	v.Server = a.publicURL
 	if v.Server == "" {
 		v.Server = "https://<endereço-do-servidor>"
@@ -478,4 +481,21 @@ func (a *api) revokeTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	a.logger.Info("token de registro revogado pelo painel", "token_id", id, "username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "token.revogar", fmt.Sprintf("token %d", id), "")
 	http.Redirect(w, r, fmt.Sprintf("/painel/configuracao?aba=agente&revogado=%d", id), http.StatusSeeOther)
+}
+
+func tokenExpiry(t time.Time) string {
+	if t.IsZero() {
+		return "sem vencimento"
+	}
+	return t.UTC().Format("02/01/2006 15:04") + " UTC"
+}
+
+func tokenHourOptions(sel int) []hourOption {
+	out := hourOptions(tokenTTLs, sel)
+	for i := range out {
+		if out[i].Hours == 0 {
+			out[i].Label = "Sem vencimento"
+		}
+	}
+	return out
 }

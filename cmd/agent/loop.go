@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -79,6 +80,12 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 
 	cred, err := credential.Load(opts.DataDir)
 	if errors.Is(err, credential.ErrNotEnrolled) {
+		cred, err = waitOfflineEnrollment(ctx, logger, opts.DataDir, info.Version)
+		if ctx.Err() != nil {
+			return exitOK
+		}
+	}
+	if errors.Is(err, credential.ErrNotEnrolled) {
 		logger.Error("máquina não registrada: execute \"patchd-agent enroll\" antes", "data_dir", opts.DataDir)
 		return exitRuntime
 	}
@@ -92,6 +99,10 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		logger.Error("o servidor configurado não é o que emitiu a credencial",
 			"configured", opts.ServerURL, "credential_server", cred.ServerURL)
 		return exitConfig
+	}
+	// Recover a successful registration interrupted before bootstrap-file cleanup.
+	if err := os.Remove(filepath.Join(opts.DataDir, offlineFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Warn("não foi possível remover o arquivo de preparação offline")
 	}
 
 	collector := inventory.New(platform.ExecRunner{})

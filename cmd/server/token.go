@@ -83,30 +83,33 @@ func runToken(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 func tokenCreate(ctx context.Context, st *store.Postgres, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("token create", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	uses := fs.Int("uses", 1, "número máximo de máquinas que o token registra")
-	ttl := fs.Duration("ttl", 24*time.Hour, "validade, ex.: 2h, 72h (máximo 720h)")
+	uses := fs.Int("uses", 1, "número máximo de máquinas; 0 = ilimitado")
+	ttl := fs.Duration("ttl", 24*time.Hour, "validade: 0 = sem vencimento, ex.: 2h, 72h (máximo 720h)")
 	note := fs.String("note", "", "descrição para a lista, ex.: \"piloto anel 0\"")
 	if err := fs.Parse(args); err != nil {
 		return exitConfig
 	}
-	if *uses < 1 || *uses > tokenMaxUses {
-		fmt.Fprintf(stderr, "patchd-server: -uses deve ficar entre 1 e %d\n", tokenMaxUses)
+	if *uses < 0 || *uses > tokenMaxUses {
+		fmt.Fprintf(stderr, "patchd-server: -uses deve ficar entre 0 (ilimitado) e %d\n", tokenMaxUses)
 		return exitConfig
 	}
-	if *ttl <= 0 || *ttl > tokenMaxTTL {
-		fmt.Fprintln(stderr, "patchd-server: -ttl deve ser positivo e de no máximo 720h (30 dias)")
+	if *ttl < 0 || *ttl > tokenMaxTTL {
+		fmt.Fprintln(stderr, "patchd-server: -ttl deve ser de 0 (sem vencimento) até 720h (30 dias)")
 		return exitConfig
 	}
 
 	plain, hash := identity.NewSecret(identity.EnrollmentPrefix)
-	expires := time.Now().Add(*ttl).UTC()
+	expires := time.Time{}
+	if *ttl > 0 {
+		expires = time.Now().Add(*ttl).UTC()
+	}
 	id, err := st.CreateEnrollmentToken(ctx, hash, *note, expires, *uses)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: criar token: %v\n", err)
 		return exitRuntime
 	}
-	fmt.Fprintf(stderr, "token %d criado: até %d uso(s), vence em %s (UTC). Guarde-o agora: ele não será mostrado de novo.\n",
-		id, *uses, expires.Format("2006-01-02 15:04"))
+	fmt.Fprintf(stderr, "token %d criado: limite de usos %s, validade %s. Guarde-o agora: ele não será mostrado de novo.\n",
+		id, tokenUsesText(*uses), tokenExpiryText(expires))
 	fmt.Fprintln(stdout, plain)
 	return exitOK
 }
@@ -121,7 +124,7 @@ func tokenList(ctx context.Context, st *store.Postgres, stdout, stderr io.Writer
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSITUAÇÃO\tUSOS\tVENCE (UTC)\tNOTA")
 	for _, t := range list {
-		fmt.Fprintf(tw, "%d\t%s\t%d/%d\t%s\t%s\n", t.ID, t.Status(now), t.Uses, t.MaxUses, t.ExpiresAt.Format("2006-01-02 15:04"), t.Note)
+		fmt.Fprintf(tw, "%d\t%s\t%d/%s\t%s\t%s\n", t.ID, t.Status(now), t.Uses, tokenUsesText(t.MaxUses), tokenExpiryText(t.ExpiresAt), t.Note)
 	}
 	_ = tw.Flush()
 	return exitOK
@@ -149,4 +152,17 @@ func tokenRevoke(ctx context.Context, st *store.Postgres, args []string, stderr 
 	}
 	fmt.Fprintf(stderr, "token %d revogado; as máquinas já registradas com ele continuam com as suas credenciais\n", *id)
 	return exitOK
+}
+
+func tokenExpiryText(t time.Time) string {
+	if t.IsZero() {
+		return "sem vencimento"
+	}
+	return t.UTC().Format("2006-01-02 15:04")
+}
+func tokenUsesText(n int) string {
+	if n == 0 {
+		return "ilimitado"
+	}
+	return fmt.Sprint(n)
 }

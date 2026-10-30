@@ -58,6 +58,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 			return runEnroll(args[1:], look, stdout, stderr, info.Version)
 		case "install":
 			return runInstall(args[1:], look, stdout, stderr, info.Version)
+		case "activate":
+			return activateOffline(args[1:], look, stdout, stderr)
 		case "service":
 			return runService(args[1:], look, stdout, stderr)
 		case "verify-cab":

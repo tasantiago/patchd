@@ -91,7 +91,9 @@ func Save(dataDir string, c Credential) error {
 // Secret diz se o arquivo da pasta de dados é um segredo: a credencial e, desde a Aula 21.3,
 // a chave da caixa da máquina. Esses ficam com a DACL própria (só SYSTEM e Administradores,
 // protegida) também na varredura da pasta (Aula 20.6).
-func Secret(name string) bool { return name == FileName || name == BoxKeyFile }
+func Secret(name string) bool {
+	return name == FileName || name == BoxKeyFile || name == "offline-enrollment.json" || name == "enrollment-ca.crt"
+}
 
 // BoxKeyFile: o arquivo da chave privada da caixa (machinebox.FileName; repetido aqui para
 // este pacote não depender daquele).

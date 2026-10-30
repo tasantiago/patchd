@@ -761,6 +761,64 @@ O firmware fica em colunas do inventário (migration 0041), como o fabricante e 
 0025: a lista não relê o relatório inteiro de cada máquina. A migration preenche as colunas do
 inventário atual de cada máquina.
 
+## Instalação offline e imagem padrão com Sysprep
+
+O agente aceita `install -offline`: instala o executável e o serviço sem acessar o servidor.
+O serviço registra a estação em segundo plano quando conseguir comunicar por HTTPS, com
+novas tentativas de 2 segundos até 5 minutos entre tentativas. Falta de rede, CA ou token
+inválido não impede a conclusão da instalação. Os logs mostram o estado de espera.
+
+Para uma imagem padrão, **use também `-image`**. Essa opção impede o registro da referência
+mesmo que ela tenha rede, inclusive após reiniciar durante a preparação da imagem.
+O registro só é liberado por `activate`, depois da implantação/Sysprep.
+
+1. Em Configuração › Agente, crie um token com **Máquinas = 0** (usos ilimitados) e
+   **Validade = Sem vencimento**. Alternativamente, no servidor:
+
+   ```bash
+   podman exec patchd-server /patchd-server token create -uses 0 -ttl 0 -note "ISO padrão TJ"
+   ```
+
+   Salve o token apresentado uma única vez em `C:\Preparacao\patchd-token.txt`.
+   O token continua revogável no painel/CLI. Revogá-lo impede novos registros feitos
+   com aquela ISO, mas não interrompe agentes já registrados.
+
+2. Na referência Windows, em PowerShell como administrador:
+
+   ```powershell
+   .\patchd-agent-windows-amd64.exe install -offline -image `
+     -server https://patchd.exemplo:44343 `
+     -enroll-token-file C:\Preparacao\patchd-token.txt `
+     -ca-file C:\Preparacao\ca.crt
+   ```
+
+   O token e a CA são copiados para a pasta protegida do agente. Os arquivos de preparação
+   deixam de ser necessários. A instalação recusa uma referência que já contenha credencial
+   ou chave privada do agente: não capture uma estação anteriormente registrada.
+
+3. Integre ao `C:\Windows\Setup\Scripts\SetupComplete.cmd` existente, sem sobrescrever
+   as outras ações do TJ:
+
+   ```bat
+   "%ProgramFiles%\patchd\patchd-agent.exe" activate
+   ```
+
+   Esse comando deve executar **nas estações implantadas, depois do Sysprep**, com privilégios
+   administrativos/SYSTEM. Não o execute na referência antes de capturar a imagem.
+   Se o processo de implantação do TJ não executar SetupComplete (conforme edição,
+   licenciamento e automação do Windows), use a etapa equivalente pós-implantação.
+   Para pasta de dados personalizada, informe o mesmo `-data-dir` no activate.
+
+4. Execute o Sysprep e capture a imagem pelo processo habitual do TJ. Após a implantação,
+   cada estação registra uma identidade própria e só então gera sua chave privada.
+   A URL e o token da imagem não se tornam uma identidade compartilhada.
+
+O token de bootstrap fica em `offline-enrollment.json`, protegido por ACL SYSTEM/Administradores
+no Windows. Ele é removido da estação depois do registro bem-sucedido; a CA permanece para
+a comunicação normal. A cópia distribuída na imagem continua reutilizável. Para instalações
+offline individuais, omita `-image`: o serviço tenta registrar imediatamente em segundo plano,
+sem precisar de activate.
+
 ## Mesclar registros duplicados de um equipamento
 
 Quando uma reinstalação gera outra identidade para o mesmo equipamento, um administrador

@@ -89,6 +89,18 @@ func runInstall(args []string, look config.Lookup, stdout, stderr io.Writer, age
 	// O serviço é conferido antes do registro: um sistema em que o serviço não pode ser
 	// instalado (sem systemd, por exemplo) falha aqui, sem gastar um uso do token.
 	svcArgs := serviceArgs(args)
+	if cfg.ImageInstall && !cfg.OfflineInstall {
+		fmt.Fprintln(stderr, "-image exige -offline")
+		return exitConfig
+	}
+	if cfg.OfflineInstall {
+		var err error
+		svcArgs, err = prepareOfflineInstall(cfg, args, look)
+		if err != nil {
+			fmt.Fprintln(stderr, "patchd-agent:", err)
+			return exitConfig
+		}
+	}
 	state, err := installedState(cfg, svcArgs)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: conferir o serviço instalado: %v\n", err)
@@ -96,7 +108,9 @@ func runInstall(args []string, look config.Lookup, stdout, stderr io.Writer, age
 	}
 
 	fmt.Fprintf(stdout, "patchd-agent %s\n", agentVersion)
-	if _, code := ensureEnrolled(cfg, look, stdout, stderr, agentVersion); code != exitOK {
+	if cfg.OfflineInstall {
+		fmt.Fprintln(stdout, "instalação offline: registro adiado até o servidor ficar acessível; imagem exige activate após Sysprep")
+	} else if _, code := ensureEnrolled(cfg, look, stdout, stderr, agentVersion); code != exitOK {
 		return code
 	}
 
@@ -193,6 +207,9 @@ func serviceArgs(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if strings.HasPrefix(a, "-") && (name == "offline" || name == "image") {
+			continue
+		}
 		if strings.HasPrefix(a, "-") && (name == "server" || name == "enroll-token-file") {
 			if !hasValue {
 				i++ // o valor vem no argumento seguinte

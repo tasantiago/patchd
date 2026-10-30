@@ -21,6 +21,8 @@ import (
 
 // agentConfig é a configuração efetiva do agente, depois de aplicar padrão, ambiente e flags.
 type agentConfig struct {
+	OfflineInstall  bool
+	ImageInstall    bool
 	ServerURL       string
 	DataDir         string
 	CheckinInterval time.Duration
@@ -53,6 +55,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	envUserApp, errUserApp := config.Bool(look, "PATCHD_USER_APP", true)
 
 	fs := flag.NewFlagSet("patchd-agent", flag.ContinueOnError)
+	fs.BoolVar(&cfg.OfflineInstall, "offline", false, "install: instala sem contato com o servidor; registra em segundo plano")
+	fs.BoolVar(&cfg.ImageInstall, "image", false, "install -offline: aguarda activate depois do Sysprep antes de registrar")
 	fs.SetOutput(usage)
 	config.SetUsage(fs)
 	fs.StringVar(&cfg.ServerURL, "server", config.String(look, "PATCHD_SERVER_URL", ""),

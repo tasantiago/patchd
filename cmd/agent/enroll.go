@@ -100,13 +100,17 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 // enrollMachine faz o registro: coleta as evidências, envia ao servidor e grava a
 // credencial. Quem chama já conferiu que a máquina não está registrada e segura a trava.
 func enrollMachine(serverURL, dataDir, token, agentVersion string, stderr io.Writer) (credential.Credential, error) {
+	return enrollMachineContext(context.Background(), serverURL, dataDir, token, agentVersion, stderr)
+}
+
+func enrollMachineContext(parent context.Context, serverURL, dataDir, token, agentVersion string, stderr io.Writer) (credential.Credential, error) {
 	// Antes do registro: sem isso, uma pasta sem permissão faria o servidor registrar a
 	// máquina e consumir um uso do token, e a credencial emitida se perderia.
 	if err := credential.CheckWritable(dataDir); err != nil {
 		return credential.Credential{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), enrollTimeout)
+	ctx, cancel := context.WithTimeout(parent, enrollTimeout)
 	defer cancel()
 
 	ev, problems := evidence.Collect(ctx, platform.ExecRunner{})
