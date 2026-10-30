@@ -301,3 +301,30 @@ cópias.
 rastro no patchd; por isso a chave fica em cofre com acesso registrado, não num notebook. E a
 senha da frota que o `.bat` deixou legível na máquina continua lá até alguém apagar: depois da
 primeira troca pela guarda, ela já não vale na BIOS, mas deve sair do Registro.
+
+## 10. A senha padrão de cada fabricante
+
+O pedido (30/10/2026): parte das Lenovo da frota tem uma senha de supervisor padrão, posta à
+mão. Na primeira troca pela guarda, o admin digitava essa senha máquina por máquina (seção 8).
+Agora ela pode ser cadastrada uma vez, por fabricante, em **Configuração › BIOS**.
+
+- **Guardada como a guarda:** fechada para a chave de guarda (`biospw.SealFleet`, rótulo
+  `bios-frota`, presa ao fabricante; tabela `bios_fleet_passwords`, migração 0050). A tela
+  nunca a mostra de volta; gravar de novo troca, e há "Remover". Motivo obrigatório; a trilha
+  (`bios.senha.padrao`, `bios.senha.padrao.remover`) guarda quem, quando e o motivo, nunca a
+  senha.
+- **Usada só na primeira troca:** quando a BIOS tem senha e a guarda não tem a ativa, o campo
+  "senha atual" do cartão Senha da BIOS fica opcional; em branco, o servidor usa a padrão do
+  fabricante da máquina e a fecha para a caixa dela, como faria com a digitada. A trilha da
+  gravação diz que foi a padrão. Uma máquina com outra senha recebe a digitada.
+- **Lenovo:** a senha vai como teclado americano numa linha separada por vírgula e ponto e
+  vírgula: o cadastro e a senha digitada recusam acento, espaço, vírgula e ponto e vírgula
+  antes de qualquer job.
+- **Chave de guarda trocada:** a padrão fechada com a chave antiga deixa de ser usada (a tela
+  avisa para cadastrar de novo).
+- **Fora da cópia de emergência** (seção 9): a padrão só vale antes da primeira troca, e a
+  equipe já a conhece; depois da troca, cada máquina tem a própria senha, que está nas cópias.
+
+Errar a senha padrão tem o custo de sempre: a BIOS recusa ("acesso negado" / código 6 / 3), o
+agente não repete e a senha da guarda volta a pendente. Conferir numa máquina antes de seguir
+com as outras.

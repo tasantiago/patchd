@@ -179,7 +179,8 @@ quem resolve.
   obrigatório e a trilha guarda o antes e o depois, nunca a senha. Cópia de emergência (R1):
   o envelope da guarda no Registro da máquina e no `patchd-server bios export`, revelado
   offline só com a chave de guarda (`docs/bios-senha.md`, seção 9); a revelação offline fica
-  fora da trilha.
+  fora da trilha. Senha padrão por fabricante (Configuração › BIOS, `docs/bios-senha.md`,
+  seção 10): fechada para a chave de guarda, usada só como a atual na primeira troca.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

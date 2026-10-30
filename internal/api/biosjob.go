@@ -234,7 +234,23 @@ func (a *api) writeBIOSAction(w http.ResponseWriter, r *http.Request, s panel.Se
 			current, source = []byte(pw), fmt.Sprintf("troca (senha atual: a da guarda #%d)", active.ID)
 		default:
 			typed := r.PostFormValue("senha_atual")
-			if typed == "" || len(typed) > maxCurrentPassword || strings.ContainsFunc(typed, func(c rune) bool { return c < 0x20 || c == 0x7f }) {
+			if typed == "" {
+				// Em branco: a senha padrão do fabricante (docs/bios-senha.md, seção 10).
+				fleet, b, err := a.fleetPassword(ctx, facts.Firmware.Interface)
+				switch {
+				case err != nil:
+					a.logger.Error("senha padrão da BIOS", "error", err, "request_id", RequestID(ctx))
+					back("bios-erro=envelope")
+					return
+				case b == nil:
+					back("bios-erro=senha-atual")
+					return
+				}
+				current, source = []byte(fleet), fmt.Sprintf("troca (senha atual: a padrão da %s, cadastrada por %s)", vendorLabel(b.Vendor), b.SetBy)
+				break
+			}
+			if len(typed) > maxCurrentPassword || strings.ContainsFunc(typed, func(c rune) bool { return c < 0x20 || c == 0x7f }) ||
+				biospw.CheckFleet(facts.Firmware.Interface, typed) != nil {
 				back("bios-erro=senha-atual")
 				return
 			}

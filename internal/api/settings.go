@@ -96,11 +96,12 @@ type settingsView struct {
 	Appearance  *logoView        // aba Sistema: o cartão Aparência (Aula 19.1)
 	Params      []paramGroup     // aba Parâmetros (Aula 19.2)
 	Assets      *assetView       // aba Patrimônio (Aula 23.6)
+	Fleet       *biosFleetView   // aba BIOS: a senha padrão de cada fabricante (docs/bios-senha.md, seção 10)
 }
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
-	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio", "descoberta":
+	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio", "descoberta", "bios":
 		return tab
 	case "parametros":
 		if a.params != nil {
@@ -127,6 +128,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	case "descoberta":
 		w.Header().Set("Cache-Control", "no-store")
 		v.Discovery, err = a.discoveryConfig(r.Context())
+	case "bios":
+		fleetFlash(q, &v)
+		v.Fleet, err = a.fleetTab(r.Context())
 	case "sistema":
 		notifyFlash(q, &v.pageBase)
 		logoFlash(q, &v.pageBase)

@@ -59,6 +59,10 @@ type Store interface {
 	AttachBIOSJob(ctx context.Context, id, jobID int64, at time.Time) (bool, error)                            // Aula 21.5
 	SettleBIOSPassword(ctx context.Context, id, jobID int64, state, result string, at time.Time) (bool, error) // Aula 21.5
 	ResolveBIOSPassword(ctx context.Context, id int64, newValid bool, result string, at time.Time) (bool, error)
+	// A senha padrão de cada fabricante (docs/bios-senha.md, seção 10).
+	BIOSFleetPasswords(ctx context.Context) ([]store.BIOSFleetPassword, error)
+	SetBIOSFleetPassword(ctx context.Context, b store.BIOSFleetPassword) error
+	DeleteBIOSFleetPassword(ctx context.Context, vendor string) (bool, error)
 	// KeyStats: as chaves de jobs e de release aceitas pela frota (Aula 20.7).
 	KeyStats(ctx context.Context, since time.Time) (store.KeyStats, error)
 	// SourceFailures: as fontes que falharam na busca atual (Aula 16.2); machineID vazio = todas.
@@ -315,6 +319,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/descoberta/faixas/{id}/{op}", a.sameOrigin(a.adminAction(a.rangeOpAction)))
 	mux.Handle("POST /painel/descoberta/varrer", a.sameOrigin(a.adminAction(a.scanAction)))
 	mux.Handle("POST /painel/configuracao/descoberta", a.sameOrigin(a.adminAction(a.discoveryCredentialAction)))
+	mux.Handle("POST /painel/configuracao/bios/senha-padrao", a.sameOrigin(a.adminAction(a.setFleetPasswordAction)))            // docs/bios-senha.md, seção 10
+	mux.Handle("POST /painel/configuracao/bios/senha-padrao/remover", a.sameOrigin(a.adminAction(a.deleteFleetPasswordAction))) // docs/bios-senha.md, seção 10
 	mux.Handle("POST /painel/configuracao/notificacoes/teste", a.sameOrigin(a.adminAction(a.notifyTestAction)))
 	mux.Handle("POST /painel/configuracao/autoatendimento", a.sameOrigin(a.adminAction(a.selfServiceOfferAction))) // Aula 17.1
 	mux.Handle("POST /painel/configuracao/acesso/testar-ad", a.sameOrigin(a.adminAction(a.testADAction)))

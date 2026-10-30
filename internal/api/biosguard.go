@@ -59,7 +59,8 @@ type biosCard struct {
 	Blocker     string // o que impede gravar nesta máquina ("" = pode)
 	NeedCurrent bool   // a BIOS tem senha e a guarda não tem a ativa: o admin digita a atual
 	MaxCurrent  int
-	Uncertain   bool // há uma senha incerta: nada é gravado até alguém conferir
+	FleetLabel  string // há senha padrão do fabricante: o campo pode ficar em branco (docs/bios-senha.md, seção 10)
+	Uncertain   bool   // há uma senha incerta: nada é gravado até alguém conferir
 }
 
 type biosRow struct {
@@ -136,6 +137,11 @@ func (a *api) biosView(r *http.Request, id string, admin bool) (*biosCard, error
 			hasActive = hasActive || (b.State == store.BIOSActive && b.EscrowKeyID == c.KeyID)
 		}
 		c.NeedCurrent = c.Blocker == "" && facts.Firmware.AdminPassword != nil && *facts.Firmware.AdminPassword && !hasActive
+		if c.NeedCurrent {
+			if _, b, err := a.fleetPassword(r.Context(), facts.Firmware.Interface); err == nil && b != nil {
+				c.FleetLabel = vendorLabel(b.Vendor)
+			}
+		}
 		for i := range c.Rows {
 			if b := list[i]; b.ID == c.Pending && b.JobID == 0 && c.Blocker == "" && b.EscrowKeyID == c.KeyID {
 				c.Rows[i].CanWrite = true
@@ -331,7 +337,7 @@ func biosFlash(q map[string][]string, v *machineView) bool {
 		"incerta":      "Há uma senha incerta nesta máquina: confira na BIOS qual vale e resolva antes de gravar outra.",
 		"nao-pendente": "Esta senha não está mais esperando a gravação (outro pedido chegou antes?).",
 		"bloqueada":    "A gravação não pode seguir nesta máquina: o motivo está no cartão Senha da BIOS.",
-		"senha-atual":  fmt.Sprintf("A BIOS desta máquina já tem senha: informe a atual (a da frota, até %d caracteres) para a troca.", maxCurrentPassword),
+		"senha-atual":  fmt.Sprintf("A BIOS desta máquina já tem senha: informe a atual (a da frota, até %d caracteres; na Lenovo, sem acento, espaço, vírgula ou ponto e vírgula) ou cadastre a senha padrão do fabricante em Configuração › BIOS.", maxCurrentPassword),
 		"resolver":     "Escolha qual senha vale (a nova ou a anterior); só uma senha incerta pode ser resolvida.",
 	}[get("bios-erro")]
 	if ok {
