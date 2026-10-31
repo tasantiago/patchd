@@ -83,13 +83,20 @@ Para requisitos e limites detalhados, consulte [docs/requisitos.md](docs/requisi
 
 ## Instalar um servidor novo do zero
 
-O caminho abaixo usa uma **VM Ubuntu 24.04 LTS de 64 bits (amd64 ou arm64) com Docker Engine e Compose V2**. A imagem de produção compila o servidor diretamente do repositório com o Go declarado em [deploy/Dockerfile](deploy/Dockerfile). O host não precisa ter Go instalado.
+Escolha o roteiro conforme o sistema e o motor de contêineres da VM:
 
-Você vai obter o código, criar a configuração e as chaves desta instalação, preparar TLS, subir o PostgreSQL e o servidor e criar o primeiro administrador. **Nenhum binário, volume, certificado ou segredo precisa ser extraído do contêiner `dev`.**
+| Ambiente | Roteiro completo |
+| --- | --- |
+| Ubuntu 24.04 LTS, Docker Engine e Compose V2 | [Instalação com Docker](#instalação-com-docker-engine-e-compose-v2-ubuntu-2404). |
+| RHEL 10, Podman sem root e Quadlet | [Instalação com Podman](#instalação-com-podman-sem-root-e-quadlet-rhel-10). |
 
-Para **RHEL 10 com Podman sem root e Quadlet**, siga [o roteiro de Podman](docs/podman.md). Ele usa o mesmo Dockerfile de produção; as permissões e os comandos de serviço são diferentes dos apresentados aqui.
+Os dois caminhos obtêm o código do Git, criam a configuração e as chaves desta instalação, preparam TLS, sobem PostgreSQL e servidor e criam o primeiro administrador. **Nenhum binário, volume, certificado ou segredo precisa ser extraído do contêiner `dev`.** O host não precisa de Go: o [Dockerfile de produção](deploy/Dockerfile) compila o servidor em uma imagem oficial de Go.
 
-### 1. Preparar a VM
+### Instalação com Docker Engine e Compose V2 (Ubuntu 24.04)
+
+Este roteiro usa uma **VM Ubuntu 24.04 LTS de 64 bits (amd64 ou arm64), Docker convencional com daemon rootful e Compose V2**. Para Podman, siga a seção própria abaixo: usuário, permissões e comandos de serviço são diferentes.
+
+#### 1. Preparar a VM
 
 Tenha um nome DNS para o servidor, acesso administrativo à VM e saída HTTPS para GitHub, registro de imagens e módulos Go. Reserve espaço para imagens de build, banco, conteúdo dos pacotes e backups; o primeiro build precisa de vários GB livres. A instalação precisa de um certificado TLS para o nome DNS escolhido.
 
@@ -126,7 +133,7 @@ docker compose version
 
 Continue no mesmo terminal administrativo. O roteiro usa Docker convencional, com daemon rootful; para operação sem root, use o guia de Podman. Se já houver Docker ou containerd no host, confira os conflitos de pacotes na documentação oficial antes de instalar.
 
-### 2. Clonar o projeto e definir os dados da instalação
+#### 2. Clonar o projeto e definir os dados da instalação
 
 ```bash
 git clone https://github.com/tasantiago/patchd.git /opt/patchd
@@ -161,7 +168,7 @@ chmod 700 deploy/secrets deploy/tls releases
 
 Esse início usa login local. AD/LDAP, OIDC/Keycloak, SMTP, descoberta e guarda de BIOS são integrações opcionais; os campos correspondentes podem continuar vazios. O Compose da raiz (`docker-compose.yml`) é de desenvolvimento; para este servidor, use os arquivos de `deploy/` e o wrapper `./deploy/compose.sh`.
 
-### 3. Compilar a imagem de produção
+#### 3. Compilar a imagem de produção
 
 ```bash
 docker build -f deploy/Dockerfile \
@@ -176,7 +183,7 @@ O build baixa a imagem oficial do Go e os módulos e produz uma imagem final com
 
 Se a rede usa inspeção TLS, obtenha o certificado **público** da CA com a equipe de infraestrutura e coloque-o em `.docker/certs/` como PEM com extensão `.crt` antes do build. Configure também a confiança e o proxy do host/Docker conforme a rede. A origem desse certificado é a PKI da organização; não é necessário copiá-lo de um ambiente de desenvolvimento.
 
-### 4. Gerar a chave de jobs desta instalação
+#### 4. Gerar a chave de jobs desta instalação
 
 Para uma **frota nova**, gere o par usando a imagem recém-compilada:
 
@@ -192,7 +199,7 @@ A privada fica em `deploy/secrets/job_signing_key`; a pública, em `job_signing_
 
 Se estiver **migrando uma frota existente**, preserve a chave de jobs de produção e os dados dessa implantação: gerar outra chave faz os agentes antigos recusarem os jobs. Isso é uma migração, diferente de criar uma instalação independente.
 
-### 5. Preparar TLS
+#### 5. Preparar TLS
 
 Gere uma chave e uma solicitação de certificado novas nesta VM:
 
@@ -216,7 +223,7 @@ Para montar um **laboratório isolado sem uma CA existente**, siga [TLS de labor
 
 O nome em `PATCHD_PUBLIC_URL` precisa constar no SAN do certificado. Navegadores e agentes devem confiar na CA; distribua apenas o certificado público da CA pelos meios da organização. A privada da CA não pertence ao servidor da aplicação.
 
-### 6. Preparar os demais segredos e as permissões
+#### 6. Preparar os demais segredos e as permissões
 
 Com a chave de jobs, o `.env` e o TLS presentes:
 
@@ -239,7 +246,7 @@ O script gera a senha e a URL do PostgreSQL, o token de métricas e os arquivos 
 
 O resultado de `config --services` deve listar `postgres` e `server`. Use `config --quiet` para validar sem imprimir a configuração inteira. Nos comandos operacionais, o wrapper evita que variáveis `PATCHD_*` exportadas no terminal substituam o `deploy/.env`.
 
-### 7. Subir o PostgreSQL e o servidor
+#### 7. Subir o PostgreSQL e o servidor
 
 ```bash
 ./deploy/atualizar.sh "$PATCHD_INSTALACAO_VERSION"
@@ -267,7 +274,7 @@ Espere HTTP 200 e os dois serviços saudáveis. Libere o acesso à porta HTTPS n
 | TCP 9090 | Métricas com token, publicadas somente em `127.0.0.1` por padrão. |
 | TCP 8080 | Listener HTTP desativado neste roteiro; o mapeamento do Compose fica limitado a `127.0.0.1`. |
 
-### 8. Criar o primeiro administrador e entrar
+#### 8. Criar o primeiro administrador e entrar
 
 Não há usuário ou senha padrão. Crie uma conta local, passando a senha pela entrada padrão:
 
@@ -283,7 +290,7 @@ unset PATCHD_ADMIN_PASSWORD
 
 Abra **`https://SEU_FQDN:8443/painel/entrar`** no navegador que confia na CA e use a conta criada. A senha não deve ser colocada como argumento, gravada no `.env` ou enviada a um repositório.
 
-### 9. Preparar agentes e validar o primeiro equipamento
+#### 9. Preparar agentes e validar o primeiro equipamento
 
 O servidor já pode operar com banco, HTTPS e login local. Para receber equipamentos, prepare agentes dessa instalação:
 
@@ -308,7 +315,7 @@ O token é exibido uma única vez: guarde-o pelo meio autorizado, sem publicar a
 
 Instale um agente em uma máquina de homologação usando a URL HTTPS, a CA e o token. Confira registro, primeiro check-in e inventário antes de ampliar a frota. Para automação com pacotes ZIP ou scripts avulsos, use [o guia de pacotes de scripts](docs/pacotes-de-scripts.md).
 
-### 10. Fechar a instalação com backup e recuperação
+#### 10. Fechar a instalação com backup e recuperação
 
 ```bash
 ./deploy/backup.sh
@@ -326,7 +333,7 @@ Configure a agenda e ensaie a restauração conforme [docs/operacao.md](docs/ope
 
 O backup lógico do banco não contém os arquivos dos volumes e diretórios acima. Não use `down -v` para manutenção rotineira: isso remove os volumes. Excluir um cadastro de script também não é uma política de limpeza dos arquivos usados por jobs emitidos.
 
-### Problemas na primeira subida
+#### Problemas na primeira subida
 
 | Sintoma | Conferir |
 | --- | --- |
@@ -339,6 +346,188 @@ O backup lógico do banco não contém os arquivos dos volumes e diretórios aci
 | Login negado | Primeiro administrador criado, senha e URL HTTPS corretas. |
 | Painel não oferece agente para baixar | Build, assinatura e publicação de uma release ainda precisam ser feitos. |
 | Agente recusa jobs | Pública embutida no build precisa corresponder à privada desta instalação. |
+
+### Instalação com Podman sem root e Quadlet (RHEL 10)
+
+Este roteiro usa uma **VM RHEL 10 de 64 bits (amd64 ou arm64), Podman 5 ou superior, systemd e SELinux ativo**. O build vem do Git e do mesmo Dockerfile de produção; não precisa de Docker, Compose, Go no host ou arquivos do contêiner `dev`. O RHEL precisa estar registrado e ter acesso aos repositórios de pacotes, ao GitHub, ao registro de imagens e aos módulos Go.
+
+#### P1. Preparar a VM como root
+
+No terminal administrativo da VM nova:
+
+```bash
+sudo -i
+dnf install -y git ca-certificates curl openssl
+PATCHD_PREPARO_DIR="$(mktemp -d /tmp/patchd-preparo.XXXXXX)"
+git clone https://github.com/tasantiago/patchd.git "$PATCHD_PREPARO_DIR"
+bash "$PATCHD_PREPARO_DIR/deploy/podman/preparar-vm.sh" \
+  -u patchd -d /srv/patchd -p 8443
+```
+
+O script instala Podman e dependências, cria o usuário `patchd`, confere as faixas de subuid/subgid, habilita *linger*, prepara o diário persistente do systemd e configura o armazenamento em `/srv/patchd/containers/storage`, com os rótulos do SELinux. Reserve espaço para builds, volumes e crescimento do banco; o script avisa abaixo de 15 GB livres. Decida o local do armazenamento antes do primeiro uso do Podman.
+
+Se o firewalld estiver ativo, o script abre `8443/tcp` na zona padrão; ajuste a regra às redes autorizadas. Se estiver inativo, providencie a liberação no firewall usado pela implantação. O exemplo mantém a URL com `:8443`; o redirecionamento opcional da 443 é explicado em [docs/podman.md](docs/podman.md).
+
+Entre no usuário do serviço. **Todos os próximos comandos deste roteiro são executados como `patchd`, sem `sudo podman`:**
+
+```bash
+sudo -iu patchd
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+systemctl --user show-environment >/dev/null
+podman version
+podman info --format '{{.Store.GraphRoot}}'
+```
+
+O último comando deve apontar para `/srv/patchd/containers/storage`. O armazenamento de `root` é outro; executar os comandos como root não encontra os serviços ou as imagens desse usuário. O *linger* mantém o systemd do usuário ativo após logout e no boot.
+
+#### P2. Clonar e configurar a instalação
+
+```bash
+git clone https://github.com/tasantiago/patchd.git "$HOME/patchd"
+cd "$HOME/patchd"
+git rev-parse HEAD
+
+# Substitua pelo DNS real desta VM.
+PATCHD_FQDN='patchd.exemplo.invalid'
+# Rótulo local de implantação; não faz checkout de uma tag do GitHub.
+PATCHD_INSTALACAO_VERSION='v0.0.0-instalacao.1'
+getent hosts "$PATCHD_FQDN"
+
+umask 077
+cp deploy/.env.exemplo deploy/.env
+chmod 600 deploy/.env
+sed -i "s|^PATCHD_PUBLIC_URL=.*|PATCHD_PUBLIC_URL=https://${PATCHD_FQDN}:8443|" deploy/.env
+sed -i 's/^PATCHD_HTTP_BIND=.*/PATCHD_HTTP_BIND=127.0.0.1/' deploy/.env
+# No RHEL, o Cockpit costuma usar 9090; reserve 9091 para as métricas.
+sed -i 's/^PATCHD_METRICS_PORT=.*/PATCHD_METRICS_PORT=9091/' deploy/.env
+cat >> deploy/.env <<'ENV'
+PATCHD_HTTP_LISTEN_ADDR=
+PATCHD_AGENT_CA_FILE=/run/patchd/tls/ca.crt
+ENV
+mkdir -p deploy/secrets deploy/tls releases
+chmod 700 deploy/secrets deploy/tls releases
+
+./deploy/podman/instalar.sh
+```
+
+Substitua `.invalid` antes de continuar e selecione o commit ou a tag aprovada antes do build. O `instalar.sh` confere Podman, systemd e portas; gera os arquivos do Quadlet em `~/.config/containers/systemd/`, o ambiente em `~/.config/patchd/servidor.env` e o timer de backup. Também baixa a imagem do PostgreSQL e anota `PATCHD_MOTOR=podman` no `deploy/.env`. Ele ainda não inicia os serviços.
+
+Neste início, AD/LDAP, OIDC/Keycloak e SMTP podem permanecer vazios: o primeiro login será local. Se houver proxy ou inspeção TLS, configure a saída e a confiança do host/Podman e coloque a CA pública da organização em `.docker/certs/*.crt` antes do build, conforme [o guia de rede do Podman](docs/podman.md#disco).
+
+#### P3. Compilar e gerar a chave de jobs
+
+```bash
+podman build --format docker -f deploy/Dockerfile \
+  --build-arg VERSION="$PATCHD_INSTALACAO_VERSION" \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  -t "localhost/patchd-server:$PATCHD_INSTALACAO_VERSION" .
+
+podman run --rm --network none \
+  "localhost/patchd-server:$PATCHD_INSTALACAO_VERSION" -version
+
+podman run --rm --network none \
+  --userns keep-id:uid=65532,gid=65532 \
+  -v "$PWD/deploy/secrets:/segredos:Z" \
+  "localhost/patchd-server:$PATCHD_INSTALACAO_VERSION" \
+  job keygen -out /segredos/job_signing_key \
+  > deploy/secrets/job_signing_key.pub
+```
+
+A privada é criada pelo próprio programa e não é sobrescrita. Preserve-a em backup protegido fora da VM; a pública será embutida nos agentes. Este é o procedimento de uma **frota nova**. Para migrar equipamentos existentes, preserve a chave de jobs de produção e siga o plano de migração; trocar essa chave sem preparar os agentes faz os jobs serem recusados.
+
+O `keep-id` apresenta o usuário do serviço como UID 65532 no contêiner. Assim ele lê os segredos e o TLS que pertencem a esse usuário, sem aplicar as ACLs do roteiro Docker. Os sufixos `:Z` preparam os rótulos do SELinux.
+
+#### P4. Emitir TLS e preparar os segredos
+
+Ainda em `~/patchd`, gere uma chave e um CSR novos:
+
+```bash
+openssl req -new -newkey rsa:3072 -nodes \
+  -keyout deploy/tls/server.key \
+  -out deploy/tls/server.csr \
+  -subj "/CN=${PATCHD_FQDN}" \
+  -addext "subjectAltName=DNS:${PATCHD_FQDN}"
+```
+
+Entregue somente o CSR à PKI da organização e receba o certificado emitido e a cadeia pública de confiança. Prepare `deploy/tls/server.crt` (servidor seguido das intermediárias), `deploy/tls/server.key` (a privada gerada aqui) e `deploy/tls/ca.crt` (a CA ou conjunto de CAs públicas). Todos devem pertencer ao usuário `patchd`; não traga a privada da CA para essa pasta. Para laboratório isolado, [o guia de TLS](docs/tls-laboratorio.md) também funciona como esse usuário, a partir de `~/patchd`.
+
+Depois de receber o certificado:
+
+```bash
+chmod 600 deploy/tls/server.key deploy/tls/server.crt deploy/tls/ca.crt
+openssl verify -CAfile deploy/tls/ca.crt \
+  -untrusted deploy/tls/server.crt \
+  -verify_hostname "$PATCHD_FQDN" deploy/tls/server.crt
+./deploy/gerar-segredos.sh
+```
+
+O script gera os arquivos de senha/URL do banco, o token de métricas e os arquivos vazios das integrações opcionais. Ele deve reconhecer o motor Podman; não é necessário instalar Go nem executar `setfacl`. A senha do banco vale na inicialização do volume: alterar só seu arquivo depois não muda a senha de um PostgreSQL existente.
+
+#### P5. Iniciar e conferir o servidor
+
+```bash
+./deploy/atualizar.sh "$PATCHD_INSTALACAO_VERSION"
+systemctl --user is-active patchd-pod.service patchd-postgres.service patchd-server.service
+podman ps
+journalctl --user -u patchd-server.service -n 50 --no-pager
+
+curl --fail --show-error --cacert deploy/tls/ca.crt \
+  "https://${PATCHD_FQDN}:8443/healthz"
+```
+
+O script reaproveita o cache do build, inicia o banco, identifica a primeira instalação sem dados, registra a versão em uso e inicia o servidor, aguardando os healthchecks. As migrations são automáticas. Espere os três serviços `active` e HTTP 200 em `/healthz`; repita o acesso HTTPS de uma máquina cliente autorizada que confie na CA.
+
+| Porta | Uso neste roteiro Podman |
+| --- | --- |
+| TCP 8443 | HTTPS para painel, API e agentes. |
+| TCP 5432 | PostgreSQL dentro do pod, sem publicação no host. |
+| TCP 9091 | Métricas com token, vinculadas a `127.0.0.1`; o listener interno é 9090. |
+| TCP 8080 | Listener HTTP desativado; o mapeamento do pod fica em `127.0.0.1`. |
+
+O servidor em uso é `localhost/patchd-server:atual`, apontado pelo `atualizar.sh`. Os serviços gerados pelo Quadlet sobem no boot pelo `WantedBy=default.target` e pelo *linger*; não execute `systemctl enable` nas unidades geradas `.service`.
+
+#### P6. Criar administrador e registrar um piloto
+
+```bash
+read -r -s -p 'Senha do administrador (mínimo de 12 caracteres): ' PATCHD_ADMIN_PASSWORD
+printf '\n'
+printf '%s\n' "$PATCHD_ADMIN_PASSWORD" | \
+  podman exec -i patchd-server /patchd-server user create -name admin -role admin
+unset PATCHD_ADMIN_PASSWORD
+podman exec patchd-server /patchd-server user list
+```
+
+Entre em **`https://SEU_FQDN:8443/painel/entrar`**. Não existe senha padrão. Para conferir a pública de jobs e emitir um token de piloto:
+
+```bash
+podman exec patchd-server /patchd-server job pubkey
+podman exec patchd-server /patchd-server token create -uses 1 -ttl 2h -note 'piloto inicial'
+```
+
+O token aparece uma vez e permite registrar um equipamento; guarde-o pelo canal autorizado. Para uma frota nova, crie a chave de releases na estação administrativa e faça o [build, assinatura e publicação com Podman](docs/podman.md#agente-compilar-assinar-e-publicar-pelo-servidor-aula-232), usando `deploy/agente.sh`. O painel passa a oferecer os agentes publicados em **Configuração › Agente**. Valide registro, check-in e inventário de uma estação antes de ampliar a instalação.
+
+#### P7. Backup e manutenção
+
+```bash
+./deploy/backup.sh
+systemctl --user enable --now patchd-backup.timer
+systemctl --user list-timers patchd-backup.timer
+```
+
+Confira o primeiro backup e configure a cópia para fora da VM, conforme [docs/operacao.md](docs/operacao.md). O timer faz o backup lógico do banco; não inclui os arquivos de conteúdo, as releases, o `.env`, TLS e chaves. No Podman, os volumes se chamam `patchd-pgdata`, `patchd-conteudo` e `patchd-repocache`, no armazenamento do usuário de serviço. Preserve-os e ensaie a recuperação; não remova volumes para manutenção rotineira.
+
+| Alteração ou diagnóstico | Comando como usuário `patchd` |
+| --- | --- |
+| Nova versão do servidor | `./deploy/atualizar.sh NOVA_VERSAO` após selecionar o código aprovado. |
+| Mudança no `.env` | `./deploy/podman/instalar.sh` e `systemctl --user restart patchd-server`. |
+| Mudança nas portas | Regerar com `instalar.sh`, depois `systemctl --user restart patchd-pod` e `systemctl --user start patchd-server`; atualizar o firewall. |
+| Logs do banco ou servidor | `journalctl --user -u patchd-postgres -u patchd-server -n 60 --no-pager`. |
+| Falha ao conectar ao systemd do usuário | Conferir `XDG_RUNTIME_DIR`, usuário de serviço e *linger*. |
+| Permissão negada em segredo/TLS | Conferir o dono `patchd` e as negações do SELinux com a administração; manter SELinux ativo. |
+| Falha ao subir o pod | Conferir portas ocupadas; 9090 costuma ser usada pelo Cockpit. |
+
+Os comandos de Compose não se aplicam a este modo. Para proxy, LDAPS, recuperação e diagnóstico detalhado, consulte [docs/podman.md](docs/podman.md).
+
 
 ## Desenvolvimento local
 
@@ -396,6 +585,7 @@ Consulte [docs/seguranca.md](docs/seguranca.md) e [Segurança no desenvolvimento
 | [docs/fontes-de-verdade.md](docs/fontes-de-verdade.md) | Fontes consideradas para inventário e atualizações em cada SO. |
 | [docs/operacao.md](docs/operacao.md) | Orientações operacionais vinculadas ao código. |
 | [docs/seguranca.md](docs/seguranca.md) | Modelo de ameaças e decisões de segurança. |
+| [docs/podman.md](docs/podman.md) | Operação com Podman sem root, Quadlet, agentes e diagnóstico. |
 | [docs/tls-laboratorio.md](docs/tls-laboratorio.md) | TLS com CA nova para laboratório isolado. |
 | [docs/build-agentes-sem-dev.md](docs/build-agentes-sem-dev.md) | Build, assinatura e publicação de agentes com imagem oficial de Go. |
 | [docs/pacotes-de-scripts.md](docs/pacotes-de-scripts.md) | Cadastro e execução de ZIPs e scripts avulsos, parâmetros, timeout e migração do ITOM. |
@@ -410,3 +600,4 @@ O patchd é um projeto em desenvolvimento contínuo. Para conhecer o estado de u
 ---
 
 **Quer ajudar a desenvolver o patchd?** Comece pela [Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior) ou pela [Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno) e escolha uma contribuição de escopo verificável.
+
