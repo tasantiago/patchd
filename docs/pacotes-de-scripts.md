@@ -32,7 +32,8 @@ No Batch, aspas usadas para agrupar são removidas antes da validação, mas asp
 `&`, `|`, `<`, `>`, `^`, `%` e `!` são recusados para evitar interpretação pelo `cmd.exe`.
 Valores que dependam de expansão devem ser resolvidos pelo próprio script cadastrado.
 São aceitos até 32 argumentos, 1.024 bytes por argumento e 8.192 bytes no total, sujeitos
-também ao teto do payload JSON assinado.
+também ao teto do payload JSON assinado. Batch limita o total dos parâmetros a 6.144 bytes
+para reservar espaço ao caminho do script na linha de até 8.191 caracteres do cmd.exe.
 
 ## Configurar e executar
 

@@ -2,4 +2,3 @@
 *.cmd text eol=crlf
 *.go text eol=lf
 *.md text eol=lf
-*.sql text eol=lf

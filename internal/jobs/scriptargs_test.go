@@ -47,4 +47,11 @@ func TestBatchArgsNaoExecutamOperadores(t *testing.T) {
 	if err := ValidateScriptArgs(bundle.RunnerCmd, []string{`C:\Program Files\Empresa`, "/quiet", "MODO=1", ""}); err != nil {
 		t.Fatal(err)
 	}
+	args := make([]string, 7)
+	for i := range args {
+		args[i] = strings.Repeat("x", 1024)
+	}
+	if err := ValidateScriptArgs(bundle.RunnerCmd, args); err == nil {
+		t.Fatal("aceitou parâmetros sem margem para o teto de linha do cmd.exe")
+	}
 }

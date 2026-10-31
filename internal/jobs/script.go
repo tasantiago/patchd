@@ -99,6 +99,11 @@ func ValidateScriptArgs(runner string, args []string) error {
 	if total > MaxScriptArgsBytes {
 		return errors.New("os argumentos passam de 8192 bytes")
 	}
+	if runner == bundle.RunnerCmd && total > 6<<10 {
+		// cmd.exe limita a linha a 8191 caracteres. Reserva espaço para o caminho
+		// validado do script (até 1024 bytes), delimitadores e opções do runner.
+		return errors.New("os parâmetros de batch passam de 6144 bytes")
+	}
 	// A assinatura tem um teto de 16 KiB para o payload inteiro. Aspas, barras e
 	// alguns caracteres viram escapes no JSON, então o tamanho original não basta.
 	raw, err := json.Marshal(args)
