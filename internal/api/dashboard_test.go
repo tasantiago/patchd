@@ -239,3 +239,16 @@ func TestDashboardTodosOcultosNaoConsultaFontes(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardNaoConfundeSuporteEncerradoComCorrecaoDisponivel(t *testing.T) {
+	now := time.Now().UTC()
+	src := &complianceFalso{fleet: protocol.ComplianceFleet{EvaluatedAt: now, Machines: []protocol.ComplianceStatus{
+		{MachineID: "com-correcao", State: "faltando", Pending: 2, PendingUnit: "CVEs"},
+		{MachineID: "sem-suporte", State: "faltando", Reasons: []string{"o sistema não recebe mais correções"}},
+	}}}
+	st := &dashboardTestStore{Memory: store.NewMemory()}
+	b := pagina(dashboardHandler(t, st, src), "GET", "/painel/?personalizar=1&bloco=seguranca", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, `<span>Com correções pendentes</span><strong>1 <small>50%</small>`) {
+		t.Error("estado faltando por suporte encerrado não implica correção disponível")
+	}
+}

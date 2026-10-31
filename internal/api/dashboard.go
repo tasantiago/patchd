@@ -241,7 +241,7 @@ func (v *dashboardView) dashboardFleet(fleet protocol.ComplianceFleet) {
 			st = compliance.StateUnknown
 		}
 		counts[st]++
-		if m.Pending > 0 || st == compliance.StateMissing {
+		if m.Pending > 0 {
 			missing++
 		}
 		warnings = warnings || len(m.CatalogWarnings) > 0
