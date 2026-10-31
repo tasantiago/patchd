@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -43,9 +44,11 @@ func TestConfiguracoesDaBIOS(t *testing.T) {
 		{Name: "TPM State", Kind: protocol.BIOSKindEnum, Value: "Enable", Possible: []string{"Disable", "Enable"}},
 		{Name: "Asset Tracking Number", Kind: protocol.BIOSKindString, Value: "PAT-0001"},
 	}
+	reportSequence := 0
 	firmware := func(fw protocol.Firmware) {
 		t.Helper()
-		_, err := st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "cfg" + time.Now().Format("150405.000000000"),
+		reportSequence++ // único também em relógios Windows de baixa resolução
+		_, err := st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "cfg" + strconv.Itoa(reportSequence),
 			OS: protocol.OSInfo{Family: "windows", Hostname: "pc-lab-02"}, Hardware: &protocol.Hardware{Manufacturer: "HP", Sources: []string{}, Firmware: &fw}})
 		if err != nil {
 			t.Fatal(err)
