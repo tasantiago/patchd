@@ -288,7 +288,7 @@ func logoFlash(q url.Values, v *pageBase) {
 // Section: o grupo do menu da página, para a trilha da barra superior.
 func (b pageBase) Section() string {
 	switch b.Nav {
-	case "frota", "inventario", "aposentadas":
+	case "inicio", "frota", "inventario", "aposentadas":
 		return "Navegação"
 	case "patch":
 		return "Patch"

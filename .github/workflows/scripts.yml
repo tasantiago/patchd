@@ -35,10 +35,10 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          files=$(gofmt -l internal/api/scripts*.go internal/api/api.go internal/api/pages.go internal/bundle/*.go internal/jobs/script*.go internal/scriptexec/*.go internal/store/scripts*.go)
+          files=$(gofmt -l internal/api/scripts*.go internal/api/dashboard*.go internal/api/api.go internal/api/pages.go internal/bundle/*.go internal/jobs/script*.go internal/scriptexec/*.go internal/store/scripts*.go)
           if [ -n "$files" ]; then
             echo "$files"
-            gofmt -d internal/api/scripts*.go internal/api/api.go internal/api/pages.go internal/bundle/*.go internal/jobs/script*.go internal/scriptexec/*.go internal/store/scripts*.go
+            gofmt -d internal/api/scripts*.go internal/api/dashboard*.go internal/api/api.go internal/api/pages.go internal/bundle/*.go internal/jobs/script*.go internal/scriptexec/*.go internal/store/scripts*.go
             echo "PATCHD_FORMAT_FAILED=1" >> "$GITHUB_ENV"
             exit 1
           fi

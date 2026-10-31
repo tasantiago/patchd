@@ -576,7 +576,8 @@ var pages = template.Must(template.New("").Parse(`
 <div class="usuario" title="{{.Session.Greeting}} · {{.RoleLabel}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot"><strong>{{.Session.Greeting}}</strong><small>{{.RoleLabel}} · {{.Session.SourceLabel}}</small></span></div>
 <nav aria-label="principal">
 <p class="grupo"><span class="rot">Navegação</span></p>
-<a href="/painel/" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Frota</span></a>
+<a href="/painel/" title="Início" {{if eq .Nav "inicio"}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Início</span></a>
+<a href="/painel/frota" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Frota</span></a>
 <a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + ui.IcInventario + `<span class="rot">Inventário</span></a>
 <a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAposentadas + `<span class="rot">Aposentadas</span></a>
 <a href="/painel/alertas" title="Alertas de desempenho" {{if eq .Nav "alertas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAlertas + `<span class="rot">Alertas</span>{{with .Badges.Alerts}}<span class="cont" title="alertas de desempenho abertos e não reconhecidos">{{.}}</span>{{end}}</a>
@@ -631,8 +632,8 @@ var pages = template.Must(template.New("").Parse(`
 <h1>Frota</h1>
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
-<li><a class="kpi{{if not .Filter}} ativo{{end}}" href="/painel/"><span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">{{.Total}}</span></a></li>
-{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span></a></li>{{end}}
+<li><a class="kpi{{if not .Filter}} ativo{{end}}" href="/painel/frota"><span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">{{.Total}}</span></a></li>
+{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/frota?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span></a></li>{{end}}
 <li><div class="kpi"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">{{.Exploited}}</span><span class="kpi-sub">máquinas com CVE explorada pendente</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Ainda por HTTP</span><span class="kpi-val v-laranja">{{.HTTP}}</span><span class="kpi-sub">último check-in sem TLS</span></div></li>
 </ul>
@@ -1627,4 +1628,4 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="tabela"><table><thead><tr><th>Quando</th><th>Por</th><th>Endereços</th><th>Com portas abertas</th><th>Sem agente</th><th>Diagnóstico</th></tr></thead>
 <tbody>{{range .Runs}}<tr><td>{{.When}}</td><td>{{.By}}</td><td>{{.Scanned}}{{if .Partial}} <span class="muted">(parcial)</span>{{end}}</td><td>{{.Alive}}</td><td>{{.SemAg}}</td><td>{{if .Note}}{{.Note}}{{else}}Concluída{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{template "fim"}}{{end}}
-`))
+` + dashboardTemplates))

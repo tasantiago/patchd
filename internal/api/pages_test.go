@@ -78,7 +78,7 @@ func pagina(h http.Handler, method, path, cookie string, form url.Values, cabeca
 
 func TestPaginaDaFrota(t *testing.T) {
 	h, _, _ := ambientePaginas(t)
-	r := pagina(h, "GET", "/painel/", sessaoTeste, nil)
+	r := pagina(h, "GET", "/painel/frota", sessaoTeste, nil)
 	b := r.Body.String()
 	for _, tr := range []string{
 		`<a href="/painel/maquinas/60ef97e4-0001"><code>60ef97e4</code></a>`,
@@ -102,14 +102,14 @@ func TestPaginaDaFrota(t *testing.T) {
 
 	// Filtro: só as do estado; filtro desconhecido é ignorado.
 	b = pagina(h, "GET", "/painel/?estado=faltando", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "60ef97e4") || strings.Contains(b, "92fc3b93") || !strings.Contains(b, `class="kpi ativo" href="/painel/?estado=faltando"`) ||
+	if !strings.Contains(b, "60ef97e4") || strings.Contains(b, "92fc3b93") || !strings.Contains(b, `class="kpi ativo" href="/painel/frota?estado=faltando"`) ||
 		!strings.Contains(b, "<h2>Máquinas · faltando</h2>") {
 		t.Errorf("filtro:\n%s", b)
 	}
 	if b := pagina(h, "GET", "/painel/?estado=%3Cx%3E", sessaoTeste, nil).Body.String(); !strings.Contains(b, "92fc3b93") || strings.Contains(b, "<x>") {
 		t.Error("filtro inválido: mostra tudo e não reflete o valor")
 	}
-	if r := pagina(h, "GET", "/painel/", "", nil); r.Code != http.StatusSeeOther {
+	if r := pagina(h, "GET", "/painel/frota", "", nil); r.Code != http.StatusSeeOther {
 		t.Errorf("sem sessão: %d", r.Code)
 	}
 }
