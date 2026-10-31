@@ -10,6 +10,15 @@ Você precisa de Git e Docker nessa estação, do commit usado no servidor e da
 A privada de releases será criada e guardada nesta estação, com cópia protegida
 offline; ela não precisa ir para a VM do servidor.
 
+## Atualizações de uma frota existente
+
+Para gerar a próxima versão, siga o [roteiro de atualização do README](../README.md#gerar-e-publicar-uma-nova-versão-do-servidor-e-do-agente).
+Ele atualiza o servidor primeiro e mostra o build/publicação com Docker ou Podman.
+**Não repita a criação da chave do passo 2**: reutilize a privada de releases que
+corresponde à pública confiada pelos agentes instalados e preserve a chave de jobs.
+Escolha um número novo, maior que o instalado; os rótulos `.1` abaixo são exemplos
+para a primeira instalação, não valores a reutilizar a cada publicação.
+
 ## 1. Obter uma cópia limpa do mesmo código
 
 ```bash
