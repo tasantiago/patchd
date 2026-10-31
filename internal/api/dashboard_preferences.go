@@ -10,7 +10,7 @@ import (
 
 type dashboardOption struct {
 	Key, Label string
-	Enabled bool
+	Enabled    bool
 }
 
 var dashboardOptions = []dashboardOption{
@@ -93,7 +93,7 @@ func (a *api) dashboardPreferences(w http.ResponseWriter, r *http.Request, v *da
 		if value == "" {
 			value = "none"
 		}
-		http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/painel/", MaxAge: 180*24*60*60,
-			Expires: a.now().Add(180*24*time.Hour), HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/painel/", MaxAge: 180 * 24 * 60 * 60,
+			Expires: a.now().Add(180 * 24 * time.Hour), HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode})
 	}
 }

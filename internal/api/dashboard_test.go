@@ -51,14 +51,14 @@ func TestInicioDashboardECompatibilidade(t *testing.T) {
 	}
 }
 
-// Override only the aggregates used by the dashboard; sessions and navigation use Memory.
+// Só os agregados são substituídos; sessões e navegação continuam usando Memory.
 type dashboardTestStore struct {
 	*store.Memory
-	machines []protocol.MachineSummary
-	counts []store.JobCount
-	failInventory, failJobs bool
+	machines                  []protocol.MachineSummary
+	counts                    []store.JobCount
+	failInventory, failJobs   bool
 	countSince, finishedSince time.Time
-	finishedStates []string
+	finishedStates            []string
 }
 
 func (s *dashboardTestStore) Machines(context.Context) ([]protocol.MachineSummary, error) {
@@ -97,19 +97,19 @@ func dashboardCard(t *testing.T, html, label string) string {
 	if end < 0 {
 		t.Fatal("cartão sem fechamento")
 	}
-	return html[i:i+end]
+	return html[i : i+end]
 }
 
 func TestDashboardContagensELimitesTemporais(t *testing.T) {
 	now := time.Now().UTC()
 	st := &dashboardTestStore{Memory: store.NewMemory(), machines: []protocol.MachineSummary{
 		{ID: "atual", OSName: "Windows 11", LastSeenAt: now},
-		{ID: "antiga", OSName: "Ubuntu 24.04", LastSeenAt: now.Add(-3*time.Hour)},
+		{ID: "antiga", OSName: "Ubuntu 24.04", LastSeenAt: now.Add(-3 * time.Hour)},
 		{ID: "sem-contato"},
 	}, counts: []store.JobCount{{State: jobs.StateDone, N: 7}, {State: jobs.StateFailed, N: 1}, {State: jobs.StateDelivered, N: 2}}}
 	src := &complianceFalso{fleet: protocol.ComplianceFleet{EvaluatedAt: now, Machines: []protocol.ComplianceStatus{
 		{MachineID: "atual", State: "em_dia", LastSeenAt: now},
-		{MachineID: "antiga", State: "sem_dado_recente", LastSeenAt: now.Add(-8*24*time.Hour), Exploited: 4},
+		{MachineID: "antiga", State: "sem_dado_recente", LastSeenAt: now.Add(-8 * 24 * time.Hour), Exploited: 4},
 		{MachineID: "sem-contato", State: "desconhecido"},
 	}}}
 	h := dashboardHandler(t, st, src)
@@ -123,11 +123,14 @@ func TestDashboardContagensELimitesTemporais(t *testing.T) {
 	if !strings.Contains(dashboardCard(t, b, "Em dia"), "33% de 3 equipamentos avaliados") || !strings.Contains(b, "10</strong> jobs criados no período") {
 		t.Error("denominador da conformidade ou total de jobs incorreto")
 	}
-	if d := st.countSince.Sub(now.Add(-7*24*time.Hour)); d < 0 || d > time.Second {
-		t.Errorf("janela dos jobs criados: %v", d)
+	week := 168 * time.Hour
+	day := 24 * time.Hour
+	ended := time.Now().UTC()
+	if st.countSince.Before(now.Add(-week)) || st.countSince.After(ended.Add(-week)) {
+		t.Errorf("janela dos jobs criados: %v", st.countSince)
 	}
-	if d := st.finishedSince.Sub(now.Add(-24*time.Hour)); d < 0 || d > time.Second {
-		t.Errorf("janela dos jobs terminados: %v", d)
+	if st.finishedSince.Before(now.Add(-day)) || st.finishedSince.After(ended.Add(-day)) {
+		t.Errorf("janela dos jobs terminados: %v", st.finishedSince)
 	}
 	if !slices.Equal(st.finishedStates, []string{jobs.StateFailed, jobs.StateRejected, jobs.StateExpired}) {
 		t.Errorf("estados de falha: %v", st.finishedStates)
@@ -161,10 +164,10 @@ func TestDashboardPriorizaExploradasEExplicitaCatalogo(t *testing.T) {
 	now := time.Now().UTC()
 	src := &complianceFalso{fleet: protocol.ComplianceFleet{EvaluatedAt: now}}
 	for i := 0; i < 12; i++ {
-		src.fleet.Machines = append(src.fleet.Machines, protocol.ComplianceStatus{MachineID: string(rune('a'+i)), Hostname: "com-pendencia", State: "faltando", LastSeenAt: now})
+		src.fleet.Machines = append(src.fleet.Machines, protocol.ComplianceStatus{MachineID: string(rune('a' + i)), Hostname: "com-pendencia", State: "faltando", LastSeenAt: now})
 	}
 	src.fleet.Machines = append(src.fleet.Machines, protocol.ComplianceStatus{MachineID: "explorada", Hostname: "<img src=x onerror=alert(1)>", State: "sem_dado_recente", Exploited: 1,
-		LastSeenAt: now.Add(-8*24*time.Hour), CatalogWarnings: []string{"fonte atrasada"}})
+		LastSeenAt: now.Add(-8 * 24 * time.Hour), CatalogWarnings: []string{"fonte atrasada"}})
 	st := &dashboardTestStore{Memory: store.NewMemory()}
 	b := pagina(dashboardHandler(t, st, src), "GET", "/painel/", sessaoTeste, nil).Body.String()
 	i := strings.Index(b, `aria-labelledby="dash-prioridades"`)

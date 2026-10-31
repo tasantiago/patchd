@@ -20,39 +20,39 @@ const dashboardPriorityLimit = 8
 
 type dashboardBar struct {
 	Label, Href, Color string
-	N, Pct int
+	N, Pct             int
 }
 
 type dashboardSignal struct {
 	Label, Detail, Href, Color string
-	N int
+	N                          int
 }
 
 type dashboardMachine struct {
 	Name, Href, State, Label, Reason, Seen, Pending string
-	Exploited int
-	lastSeen time.Time
+	Exploited                                       int
+	lastSeen                                        time.Time
 }
 
 type dashboardView struct {
 	pageBase
-	AsOf, EvaluatedAt string
-	InventoryOn, ComplianceOn, JobsOn bool
+	AsOf, EvaluatedAt                                         string
+	InventoryOn, ComplianceOn, JobsOn                         bool
 	Total, FleetTotal, OK, Exploited, Offline, JobTotal, More int
-	KPIs []ovKPI
-	States, Systems, Execution []dashboardBar
-	Signals []dashboardSignal
-	Priorities []dashboardMachine
-	Issues []string
-	Show map[string]bool
-	Options []dashboardOption
-	EmptySelection, CampaignsOn bool
-	Campaigns, Security, Communication []dashboardBar
-	CampaignTotal int
+	KPIs                                                      []ovKPI
+	States, Systems, Execution                                []dashboardBar
+	Signals                                                   []dashboardSignal
+	Priorities                                                []dashboardMachine
+	Issues                                                    []string
+	Show                                                      map[string]bool
+	Options                                                   []dashboardOption
+	EmptySelection, CampaignsOn                               bool
+	Campaigns, Security, Communication                        []dashboardBar
+	CampaignTotal                                             int
 }
 
-// homePage keeps existing links with fleet filters and action results working.
-// The unfiltered entry after login is the decision dashboard; the full list has its own route.
+// homePage preserva links antigos com filtros da frota e retornos de ações.
+// Após o login, a entrada sem filtros abre os dashboards; a frota tem uma rota própria.
 func (a *api) homePage(w http.ResponseWriter, r *http.Request) {
 	if len(r.URL.Query()) > 0 && !r.URL.Query().Has("personalizar") {
 		a.fleetPage(w, r)
@@ -73,139 +73,139 @@ func (a *api) dashboardPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if v.wants("indicadores", "sistemas", "comunicacao") {
-	machines, err := a.store.Machines(ctx)
-	if err != nil {
-		issue("Inventário", err)
-	} else {
-		v.InventoryOn = true
-		v.Total = len(machines)
-		bySystem := map[string]int{}
-		for _, m := range machines {
-			if m.LastSeenAt.IsZero() || m.LastSeenAt.Before(now.Add(-onlineWithin)) {
-				v.Offline++
+		machines, err := a.store.Machines(ctx)
+		if err != nil {
+			issue("Inventário", err)
+		} else {
+			v.InventoryOn = true
+			v.Total = len(machines)
+			bySystem := map[string]int{}
+			for _, m := range machines {
+				if m.LastSeenAt.IsZero() || m.LastSeenAt.Before(now.Add(-onlineWithin)) {
+					v.Offline++
+				}
+				bySystem[osFamily(m.OSName)]++
 			}
-			bySystem[osFamily(m.OSName)]++
-		}
-		v.Communication = []dashboardBar{
-			{Label: "Contato nas últimas 2 h", N: v.Total-v.Offline, Pct: pct(v.Total-v.Offline, v.Total), Color: "em_dia", Href: "/painel/inventario?status=online"},
-			{Label: "Sem contato recente", N: v.Offline, Pct: pct(v.Offline, v.Total), Color: "sem_dado_recente", Href: "/painel/inventario?status=offline"},
-		}
-		for os, n := range bySystem {
-			v.Systems = append(v.Systems, dashboardBar{Label: os, N: n, Pct: pct(n, v.Total), Color: "sistema"})
-		}
-		slices.SortFunc(v.Systems, func(a, b dashboardBar) int {
-			if a.N != b.N {
-				return b.N - a.N
+			v.Communication = []dashboardBar{
+				{Label: "Contato nas últimas 2 h", N: v.Total - v.Offline, Pct: pct(v.Total-v.Offline, v.Total), Color: "em_dia", Href: "/painel/inventario?status=online"},
+				{Label: "Sem contato recente", N: v.Offline, Pct: pct(v.Offline, v.Total), Color: "sem_dado_recente", Href: "/painel/inventario?status=offline"},
 			}
-			return strings.Compare(a.Label, b.Label)
-		})
-		if len(v.Systems) > 6 {
-			other := 0
-			for _, row := range v.Systems[6:] {
-				other += row.N
+			for os, n := range bySystem {
+				v.Systems = append(v.Systems, dashboardBar{Label: os, N: n, Pct: pct(n, v.Total), Color: "sistema"})
 			}
-			v.Systems = append(v.Systems[:6], dashboardBar{Label: "Outras famílias", N: other, Pct: pct(other, v.Total), Color: "sistema"})
+			slices.SortFunc(v.Systems, func(a, b dashboardBar) int {
+				if a.N != b.N {
+					return b.N - a.N
+				}
+				return strings.Compare(a.Label, b.Label)
+			})
+			if len(v.Systems) > 6 {
+				other := 0
+				for _, row := range v.Systems[6:] {
+					other += row.N
+				}
+				v.Systems = append(v.Systems[:6], dashboardBar{Label: "Outras famílias", N: other, Pct: pct(other, v.Total), Color: "sistema"})
+			}
 		}
-	}
-	v.KPIs = append(v.KPIs,
-		dashboardKPI("Equipamentos ativos", v.Total, v.InventoryOn, "cadastros não aposentados", "/painel/inventario", ""),
-		dashboardKPI("Sem contato recente", v.Offline, v.InventoryOn, "último contato há mais de 2 h ou nunca recebido", "/painel/inventario?status=offline", "v-laranja"))
+		v.KPIs = append(v.KPIs,
+			dashboardKPI("Equipamentos ativos", v.Total, v.InventoryOn, "cadastros não aposentados", "/painel/inventario", ""),
+			dashboardKPI("Sem contato recente", v.Offline, v.InventoryOn, "último contato há mais de 2 h ou nunca recebido", "/painel/inventario?status=offline", "v-laranja"))
 
 	}
 	if v.wants("indicadores", "decisoes") {
-	if open, unacked, err := a.store.PerfAlertCounts(ctx); err != nil {
-		issue("Alertas de desempenho", err)
-		v.KPIs = append(v.KPIs, dashboardKPI("Alertas abertos", 0, false, "desempenho dos equipamentos", "/painel/alertas", ""))
-	} else {
-		v.KPIs = append(v.KPIs, dashboardKPI("Alertas abertos", open, true, fmt.Sprintf("%d ainda não reconhecidos", unacked), "/painel/alertas", "v-laranja"))
-		if unacked > 0 {
-			v.Signals = append(v.Signals, dashboardSignal{Label: "Alertas para reconhecer", Detail: "Investigue CPU, memória e espaço em disco.", N: unacked, Href: "/painel/alertas", Color: "atencao"})
+		if open, unacked, err := a.store.PerfAlertCounts(ctx); err != nil {
+			issue("Alertas de desempenho", err)
+			v.KPIs = append(v.KPIs, dashboardKPI("Alertas abertos", 0, false, "desempenho dos equipamentos", "/painel/alertas", ""))
+		} else {
+			v.KPIs = append(v.KPIs, dashboardKPI("Alertas abertos", open, true, fmt.Sprintf("%d ainda não reconhecidos", unacked), "/painel/alertas", "v-laranja"))
+			if unacked > 0 {
+				v.Signals = append(v.Signals, dashboardSignal{Label: "Alertas para reconhecer", Detail: "Investigue CPU, memória e espaço em disco.", N: unacked, Href: "/painel/alertas", Color: "atencao"})
+			}
 		}
-	}
-	if n, err := a.store.JobsFinishedSince(ctx, []string{jobs.StateFailed, jobs.StateRejected, jobs.StateExpired}, now.Add(-24*time.Hour)); err != nil {
-		issue("Resultados de jobs", err)
-		v.KPIs = append(v.KPIs, dashboardKPI("Jobs sem sucesso · 24 h", 0, false, "falhos, recusados ou expirados", "/painel/jobs", ""))
-	} else {
-		v.KPIs = append(v.KPIs, dashboardKPI("Jobs sem sucesso · 24 h", n, true, "terminados nas últimas 24 h", "/painel/jobs", "v-vermelho"))
-		if n > 0 {
-			v.Signals = append(v.Signals, dashboardSignal{Label: "Execuções para investigar", Detail: "Falhas, recusas ou expirações nas últimas 24 h.", N: n, Href: "/painel/jobs", Color: "erro"})
+		if n, err := a.store.JobsFinishedSince(ctx, []string{jobs.StateFailed, jobs.StateRejected, jobs.StateExpired}, now.Add(-24*time.Hour)); err != nil {
+			issue("Resultados de jobs", err)
+			v.KPIs = append(v.KPIs, dashboardKPI("Jobs sem sucesso · 24 h", 0, false, "falhos, recusados ou expirados", "/painel/jobs", ""))
+		} else {
+			v.KPIs = append(v.KPIs, dashboardKPI("Jobs sem sucesso · 24 h", n, true, "terminados nas últimas 24 h", "/painel/jobs", "v-vermelho"))
+			if n > 0 {
+				v.Signals = append(v.Signals, dashboardSignal{Label: "Execuções para investigar", Detail: "Falhas, recusas ou expirações nas últimas 24 h.", N: n, Href: "/painel/jobs", Color: "erro"})
+			}
 		}
-	}
 	}
 	if v.wants("execucoes") {
-	if counts, err := a.store.JobCounts(ctx, now.Add(-7*24*time.Hour)); err != nil {
-		issue("Execuções dos últimos 7 dias", err)
-	} else {
-		v.JobsOn = true
-		v.Execution, v.JobTotal = dashboardExecutions(counts)
-	}
+		if counts, err := a.store.JobCounts(ctx, now.Add(-7*24*time.Hour)); err != nil {
+			issue("Execuções dos últimos 7 dias", err)
+		} else {
+			v.JobsOn = true
+			v.Execution, v.JobTotal = dashboardExecutions(counts)
+		}
 	}
 	if v.wants("decisoes") {
-	if failures, err := a.store.SourceFailures(ctx, ""); err != nil {
-		issue("Fontes de atualizações", err)
-	} else {
-		seen := map[string]bool{}
-		for _, f := range failures {
-			if f.Source != "wua-offline" {
-				seen[f.MachineID] = true
+		if failures, err := a.store.SourceFailures(ctx, ""); err != nil {
+			issue("Fontes de atualizações", err)
+		} else {
+			seen := map[string]bool{}
+			for _, f := range failures {
+				if f.Source != "wua-offline" {
+					seen[f.MachineID] = true
+				}
+			}
+			if len(seen) > 0 {
+				v.Signals = append(v.Signals, dashboardSignal{Label: "Equipamentos com busca falhando", Detail: "Uma busca sem resposta não comprova ausência de atualizações.", N: len(seen), Href: "/painel/patch?aba=geral", Color: "atencao"})
 			}
 		}
-		if len(seen) > 0 {
-			v.Signals = append(v.Signals, dashboardSignal{Label: "Equipamentos com busca falhando", Detail: "Uma busca sem resposta não comprova ausência de atualizações.", N: len(seen), Href: "/painel/patch?aba=geral", Color: "atencao"})
+		if requests, err := a.store.SelfServiceRequests(ctx, store.RequestFilter{Waiting: true, Limit: 500}); err != nil {
+			issue("Pedidos de autoatendimento", err)
+		} else if len(requests) > 0 {
+			detail := "Aguardando uma decisão da TI."
+			if len(requests) == 500 {
+				detail = "Pelo menos 500 pedidos aguardando; consulte a lista completa."
+			}
+			v.Signals = append(v.Signals, dashboardSignal{Label: "Pedidos aguardando a TI", Detail: detail, N: len(requests), Href: "/painel/autoatendimento", Color: "atencao"})
 		}
-	}
-	if requests, err := a.store.SelfServiceRequests(ctx, store.RequestFilter{Waiting: true, Limit: 500}); err != nil {
-		issue("Pedidos de autoatendimento", err)
-	} else if len(requests) > 0 {
-		detail := "Aguardando uma decisão da TI."
-		if len(requests) == 500 {
-			detail = "Pelo menos 500 pedidos aguardando; consulte a lista completa."
-		}
-		v.Signals = append(v.Signals, dashboardSignal{Label: "Pedidos aguardando a TI", Detail: detail, N: len(requests), Href: "/painel/autoatendimento", Color: "atencao"})
-	}
 	}
 	if v.wants("campanhas", "decisoes") {
-	if camps, err := a.store.Campaigns(ctx, 200); err != nil {
-		issue("Campanhas", err)
-	} else {
-		paused := 0
-		v.CampaignsOn = true
-		v.CampaignTotal = len(camps)
-		byState := map[string]int{}
-		for _, c := range camps {
-			byState[c.State]++
-			if c.State == campaign.StatePaused {
-				paused++
+		if camps, err := a.store.Campaigns(ctx, 200); err != nil {
+			issue("Campanhas", err)
+		} else {
+			paused := 0
+			v.CampaignsOn = true
+			v.CampaignTotal = len(camps)
+			byState := map[string]int{}
+			for _, c := range camps {
+				byState[c.State]++
+				if c.State == campaign.StatePaused {
+					paused++
+				}
+			}
+			for _, state := range []struct{ key, label, color string }{
+				{campaign.StateRunning, "Em andamento", "desconhecido"},
+				{campaign.StatePaused, "Pausadas", "reboot_pendente"},
+				{campaign.StateDone, "Concluídas", "em_dia"},
+				{campaign.StateCanceled, "Canceladas", "sem_dado_recente"},
+			} {
+				v.Campaigns = append(v.Campaigns, dashboardBar{Label: state.label, N: byState[state.key], Pct: pct(byState[state.key], len(camps)), Color: state.color})
+			}
+			if paused > 0 {
+				v.Signals = append(v.Signals, dashboardSignal{Label: "Campanhas pausadas", Detail: "Entre as 200 campanhas mais recentes; confira o motivo antes de retomar.", N: paused, Href: "/painel/campanhas", Color: "atencao"})
 			}
 		}
-		for _, state := range []struct{ key, label, color string }{
-			{campaign.StateRunning, "Em andamento", "desconhecido"},
-			{campaign.StatePaused, "Pausadas", "reboot_pendente"},
-			{campaign.StateDone, "Concluídas", "em_dia"},
-			{campaign.StateCanceled, "Canceladas", "sem_dado_recente"},
-		} {
-			v.Campaigns = append(v.Campaigns, dashboardBar{Label: state.label, N: byState[state.key], Pct: pct(byState[state.key], len(camps)), Color: state.color})
-		}
-		if paused > 0 {
-			v.Signals = append(v.Signals, dashboardSignal{Label: "Campanhas pausadas", Detail: "Entre as 200 campanhas mais recentes; confira o motivo antes de retomar.", N: paused, Href: "/painel/campanhas", Color: "atencao"})
-		}
-	}
 	}
 
-	// The optional evaluation runs last: an unavailable catalog must not hide the other indicators.
+	// A avaliação opcional vem por último: catálogo indisponível não esconde os outros indicadores.
 	if v.wants("indicadores", "conformidade", "seguranca", "prioridades") {
-	if a.compliance == nil {
-		v.Issues = append(v.Issues, "Conformidade: avaliação indisponível; exige PostgreSQL e catálogo configurados.")
-	} else if fleet, err := a.compliance.Fleet(ctx); err != nil {
-		if a.canceled(r, err) {
-			return
+		if a.compliance == nil {
+			v.Issues = append(v.Issues, "Conformidade: avaliação indisponível; exige PostgreSQL e catálogo configurados.")
+		} else if fleet, err := a.compliance.Fleet(ctx); err != nil {
+			if a.canceled(r, err) {
+				return
+			}
+			issue("Conformidade", err)
+		} else {
+			v.ComplianceOn = true
+			v.EvaluatedAt = fleet.EvaluatedAt.UTC().Format("02/01/2006 15:04") + " UTC"
+			v.dashboardFleet(fleet)
 		}
-		issue("Conformidade", err)
-	} else {
-		v.ComplianceOn = true
-		v.EvaluatedAt = fleet.EvaluatedAt.UTC().Format("02/01/2006 15:04") + " UTC"
-		v.dashboardFleet(fleet)
-	}
 	}
 	complianceSub := "nenhum equipamento avaliado"
 	if v.FleetTotal > 0 {

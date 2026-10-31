@@ -59,8 +59,8 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/autoatendimento` |
 | GET | `/painel/campanhas/{id}` |
 | GET | `/painel/campanhas` |
-| GET | `/painel/frota` |
 | GET | `/painel/frota.csv` |
+| GET | `/painel/frota` |
 | GET | `/painel/inventario.csv` |
 | GET | `/painel/inventario` |
 | GET | `/painel/jobs` |
