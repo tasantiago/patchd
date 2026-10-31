@@ -47,7 +47,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | GET | `/api/v1/agent/selfservice/logo` |
 | POST | `/api/v1/agent/selfservice/request` |
 
-## Sessão (página) (16)
+## Sessão (página) (17)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -59,6 +59,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/autoatendimento` |
 | GET | `/painel/campanhas/{id}` |
 | GET | `/painel/campanhas` |
+| GET | `/painel/frota` |
 | GET | `/painel/frota.csv` |
 | GET | `/painel/inventario.csv` |
 | GET | `/painel/inventario` |

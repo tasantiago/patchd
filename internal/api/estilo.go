@@ -16,7 +16,7 @@ import (
 // versão nova do servidor muda o endereço.
 
 // panelCSS: o tema (layout das aplicações, theme.go) e o que antes ficava em cada tela.
-var panelCSS = themeCSS + loginCSS + paramCSS + selfServiceCSS + widthCSS()
+var panelCSS = themeCSS + loginCSS + paramCSS + selfServiceCSS + dashboardCSS + widthCSS()
 
 // cssVersion: os primeiros 16 hexadecimais do SHA-256 do CSS.
 var cssVersion = func() string {

@@ -130,7 +130,7 @@ func TestAnelEmLoteNaFrota(t *testing.T) {
 	h, st, log := ambientePaginas(t)
 	ctx := context.Background()
 
-	if b := pagina(h, "GET", "/painel/", sessaoTeste, nil).Body.String(); strings.Contains(b, `name="maquina"`) || !strings.Contains(b, "<th>Anel</th>") {
+	if b := pagina(h, "GET", "/painel/frota", sessaoTeste, nil).Body.String(); strings.Contains(b, `name="maquina"`) || !strings.Contains(b, "<th>Anel</th>") {
 		t.Errorf("leitura: coluna sim, caixas não")
 	}
 	if b := pagina(h, "GET", "/painel/?estado=faltando", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `action="/painel/aneis/maquinas"`) ||

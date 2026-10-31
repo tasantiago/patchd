@@ -89,7 +89,7 @@ func TestRotasDeCompliance(t *testing.T) {
 	}
 
 	// O painel mostra as contagens.
-	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), `<span class="kpi-rot">faltando</span><span class="kpi-val v-vermelho">1</span>`) ||
+	if r := le(h, "/painel/frota"); !strings.Contains(r.Body.String(), `<span class="kpi-rot">faltando</span><span class="kpi-val v-vermelho">1</span>`) ||
 		!strings.Contains(r.Body.String(), `<span class="kpi-rot">em dia</span><span class="kpi-val v-verde">1</span>`) {
 		t.Errorf("painel:\n%s", r.Body)
 	}
@@ -99,7 +99,7 @@ func TestRotasDeCompliance(t *testing.T) {
 	if r := le(h, "/api/v1/compliance"); r.Code != http.StatusInternalServerError || strings.Contains(r.Body.String(), "banco fora") {
 		t.Errorf("erro: %d %s", r.Code, r.Body)
 	}
-	if r := le(h, "/painel/"); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "A avaliação da frota falhou") {
+	if r := le(h, "/painel/frota"); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "A avaliação da frota falhou") {
 		t.Errorf("painel com erro: %d", r.Code)
 	}
 }
@@ -109,7 +109,7 @@ func TestComplianceSemPostgres(t *testing.T) {
 	if r := le(h, "/api/v1/compliance"); r.Code != http.StatusServiceUnavailable || !strings.Contains(r.Body.String(), "PostgreSQL") {
 		t.Errorf("sem fonte: %d %s", r.Code, r.Body)
 	}
-	if r := le(h, "/painel/"); !strings.Contains(r.Body.String(), "exige o PostgreSQL") {
+	if r := le(h, "/painel/frota"); !strings.Contains(r.Body.String(), "exige o PostgreSQL") {
 		t.Error("sem fonte, o painel explica por que não há estado")
 	}
 }
@@ -119,7 +119,7 @@ func TestClienteQueDesiste(t *testing.T) {
 	abreSessao(t, st, sessaoTeste, time.Now().UTC())
 	log := &syncBuffer{}
 	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(&complianceFalso{err: context.Canceled}))
-	for _, p := range []string{"/painel/", "/api/v1/compliance"} {
+	for _, p := range []string{"/painel/frota", "/api/v1/compliance"} {
 		ctx, cancel := context.WithCancel(context.Background())
 		req := httptest.NewRequest("GET", p, nil).WithContext(ctx)
 		req.AddCookie(&http.Cookie{Name: "patchd_sessao", Value: sessaoTeste})

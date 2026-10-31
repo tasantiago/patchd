@@ -583,6 +583,7 @@ Consulte [docs/seguranca.md](docs/seguranca.md) e [Segurança no desenvolvimento
 | [Wiki do patchd](https://github.com/tasantiago/patchd/wiki) | Portal central de documentação e formação. |
 | [docs/requisitos.md](docs/requisitos.md) | Requisitos funcionais, não funcionais e restrições. |
 | [docs/fontes-de-verdade.md](docs/fontes-de-verdade.md) | Fontes consideradas para inventário e atualizações em cada SO. |
+| [docs/dashboard.md](docs/dashboard.md) | Página inicial: indicadores, prioridades, janelas de tempo e limites dos dados. |
 | [docs/operacao.md](docs/operacao.md) | Orientações operacionais vinculadas ao código. |
 | [docs/seguranca.md](docs/seguranca.md) | Modelo de ameaças e decisões de segurança. |
 | [docs/podman.md](docs/podman.md) | Operação com Podman sem root, Quadlet, agentes e diagnóstico. |
@@ -600,4 +601,3 @@ O patchd é um projeto em desenvolvimento contínuo. Para conhecer o estado de u
 ---
 
 **Quer ajudar a desenvolver o patchd?** Comece pela [Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior) ou pela [Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno) e escolha uma contribuição de escopo verificável.
-
