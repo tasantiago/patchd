@@ -30,7 +30,7 @@ func TestBatchCaminhoEArgumentoComEspacos(t *testing.T) {
 	}
 }
 
-func TestWindowsEncerraFilhosNoTimeout(t *testing.T) {
+func TestWindowsEncerraFilhosNoCancelamento(t *testing.T) {
 	dir := t.TempDir()
 	child := filepath.Join(dir, "filho.ps1")
 	if err := os.WriteFile(child, []byte("Start-Sleep -Seconds 120"), 0o600); err != nil {
@@ -38,34 +38,58 @@ func TestWindowsEncerraFilhosNoTimeout(t *testing.T) {
 	}
 	parent := filepath.Join(dir, "pai.ps1")
 	script := `$p = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-File', ('"' + (Join-Path $PSScriptRoot 'filho.ps1') + '"')) -PassThru
-Write-Output $p.Id
+[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'filho.pid'), [string]$p.Id)
 Wait-Process -Id $p.Id
 `
 	if err := os.WriteFile(parent, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	name, args := command(DefaultShells()[bundle.RunnerPowerShell], bundle.RunnerPowerShell, parent, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out, _, err := RunLocal(ctx, dir, name, args)
-	if err == nil || ctx.Err() != context.DeadlineExceeded {
-		t.Fatalf("timeout não interrompeu: %v", err)
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := RunLocal(ctx, dir, name, args)
+		done <- err
+	}()
+	// PowerShell pode levar mais de 5 s para iniciar em um runner ocupado.
+	// Só cancela depois de observar um filho vivo, evitando um falso positivo.
+	var pid uint64
+	readyBy := time.Now().Add(30 * time.Second)
+	for pid == 0 {
+		if raw, err := os.ReadFile(filepath.Join(dir, "filho.pid")); err == nil {
+			pid, _ = strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 32)
+		}
+		if pid != 0 {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("o script terminou antes de iniciar o filho: %v", err)
+		default:
+		}
+		if time.Now().After(readyBy) {
+			t.Fatal("o filho não iniciou em 30 s")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	pid, err := strconv.ParseUint(strings.TrimSpace(string(out)), 10, 32)
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(pid))
 	if err != nil {
-		t.Fatalf("PID do filho: %q %v", out, err)
-	}
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE, false, uint32(pid))
-	if err != nil {
-		return // processo já foi recolhido
+		t.Fatalf("abrir o filho para conferir o encerramento: %v", err)
 	}
 	defer windows.CloseHandle(h)
-	var code uint32
-	if err := windows.GetExitCodeProcess(h, &code); err != nil {
-		t.Fatal(err)
+	defer windows.TerminateProcess(h, 1)
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil || ctx.Err() != context.Canceled {
+			t.Fatalf("cancelamento não interrompeu: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a execução não terminou após o cancelamento")
 	}
-	if code == 259 { // STILL_ACTIVE
-		_ = windows.TerminateProcess(h, 1)
-		t.Fatal("o processo filho continuou rodando depois do timeout")
+	state, err := windows.WaitForSingleObject(h, 5000)
+	if err != nil || state != windows.WAIT_OBJECT_0 {
+		t.Fatalf("o filho continuou vivo: estado %d, erro %v", state, err)
 	}
 }
