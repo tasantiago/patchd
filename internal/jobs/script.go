@@ -93,7 +93,7 @@ func ValidateScriptArgs(runner string, args []string) error {
 			return errors.New("argumento inválido: até 1024 bytes, sem caracteres de controle")
 		}
 		if runner == bundle.RunnerCmd && strings.ContainsAny(a, `"&|<>^%!`) {
-			return errors.New("Batch não aceita aspas literais, operadores nem expansão de variáveis nos parâmetros")
+			return errors.New("batch não aceita aspas literais, operadores nem expansão de variáveis nos parâmetros")
 		}
 	}
 	if total > MaxScriptArgsBytes {
