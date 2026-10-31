@@ -108,13 +108,14 @@ func TestExecuteCodigoDeSaida(t *testing.T) {
 
 // SHA-256 diferente do que o job diz: nada é extraído nem executado.
 func TestExecuteRecusaHashErrado(t *testing.T) {
-	z, _, size := zipa(t, map[string]string{"rodar.sh": "#!/bin/sh\ntouch /tmp/nao-devia\n"})
+	entry, runner := nativeEntry()
+	z, _, size := zipa(t, map[string]string{entry: "fixture: nunca deve executar"})
 	e := executor(t, z)
 	e.Run = func(context.Context, string, string, []string) ([]byte, int, error) {
 		t.Fatal("não devia executar nada")
 		return nil, 0, nil
 	}
-	p := params(strings.Repeat("0", 64), size, "rodar.sh", bundle.RunnerBash)
+	p := params(strings.Repeat("0", 64), size, entry, runner)
 	_, err := e.Execute(context.Background(), 1, p)
 	if !errors.Is(err, jobs.ErrRefused) || !strings.Contains(err.Error(), "SHA-256") {
 		t.Fatalf("erro: %v", err)
@@ -123,11 +124,19 @@ func TestExecuteRecusaHashErrado(t *testing.T) {
 
 // Tamanho diferente do que o job diz: recusado antes de extrair.
 func TestExecuteRecusaTamanho(t *testing.T) {
-	z, sha, size := zipa(t, map[string]string{"rodar.sh": "#!/bin/sh\n"})
+	entry, runner := nativeEntry()
+	z, sha, size := zipa(t, map[string]string{entry: "fixture: nunca deve executar"})
 	e := executor(t, z)
-	if _, err := e.Execute(context.Background(), 1, params(sha, size+10, "rodar.sh", bundle.RunnerBash)); !errors.Is(err, jobs.ErrRefused) {
+	if _, err := e.Execute(context.Background(), 1, params(sha, size+10, entry, runner)); !errors.Is(err, jobs.ErrRefused) || !strings.Contains(err.Error(), "servidor entregou") {
 		t.Fatalf("erro: %v", err)
 	}
+}
+
+func nativeEntry() (string, string) {
+	if runtime.GOOS == "windows" {
+		return "rodar.ps1", bundle.RunnerPowerShell
+	}
+	return "rodar.sh", bundle.RunnerBash
 }
 
 // Bundle de outro sistema é recusado, não executado pela metade.

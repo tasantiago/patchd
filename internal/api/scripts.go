@@ -57,14 +57,14 @@ type scriptsView struct {
 }
 
 type bundleRow struct {
-	ID              int64
-	Name, SHA, Note string
-	Size, Files     string
-	OS, OSLabel     string
-	Uploaded, By    string
-	Entries         []string
+	ID                       int64
+	Name, SHA, Note          string
+	Size, Files              string
+	OS, OSLabel              string
+	Uploaded, By             string
+	Entries                  []string
 	Entry, Arguments, Runner string
-	TimeoutMinutes string
+	TimeoutMinutes           string
 }
 
 type scriptMachineRow struct {
@@ -455,7 +455,9 @@ func (a *api) saveScriptExecutionAction(w http.ResponseWriter, r *http.Request, 
 		http.NotFound(w, r)
 		return
 	}
-	back := func(q string) { http.Redirect(w, r, fmt.Sprintf("/painel/scripts?bundle=%d&%s", id, q), http.StatusSeeOther) }
+	back := func(q string) {
+		http.Redirect(w, r, fmt.Sprintf("/painel/scripts?bundle=%d&%s", id, q), http.StatusSeeOther)
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "formulário inválido", http.StatusBadRequest)

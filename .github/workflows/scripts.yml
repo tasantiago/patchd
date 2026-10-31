@@ -10,8 +10,6 @@ on:
       - 'internal/store/**'
       - 'go.*'
       - '.github/workflows/scripts.yml'
-  push:
-    branches: [feat/pacotes-scripts-itom]
   workflow_dispatch:
 
 permissions:

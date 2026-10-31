@@ -81,7 +81,11 @@ func TestScriptAvulsoConfigSalvaEDisparo(t *testing.T) {
 	if l := local(pagina(h, "POST", base+"/executar", sessaoAdmin, url.Values{"maquina": {"e002-0000"}})); !strings.Contains(l, "criados=1") {
 		t.Fatalf("disparo com novos padrões: %s", l)
 	}
-	for _, tc := range []struct{ machine string; timeout int; args []string }{
+	for _, tc := range []struct {
+		machine string
+		timeout int
+		args    []string
+	}{
 		{"e001-0000", 3600, args}, {"e002-0000", 30, nil},
 	} {
 		queue, err := st.DeliverJobs(ctx, tc.machine, time.Now())

@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"golang.org/x/sys/windows"
 	"github.com/tasantiago/patchd/internal/jobs"
+	"golang.org/x/sys/windows"
 )
 
 // O processo nasce suspenso: ele só pode criar filhos depois de entrar no Job Object.

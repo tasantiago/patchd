@@ -167,7 +167,7 @@ func command(prog, runner, entry string, args []string) (string, []string) {
 		// Operadores/expansões foram recusados na validação; cada valor é delimitado.
 		words := []string{`"` + entry + `"`}
 		for _, a := range args {
-			words = append(words, `"` + a + `"`)
+			words = append(words, `"`+a+`"`)
 		}
 		return prog, []string{"/d", "/v:off", "/s", "/c", `"` + strings.Join(words, " ") + `"`}
 	case bundle.RunnerVBScript:

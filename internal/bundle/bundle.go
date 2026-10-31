@@ -26,15 +26,15 @@ import (
 
 // Limites do bundle.
 const (
-	MaxZipBytes   = 256 << 20 // o ZIP em si
-	MaxTotalBytes = 512 << 20 // soma descompactada
-	MaxFileBytes  = 256 << 20 // um arquivo descompactado
-	MaxFiles      = 512
-	MaxDepth      = 4   // pastas dentro do ZIP
-	MaxSegment    = 120 // letras de cada parte do caminho
+	MaxZipBytes    = 256 << 20 // o ZIP em si
+	MaxTotalBytes  = 512 << 20 // soma descompactada
+	MaxFileBytes   = 256 << 20 // um arquivo descompactado
+	MaxFiles       = 512
+	MaxDepth       = 4        // pastas dentro do ZIP
+	MaxSegment     = 120      // letras de cada parte do caminho
 	MaxScriptBytes = 16 << 20 // script avulso; instaladores maiores devem vir no ZIP
-	maxRatio      = 200 // descompactado / compactado, por arquivo: acima disso é zip bomb
-	ratioFloor    = 1 << 20
+	maxRatio       = 200      // descompactado / compactado, por arquivo: acima disso é zip bomb
+	ratioFloor     = 1 << 20
 )
 
 // Runners: como o ponto de entrada é executado. Nenhum deles recebe linha de comando: o

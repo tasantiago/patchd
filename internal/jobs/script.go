@@ -38,12 +38,12 @@ type ScriptParams struct {
 
 // Limites da execução.
 const (
-	MinScriptTimeout = 30
-	MaxScriptTimeout = 3600
-	MaxScriptArgs    = 32
-	MaxScriptArgBytes = 1024
+	MinScriptTimeout   = 30
+	MaxScriptTimeout   = 3600
+	MaxScriptArgs      = 32
+	MaxScriptArgBytes  = 1024
 	MaxScriptArgsBytes = 8192
-	maxBundleName    = 64
+	maxBundleName      = 64
 )
 
 // ParseScriptParams lê e confere os parâmetros.

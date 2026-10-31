@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sys/windows"
 	"github.com/tasantiago/patchd/internal/bundle"
+	"golang.org/x/sys/windows"
 )
 
 func TestBatchCaminhoEArgumentoComEspacos(t *testing.T) {
