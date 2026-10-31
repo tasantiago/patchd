@@ -1,0 +1,76 @@
+name: scripts
+
+on:
+  pull_request:
+    paths:
+      - 'internal/api/**'
+      - 'internal/bundle/**'
+      - 'internal/jobs/**'
+      - 'internal/scriptexec/**'
+      - 'internal/store/**'
+      - 'go.*'
+      - '.github/workflows/scripts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plataformas:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Conferir formatação
+        continue-on-error: true
+        shell: bash
+        run: |
+          files=$(gofmt -l internal/api/scripts*.go internal/api/api.go internal/api/pages.go internal/bundle/*.go internal/jobs/script*.go internal/scriptexec/*.go internal/store/scripts*.go)
+          if [ -n "$files" ]; then
+            echo "$files"
+            gofmt -d internal/api/scripts*.go internal/api/api.go internal/api/pages.go internal/bundle/*.go internal/jobs/script*.go internal/scriptexec/*.go internal/store/scripts*.go
+            echo "PATCHD_FORMAT_FAILED=1" >> "$GITHUB_ENV"
+            exit 1
+          fi
+      - run: go test -race -timeout 10m ./internal/bundle ./internal/jobs ./internal/scriptexec ./internal/store ./internal/api
+      - run: go vet ./internal/bundle ./internal/jobs ./internal/scriptexec ./internal/store ./internal/api
+      - run: go build ./cmd/...
+      - name: Exigir formatação
+        shell: bash
+        run: test "${PATCHD_FORMAT_FAILED:-0}" = 0
+
+  postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: patchd_test
+          POSTGRES_USER: patchd_test
+          POSTGRES_PASSWORD: test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U patchd_test -d patchd_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PATCHD_TEST_DATABASE_URL: postgres://patchd_test:test-only@localhost:5432/patchd_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go test -race -timeout 10m ./internal/store

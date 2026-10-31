@@ -113,6 +113,7 @@ type Store interface {
 	ScriptBundles(ctx context.Context) ([]store.ScriptBundle, error)
 	ScriptBundle(ctx context.Context, id int64) (store.ScriptBundle, bool, error)
 	DeleteScriptBundle(ctx context.Context, id int64) (store.ScriptBundle, bool, error)
+	SetScriptExecution(ctx context.Context, id int64, entry string, args []string, timeout int) (bool, error)
 	// Descoberta de rede (Aula 23.7): faixas, hosts vivos e histórico de varreduras.
 	AddDiscoveryRange(ctx context.Context, spec, note, by string) (int64, error)
 	SetDiscoveryRangeEnabled(ctx context.Context, id int64, enabled bool) (bool, error)
@@ -322,6 +323,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/scripts", a.adminAction(a.scriptsPage))
 	mux.Handle("POST /painel/scripts", a.sameOrigin(a.adminAction(a.uploadBundleAction)))
 	mux.Handle("POST /painel/scripts/{id}/executar", a.sameOrigin(a.adminAction(a.runScriptAction)))
+	mux.Handle("POST /painel/scripts/{id}/configurar", a.sameOrigin(a.adminAction(a.saveScriptExecutionAction)))
 	mux.Handle("POST /painel/scripts/{id}/excluir", a.sameOrigin(a.adminAction(a.deleteBundleAction)))
 	// Descoberta de rede (Aula 23.7).
 	mux.Handle("GET /painel/descoberta", a.adminAction(a.discoveryPage))

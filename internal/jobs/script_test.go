@@ -32,21 +32,21 @@ func TestScriptParams(t *testing.T) {
 
 func TestScriptParamsRecusa(t *testing.T) {
 	casos := map[string]func(*ScriptParams){
-		"sem bundle":            func(p *ScriptParams) { p.Bundle = "" },
-		"sha curto":             func(p *ScriptParams) { p.SHA256 = "abc" },
-		"sha maiúsculo":         func(p *ScriptParams) { p.SHA256 = strings.ToUpper(strings.Repeat("ab", 32)) },
-		"tamanho zero":          func(p *ScriptParams) { p.Size = 0 },
-		"tamanho absurdo":       func(p *ScriptParams) { p.Size = 1 << 40 },
-		"entrada para fora":     func(p *ScriptParams) { p.Entry = "../../Windows/System32/cmd.exe" },
-		"entrada absoluta":      func(p *ScriptParams) { p.Entry = "/bin/sh" },
-		"entrada com unidade":   func(p *ScriptParams) { p.Entry = "C:/Windows/System32/cmd.exe" },
-		"entrada não executa":   func(p *ScriptParams) { p.Entry = "config.ini"; p.Runner = "" },
-		"runner trocado":        func(p *ScriptParams) { p.Runner = "bash" }, // entrada é .ps1
-		"argumento com espaço":  func(p *ScriptParams) { p.Args = []string{"a b"} },
-		"argumento com aspas":   func(p *ScriptParams) { p.Args = []string{`"x"`} },
-		"argumento com caminho": func(p *ScriptParams) { p.Args = []string{`C:\x`} },
-		"prazo curto":           func(p *ScriptParams) { p.Timeout = 5 },
-		"prazo longo":           func(p *ScriptParams) { p.Timeout = 99999 },
+		"sem bundle":             func(p *ScriptParams) { p.Bundle = "" },
+		"sha curto":              func(p *ScriptParams) { p.SHA256 = "abc" },
+		"sha maiúsculo":          func(p *ScriptParams) { p.SHA256 = strings.ToUpper(strings.Repeat("ab", 32)) },
+		"tamanho zero":           func(p *ScriptParams) { p.Size = 0 },
+		"tamanho absurdo":        func(p *ScriptParams) { p.Size = 1 << 40 },
+		"entrada para fora":      func(p *ScriptParams) { p.Entry = "../../Windows/System32/cmd.exe" },
+		"entrada absoluta":       func(p *ScriptParams) { p.Entry = "/bin/sh" },
+		"entrada com unidade":    func(p *ScriptParams) { p.Entry = "C:/Windows/System32/cmd.exe" },
+		"entrada não executa":    func(p *ScriptParams) { p.Entry = "config.ini"; p.Runner = "" },
+		"runner trocado":         func(p *ScriptParams) { p.Runner = "bash" }, // entrada é .ps1
+		"argumento com controle": func(p *ScriptParams) { p.Args = []string{"a\nb"} },
+		"argumento enorme":       func(p *ScriptParams) { p.Args = []string{strings.Repeat("x", MaxScriptArgBytes+1)} },
+		"muitos argumentos":      func(p *ScriptParams) { p.Args = make([]string, MaxScriptArgs+1) },
+		"prazo curto":            func(p *ScriptParams) { p.Timeout = 5 },
+		"prazo longo":            func(p *ScriptParams) { p.Timeout = 99999 },
 	}
 	for nome, muda := range casos {
 		p := paramsValidos()
@@ -58,7 +58,7 @@ func TestScriptParamsRecusa(t *testing.T) {
 }
 
 func TestScriptRunnerPorExtensao(t *testing.T) {
-	casos := map[string]string{"a.ps1": "powershell", "a.bat": "cmd", "a.cmd": "cmd", "a.exe": "exe", "sub/a.sh": "bash"}
+	casos := map[string]string{"a.ps1": "powershell", "a.bat": "cmd", "a.cmd": "cmd", "a.exe": "exe", "sub/a.sh": "bash", "a.vbs": "cscript"}
 	for entry, runner := range casos {
 		p := paramsValidos()
 		p.Entry, p.Runner = entry, runner

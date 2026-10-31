@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -145,13 +146,19 @@ func TestExtract(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, "bin", "dados.bin")); err != nil {
 		t.Errorf("subpasta: %v", err)
 	}
-	// O script fica executável; o resto, não.
+	// O script fica executável; o resto, não. Windows usa ACLs, não estes bits Unix.
 	st, err := os.Stat(filepath.Join(dest, "instalar.sh"))
-	if err != nil || st.Mode().Perm() != 0o700 {
-		t.Errorf("modo do script: %v %v", st.Mode().Perm(), err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	st, _ = os.Stat(filepath.Join(dest, "config.ini"))
-	if st.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o700 {
+		t.Errorf("modo do script: %v", st.Mode().Perm())
+	}
+	st, err = os.Stat(filepath.Join(dest, "config.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("modo do .ini: %v", st.Mode().Perm())
 	}
 	// Nada escapou da pasta.

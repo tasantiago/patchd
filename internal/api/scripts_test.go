@@ -48,6 +48,10 @@ func zipDeTeste(t *testing.T, arquivos map[string]string) ([]byte, string) {
 }
 
 func sobeBundle(h http.Handler, cookie, nome, arquivo string, conteudo []byte) *httptest.ResponseRecorder {
+	return sobePacote(h, cookie, nome, arquivo, conteudo, nil)
+}
+
+func sobePacote(h http.Handler, cookie, nome, arquivo string, conteudo []byte, config url.Values) *httptest.ResponseRecorder {
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	if conteudo != nil {
@@ -56,6 +60,11 @@ func sobeBundle(h http.Handler, cookie, nome, arquivo string, conteudo []byte) *
 	}
 	if nome != "" {
 		_ = mw.WriteField("nome", nome)
+	}
+	for key, values := range config {
+		for _, value := range values {
+			_ = mw.WriteField(key, value)
+		}
 	}
 	_ = mw.Close()
 	req := httptest.NewRequest("POST", "/painel/scripts", &body)
@@ -137,14 +146,14 @@ func TestScriptsBundleEExecucao(t *testing.T) {
 		return local(pagina(h, "POST", "/painel/scripts/"+itoa(id)+"/executar", sessaoAdmin, form))
 	}
 	// Ponto de entrada fora da lista do bundle é recusado.
-	if l := exec(url.Values{"entrada": {"../../etc/passwd"}, "maquina": {"e001-0000"}}); !strings.Contains(l, "erro=entrada") {
+	if l := exec(url.Values{"entrada": {"../../etc/passwd"}, "maquina": {"e001-0000"}}); !strings.Contains(l, "erro=params") {
 		t.Errorf("entrada inválida: %s", l)
 	}
-	if l := exec(url.Values{"entrada": {"config.ini"}, "maquina": {"e001-0000"}}); !strings.Contains(l, "erro=entrada") {
+	if l := exec(url.Values{"entrada": {"config.ini"}, "maquina": {"e001-0000"}}); !strings.Contains(l, "erro=params") {
 		t.Errorf("entrada não executável: %s", l)
 	}
-	// Argumento com aspas ou caminho é recusado.
-	for _, arg := range []string{`"x"`, `C:\Windows\x`, "a;rm -rf /"} {
+	// Aspas sem fechamento, controles e valores grandes são recusados.
+	for _, arg := range []string{`"x`, "a\nb", strings.Repeat("x", 1025)} {
 		if l := exec(url.Values{"entrada": {"instalar.ps1"}, "argumentos": {arg}, "maquina": {"e001-0000"}}); !strings.Contains(l, "erro=") {
 			t.Errorf("argumento %q devia recusar: %s", arg, l)
 		}
@@ -216,12 +225,19 @@ func TestScriptsBundleEExecucao(t *testing.T) {
 		t.Error("download sem credencial")
 	}
 
-	// Excluir tira do banco e do disco.
+	// Excluir tira o cadastro, preservando o conteúdo de jobs já emitidos.
 	if l := local(pagina(h, "POST", "/painel/scripts/"+itoa(id)+"/excluir", sessaoAdmin, url.Values{})); !strings.Contains(l, "removido=1") {
 		t.Errorf("excluir: %s", l)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "bundles", sha+".zip")); !os.IsNotExist(err) {
-		t.Errorf("o ZIP ficou no disco: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "bundles", sha+".zip")); err != nil {
+		t.Errorf("o ZIP de jobs emitidos foi removido: %v", err)
+	}
+	req = httptest.NewRequest("GET", protocol.BundlesPath+sha+".zip", nil)
+	req.Header.Set("Authorization", "Bearer "+m.Credential)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), z) {
+		t.Fatalf("job perdeu o download após exclusão: %d", rec.Code)
 	}
 
 	// Auditoria: a subida e a execução.

@@ -1,2 +1,4 @@
 # Scripts do cmd precisam de CRLF: com LF, o cmd erra rótulos e blocos entre parênteses.
 *.cmd text eol=crlf
+*.go text eol=lf
+*.md text eol=lf

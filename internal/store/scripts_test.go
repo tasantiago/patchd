@@ -14,6 +14,7 @@ type contratoBundles interface {
 	ScriptBundles(ctx context.Context) ([]ScriptBundle, error)
 	ScriptBundle(ctx context.Context, id int64) (ScriptBundle, bool, error)
 	DeleteScriptBundle(ctx context.Context, id int64) (ScriptBundle, bool, error)
+	SetScriptExecution(ctx context.Context, id int64, entry string, args []string, timeout int) (bool, error)
 }
 
 // Aula 23.8: cadastro dos bundles, o mesmo ZIP recusado duas vezes, e a lista de arquivos
@@ -46,6 +47,26 @@ func testarBundles(t *testing.T, st contratoBundles) {
 	}
 	if lido.Name != "instala-exemplo" || lido.Size != 4096 || lido.OS != "windows" || lido.UploadedBy != "thyago" || lido.UploadedAt.IsZero() {
 		t.Errorf("metadados: %+v", lido)
+	}
+	if lido.Entry != "" || len(lido.Args) != 0 || lido.ExecutionTimeout() != 600 {
+		t.Errorf("padrões do cadastro anterior: %+v", lido)
+	}
+	args := []string{"-Destino", `C:\Program Files\Empresa`}
+	if ok, err := st.SetScriptExecution(ctx, id, "instalar.ps1", args, 3600); err != nil || !ok {
+		t.Fatalf("salvar execução: %v %v", ok, err)
+	}
+	args[0] = "alterado fora do store"
+	lido, ok, err = st.ScriptBundle(ctx, id)
+	if err != nil || !ok || lido.Entry != "instalar.ps1" || lido.Timeout != 3600 || len(lido.Args) != 2 || lido.Args[0] != "-Destino" {
+		t.Fatalf("execução não preservada: %+v %v", lido, err)
+	}
+	lido.Args[0] = "alterado na leitura"
+	lido, _, _ = st.ScriptBundle(ctx, id)
+	if lido.Args[0] != "-Destino" {
+		t.Error("a leitura expôs os parâmetros internos")
+	}
+	if ok, err := st.SetScriptExecution(ctx, 9999, "x.sh", nil, 60); err != nil || ok {
+		t.Fatalf("configurar inexistente: %v %v", ok, err)
 	}
 	if len(lido.Files) != 3 || lido.Files[0].Name != "instalar.ps1" || lido.Files[2].Size != 3000 {
 		t.Errorf("arquivos: %+v", lido.Files)

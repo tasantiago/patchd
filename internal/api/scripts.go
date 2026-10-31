@@ -57,12 +57,14 @@ type scriptsView struct {
 }
 
 type bundleRow struct {
-	ID              int64
-	Name, SHA, Note string
-	Size, Files     string
-	OS, OSLabel     string
-	Uploaded, By    string
-	Entries         []string
+	ID                       int64
+	Name, SHA, Note          string
+	Size, Files              string
+	OS, OSLabel              string
+	Uploaded, By             string
+	Entries                  []string
+	Entry, Arguments, Runner string
+	TimeoutMinutes           string
 }
 
 type scriptMachineRow struct {
@@ -92,7 +94,11 @@ func (a *api) scriptsPage(w http.ResponseWriter, r *http.Request, s panel.Sessio
 		if err == nil {
 			if i := slices.IndexFunc(v.Bundles, func(b bundleRow) bool { return b.ID == id }); i >= 0 {
 				v.Chosen = &v.Bundles[i]
-				if err := a.scriptTargets(r, v.Chosen.OS, &v); err != nil {
+				targetOS := v.Chosen.OS
+				if v.Chosen.Entry != "" {
+					targetOS = bundle.OSForRunner(bundle.RunnerFor(v.Chosen.Entry))
+				}
+				if err := a.scriptTargets(r, targetOS, &v); err != nil {
 					a.internalError(w, r, "listar as máquinas", err)
 					return
 				}
@@ -106,7 +112,8 @@ func (a *api) bundleRowOf(b store.ScriptBundle) bundleRow {
 	return bundleRow{ID: b.ID, Name: b.Name, SHA: b.SHA256[:12], Note: b.Note,
 		Size: pkgcache.Bytes(b.Size), Files: fmt.Sprintf("%d", len(b.Files)),
 		OS: b.OS, OSLabel: bundleOSLabel(b.OS), Uploaded: a.stamp(b.UploadedAt), By: dash(b.UploadedBy),
-		Entries: b.Entries()}
+		Entries: b.Entries(), Entry: b.Entry, Arguments: jobs.FormatScriptArgs(b.Args),
+		Runner: bundle.RunnerFor(b.Entry), TimeoutMinutes: strconv.FormatFloat(float64(b.ExecutionTimeout())/60, 'f', -1, 64)}
 }
 
 func bundleOSLabel(os string) string {
@@ -197,7 +204,22 @@ func (a *api) uploadBundleAction(w http.ResponseWriter, r *http.Request, s panel
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	h := sha256.New()
-	size, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(f, bundle.MaxZipBytes+1))
+	var size int64
+	if strings.EqualFold(filepath.Ext(fh.Filename), ".zip") {
+		size, err = io.Copy(io.MultiWriter(tmp, h), io.LimitReader(f, bundle.MaxZipBytes+1))
+	} else {
+		err = bundle.PackScript(io.MultiWriter(tmp, h), fh.Filename, f)
+		if err != nil {
+			_ = tmp.Close()
+			back("erro=script&motivo=" + url.QueryEscape(shortError(err.Error(), 120)))
+			return
+		}
+		var st os.FileInfo
+		st, err = tmp.Stat()
+		if err == nil {
+			size = st.Size()
+		}
+	}
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
@@ -224,6 +246,19 @@ func (a *api) uploadBundleAction(w http.ResponseWriter, r *http.Request, s panel
 	sum := hex.EncodeToString(h.Sum(nil))
 	b := store.ScriptBundle{Name: name, SHA256: sum, Size: size, OS: info.OS, Files: info.Files,
 		Note: note, UploadedBy: s.Username}
+	p, err := scriptExecutionFromForm(r, b, false)
+	if err != nil {
+		back("erro=params&motivo=" + url.QueryEscape(shortError(err.Error(), 120)))
+		return
+	}
+	b.Entry, b.Args, b.Timeout = p.Entry, p.Args, p.Timeout
+	// Publica o conteúdo antes dos metadados. Um erro no banco pode deixar um arquivo
+	// sem cadastro, mas nunca um cadastro cujo download ainda não existe.
+	final := filepath.Join(a.bundlesDir(), sum+".zip")
+	if err := os.Link(tmp.Name(), final); err != nil && !errors.Is(err, os.ErrExist) {
+		a.internalError(w, r, "guardar o bundle", err)
+		return
+	}
 	id, err := a.store.AddScriptBundle(r.Context(), b)
 	switch {
 	case errors.Is(err, store.ErrBundleExists):
@@ -233,23 +268,18 @@ func (a *api) uploadBundleAction(w http.ResponseWriter, r *http.Request, s panel
 		a.internalError(w, r, "cadastrar o bundle", err)
 		return
 	}
-	// Só agora o arquivo vai para o nome definitivo.
-	final := filepath.Join(a.bundlesDir(), sum+".zip")
-	if err := os.Rename(tmp.Name(), final); err != nil {
-		a.internalError(w, r, "guardar o bundle", err)
-		return
-	}
 	a.logger.Info("bundle de script subido", "bundle_id", id, "name", name, "sha256", sum[:12], "size", size,
 		"files", len(info.Files), "os", info.OS, "username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "script.bundle", name, fmt.Sprintf("%d arquivo(s) · %s · sha256 %s…", len(info.Files), pkgcache.Bytes(size), sum[:12]))
-	back("subiu=" + strconv.FormatInt(id, 10))
+	back("subiu=" + strconv.FormatInt(id, 10) + "&bundle=" + strconv.FormatInt(id, 10))
 }
 
 // bundleNameOf: o nome que o admin digitou, ou o do arquivo sem a extensão.
 func bundleNameOf(typed, filename string) string {
 	name := strings.TrimSpace(typed)
 	if name == "" {
-		name = strings.TrimSuffix(filepath.Base(filepath.FromSlash(filename)), ".zip")
+		name = filepath.Base(filepath.FromSlash(filename))
+		name = strings.TrimSuffix(name, filepath.Ext(name))
 	}
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 64 || !bundle.ValidEntry(name) {
@@ -275,12 +305,10 @@ func (a *api) deleteBundleAction(w http.ResponseWriter, r *http.Request, s panel
 		back("erro=sumiu")
 		return
 	}
-	if a.contentDir != "" {
-		if err := os.Remove(filepath.Join(a.bundlesDir(), b.SHA256+".zip")); err != nil && !os.IsNotExist(err) {
-			a.logger.Warn("bundle removido do banco, mas o arquivo ficou", "sha256", b.SHA256[:12], "error", err)
-		}
-	}
-	a.audit(r, s, "script.bundle", b.Name, "removido")
+	// Jobs já emitidos referenciam o hash, não o cadastro. Preservar o conteúdo
+	// imutável evita quebrá-los, inclusive numa corrida entre disparo e exclusão.
+
+	a.audit(r, s, "script.bundle", b.Name, "cadastro removido; conteúdo preservado para jobs emitidos")
 	back("removido=1")
 }
 
@@ -300,6 +328,7 @@ func (a *api) runScriptAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		back("erro=sem-chave")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "formulário inválido", http.StatusBadRequest)
 		return
@@ -313,23 +342,8 @@ func (a *api) runScriptAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		back("erro=sumiu")
 		return
 	}
-	entry := r.PostFormValue("entrada")
-	if !slices.Contains(b.Entries(), entry) {
-		back("erro=entrada")
-		return
-	}
-	timeout, _ := strconv.Atoi(r.PostFormValue("prazo"))
-	if timeout == 0 {
-		timeout = defaultTimeout
-	}
-	args, err := splitScriptArgs(r.PostFormValue("argumentos"))
+	p, err := scriptExecutionFromForm(r, b, true)
 	if err != nil {
-		back("erro=args&motivo=" + url.QueryEscape(shortError(err.Error(), 120)))
-		return
-	}
-	p := jobs.ScriptParams{Bundle: b.Name, SHA256: b.SHA256, Size: b.Size, Entry: entry,
-		Runner: bundle.RunnerFor(entry), Args: args, Timeout: timeout}
-	if err := p.Validate(); err != nil {
 		back("erro=params&motivo=" + url.QueryEscape(shortError(err.Error(), 120)))
 		return
 	}
@@ -343,12 +357,23 @@ func (a *api) runScriptAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		a.internalError(w, r, "montar o job", err)
 		return
 	}
+	machines, err := a.store.InventoryList(r.Context())
+	if err != nil {
+		a.internalError(w, r, "conferir os sistemas das máquinas", err)
+		return
+	}
+	compatible := map[string]bool{}
+	for _, m := range machines {
+		compatible[m.ID] = machineOS(m.OSName) == p.OS()
+	}
+	seen := map[string]bool{}
 	criados, pulados := 0, 0
 	for _, mid := range ids {
-		if !machineIDPattern.MatchString(mid) {
+		if !machineIDPattern.MatchString(mid) || !compatible[mid] || seen[mid] {
 			pulados++
 			continue
 		}
+		seen[mid] = true
 		_, err := jobs.Issue(r.Context(), a.store, a.jobKey,
 			jobs.Request{MachineID: mid, Type: jobs.TypeScript, TTL: scriptJobTTL, By: s.Username, Params: raw}, a.now())
 		switch {
@@ -361,33 +386,108 @@ func (a *api) runScriptAction(w http.ResponseWriter, r *http.Request, s panel.Se
 			criados++
 		}
 	}
-	a.logger.Info("bundle de script disparado", "bundle", b.Name, "entry", entry, "jobs", criados, "skipped", pulados,
+	a.logger.Info("bundle de script disparado", "bundle", b.Name, "entry", p.Entry, "jobs", criados, "skipped", pulados,
 		"username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "script.executar", b.Name+" · "+entry,
+	a.audit(r, s, "script.executar", b.Name+" · "+p.Entry,
 		fmt.Sprintf("%d job(s) criado(s), %d máquina(s) fora", criados, pulados))
 	back(fmt.Sprintf("criados=%d&pulados=%d", criados, pulados))
 }
 
-// splitScriptArgs separa a linha de argumentos em tokens e confere cada um pelas regras do
-// pacote jobs (sem aspas, espaços, barras invertidas ou caminhos).
-func splitScriptArgs(line string) ([]string, error) {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return nil, nil
+// splitScriptArgs mantém o ponto de entrada usado pelos testes antigos da API.
+func splitScriptArgs(line string) ([]string, error) { return jobs.SplitScriptArgs(line) }
+
+// scriptExecutionFromForm aplica os padrões salvos. Campos presentes, mesmo vazios,
+// substituem o padrão: é possível limpar os parâmetros somente para um disparo.
+func scriptExecutionFromForm(r *http.Request, b store.ScriptBundle, required bool) (jobs.ScriptParams, error) {
+	entry := b.Entry
+	if r.PostForm.Has("entrada") {
+		entry = strings.TrimSpace(r.PostFormValue("entrada"))
 	}
-	if strings.ContainsAny(line, `"'`) {
-		return nil, errors.New("argumentos com aspas não são aceitos")
+	entries := b.Entries()
+	if entry == "" && len(entries) == 1 {
+		entry = entries[0]
 	}
-	args := strings.Fields(line)
-	if len(args) > jobs.MaxScriptArgs {
-		return nil, fmt.Errorf("mais de %d argumentos", jobs.MaxScriptArgs)
+	if entry != "" && !slices.Contains(entries, entry) {
+		return jobs.ScriptParams{}, errors.New("escolha um Run que exista dentro do pacote")
 	}
-	p := jobs.ScriptParams{Bundle: "x", SHA256: strings.Repeat("0", 64), Size: 1, Entry: "x.sh",
-		Runner: bundle.RunnerBash, Args: args, Timeout: jobs.MinScriptTimeout}
-	if err := p.Validate(); err != nil {
-		return nil, err
+	if required && entry == "" {
+		return jobs.ScriptParams{}, errors.New("escolha o Run do pacote")
 	}
-	return args, nil
+	args := slices.Clone(b.Args)
+	var err error
+	if r.PostForm.Has("argumentos") {
+		args, err = splitScriptArgs(r.PostFormValue("argumentos"))
+		if err != nil {
+			return jobs.ScriptParams{}, err
+		}
+	}
+	timeout := b.ExecutionTimeout()
+	if r.PostForm.Has("minutos") {
+		d, e := time.ParseDuration(r.PostFormValue("minutos") + "m")
+		if e != nil || d%time.Second != 0 || d < 30*time.Second || d > time.Hour {
+			return jobs.ScriptParams{}, errors.New("timeout: de 0,5 a 60 minutos")
+		}
+		timeout = int(d / time.Second)
+	} else if r.PostForm.Has("prazo") { // formulários anteriores, em segundos
+		timeout, err = strconv.Atoi(r.PostFormValue("prazo"))
+		if err != nil {
+			return jobs.ScriptParams{}, errors.New("timeout inválido")
+		}
+	}
+	p := jobs.ScriptParams{Bundle: b.Name, SHA256: b.SHA256, Size: b.Size, Entry: entry,
+		Runner: bundle.RunnerFor(entry), Args: args, Timeout: timeout}
+	if runner := r.PostFormValue("interpretador"); runner != "" && runner != "auto" && runner != p.Runner {
+		return p, errors.New("o interpretador não combina com a extensão do Run")
+	}
+	if entry == "" {
+		if timeout < jobs.MinScriptTimeout || timeout > jobs.MaxScriptTimeout {
+			return p, errors.New("timeout fora de 30 a 3600 segundos")
+		}
+		return p, jobs.ValidateScriptArgs("", args)
+	}
+	return p, p.Validate()
+}
+
+// saveScriptExecutionAction altera os padrões sem emitir jobs nem alterar jobs assinados.
+func (a *api) saveScriptExecutionAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	back := func(q string) {
+		http.Redirect(w, r, fmt.Sprintf("/painel/scripts?bundle=%d&%s", id, q), http.StatusSeeOther)
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	b, ok, err := a.store.ScriptBundle(r.Context(), id)
+	if err != nil {
+		a.internalError(w, r, "ler o pacote", err)
+		return
+	}
+	if !ok {
+		back("erro=sumiu")
+		return
+	}
+	p, err := scriptExecutionFromForm(r, b, true)
+	if err != nil {
+		back("erro=params&motivo=" + url.QueryEscape(shortError(err.Error(), 120)))
+		return
+	}
+	ok, err = a.store.SetScriptExecution(r.Context(), id, p.Entry, p.Args, p.Timeout)
+	if err != nil {
+		a.internalError(w, r, "salvar a execução", err)
+		return
+	}
+	if !ok {
+		back("erro=sumiu")
+		return
+	}
+	a.audit(r, s, "script.configurar", b.Name, "Run e configuração padrão atualizados")
+	back("salvo=1")
 }
 
 // bundleName: o nome do bundle no servidor, como o agente o pede.
@@ -426,14 +526,16 @@ func (a *api) bundleFile(w http.ResponseWriter, r *http.Request, id string) {
 func scriptsFlash(q url.Values, b *pageBase) {
 	switch {
 	case q.Has("subiu"):
-		b.Flash = "Bundle guardado. Escolha o ponto de entrada e as máquinas para executar."
+		b.Flash = "Pacote cadastrado. Confira a configuração e escolha as máquinas para executar."
 	case q.Has("removido"):
-		b.Flash = "Bundle removido."
+		b.Flash = "Cadastro removido. Jobs já emitidos mantêm acesso ao pacote."
+	case q.Has("salvo"):
+		b.Flash = "Configuração salva. Ela será usada nas próximas execuções."
 	case q.Has("criados"):
 		n, _ := strconv.Atoi(q.Get("criados"))
 		msg := fmt.Sprintf("%d job(s) criado(s). O script roda no próximo check-in de cada máquina; acompanhe em Automação › Jobs.", n)
 		if p, _ := strconv.Atoi(q.Get("pulados")); p > 0 {
-			msg += fmt.Sprintf(" %d máquina(s) ficou(ram) de fora (aposentada ou inexistente).", p)
+			msg += fmt.Sprintf(" %d seleção(ões) ficou(ram) de fora (duplicada, incompatível, aposentada ou inexistente).", p)
 		}
 		b.Flash = msg
 	case q.Get("erro") == "sem-pasta":
@@ -443,7 +545,9 @@ func scriptsFlash(q url.Values, b *pageBase) {
 	case q.Get("erro") == "grande":
 		b.Error = fmt.Sprintf("O ZIP passa de %d MiB.", bundle.MaxZipBytes>>20)
 	case q.Get("erro") == "arquivo":
-		b.Error = "Escolha um arquivo .zip."
+		b.Error = "Escolha um ZIP ou um script .ps1, .bat, .cmd, .vbs ou .sh."
+	case q.Get("erro") == "script":
+		b.Error = "Script recusado: " + shortError(q.Get("motivo"), 120)
 	case q.Get("erro") == "nome":
 		b.Error = "Nome do bundle inválido (até 64 caracteres, sem barras nem acentos estranhos)."
 	case q.Get("erro") == "nota":

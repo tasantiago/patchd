@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tasantiago/patchd/internal/bundle"
 )
@@ -14,9 +17,9 @@ import (
 //
 // Como todo tipo desde a Aula 8.1, o job NÃO leva linha de comando. Leva o que identifica o
 // ZIP (SHA-256 e tamanho), o nome do arquivo de dentro dele por onde a execução começa, e
-// uma lista de argumentos conferida aqui, dos dois lados — os mesmos tokens do thirdparty:
-// nada de aspas, espaços, barras invertidas ou caminhos. Quem monta o comando é o agente, a
-// partir do runner, e passa tudo como argv, nunca por um shell.
+// uma lista de argumentos conferida aqui, dos dois lados. Caminhos e espaços são dados;
+// o agente escolhe o interpretador pela extensão. Batch tem validação e quoting próprios
+// porque cmd.exe interpreta a linha de comando.
 //
 // O ponto de entrada é um nome de arquivo DENTRO do ZIP conferido, não um caminho da
 // máquina: não há como apontar para C:\Windows\System32\cmd.exe.
@@ -35,10 +38,12 @@ type ScriptParams struct {
 
 // Limites da execução.
 const (
-	MinScriptTimeout = 30
-	MaxScriptTimeout = 3600
-	MaxScriptArgs    = 32
-	maxBundleName    = 64
+	MinScriptTimeout   = 30
+	MaxScriptTimeout   = 3600
+	MaxScriptArgs      = 32
+	MaxScriptArgBytes  = 1024
+	MaxScriptArgsBytes = 8192
+	maxBundleName      = 64
 )
 
 // ParseScriptParams lê e confere os parâmetros.
@@ -64,7 +69,7 @@ func (p ScriptParams) Validate() error {
 	case !bundle.ValidEntry(p.Entry):
 		return fmt.Errorf("ponto de entrada %q inválido (um arquivo de dentro do ZIP, caminho relativo)", p.Entry)
 	case bundle.RunnerFor(p.Entry) == "":
-		return fmt.Errorf("o ponto de entrada %q não é executável (use .ps1, .bat, .cmd, .exe ou .sh)", p.Entry)
+		return fmt.Errorf("o ponto de entrada %q não é executável (use .ps1, .bat, .cmd, .vbs, .exe ou .sh)", p.Entry)
 	case p.Runner != bundle.RunnerFor(p.Entry):
 		return fmt.Errorf("runner %q não combina com o ponto de entrada %q", p.Runner, p.Entry)
 	case len(p.Args) > MaxScriptArgs:
@@ -72,10 +77,38 @@ func (p ScriptParams) Validate() error {
 	case p.Timeout < MinScriptTimeout || p.Timeout > MaxScriptTimeout:
 		return fmt.Errorf("prazo de %d s fora de %d a %d", p.Timeout, MinScriptTimeout, MaxScriptTimeout)
 	}
-	for _, a := range p.Args {
-		if !argToken.MatchString(a) {
-			return fmt.Errorf("argumento %q fora do formato (sem aspas, espaços, barras invertidas ou caminhos)", a)
+	return ValidateScriptArgs(p.Runner, p.Args)
+}
+
+// ValidateScriptArgs aceita caminhos e espaços como dados do script. cmd.exe interpreta
+// sua linha mesmo com argv: nele também recusamos expansão e operadores de shell.
+func ValidateScriptArgs(runner string, args []string) error {
+	if len(args) > MaxScriptArgs {
+		return fmt.Errorf("mais de %d argumentos", MaxScriptArgs)
+	}
+	total := 0
+	for _, a := range args {
+		total += len(a)
+		if !utf8.ValidString(a) || len(a) > MaxScriptArgBytes || strings.IndexFunc(a, unicode.IsControl) >= 0 {
+			return errors.New("argumento inválido: até 1024 bytes, sem caracteres de controle")
 		}
+		if runner == bundle.RunnerCmd && strings.ContainsAny(a, `"&|<>^%!`) {
+			return errors.New("batch não aceita aspas literais, operadores nem expansão de variáveis nos parâmetros")
+		}
+	}
+	if total > MaxScriptArgsBytes {
+		return errors.New("os argumentos passam de 8192 bytes")
+	}
+	if runner == bundle.RunnerCmd && total > 6<<10 {
+		// cmd.exe limita a linha a 8191 caracteres. Reserva espaço para o caminho
+		// validado do script (até 1024 bytes), delimitadores e opções do runner.
+		return errors.New("os parâmetros de batch passam de 6144 bytes")
+	}
+	// A assinatura tem um teto de 16 KiB para o payload inteiro. Aspas, barras e
+	// alguns caracteres viram escapes no JSON, então o tamanho original não basta.
+	raw, err := json.Marshal(args)
+	if err != nil || len(raw) > 12<<10 {
+		return errors.New("os argumentos codificados passam do limite do job")
 	}
 	return nil
 }

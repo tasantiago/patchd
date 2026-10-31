@@ -1511,34 +1511,42 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .NoStore}}<p class="aviso atencao">Sem PATCHD_CONTENT_DIR: o servidor não tem onde guardar os bundles.</p>{{end}}
 {{if .NoJobKey}}<p class="aviso atencao">Sem chave de jobs: dá para subir bundles, mas não para executar.</p>{{end}}
 
-<div class="card"><div class="card-cab"><h2>Novo bundle</h2><span class="muted">um ZIP com o script de entrada e os arquivos que ele usa</span></div>
-<p class="muted">O ZIP leva o que a execução precisa: o executável, o .ini e o script que começa (<code>.ps1</code>, <code>.bat</code>, <code>.cmd</code> ou <code>.exe</code> no Windows; <code>.sh</code> no Linux e macOS). O script roda na pasta onde o bundle foi extraído, então ele chama os outros arquivos por caminho relativo. Até {{.MaxMiB}} MiB.</p>
-<form method="post" action="/painel/scripts" enctype="multipart/form-data" class="linha-faixa">
-<input type="file" name="arquivo" accept=".zip,application/zip" required aria-label="arquivo ZIP">
-<input type="text" name="nome" placeholder="nome (opcional)" maxlength="64" aria-label="nome do bundle">
-<input type="text" name="nota" placeholder="descrição (opcional)" maxlength="200" aria-label="descrição">
-<button type="submit"{{if .NoStore}} disabled{{end}}>Subir</button></form></div>
+<div class="card"><div class="card-cab"><h2>Novo pacote de script</h2><span class="muted">ZIP com arquivos auxiliares ou script avulso</span></div>
+<p class="muted">Envie um ZIP de até {{.MaxMiB}} MiB ou um script de até 16 MiB. Windows: PowerShell, Batch e VBScript; Linux/macOS: Bash. O Run começa na raiz do pacote e pode acessar os arquivos por caminho relativo.</p>
+<form method="post" action="/painel/scripts" enctype="multipart/form-data">
+<div class="campo"><label for="script-nome">Nome do pacote</label><input id="script-nome" type="text" name="nome" maxlength="64" placeholder="opcional; usa o nome do arquivo"></div>
+<div class="campo"><label for="script-nota">Descrição</label><input id="script-nota" type="text" name="nota" maxlength="200"></div>
+<div class="campo"><label for="script-arquivo">Arquivo</label><input id="script-arquivo" type="file" name="arquivo" accept=".zip,.ps1,.bat,.cmd,.vbs,.sh" required></div>
+<div class="campo"><label for="script-run">Run</label><input id="script-run" type="text" name="entrada" placeholder="instalar.cmd ou scripts/instalar.ps1">
+<span class="muted">Caminho dentro do ZIP. Em script avulso ou pacote com uma única entrada, é preenchido automaticamente. Se houver várias entradas, escolha aqui ou antes de executar.</span></div>
+<div class="campo"><label for="script-interpretador">Interpretador</label><select id="script-interpretador" name="interpretador"><option value="auto">Automático pela extensão do Run</option><option value="powershell">PowerShell (.ps1)</option><option value="cmd">Batch (.bat, .cmd)</option><option value="cscript">VBScript (.vbs)</option><option value="bash">Bash (.sh)</option><option value="exe">Executável Windows (.exe dentro do ZIP)</option></select></div>
+<div class="campo"><label for="script-argumentos">Parâmetros padrão</label><input id="script-argumentos" type="text" name="argumentos" maxlength="65536" placeholder='/quiet MODO=1 ou -Destino "C:\Program Files\Empresa"'>
+<span class="muted">Opcionais. Use aspas para agrupar valores com espaços. Caminhos são aceitos; Batch recusa operadores e expansão de variáveis.</span></div>
+<div class="campo"><label for="script-minutos">Timeout (minutos)</label><input id="script-minutos" type="number" name="minutos" value="10" min="0.5" max="60" step="0.5" required></div>
+<button type="submit"{{if .NoStore}} disabled{{end}}>Salvar pacote</button></form></div>
 
 <div class="card"><div class="card-cab"><h2>Bundles</h2><span class="muted">{{len .Bundles}}</span></div>
 {{if .Bundles}}<div class="tabela"><table>
-<thead><tr><th>Nome</th><th>Sistema</th><th>Arquivos</th><th>Tamanho</th><th>SHA-256</th><th>Subido</th><th>Por</th><th></th></tr></thead>
+<thead><tr><th>Nome</th><th>Sistema</th><th>Arquivos</th><th>Tamanho</th><th>Run padrão</th><th>SHA-256</th><th>Subido</th><th>Por</th><th></th></tr></thead>
 <tbody>{{range .Bundles}}<tr><td>{{.Name}}{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td>
-<td>{{.OSLabel}}</td><td>{{.Files}}</td><td>{{.Size}}</td><td><code>{{.SHA}}…</code></td><td>{{.Uploaded}}</td><td>{{.By}}</td>
-<td class="acoes"><a class="btn sec" href="/painel/scripts?bundle={{.ID}}">Executar</a>
-<details class="excluir"><summary>Excluir</summary><form method="post" action="/painel/scripts/{{.ID}}/excluir"><button class="sec perigo" type="submit">Excluir o bundle</button></form></details></td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhum bundle ainda. Suba um ZIP acima.</p>{{end}}</div>
+<td>{{.OSLabel}}</td><td>{{.Files}}</td><td>{{.Size}}</td><td>{{if .Entry}}{{.Entry}}{{else}}Escolher ao executar{{end}}</td><td><code>{{.SHA}}…</code></td><td>{{.Uploaded}}</td><td>{{.By}}</td>
+<td class="acoes"><a class="btn sec" href="/painel/scripts?bundle={{.ID}}">Configurar / Executar</a>
+<details class="excluir"><summary>Excluir</summary><form method="post" action="/painel/scripts/{{.ID}}/excluir"><p class="muted">Remove o cadastro. Jobs já emitidos continuam podendo baixar o pacote.</p><button class="sec perigo" type="submit">Excluir cadastro</button></form></details></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum pacote ainda. Envie um ZIP ou script acima.</p>{{end}}</div>
 
-{{with .Chosen}}<div class="card" id="executar"><div class="card-cab"><h2>Executar: {{.Name}}</h2><span class="muted">{{.OSLabel}} · {{.Files}} arquivo(s)</span></div>
+{{with .Chosen}}{{$chosen := .}}<div class="card" id="executar"><div class="card-cab"><h2>Executar: {{.Name}}</h2><span class="muted">{{.OSLabel}} · {{.Files}} arquivo(s)</span></div>
 <form method="post" action="/painel/scripts/{{.ID}}/executar">
-<div class="campo"><label for="entrada">Começar por</label>
-<select id="entrada" name="entrada" required>{{range .Entries}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+<div class="campo"><label for="entrada">Run</label>
+<select id="entrada" name="entrada" required><option value="">Escolha o arquivo de entrada</option>{{range .Entries}}<option value="{{.}}"{{if eq . $chosen.Entry}} selected{{end}}>{{.}}</option>{{end}}</select>
 <span class="muted">o arquivo do ZIP por onde a execução começa; ele chama os outros</span></div>
 <div class="campo"><label for="argumentos">Argumentos</label>
-<input type="text" id="argumentos" name="argumentos" placeholder="/quiet MODO=1" maxlength="400">
-<span class="muted">opcional, separados por espaço; sem aspas, caminhos ou barras invertidas</span></div>
-<div class="campo"><label for="prazo">Prazo</label>
-<input type="number" id="prazo" name="prazo" value="{{$.Timeout}}" min="30" max="3600" required>
-<span class="muted">segundos; passando disso o script é interrompido e o job falha</span></div>
+<input type="text" id="argumentos" name="argumentos" value="{{.Arguments}}" placeholder="/quiet MODO=1" maxlength="65536">
+<span class="muted">opcionais; use aspas para valores com espaços. Barras invertidas são preservadas. Em Batch, operadores e expansão de variáveis são recusados</span></div>
+<div class="campo"><label for="minutos">Timeout (minutos)</label>
+<input type="number" id="minutos" name="minutos" value="{{.TimeoutMinutes}}" min="0.5" max="60" step="0.5" required>
+<span class="muted">ao vencer, a execução e seus processos filhos são interrompidos</span></div>
+<p><button class="sec" type="submit" formaction="/painel/scripts/{{.ID}}/configurar">Salvar configuração padrão</button></p>
+<p class="muted">Salvar não executa nada. Ao executar, os valores acima valem apenas para os jobs criados; salve primeiro se quiser reutilizá-los.</p>
 <p class="muted">Marque as máquinas. O script roda com a conta do agente (SYSTEM no Windows, root no Linux), no próximo check-in de cada uma.</p>
 {{if $.Machines}}<div class="tabela"><table>
 <thead><tr><th></th><th>Máquina</th><th>Sistema</th><th>Anel</th><th>Último contato</th></tr></thead>
