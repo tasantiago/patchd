@@ -1,4 +1,10 @@
-# patchd no RHEL com Podman (Aula 23.1)
+# patchd no RHEL com Podman e Quadlet
+
+Para instalar uma **VM nova do zero**, siga o [roteiro completo de Podman no
+README](../README.md#instalação-com-podman-sem-root-e-quadlet-rhel-10): preparação
+como root, usuário do serviço, build, chave de jobs, TLS, primeiro administrador e
+backup. Este guia complementa esse roteiro com detalhes de operação e agentes.
+Nenhum passo depende de extrair arquivos do contêiner de desenvolvimento.
 
 O mesmo servidor do `deploy/compose.yaml`, no Podman sem root e com unidades do systemd geradas
 pelo Quadlet: o caminho que a Red Hat documenta e suporta no RHEL 10. Nada aqui tem nome de
@@ -35,11 +41,13 @@ estava feito; rodar de novo não desfaz nada. Ele vem antes do clone do usuário
 
 ```sh
 dnf install -y git
-git clone URL_DO_REPOSITORIO /tmp/patchd
+git clone https://github.com/tasantiago/patchd.git /tmp/patchd
 bash /tmp/patchd/deploy/podman/preparar-vm.sh            # -u patchd -d /srv/patchd -p 8443
-bash /tmp/patchd/deploy/podman/preparar-vm.sh --443      # idem, e o painel sem a porta na URL
-rm -rf /tmp/patchd
 ```
+
+Para redirecionar a porta 443, escolha `--443` na chamada acima. Use então a URL
+sem `:8443` em `PATCHD_PUBLIC_URL` e nos clientes. O script abre a HTTPS na zona
+padrão do firewalld, quando ativo; ajuste a regra às redes autorizadas.
 
 O que ele faz, para quem preferir à mão:
 
@@ -120,8 +128,8 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 ```
 
 ```sh
-git clone URL_DO_REPOSITORIO patchd && cd patchd     # ou de um git bundle, se o GitHub for bloqueado
-ls deploy/podman                                     # sem a pasta, o clone não tem a Aula 23.1: falta o push
+git clone https://github.com/tasantiago/patchd.git patchd && cd patchd
+ls deploy/podman
 cp deploy/.env.exemplo deploy/.env && vi deploy/.env  # PATCHD_PUBLIC_URL, no mínimo; 9090 ocupada: PATCHD_METRICS_PORT=9091
 ./deploy/podman/instalar.sh     # unidades do Quadlet, PATCHD_MOTOR=podman, imagem do Postgres
 ./deploy/gerar-segredos.sh      # banco, token das métricas; diz o que falta
@@ -130,9 +138,10 @@ cp deploy/.env.exemplo deploy/.env && vi deploy/.env  # PATCHD_PUBLIC_URL, no m�
 systemctl --user enable --now patchd-backup.timer
 ```
 
-O usuário do serviço não tem senha: para levar um arquivo à VM (o certificado, o
-`lab-23.1-tls.sh`), copie com o seu usuário para `/tmp` e, como o usuário do serviço,
-`cp /tmp/ARQUIVO ~`.
+O usuário do serviço não tem senha. Transfira certificados e outros arquivos pelo
+canal administrativo autorizado e entregue-os a esse usuário, com as permissões
+necessárias. Os nomes e a geração do CSR estão no README; para um laboratório sem
+PKI, use [TLS de laboratório](tls-laboratorio.md), a partir de `~/patchd`.
 
 Na primeira subida de uma frota nova, o `atualizar.sh` constrói a imagem e para antes de
 subir, pedindo a chave de jobs: ele mostra o `podman run ... job keygen` com a imagem recém
@@ -219,13 +228,48 @@ O painel não compila o agente: ele distribui a versão publicada na pasta `rele
 (Configuração › Agente, com o token e o comando de instalação). O `deploy/agente.sh` faz a
 versão ali mesmo, sem o ambiente de desenvolvimento e sem Go no host:
 
+### Primeira frota: criar a chave de releases na administração
+
+Em uma **estação Linux administrativa com Git, Bash e Podman**, use um clone
+separado do mesmo código aprovado para a instalação. A privada fica nessa estação,
+fora do repositório, com backup protegido offline. Não reutilize a chave de jobs.
+
+```bash
+git clone https://github.com/tasantiago/patchd.git patchd-assinatura
+cd patchd-assinatura
+# Substitua pelo hash registrado na implantação do servidor.
+git checkout --detach COMMIT_REGISTRADO_NO_SERVIDOR
+PATCHD_GO_IMAGE="$(sed -n 's/^FROM \(docker\.io\/library\/golang:[^ ]*\).*/\1/p' deploy/Dockerfile | head -n 1)"
+install -d -m 700 "$HOME/.config/patchd-signing"
+podman run --rm --userns keep-id --user "$(id -u):$(id -g)" \
+  -v "$PWD:/src:ro,Z" \
+  -v "$HOME/.config/patchd-signing:/chaves:Z" \
+  -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod -e GOTELEMETRY=off \
+  --workdir /src "$PATCHD_GO_IMAGE" bash -euc \
+  'go run ./cmd/release keygen -key /chaves/release.key > /chaves/release.pub'
+```
+
+`COMMIT_REGISTRADO_NO_SERVIDOR` é um campo a substituir. O comando baixa os
+módulos, gera a privada `release.key` e grava somente a pública em `release.pub`.
+A criação recusa sobrescrever uma privada existente; nos próximos builds, use a
+mesma chave, seguindo o plano de rotação quando necessário. Configure proxy e
+confiança nas CAs públicas da rede nessa estação, se exigidos.
+
+### Compilar, assinar e publicar
+
+Do seu computador administrativo, transfira a chave somente para a memória do
+servidor. Substitua os nomes da conta administrativa e do servidor:
+
 ```sh
 # no seu computador, onde a chave de release fica guardada:
-scp release.key SEU_USUARIO@NOME_DO_SERVIDOR:/dev/shm/
+scp "$HOME/.config/patchd-signing/release.key" SEU_USUARIO@NOME_DO_SERVIDOR:/dev/shm/release.key
 # no servidor, como root:
 chown patchd /dev/shm/release.key
+chmod 600 /dev/shm/release.key
 # como o usuário do serviço, na pasta do repositório:
-./deploy/agente.sh vX.Y.Z -key /dev/shm/release.key
+cd ~/patchd
+# Use a versão real da implantação; este é o rótulo inicial do README.
+./deploy/agente.sh v0.0.0-instalacao.1 -key /dev/shm/release.key
 ```
 
 1. Confere: árvore limpa, servidor no ar, versão não mais nova que a do servidor (atualize o
@@ -242,6 +286,9 @@ chown patchd /dev/shm/release.key
 a frota inteira, passando por cima de toda conferência dos jobs. Em `/dev/shm` ela fica só na
 memória; o script a passa ao container pela entrada padrão (num tmpfs, nunca em disco) e a
 apaga no fim, mesmo se o build falhar. Fora de `/dev/shm`, o script assina, mas avisa.
+Se ele recusar a execução nas verificações iniciais, antes de começar o build,
+remova manualmente a cópia temporária da chave de `/dev/shm`. O uso de memória não
+dispensa as proteções e a política de swap da VM.
 
 Voltar a oferecer uma versão anterior que ainda está em `releases/`:
 `./deploy/agente.sh --publicar vX.Y.Z` (os agentes não voltam de versão sozinhos; isso só
@@ -294,3 +341,4 @@ muda o que o painel e as máquinas novas recebem). Retirar a oferta, sem versão
 - **`gerar-segredos.sh` falando em `go run` e `setfacl`**: ele rodou antes do `instalar.sh` (que
   anota `PATCHD_MOTOR=podman`). Desde a 23.1b ele para e avisa; se já tiver rodado, nada se
   perde: `setfacl -b deploy/secrets/metrics_token` e siga.
+

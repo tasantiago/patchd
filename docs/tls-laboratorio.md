@@ -3,21 +3,23 @@
 Este procedimento cria uma CA própria para um laboratório isolado. Para produção,
 solicite o certificado à PKI da organização e siga sua política de emissão e renovação.
 
-Pré-requisitos: passos 1 a 5 do [README](../README.md#5-preparar-tls), OpenSSL,
-terminal Bash administrativo na VM e `deploy/tls/server.key` e `server.csr`
-gerados nessa instalação. Defina `PATCHD_FQDN` com o mesmo nome usado em
+Pré-requisitos: OpenSSL, terminal Bash na VM e `deploy/tls/server.key` e
+`server.csr` gerados no [passo de TLS do Docker](../README.md#5-preparar-tls) ou
+[do Podman](../README.md#p4-emitir-tls-e-preparar-os-segredos). Execute como o mesmo
+usuário que preparou os arquivos: root no roteiro Docker, `patchd` no Podman.
+Defina `PATCHD_FQDN` com o mesmo nome usado em
 `PATCHD_PUBLIC_URL`; o DNS ou a resolução controlada do laboratório deve apontar
 esse nome para a VM.
 
-A privada da CA será criada fora do repositório. Use uma pasta nova: o bloco recusa
-uma CA ou certificado de servidor já existentes.
+Entre na raiz do clone (`/opt/patchd` no Docker, `~/patchd` no Podman). A privada
+da CA será criada fora do repositório, em `$HOME/.local/share/patchd-ca-lab`. Use
+uma pasta nova: o bloco recusa uma CA ou certificado de servidor já existentes.
 
 ```bash
-cd /opt/patchd
 (
   set -euo pipefail
   : "${PATCHD_FQDN:?defina o nome DNS do servidor}"
-  PATCHD_CA_DIR='/root/patchd-ca-lab'
+  PATCHD_CA_DIR="$HOME/.local/share/patchd-ca-lab"
   install -d -m 700 "$PATCHD_CA_DIR"
   test ! -e "$PATCHD_CA_DIR/ca.key"
   test ! -e "$PATCHD_CA_DIR/ca.crt"
@@ -51,9 +53,10 @@ EOF
 ```
 
 O resultado esperado é `deploy/tls/server.crt: OK`. O certificado do servidor vale
-30 dias; planeje renovação antes do vencimento. Volte ao passo 6 do README para
-preparar segredos e ACLs, depois suba os serviços e valide `/healthz` com `curl
---cacert`.
+30 dias; planeje renovação antes do vencimento. Volte ao roteiro escolhido no
+README: no Docker, prepare os segredos e as ACLs do passo 6; no Podman, prossiga
+no passo P4 como o usuário do serviço, sem ACLs. Depois suba os serviços e valide
+`/healthz` com `curl --cacert`.
 
 Distribua **somente `deploy/tls/ca.crt`**, a parte pública, aos clientes de teste
 que precisam confiar na CA. Não distribua `ca.key` ou `server.key`. Preserve a
@@ -63,3 +66,4 @@ ela permite emitir certificados aceitos por todos os clientes que confiam nela.
 O healthcheck interno do contêiner comprova disponibilidade local. A chamada do
 README com `curl --cacert` também verifica a identidade e a confiança no
 certificado; um serviço saudável não substitui essa validação externa.
+
