@@ -8,7 +8,7 @@ O objetivo é oferecer uma base para compreender **quais equipamentos existem, o
 
 > **Estado do projeto:** em desenvolvimento. A presença de uma funcionalidade nos requisitos ou na Wiki não significa, por si só, que ela esteja implementada ou pronta para produção. Consulte a versão do código, os testes e a documentação operacional antes de utilizá-la.
 
-**[Instalar servidor do zero](#instalar-um-servidor-novo-do-zero)** · **[Documentação (Wiki)](https://github.com/tasantiago/patchd/wiki)** · **[Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior)** · **[Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno)** · **[Manual do Usuário](https://github.com/tasantiago/patchd/wiki/Manual-do-usuario)** · **[Como contribuir](https://github.com/tasantiago/patchd/wiki/Como-contribuir)**
+**[Instalar servidor do zero](#instalar-um-servidor-novo-do-zero)** · **[Gerar e publicar uma nova versão](#gerar-e-publicar-uma-nova-versão-do-servidor-e-do-agente)** · **[Documentação (Wiki)](https://github.com/tasantiago/patchd/wiki)** · **[Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior)** · **[Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno)** · **[Manual do Usuário](https://github.com/tasantiago/patchd/wiki/Manual-do-usuario)** · **[Como contribuir](https://github.com/tasantiago/patchd/wiki/Como-contribuir)**
 
 ---
 
@@ -527,6 +527,155 @@ Confira o primeiro backup e configure a cópia para fora da VM, conforme [docs/o
 | Falha ao subir o pod | Conferir portas ocupadas; 9090 costuma ser usada pelo Cockpit. |
 
 Os comandos de Compose não se aplicam a este modo. Para proxy, LDAPS, recuperação e diagnóstico detalhado, consulte [docs/podman.md](docs/podman.md).
+
+
+## Gerar e publicar uma nova versão do servidor e do agente
+
+Este roteiro é para uma instalação **já funcionando**. A ordem é: **atualizar o servidor → compilar e assinar o agente → publicar a release → acompanhar os próximos check-ins**. Publicar um commit na `main` não atualiza os contêineres nem os agentes automaticamente.
+
+Preserve `.env`, banco, volumes, TLS, a privada de jobs e a privada de assinatura de releases. **Não execute `keygen` novamente para uma atualização normal**: os agentes instalados precisam continuar confiando nas chaves usadas pela instalação.
+
+### 1. Atualizar o código e subir a nova versão do servidor
+
+Entre na raiz do clone de produção: **`~/patchd`, como usuário `patchd`, no Podman**, ou **`/opt/patchd`, no terminal administrativo, no Docker**. Confira as versões atuais antes de escolher o novo número:
+
+| Ambiente | Servidor em execução | Agente publicado |
+| --- | --- | --- |
+| Podman | `podman exec patchd-server /patchd-server -version` | `podman exec patchd-server /patchd-server release current` |
+| Docker | `./deploy/compose.sh exec -T server /patchd-server -version` | `./deploy/compose.sh exec -T server /patchd-server release current` |
+
+```bash
+git status --short
+# Se houver alterações locais no código, resolva-as antes de continuar.
+git switch main
+git pull --ff-only origin main
+git rev-parse HEAD
+
+# Exemplo para quem instalou v0.0.0-instalacao.1 pelo roteiro acima.
+# Substitua por uma versão nova e maior que as versões da sua implantação.
+NOVA_VERSAO='v0.0.0-instalacao.2'
+./deploy/atualizar.sh "$NOVA_VERSAO"
+```
+
+Use um rótulo `vMAJOR.MINOR.PATCH`, com sufixo opcional como no exemplo, maior que a versão atual do servidor e dos agentes. Não reutilize um número já publicado para outros binários. O rótulo não precisa existir como tag no GitHub e não faz checkout de código; registre o hash aprovado mostrado por `git rev-parse HEAD` para usá-lo no build do agente. Se a equipe aprova uma tag ou um commit específico, selecione essa revisão antes de executar `atualizar.sh`.
+
+O `atualizar.sh` escolhe Docker ou Podman pelo `deploy/.env`, compila a imagem do commit atual, faz o backup do banco existente, aplica a troca e espera o healthcheck. As migrations são automáticas. Confira novamente `-version` com o comando da tabela e teste o painel/HTTPS antes de publicar agentes. Os dashboards do servidor, por exemplo, passam a existir após essa troca, sem depender de atualizar os agentes.
+
+### 2A. No Podman: compilar, assinar e publicar o agente
+
+O servidor já deve estar saudável na nova versão. Na **estação administrativa**, onde a privada de releases atual está guardada, envie somente uma cópia temporária para a memória da VM. Substitua a conta e o nome do servidor:
+
+```bash
+scp "$HOME/.config/patchd-signing/release.key" \
+  SEU_USUARIO@SEU_SERVIDOR:/dev/shm/patchd-release.key
+```
+
+Em outro terminal da VM, **como root**, entregue essa cópia ao usuário do serviço:
+
+```bash
+chown patchd /dev/shm/patchd-release.key
+chmod 600 /dev/shm/patchd-release.key
+```
+
+Volte ao terminal **do usuário `patchd`**, na raiz do clone usado no passo 1, com a mesma `NOVA_VERSAO` definida:
+
+```bash
+./deploy/agente.sh "$NOVA_VERSAO" -key /dev/shm/patchd-release.key
+podman exec patchd-server /patchd-server release current
+```
+
+O script obtém a pública de jobs do servidor em execução e a pública de releases da chave fornecida, compila com a imagem oficial de Go, assina, grava `releases/VERSAO/` e publica o apontador `current`. A cópia em `/dev/shm` é removida ao terminar a fase de build, inclusive se o build falhar. Se houver recusa nas verificações iniciais, remova a cópia temporária que restar. A privada original e o backup ficam na administração; `/dev/shm` também exige a política de proteção/swap da VM.
+
+Se os artefatos **dessa mesma versão** já existem e você precisa apenas oferecê-los novamente:
+
+```bash
+./deploy/agente.sh --publicar "$NOVA_VERSAO"
+```
+
+Uma release assinada existente não é refeita. Para alterar binários, escolha outro número. Para a primeira chave ou detalhes de rede e permissões, consulte [o guia do Podman](docs/podman.md#agente-compilar-assinar-e-publicar-pelo-servidor-aula-232).
+
+### 2B. No Docker: compilar na administração e publicar no servidor
+
+No **servidor Docker**, confira a pública de jobs atual e guarde somente esse valor público para o build:
+
+```bash
+./deploy/compose.sh exec -T server /patchd-server job pubkey
+```
+
+Na **estação Linux administrativa com Git, Bash e Docker**, reutilize a privada de releases existente. Não gere outra. O exemplo cria um clone temporário e exige substituir o commit e a pública abaixo:
+
+```bash
+PATCHD_BUILD_DIR="$(mktemp -d "$HOME/patchd-release.XXXXXX")"
+git clone https://github.com/tasantiago/patchd.git "$PATCHD_BUILD_DIR"
+cd "$PATCHD_BUILD_DIR"
+git checkout --detach COMMIT_REGISTRADO_NO_SERVIDOR
+
+# Mesma versão do servidor atualizada no passo 1.
+export PATCHD_AGENT_VERSION='v0.0.0-instalacao.2'
+export PATCHD_JOB_PUBKEY='COLE_A_PUBLICA_BASE64_ATUAL_DE_JOBS'
+PATCHD_GO_IMAGE="$(sed -n 's/^FROM \(docker\.io\/library\/golang:[^ ]*\).*/\1/p' deploy/Dockerfile | head -n 1)"
+test -s "$HOME/.config/patchd-signing/release.key"
+mkdir -p releases
+
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount "type=bind,src=$PWD,dst=/src" \
+  --mount "type=bind,src=$HOME/.config/patchd-signing,dst=/chaves,readonly" \
+  -e PATCHD_AGENT_VERSION -e PATCHD_JOB_PUBKEY \
+  -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod -e GOTELEMETRY=off \
+  --workdir /src "$PATCHD_GO_IMAGE" bash -euc '
+    export PATCHD_UPDATE_PUBKEY="$(go run ./cmd/release pubkey -key /chaves/release.key)"
+    ./scripts/build.sh "$PATCHD_AGENT_VERSION"
+    go run ./cmd/release sign -key /chaves/release.key \
+      -version "$PATCHD_AGENT_VERSION" -dist dist -out releases
+  '
+
+tar -C releases -czf "/tmp/patchd-agentes-${PATCHD_AGENT_VERSION}.tar.gz" "$PATCHD_AGENT_VERSION"
+```
+
+Use o número novo real se tiver escolhido outro. Se a rede exige proxy ou CA corporativa, prepare o ambiente de build antes de baixar os módulos, conforme [o guia de build de agentes](docs/build-agentes-sem-dev.md). Transfira somente o arquivo `.tar.gz` pelo canal administrativo para `/tmp/` da VM; a privada de releases permanece na estação administrativa.
+
+No terminal administrativo do **servidor Docker**, volte a `/opt/patchd` e use a mesma `NOVA_VERSAO` do passo 1:
+
+```bash
+cd /opt/patchd
+PATCHD_AGENT_VERSION="$NOVA_VERSAO"
+# Confira a listagem: somente a pasta dessa versão e os artefatos esperados.
+tar -tzf "/tmp/patchd-agentes-${PATCHD_AGENT_VERSION}.tar.gz"
+tar -xzf "/tmp/patchd-agentes-${PATCHD_AGENT_VERSION}.tar.gz" -C releases
+find releases -type d -exec setfacl -m u:65532:rx {} +
+find releases -type f -exec setfacl -m u:65532:r {} +
+
+PATCHD_INSTALACAO_VERSION="$(sed -n 's/^PATCHD_VERSION=//p' deploy/.env | tail -n 1)"
+test -n "$PATCHD_INSTALACAO_VERSION"
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  --mount "type=bind,src=$PWD/releases,dst=/var/lib/patchd/releases" \
+  -e PATCHD_RELEASES_DIR=/var/lib/patchd/releases \
+  "patchd-server:$PATCHD_INSTALACAO_VERSION" release publish "$PATCHD_AGENT_VERSION"
+
+./deploy/compose.sh exec -T server /patchd-server release current
+```
+
+A publicação usa um contêiner temporário com a pasta para escrita: o servidor em execução monta as releases somente para leitura. O comando `release current` deve devolver o novo número. Somente copiar executáveis para `dist/` ou `releases/` não os publica. Criar uma tag ou uma Release no GitHub também não muda a oferta aos agentes: a publicação deste roteiro é feita no próprio patchd.
+
+### 3. Receber a atualização no próximo check-in
+
+Após publicar, **Configuração › Agente** oferece a nova versão e o servidor a anuncia na resposta aos próximos check-ins. A oferta é global aos agentes elegíveis; esse mecanismo de atualização do próprio agente não usa os anéis das campanhas de instalação de software. Homologue os artefatos em um ambiente de teste antes de publicá-los na frota de produção.
+
+O agente instalado precisa estar rodando como serviço, com autoatualização ativa, uma versão válida e a pública correspondente à chave que assinou a release. Ele aceita apenas uma versão **mais nova que a instalada**, e o servidor só oferece agentes com versão **menor ou igual à sua**. O agente verifica assinatura, plataforma, tamanho, SHA-256 e identificação do executável antes de iniciar a substituição e o reinício do serviço. Identidade e credencial de registro são preservadas; não é necessário criar outro token de enrollment.
+
+O intervalo padrão é **1 h com variação de ±10%**; rede indisponível e novas tentativas podem aumentar a espera. Para antecipar em uma estação de teste, reinicie o serviço do agente como administrador: `Restart-Service patchd-agent` no Windows ou `sudo systemctl restart patchd-agent` no Linux. Há um atraso aleatório inicial de até cinco minutos. Um processo executado apenas no terminal não habilita a autoatualização do serviço.
+
+Confira em **Inventário** a versão reportada do agente e o último contato de cada equipamento, depois do reinício e do novo check-in. Veja os logs do agente para confirmar instalação ou erro; `release current` comprova a oferta, não a adoção pela frota.
+
+| Se o agente não atualizar | Conferir |
+| --- | --- |
+| Nenhuma oferta nova | `release current`, versão válida do servidor, agente não mais novo que o servidor e último contato. |
+| Versão igual ou mais antiga | A autoatualização recusa reinstalação da mesma versão e downgrade. Gere outro número maior. |
+| Assinatura recusada ou atualização desligada | Pública de releases embutida no agente instalado, privada usada para assinar e execução como serviço; siga a rotação de chaves quando necessária. |
+| Agente com versão `dev` ou sem pública de releases | Reinstale uma vez com uma versão válida e a pública correta; depois ele poderá seguir o fluxo automático. |
+| Falha ao baixar/instalar | DNS, TLS, rede, espaço, permissões e logs do serviço. Após uma tentativa, a mesma versão aguarda seis horas antes de tentar novamente; apenas reiniciar não elimina essa espera. |
+
+Para interromper novas ofertas, execute `release withdraw` em um contêiner temporário com a mesma montagem de releases para escrita usada na publicação (no Podman, mantenha `keep-id` e `:z`). Isso não desfaz instalações já feitas. Para devolver um comportamento anterior aos agentes, compile esse código com um número maior e publique uma nova release assinada. A recuperação do servidor é descrita em [docs/operacao.md](docs/operacao.md).
 
 
 ## Desenvolvimento local
