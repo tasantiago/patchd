@@ -195,6 +195,7 @@ Consulte [docs/seguranca.md](docs/seguranca.md) e [Segurança no desenvolvimento
 | [docs/fontes-de-verdade.md](docs/fontes-de-verdade.md) | Fontes consideradas para inventário e atualizações em cada SO. |
 | [docs/operacao.md](docs/operacao.md) | Orientações operacionais vinculadas ao código. |
 | [docs/seguranca.md](docs/seguranca.md) | Modelo de ameaças e decisões de segurança. |
+| [docs/pacotes-de-scripts.md](docs/pacotes-de-scripts.md) | Cadastro e execução de ZIPs e scripts avulsos, parâmetros, timeout e migração do ITOM. |
 | [docs/rotas.md](docs/rotas.md) | Inventário de rotas, quando presente na revisão utilizada. |
 | [Mapa do repositório](https://github.com/tasantiago/patchd/wiki/Mapa-do-repositorio) | Orientação para localizar entradas e implementações no código. |
 | [Exemplos práticos](https://github.com/tasantiago/patchd/wiki/Exemplos-praticos) | Atividades comentadas nas trilhas e manuais. |

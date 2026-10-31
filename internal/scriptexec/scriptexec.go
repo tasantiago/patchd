@@ -13,7 +13,6 @@
 package scriptexec
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tasantiago/patchd/internal/bundle"
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -76,6 +76,7 @@ func DefaultShells() map[string]string {
 			bundle.RunnerPowerShell: filepath.Join(sys, `System32\WindowsPowerShell\v1.0\powershell.exe`),
 			bundle.RunnerCmd:        filepath.Join(sys, `System32\cmd.exe`),
 			bundle.RunnerExe:        "", // o próprio arquivo é o programa
+			bundle.RunnerVBScript:   filepath.Join(sys, `System32\cscript.exe`),
 		}
 	}
 	for _, sh := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh"} {
@@ -89,6 +90,9 @@ func DefaultShells() map[string]string {
 // Execute roda o job e devolve o detalhe para o servidor. Erros com jobs.ErrRefused viram
 // "rejeitado" (nada foi executado na máquina); os outros, "falhou".
 func (e *Executor) Execute(ctx context.Context, jobID int64, p jobs.ScriptParams) (string, error) {
+	if err := p.Validate(); err != nil {
+		return "", fmt.Errorf("%w: %v", jobs.ErrRefused, err)
+	}
 	if bundle.OSForRunner(p.Runner) != thisOS() {
 		return "", fmt.Errorf("%w: o bundle é para %s e esta máquina é %s", jobs.ErrRefused, bundle.OSForRunner(p.Runner), thisOS())
 	}
@@ -118,6 +122,11 @@ func (e *Executor) Execute(ctx context.Context, jobID int64, p jobs.ScriptParams
 	if st, err := os.Stat(entry); err != nil || !st.Mode().IsRegular() {
 		return "", fmt.Errorf("%w: o ponto de entrada %q não está no bundle", jobs.ErrRefused, p.Entry)
 	}
+	if p.Runner == bundle.RunnerCmd {
+		if err := jobs.ValidateScriptArgs(bundle.RunnerCmd, []string{entry}); err != nil {
+			return "", fmt.Errorf("%w: caminho de trabalho incompatível com Batch: %v", jobs.ErrRefused, err)
+		}
+	}
 
 	name, args := command(prog, p.Runner, entry, p.Args)
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(p.Timeout)*time.Second)
@@ -133,13 +142,16 @@ func (e *Executor) Execute(ctx context.Context, jobID int64, p jobs.ScriptParams
 	res := Result{Code: code, Took: took}
 	res.Output, res.Truncated = clip(out)
 	switch {
-	case runErr != nil && errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		return detail(p, n, res), fmt.Errorf("o script passou do prazo de %d s e foi interrompido", p.Timeout)
-	case runErr != nil && code == 0:
-		// Nem chegou a rodar (interpretador ausente, permissão): o estado não mudou.
-		return detail(p, n, res), fmt.Errorf("%w: %v", jobs.ErrNotStarted, runErr)
+	case runCtx.Err() != nil:
+		return detail(p, n, res), fmt.Errorf("execução cancelada: %w", runCtx.Err())
+	case errors.Is(runErr, jobs.ErrNotStarted):
+		return detail(p, n, res), runErr
 	case code != 0:
 		return detail(p, n, res), fmt.Errorf("o script saiu com código %d", code)
+	case runErr != nil:
+		return detail(p, n, res), fmt.Errorf("execução do script: %w", runErr)
 	}
 	return detail(p, n, res), nil
 }
@@ -151,7 +163,15 @@ func command(prog, runner, entry string, args []string) (string, []string) {
 	case bundle.RunnerPowerShell:
 		return prog, append([]string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", entry}, args...)
 	case bundle.RunnerCmd:
-		return prog, append([]string{"/c", entry}, args...)
+		// cmd.exe tem regras próprias, diferentes das do argv de um executável.
+		// Operadores/expansões foram recusados na validação; cada valor é delimitado.
+		words := []string{`"` + entry + `"`}
+		for _, a := range args {
+			words = append(words, `"` + a + `"`)
+		}
+		return prog, []string{"/d", "/v:off", "/s", "/c", `"` + strings.Join(words, " ") + `"`}
+	case bundle.RunnerVBScript:
+		return prog, append([]string{"//NoLogo", "//B", entry}, args...)
 	case bundle.RunnerBash:
 		return prog, append([]string{entry}, args...)
 	default: // RunnerExe: o próprio arquivo
@@ -205,14 +225,13 @@ func RunLocal(ctx context.Context, dir, name string, args []string) ([]byte, int
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- programa e argumentos conferidos pelo pacote jobs; nada vem de shell
 	cmd.Dir = dir
 	cmd.WaitDelay = waitDelay
-	var buf bytes.Buffer
+	var buf tailBuffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
-	err := cmd.Run()
+	err := runProcess(ctx, cmd)
 	code := 0
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		code = ee.ExitCode()
-		err = nil
 	}
 	return buf.Bytes(), code, err
 }
@@ -224,6 +243,9 @@ func clip(out []byte) (string, bool) {
 	}
 	// Corta o começo: o fim de um log costuma dizer mais (o erro, o resumo).
 	s = s[len(s)-MaxOutput:]
+	for len(s) > 0 && !utf8.RuneStart(s[0]) {
+		s = s[1:]
+	}
 	if i := strings.IndexByte(s, '\n'); i >= 0 && i < 200 {
 		s = s[i+1:]
 	}

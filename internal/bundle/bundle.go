@@ -32,6 +32,7 @@ const (
 	MaxFiles      = 512
 	MaxDepth      = 4   // pastas dentro do ZIP
 	MaxSegment    = 120 // letras de cada parte do caminho
+	MaxScriptBytes = 16 << 20 // script avulso; instaladores maiores devem vir no ZIP
 	maxRatio      = 200 // descompactado / compactado, por arquivo: acima disso é zip bomb
 	ratioFloor    = 1 << 20
 )
@@ -43,6 +44,7 @@ const (
 	RunnerCmd        = "cmd"        // .bat, .cmd
 	RunnerExe        = "exe"        // .exe
 	RunnerBash       = "bash"       // .sh
+	RunnerVBScript   = "cscript"    // .vbs (Windows Script Host)
 )
 
 // Sistemas a que um runner serve.
@@ -68,7 +70,7 @@ type Info struct {
 // Erros.
 var (
 	ErrEmpty   = errors.New("o ZIP não tem nenhum arquivo")
-	ErrNoEntry = errors.New("o ZIP não tem nenhum script ou executável que sirva de ponto de entrada (.ps1, .bat, .cmd, .exe ou .sh)")
+	ErrNoEntry = errors.New("o ZIP não tem nenhum script ou executável que sirva de ponto de entrada (.ps1, .bat, .cmd, .vbs, .exe ou .sh)")
 )
 
 // RunnerFor devolve o runner do ponto de entrada pela extensão ("" se não serve).
@@ -82,6 +84,8 @@ func RunnerFor(name string) string {
 		return RunnerExe
 	case ".sh":
 		return RunnerBash
+	case ".vbs":
+		return RunnerVBScript
 	}
 	return ""
 }
@@ -89,7 +93,7 @@ func RunnerFor(name string) string {
 // OSForRunner: o sistema em que o runner existe.
 func OSForRunner(r string) string {
 	switch r {
-	case RunnerPowerShell, RunnerCmd, RunnerExe:
+	case RunnerPowerShell, RunnerCmd, RunnerExe, RunnerVBScript:
 		return OSWindows
 	case RunnerBash:
 		return OSUnix

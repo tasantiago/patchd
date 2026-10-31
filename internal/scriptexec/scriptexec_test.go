@@ -182,8 +182,8 @@ func TestExecutePrazo(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	inicio := time.Now()
-	if _, err := e.Execute(ctx, 1, p); err == nil {
-		t.Fatal("devia falhar")
+	if _, err := e.Execute(ctx, 1, p); err == nil || !strings.Contains(err.Error(), "prazo") {
+		t.Fatalf("devia informar timeout: %v", err)
 	}
 	// O WaitDelay fecha a saída logo depois de matar o processo; sem ele, isto levaria os
 	// 120 s do processo em segundo plano.
@@ -198,7 +198,8 @@ func TestCommand(t *testing.T) {
 		quer                []string
 	}{
 		{bundle.RunnerPowerShell, `C:\ps.exe`, `C:\w\a.ps1`, []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", `C:\w\a.ps1`, "x"}},
-		{bundle.RunnerCmd, `C:\cmd.exe`, `C:\w\a.bat`, []string{"/c", `C:\w\a.bat`, "x"}},
+		{bundle.RunnerCmd, `C:\cmd.exe`, `C:\w\a.bat`, []string{"/d", "/v:off", "/s", "/c", `""C:\w\a.bat" "x""`}},
+		{bundle.RunnerVBScript, `C:\cscript.exe`, `C:\w\a.vbs`, []string{"//NoLogo", "//B", `C:\w\a.vbs`, "x"}},
 		{bundle.RunnerBash, "/bin/sh", "/w/a.sh", []string{"/w/a.sh", "x"}},
 	}
 	for _, c := range casos {
