@@ -10,8 +10,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"runtime"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -50,14 +50,22 @@ func fileHash(path string) (string, error) {
 }
 
 func shortcutFile(s protocol.StandardShortcut) string {
- if runtime.GOOS=="linux" {return s.Name+".desktop"};if runtime.GOOS=="darwin" {if s.Kind=="site" {return s.Name+".webloc"};return s.Name+".fileloc"}
+	if runtime.GOOS == "linux" {
+		return s.Name + ".desktop"
+	}
+	if runtime.GOOS == "darwin" {
+		if s.Kind == "site" {
+			return s.Name + ".webloc"
+		}
+		return s.Name + ".fileloc"
+	}
 	if s.Kind == "site" {
 		return s.Name + ".url"
 	}
 	return s.Name + ".lnk"
 }
 func safeFile(name string) bool {
-	return name != "" && filepath.Base(name) == name && !strings.ContainsAny(name, `/\:`) && (strings.HasSuffix(name, ".url") || strings.HasSuffix(name, ".lnk") || strings.HasSuffix(name,".desktop") || strings.HasSuffix(name,".webloc") || strings.HasSuffix(name,".fileloc"))
+	return name != "" && filepath.Base(name) == name && !strings.ContainsAny(name, `/\:`) && (strings.HasSuffix(name, ".url") || strings.HasSuffix(name, ".lnk") || strings.HasSuffix(name, ".desktop") || strings.HasSuffix(name, ".webloc") || strings.HasSuffix(name, ".fileloc"))
 }
 func short(s string) string {
 	r := []rune(strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " "))
@@ -113,15 +121,15 @@ func (m *Manager) Apply(plan protocol.StandardizationPlan) (protocol.Standardiza
 			continue
 		}
 		if err != nil || hash != entry.SHA256 {
-			result.Items = append(result.Items, protocol.StandardShortcutResult{Name: strings.TrimSuffix(entry.File,filepath.Ext(entry.File)), State: "conflito", Detail: "Atalho alterado pelo usuário foi preservado."})
+			result.Items = append(result.Items, protocol.StandardShortcutResult{Name: strings.TrimSuffix(entry.File, filepath.Ext(entry.File)), State: "conflito", Detail: "Atalho alterado pelo usuário foi preservado."})
 			continue
 		}
 		if err := os.Remove(path); err != nil {
-			result.Items = append(result.Items, protocol.StandardShortcutResult{Name: strings.TrimSuffix(entry.File,filepath.Ext(entry.File)), State: "conflito", Detail: "Não foi possível remover o atalho gerenciado."})
+			result.Items = append(result.Items, protocol.StandardShortcutResult{Name: strings.TrimSuffix(entry.File, filepath.Ext(entry.File)), State: "conflito", Detail: "Não foi possível remover o atalho gerenciado."})
 			next.Entries[key] = entry
 			continue
 		}
-		result.Items = append(result.Items, protocol.StandardShortcutResult{Name: strings.TrimSuffix(entry.File,filepath.Ext(entry.File)), State: "removido"})
+		result.Items = append(result.Items, protocol.StandardShortcutResult{Name: strings.TrimSuffix(entry.File, filepath.Ext(entry.File)), State: "removido"})
 	}
 	for _, s := range plan.Shortcuts {
 		file := shortcutFile(s)

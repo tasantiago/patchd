@@ -22,7 +22,7 @@ const (
 )
 
 type StandardShortcut struct {
-	OS string `json:"os,omitempty"` // vazio: todos os sistemas compatíveis com o destino
+	OS     string `json:"os,omitempty"` // vazio: todos os sistemas compatíveis com o destino
 	Name   string `json:"name"`
 	Kind   string `json:"kind"` // site, aplicativo ou pasta
 	Target string `json:"target"`
@@ -34,7 +34,9 @@ var shortcutEnv = regexp.MustCompile(`(?i)^%(ProgramFiles|ProgramFiles\(x86\)|Lo
 var shortcutReserved = regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)`)
 
 func (s StandardShortcut) Validate() error {
-	if s.OS != "" && s.OS != "windows" && s.OS != "linux" && s.OS != "darwin" { return errors.New("sistema do atalho inválido") }
+	if s.OS != "" && s.OS != "windows" && s.OS != "linux" && s.OS != "darwin" {
+		return errors.New("sistema do atalho inválido")
+	}
 	if strings.TrimSpace(s.Name) != s.Name || s.Name == "" || len([]rune(s.Name)) > 64 || strings.ContainsAny(s.Name, `<>:"/\|?*`) || strings.HasSuffix(s.Name, ".") || shortcutReserved.MatchString(s.Name) || invalidStandardText(s.Name) {
 		return errors.New("nome do atalho inválido: use até 64 caracteres válidos para um arquivo do Windows")
 	}
@@ -53,11 +55,15 @@ func (s StandardShortcut) Validate() error {
 			return errors.New("site exige URL http ou https, sem credencial embutida")
 		}
 	case "aplicativo", "pasta":
-		if strings.HasPrefix(s.Target,"/") || strings.HasPrefix(s.Target,"~/") {
-			if s.OS=="windows" || strings.ContainsAny(s.Target,`"`+"`$\\") || strings.Contains(s.Target,"/../") || strings.HasSuffix(s.Target,"/..") {return errors.New("caminho Unix inválido; use caminho absoluto ou ~/ sem expansão de comandos")}
+		if strings.HasPrefix(s.Target, "/") || strings.HasPrefix(s.Target, "~/") {
+			if s.OS == "windows" || strings.ContainsAny(s.Target, `"`+"`$\\") || strings.Contains(s.Target, "/../") || strings.HasSuffix(s.Target, "/..") {
+				return errors.New("caminho Unix inválido; use caminho absoluto ou ~/ sem expansão de comandos")
+			}
 			return nil
 		}
-		if s.OS=="linux" || s.OS=="darwin" {return errors.New("use um caminho absoluto Unix ou ~/ para Linux e macOS")}
+		if s.OS == "linux" || s.OS == "darwin" {
+			return errors.New("use um caminho absoluto Unix ou ~/ para Linux e macOS")
+		}
 		if strings.ContainsAny(s.Target, `<>"|?*`) || strings.HasPrefix(s.Target, `\\?\`) || strings.HasPrefix(s.Target, `\\.\`) {
 			return errors.New("caminho do atalho inválido")
 		}
@@ -87,10 +93,15 @@ func (s StandardShortcut) Validate() error {
 }
 
 // SupportsOS impede que caminhos de outro sistema sejam entregues ao usuário.
-func(s StandardShortcut) SupportsOS(platform string)bool {
-	if s.OS!="" && s.OS!=platform{return false};if s.Kind=="site"{return true}
-	unix:=strings.HasPrefix(s.Target,"/")||strings.HasPrefix(s.Target,"~/")
-	return unix==(platform=="linux"||platform=="darwin")
+func (s StandardShortcut) SupportsOS(platform string) bool {
+	if s.OS != "" && s.OS != platform {
+		return false
+	}
+	if s.Kind == "site" {
+		return true
+	}
+	unix := strings.HasPrefix(s.Target, "/") || strings.HasPrefix(s.Target, "~/")
+	return unix == (platform == "linux" || platform == "darwin")
 }
 
 func invalidStandardText(s string) bool {
@@ -177,7 +188,7 @@ func (r StandardizationResult) Check() error {
 		return errors.New("revisão inválida")
 	}
 	for _, item := range r.Items {
-		if item.Name=="" || len([]rune(item.Name)) > 64 || len([]rune(item.Detail)) > 200 || invalidStandardText(item.Name) || invalidStandardText(item.Detail) {
+		if item.Name == "" || len([]rune(item.Name)) > 64 || len([]rune(item.Detail)) > 200 || invalidStandardText(item.Name) || invalidStandardText(item.Detail) {
 			return errors.New("resultado de atalho inválido")
 		}
 		switch item.State {

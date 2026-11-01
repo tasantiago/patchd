@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-		"text/tabwriter"
+	"text/tabwriter"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/agent"
@@ -19,7 +19,7 @@ import (
 // app do usuário pede a loja e os pedidos por ele, e o agente fala com o servidor. Um
 // pedido que vira job antecipa o check-in. O canal fecha com o serviço.
 func startSelfService(ctx context.Context, logger *slog.Logger, ag *agent.Agent, onAppName func(string)) {
-		srv := &localapi.Server{Backend: ag, Logger: logger, OnCreated: ag.Wake, RebootStatus: ag.RebootStatus, OnAppName: onAppName}
+	srv := &localapi.Server{Backend: ag, Logger: logger, OnCreated: ag.Wake, RebootStatus: ag.RebootStatus, OnAppName: onAppName}
 	go func() {
 		logger.Info("autoatendimento: canal local aberto", "pipe", localapi.PipeName)
 		if err := localapi.Listen(ctx, func(c localapi.Conn) { srv.HandleConn(ctx, c) }); err != nil {

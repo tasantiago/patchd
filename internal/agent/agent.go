@@ -354,7 +354,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		// Nenhum instalador rodou (download falhou, recusa): o inventário não mudou.
 		if ran {
 			a.resendInventory(ctx, &state)
-			if a.Client.SupportsStandardization() {a.Wake()}
+			if a.Client.SupportsStandardization() {
+				a.Wake()
+			}
 		}
 		a.saveStateOrLog(state)
 	}
@@ -371,7 +373,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 		if ran {
 			a.resendInventory(ctx, &state)
-			if a.Client.SupportsStandardization() {a.Wake()}
+			if a.Client.SupportsStandardization() {
+				a.Wake()
+			}
 		}
 		a.saveStateOrLog(state)
 	}
