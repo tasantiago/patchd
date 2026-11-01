@@ -134,8 +134,9 @@ func (m *Manager) Apply(plan protocol.StandardizationPlan) (protocol.Standardiza
 	for _, s := range plan.Shortcuts {
 		file := shortcutFile(s)
 		key := strings.ToLower(file)
-		path := filepath.Join(m.Desktop, file)
 		entry, managed := old.Entries[key]
+		if managed {file=entry.File}
+		path := filepath.Join(m.Desktop, file)
 		item := protocol.StandardShortcutResult{Name: s.Name, State: "conflito"}
 		hash, err := fileHash(path)
 		if err == nil && (!managed || hash != entry.SHA256) {

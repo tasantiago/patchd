@@ -30,6 +30,9 @@ func TestManagedShortcutLifecyclePreservesPersonalFiles(t *testing.T) {
 	if err != nil || r.Items[0].State != "em_dia" {
 		t.Fatalf("repetir: %+v %v", r, err)
 	}
+	p.Shortcuts[0].Name="portal"
+	if _,err:=m.Apply(p);err!=nil{t.Fatal(err)}
+	entries,err:=os.ReadDir(m.Desktop);if err!=nil||len(entries)!=1{t.Fatalf("mudança de caixa duplicou o atalho: %v %v",entries,err)}
 	p.Shortcuts[0].Target = "https://updated.example"
 	r, err = m.Apply(p)
 	if err != nil || r.Items[0].State != "aplicado" {

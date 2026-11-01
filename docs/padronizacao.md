@@ -54,7 +54,7 @@ Cada atalho informa nome, tipo, destino, sistema e um ícone padrão. Sites acei
 
 Sites podem valer para todos os sistemas. Para aplicativos e pastas, o agente filtra caminhos incompatíveis. Para usar o mesmo nome com destinos diferentes por sistema, crie uma linha para cada sistema. Upload de imagens de ícone não está incluído.
 
-Os atalhos são escritos pelo usuário, na própria Área de Trabalho. No Linux, respeitam `XDG_DESKTOP_DIR`; a sessão gráfica pode exigir permitir a execução ou confiar no launcher conforme suas regras. O patchd preserva arquivos pessoais e atalhos alterados pelo usuário. Só remove atalhos que ele criou e cujo conteúdo continua intacto, quando deixam de fazer parte do padrão. Sem Área de Trabalho disponível, a sessão informa falha e tenta novamente depois.
+Os atalhos são escritos pelo usuário, na própria Área de Trabalho. No Linux, respeitam `XDG_DESKTOP_DIR`; a sessão gráfica pode exigir permitir a execução ou confiar no launcher conforme suas regras. No macOS, o sistema pode exigir autorização de acesso à Mesa para o executável do agente. O patchd preserva arquivos pessoais e atalhos alterados pelo usuário. Só remove atalhos que ele criou e cujo conteúdo continua intacto, quando deixam de fazer parte do padrão. Sem Área de Trabalho disponível, a sessão informa falha e tenta novamente depois.
 
 Atalhos com o mesmo nome e destinos diferentes em grupos sobrepostos ficam bloqueados. O acompanhamento mostra o conflito para o administrador corrigir a configuração. Instaladores diferentes para o mesmo nome de aplicativo por script também são bloqueados.
 
