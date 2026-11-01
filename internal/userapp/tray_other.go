@@ -10,7 +10,6 @@ import (
 // ErrNoTray: o ícone só existe no Windows; fora dele, o app serve a página e mostra o endereço.
 var ErrNoTray = errors.New("o ícone da área de notificação só existe no Windows")
 
-
 // RunTray não existe fora do Windows.
 func RunTray(ctx context.Context, opts TrayOptions) error { return ErrNoTray }
 

@@ -47,7 +47,9 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
 		return
 	}
-	if err:=writeRootFile(path,data,0644);err!=nil{logger.Warn("padronização: gravar início de sessão","error",err)}
+	if err := writeRootFile(path, data, 0644); err != nil {
+		logger.Warn("padronização: gravar início de sessão", "error", err)
+	}
 }
 
 func unixAutostart(exe, platform string) ([]byte, error) {

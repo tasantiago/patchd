@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
-
 )
 
 var ErrUnsupported = errors.New("canal local indisponível neste sistema")
@@ -27,7 +26,6 @@ func (c *unixConn) Identify() (TokenInfo, error) {
 	}
 	return unixIdentity(uid)
 }
-
 
 func rootOwned(info os.FileInfo) bool {
 	st, ok := info.Sys().(*syscall.Stat_t)

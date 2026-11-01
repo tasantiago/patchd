@@ -2,4 +2,4 @@
 
 package userapp
 
-func SingleInstance()(func(),bool){return func(){},true}
+func SingleInstance() (func(), bool) { return func() {}, true }
