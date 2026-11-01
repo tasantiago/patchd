@@ -99,7 +99,9 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 	if !requireAdmin(stderr) {
 		return exitRuntime
 	}
- if err:=removeIfExists(userAutostartPath());err!=nil{fmt.Fprintf(stderr,"patchd-agent: aviso: remover início da sessão: %v\n",err)}
+	if err := removeIfExists(userAutostartPath()); err != nil {
+		fmt.Fprintf(stderr, "patchd-agent: aviso: remover início da sessão: %v\n", err)
+	}
 	if _, err := os.Stat(unitPath); err != nil {
 		fmt.Fprintf(stdout, "o serviço %s não está instalado\n", serviceName)
 		return exitOK
