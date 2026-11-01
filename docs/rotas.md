@@ -49,7 +49,6 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | POST | `/api/v1/agent/standardization/report` |
 | POST | `/api/v1/agent/standardization` |
 
-
 ## Sessão (página) (17)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
@@ -103,7 +102,6 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/maquinas/{id}/mesclar` |
 | GET | `/painel/padronizacao` |
 | GET | `/painel/scripts` |
-
 
 ## Admin (ação) (59)
 
