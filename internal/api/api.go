@@ -34,14 +34,14 @@ import (
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
 // tipo com estes métodos serve (a memória, o PostgreSQL, um fake de teste).
 type Store interface {
-	StandardizationPolicies(context.Context) ([]store.StandardizationPolicy,error)
-	SaveStandardizationPolicy(context.Context,store.StandardizationPolicy)(int64,error)
-	DeleteStandardizationPolicy(context.Context,int64,int64)error
-	WithStandardizationLock(context.Context,string,func(context.Context)error)(bool,error)
-	StandardizationJobs(context.Context,string,time.Time)(map[string]store.JobRow,int,error)
-	SaveStandardizationState(context.Context,store.StandardizationState)error
-	StandardizationStates(context.Context)([]store.StandardizationState,error)
-	ReportStandardization(context.Context,string,string,protocol.StandardizationResult,time.Time)error
+	StandardizationPolicies(context.Context) ([]store.StandardizationPolicy, error)
+	SaveStandardizationPolicy(context.Context, store.StandardizationPolicy) (int64, error)
+	DeleteStandardizationPolicy(context.Context, int64, int64) error
+	WithStandardizationLock(context.Context, string, func(context.Context) error) (bool, error)
+	StandardizationJobs(context.Context, string, time.Time) (map[string]store.JobRow, int, error)
+	SaveStandardizationState(context.Context, store.StandardizationState) error
+	StandardizationStates(context.Context) ([]store.StandardizationState, error)
+	ReportStandardization(context.Context, string, string, protocol.StandardizationResult, time.Time) error
 	MergeMachines(context.Context, string, string, string, store.AuditEvent) error
 	MachineMergeMembers(context.Context, string) ([]store.MachineMerge, error)
 	MachineReportHistory(context.Context, string, string, int64) ([]store.MachineReportRecord, error)

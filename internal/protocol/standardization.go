@@ -14,18 +14,19 @@ import (
 )
 
 const (
-	CapabilityStandardization = "standardization-v1"
-	StandardizationPath = "/api/v1/agent/standardization"
-	StandardizationReportPath = "/api/v1/agent/standardization/report"
+	CapabilityStandardization   = "standardization-v1"
+	StandardizationPath         = "/api/v1/agent/standardization"
+	StandardizationReportPath   = "/api/v1/agent/standardization/report"
 	MaxStandardizationShortcuts = 24
-	MaxStandardizationApps = 64
+	MaxStandardizationApps      = 64
 )
 
 type StandardShortcut struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"` // site, aplicativo ou pasta
+	OS string `json:"os,omitempty"` // vazio: todos os sistemas compatíveis com o destino
+	Name   string `json:"name"`
+	Kind   string `json:"kind"` // site, aplicativo ou pasta
 	Target string `json:"target"`
-	Icon string `json:"icon,omitempty"` // padrão, site, aplicativo, pasta ou documento
+	Icon   string `json:"icon,omitempty"` // padrão, site, aplicativo, pasta ou documento
 }
 
 var shortcutDrive = regexp.MustCompile(`^[A-Za-z]:\\`)
@@ -33,6 +34,7 @@ var shortcutEnv = regexp.MustCompile(`(?i)^%(ProgramFiles|ProgramFiles\(x86\)|Lo
 var shortcutReserved = regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)`)
 
 func (s StandardShortcut) Validate() error {
+	if s.OS != "" && s.OS != "windows" && s.OS != "linux" && s.OS != "darwin" { return errors.New("sistema do atalho inválido") }
 	if strings.TrimSpace(s.Name) != s.Name || s.Name == "" || len([]rune(s.Name)) > 64 || strings.ContainsAny(s.Name, `<>:"/\|?*`) || strings.HasSuffix(s.Name, ".") || shortcutReserved.MatchString(s.Name) || invalidStandardText(s.Name) {
 		return errors.New("nome do atalho inválido: use até 64 caracteres válidos para um arquivo do Windows")
 	}
@@ -51,6 +53,11 @@ func (s StandardShortcut) Validate() error {
 			return errors.New("site exige URL http ou https, sem credencial embutida")
 		}
 	case "aplicativo", "pasta":
+		if strings.HasPrefix(s.Target,"/") || strings.HasPrefix(s.Target,"~/") {
+			if s.OS=="windows" || strings.ContainsAny(s.Target,`"`+"`$\\") || strings.Contains(s.Target,"/../") || strings.HasSuffix(s.Target,"/..") {return errors.New("caminho Unix inválido; use caminho absoluto ou ~/ sem expansão de comandos")}
+			return nil
+		}
+		if s.OS=="linux" || s.OS=="darwin" {return errors.New("use um caminho absoluto Unix ou ~/ para Linux e macOS")}
 		if strings.ContainsAny(s.Target, `<>"|?*`) || strings.HasPrefix(s.Target, `\\?\`) || strings.HasPrefix(s.Target, `\\.\`) {
 			return errors.New("caminho do atalho inválido")
 		}
@@ -79,8 +86,17 @@ func (s StandardShortcut) Validate() error {
 	return nil
 }
 
+// SupportsOS impede que caminhos de outro sistema sejam entregues ao usuário.
+func(s StandardShortcut) SupportsOS(platform string)bool {
+	if s.OS!="" && s.OS!=platform{return false};if s.Kind=="site"{return true}
+	unix:=strings.HasPrefix(s.Target,"/")||strings.HasPrefix(s.Target,"~/")
+	return unix==(platform=="linux"||platform=="darwin")
+}
+
 func invalidStandardText(s string) bool {
-	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == unicode.ReplacementChar }) >= 0
+	return strings.IndexFunc(s, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == unicode.ReplacementChar
+	}) >= 0
 }
 
 func (s StandardShortcut) Fingerprint() string {
@@ -91,21 +107,34 @@ func (s StandardShortcut) Fingerprint() string {
 
 type StandardAppState struct {
 	App, Name, Target, State, Detail string
-	JobID int64
+	JobID                            int64
 }
 
-func(s StandardAppState) Label()string{
-	switch s.State{case "em_dia":return "em dia";case "agendado":return "agendado";case "em_andamento":return "em andamento";case "aguardando":return "aguardando fila";case "falhou":return "tentativa sem sucesso";default:return "bloqueado"}
+func (s StandardAppState) Label() string {
+	switch s.State {
+	case "em_dia":
+		return "em dia"
+	case "agendado":
+		return "agendado"
+	case "em_andamento":
+		return "em andamento"
+	case "aguardando":
+		return "aguardando fila"
+	case "falhou":
+		return "tentativa sem sucesso"
+	default:
+		return "bloqueado"
+	}
 }
 
 type StandardizationPlan struct {
-	Revision string `json:"revision"`
-	Policies []string `json:"policies"`
-	Shortcuts []StandardShortcut `json:"shortcuts"`
-	Apps []StandardAppState `json:"apps"`
-	Warnings []string `json:"warnings,omitempty"`
-	CreatedJobs int `json:"created_jobs,omitempty"`
-	GeneratedAt time.Time `json:"generated_at"`
+	Revision    string             `json:"revision"`
+	Policies    []string           `json:"policies"`
+	Shortcuts   []StandardShortcut `json:"shortcuts"`
+	Apps        []StandardAppState `json:"apps"`
+	Warnings    []string           `json:"warnings,omitempty"`
+	CreatedJobs int                `json:"created_jobs,omitempty"`
+	GeneratedAt time.Time          `json:"generated_at"`
 }
 
 func (p StandardizationPlan) Check() error {
@@ -130,14 +159,14 @@ func (p StandardizationPlan) Check() error {
 }
 
 type StandardShortcutResult struct {
-	Name string `json:"name"`
-	State string `json:"state"` // em_dia, aplicado, removido ou conflito
+	Name   string `json:"name"`
+	State  string `json:"state"` // em_dia, aplicado, removido ou conflito
 	Detail string `json:"detail,omitempty"`
 }
 
 type StandardizationResult struct {
-	Revision string `json:"revision"`
-	Items []StandardShortcutResult `json:"items"`
+	Revision string                   `json:"revision"`
+	Items    []StandardShortcutResult `json:"items"`
 }
 
 func (r StandardizationResult) Check() error {
@@ -148,7 +177,7 @@ func (r StandardizationResult) Check() error {
 		return errors.New("revisão inválida")
 	}
 	for _, item := range r.Items {
-		if len([]rune(item.Name)) > 64 || len([]rune(item.Detail)) > 200 || invalidStandardText(item.Name) || invalidStandardText(item.Detail) {
+		if item.Name=="" || len([]rune(item.Name)) > 64 || len([]rune(item.Detail)) > 200 || invalidStandardText(item.Name) || invalidStandardText(item.Detail) {
 			return errors.New("resultado de atalho inválido")
 		}
 		switch item.State {
