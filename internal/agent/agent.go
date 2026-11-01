@@ -294,6 +294,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 		inventorySent = true
 		a.Logger.Info("inventário enviado", "status", r.Status, "hash", r.Hash, "software", len(inv.Software))
+		if a.Client.SupportsStandardization() {
+			a.Wake()
+		}
 	}
 	if state.InventoryFirst && (inventorySent || resp.InventoryKnown) {
 		state.InventoryFirst = false // o inventário de depois da instalação já está no servidor
@@ -351,6 +354,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		// Nenhum instalador rodou (download falhou, recusa): o inventário não mudou.
 		if ran {
 			a.resendInventory(ctx, &state)
+			if a.Client.SupportsStandardization() {
+				a.Wake()
+			}
 		}
 		a.saveStateOrLog(state)
 	}
@@ -367,6 +373,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 		if ran {
 			a.resendInventory(ctx, &state)
+			if a.Client.SupportsStandardization() {
+				a.Wake()
+			}
 		}
 		a.saveStateOrLog(state)
 	}

@@ -17,14 +17,18 @@ import (
 // Memory guarda tudo na memória do processo. Serve para desenvolvimento e para os
 // testes da API; em produção, o armazenamento é o PostgreSQL (Aula 4.2).
 type Memory struct {
-	merges      map[string]MachineMerge
-	mu          sync.RWMutex
-	machines    map[string]*memMachine
-	tokens      []*memToken
-	credentials map[string]string // hash da credencial (como texto) → ID da máquina
-	keys        []memKeys         // chaves de identidade, na ordem de registro
-	links       []protocol.IdentityLink
-	now         func() time.Time
+	standardPolicies  map[int64]StandardizationPolicy
+	standardPolicySeq int64
+	standardStates    map[string]StandardizationState
+	standardLocks     map[string]bool
+	merges            map[string]MachineMerge
+	mu                sync.RWMutex
+	machines          map[string]*memMachine
+	tokens            []*memToken
+	credentials       map[string]string // hash da credencial (como texto) → ID da máquina
+	keys              []memKeys         // chaves de identidade, na ordem de registro
+	links             []protocol.IdentityLink
+	now               func() time.Time
 
 	jobs   []*memJob // fila de jobs (Aula 8.1)
 	jobSeq int64

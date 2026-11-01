@@ -51,7 +51,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 	release, ok := userapp.SingleInstance()
 	release = sync.OnceFunc(release) // a reabertura solta o mutex antes de abrir a cópia nova
 	defer release()
-	if !ok && !*noTray {
+	if !ok {
 		return exitOK // já há uma Central aberta nesta sessão: o ícone dela atende
 	}
 
@@ -77,6 +77,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- app.Serve(ctx, ln) }()
+	go app.WatchStandardization(ctx, stderr)
 
 	if *noTray {
 		fmt.Fprintf(stdout, "%s\n(Ctrl+C encerra)\n", app.URL())

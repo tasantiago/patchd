@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/xml"
-	"path/filepath"
+	"path"
 )
 
 // launchdLabel: identificador do serviço no launchd (nome reverso de domínio). O
@@ -54,7 +54,7 @@ func launchdPlist(bin string, args []string, dataDir string) string {
 	<integer>30</integer>
 	<key>StandardErrorPath</key>
 	<string>`)
-	_ = xml.EscapeText(&b, []byte(filepath.Join(dataDir, "logs", "stderr.log")))
+	_ = xml.EscapeText(&b, []byte(path.Join(dataDir, "logs", "stderr.log")))
 	b.WriteString(`</string>
 </dict>
 </plist>

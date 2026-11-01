@@ -590,6 +590,7 @@ var pages = template.Must(template.New("").Parse(`
 <a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Jobs</span></a>
 <a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Anéis</span></a>
 <a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
+{{if .Admin}}<a href="/painel/padronizacao" title="Padronização" {{if eq .Nav "padronizacao"}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Padronização</span></a>{{end}}
 {{if .Admin}}<a href="/painel/scripts" title="Scripts" {{if eq .Nav "scripts"}}class="ativo" aria-current="page"{{end}}>` + ui.IcScripts + `<span class="rot">Scripts</span></a>{{end}}
 {{if .Admin}}<p class="grupo"><span class="rot">Administração</span></p>
 <a href="/painel/descoberta" title="Descoberta de rede" {{if eq .Nav "descoberta"}}class="ativo" aria-current="page"{{end}}>` + ui.IcDescoberta + `<span class="rot">Descoberta</span></a>
@@ -1628,4 +1629,4 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="tabela"><table><thead><tr><th>Quando</th><th>Por</th><th>Endereços</th><th>Com portas abertas</th><th>Sem agente</th><th>Diagnóstico</th></tr></thead>
 <tbody>{{range .Runs}}<tr><td>{{.When}}</td><td>{{.By}}</td><td>{{.Scanned}}{{if .Partial}} <span class="muted">(parcial)</span>{{end}}</td><td>{{.Alive}}</td><td>{{.SemAg}}</td><td>{{if .Note}}{{.Note}}{{else}}Concluída{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{template "fim"}}{{end}}
-` + dashboardTemplates))
+` + dashboardTemplates + standardizationTemplates))

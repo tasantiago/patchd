@@ -50,6 +50,9 @@ ProtectSystem=full
 ProtectHome=read-only
 PrivateTmp=yes
 ReadWritePaths=-/etc/apt/apt.conf.d -/etc/dnf
+# Instaladores aprovados da padronização precisam gravar aplicativos e configurar o
+# início da sessão. /home continua somente leitura para o serviço: atalhos são do usuário.
+ReadWritePaths=-/usr -/opt -/etc
 
 [Install]
 WantedBy=multi-user.target

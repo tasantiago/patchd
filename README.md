@@ -750,3 +750,12 @@ O patchd é um projeto em desenvolvimento contínuo. Para conhecer o estado de u
 ---
 
 **Quer ajudar a desenvolver o patchd?** Comece pela [Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior) ou pela [Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno) e escolha uma contribuição de escopo verificável.
+
+
+## Padronização de computadores
+
+Em **Automação › Padronização**, crie um padrão básico e grupos como Financeiro e RH, definidos por computadores cadastrados, grupos do AD dos usuários ou ambos. Marque os aplicativos obrigatórios e configure os atalhos da Área de Trabalho por sistema.
+
+Windows usa os instaladores aprovados do catálogo; Windows, Linux e macOS também podem usar pacotes de scripts com detecção pelo inventário. Os atalhos são aplicados na sessão do usuário, preservando arquivos pessoais. Atualize servidor e agentes para disponibilizar a função.
+
+Veja [Padronização: instalação, grupos, aplicativos e atalhos](docs/padronizacao.md) para configurar, ativar e acompanhar os padrões.

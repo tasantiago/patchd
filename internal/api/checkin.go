@@ -38,6 +38,9 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		canal = "https"
 	}
 	a.count(checkinsOf, canal)
+	if slices.Contains(req.Capabilities, protocol.CapabilityStandardization) {
+		a.standardizeCheckin(r, id)
+	}
 	resp := protocol.CheckinResponse{InventoryKnown: known && req.InventoryHash != "", ServerTime: a.now(), Monitor: &policy}
 	// A oferta vai quando a versão publicada é outra. Se ela serve, quem decide é o agente:
 	// ele confere a assinatura e recusa qualquer versão que não seja mais nova que a sua.
