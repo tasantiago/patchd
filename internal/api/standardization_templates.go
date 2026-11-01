@@ -22,7 +22,7 @@ const standardizationTemplates = `
 </fieldset>
 
 <fieldset><legend>Aplicativos do catálogo Windows</legend><p class="muted">Instala o que falta e atualiza até a versão aprovada mais recente. Versões superiores são mantidas. Instaladores são conferidos e jobs são assinados pelo fluxo normal do patchd.</p>
-{{if .CatalogOff}}<p class="aviso atencao">O catálogo de aplicativos não está configurado. Você pode configurar os atalhos enquanto prepara o catálogo.</p>{{end}}
+{{if .CatalogOff}}<p class="aviso atencao">O catálogo de aplicativos não está configurado. Você pode configurar atalhos e pacotes de instalação enquanto prepara o catálogo.</p>{{end}}
 <div class="std-apps">{{range .Apps}}<label class="std-app"><input type="checkbox" name="aplicativo" value="{{.ID}}"{{if .Selected}} checked{{end}}><span><strong>{{.Name}}</strong><small>{{if .Ready}}Há instalador aprovado; a compatibilidade será avaliada por computador.{{else}}Aguardando instalador aprovado em Patch › Terceiros.{{end}}</small></span></label>{{else}}<p class="muted">Nenhum aplicativo com instalação automatizada disponível no catálogo.</p>{{end}}</div>
 </fieldset>
 

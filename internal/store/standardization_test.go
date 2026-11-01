@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -101,6 +102,18 @@ func testStandardizationStore(t *testing.T, st standardStore) {
 	if err != nil || len(latest) != 0 || open != 0 {
 		t.Fatalf("jobs vazios: %v %d %v", latest, open, err)
 	}
+	_,key,err:=jobs.GenerateKey();if err!=nil{t.Fatal(err)}
+	var newest int64
+	for _,version:=range []string{"1.0","2.0"}{
+	 params:=jobs.ThirdPartyParams{App:"7zip",Version:version,SHA256:strings.Repeat("a",64),Size:1,Installer:"exe",Args:[]string{"/S"}}
+	 raw,_:=json.Marshal(params);rec,err:=jobs.Issue(ctx,st,key,jobs.Request{MachineID:"pc",Type:jobs.TypeThirdParty,TTL:time.Hour,By:StandardizationAuthor,Params:raw},now);if err!=nil{t.Fatal(err)};newest=rec.ID
+	}
+	for _,sha:=range []string{strings.Repeat("b",64),strings.Repeat("c",64)}{
+	 params:=jobs.ScriptParams{Bundle:"aplicativo",SHA256:sha,Size:1,Entry:"install.sh",Runner:"bash",Timeout:600};raw,_:=json.Marshal(params)
+	 if _,err:=jobs.Issue(ctx,st,key,jobs.Request{MachineID:"pc",Type:jobs.TypeScript,TTL:time.Hour,By:StandardizationAuthor,Params:raw},now);err!=nil{t.Fatal(err)}
+	}
+	latest,open,err=st.StandardizationJobs(ctx,"pc",now);if err!=nil||open!=4||len(latest)!=3||latest["7zip"].ID!=newest{t.Fatalf("últimos jobs por aplicativo: %v abertos=%d err=%v",latest,open,err)}
+	latest,open,err=st.StandardizationJobs(ctx,"pc",now.Add(2*time.Hour));if err!=nil||open!=0||latest["7zip"].State!=jobs.StateExpired{t.Fatalf("expiração: %v abertos=%d err=%v",latest,open,err)}
 }
 
 func TestStandardizationStoreMemory(t *testing.T) { testStandardizationStore(t, NewMemory()) }

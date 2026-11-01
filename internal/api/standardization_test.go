@@ -2,6 +2,8 @@ package api_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -10,12 +12,35 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 )
 
 func standardForm() url.Values {
 	return url.Values{"id": {"0"}, "revisao": {"0"}, "nome": {"Financeiro"}, "ativo": {"1"}, "maquina": {"60ef97e4-0001"}, "grupos_ad": {`CORP\Financeiro`}, "atalho_nome": {"Portal"}, "atalho_tipo": {"site"}, "atalho_destino": {"https://financeiro.example"}, "atalho_icone": {"site"}, "atalho_os": {""}}
+}
+
+func TestStandardizationScriptScheduledOnCapableAgentCheckin(t *testing.T){
+ pub,key,err:=ed25519.GenerateKey(rand.Reader);if err!=nil{t.Fatal(err)}
+ h,st,_:=ambientePaginas(t,api.WithJobKey(key),api.WithContent(t.TempDir(),nil));ctx:=context.Background()
+ uploaded:=sobePacote(h,sessaoAdmin,"financeiro","instalar.sh",[]byte("#!/bin/sh\nexit 0\n"),url.Values{"entrada":{"instalar.sh"}})
+ if uploaded.Code!=303||strings.Contains(uploaded.Header().Get("Location"),"erro="){t.Fatalf("upload: %d %s",uploaded.Code,uploaded.Header().Get("Location"))}
+ tok,hash:=identity.NewSecret(identity.EnrollmentPrefix);if _,err:=st.CreateEnrollmentToken(ctx,hash,"teste",time.Now().Add(time.Hour),1);err!=nil{t.Fatal(err)};m:=registra(t,h,tok)
+ if _,err:=st.SaveInventory(ctx,m.MachineID,protocol.InventoryReport{SchemaVersion:1,Hash:"sha256:"+strings.Repeat("a",64),OS:protocol.OSInfo{Family:"linux",ID:"ubuntu",Arch:"amd64"},Software:[]protocol.Software{}});err!=nil{t.Fatal(err)}
+ form:=url.Values{"nome":{"Financeiro"},"ativo":{"1"},"todos":{"1"},"instalador_pacote":{"1"},"instalador_os":{"linux"},"instalador_software":{"app-financeiro"}}
+ if r:=pagina(h,"POST","/painel/padronizacao",sessaoAdmin,form);r.Code!=303{t.Fatalf("salvar instalador: %d %s",r.Code,r.Body)}
+ bundles,err:=st.ScriptBundles(ctx);if err!=nil||len(bundles)!=1{t.Fatalf("pacote: %v %v",bundles,err)}
+ // Mudar parâmetros no cadastro não altera a aprovação já fixada no grupo.
+ if _,err:=st.SetScriptExecution(ctx,bundles[0].ID,"instalar.sh",[]string{"novo"},300);err!=nil{t.Fatal(err)}
+ check:=protocol.CheckinRequest{AgentVersion:"teste",InventoryHash:"sha256:"+strings.Repeat("a",64),SentAt:time.Now(),Capabilities:[]string{protocol.CapabilityJobs}}
+ raw,_:=json.Marshal(check);if r:=envia(h,"POST","/api/v1/agent/checkin",m.Credential,raw);r.Code!=200{t.Fatal(r.Code)}
+ list,_:=st.Jobs(ctx,m.MachineID,10);if len(list)!=0{t.Fatal("agente sem capacidade recebeu nova política")}
+ check.Capabilities=append(check.Capabilities,protocol.CapabilityStandardization);raw,_=json.Marshal(check);r:=envia(h,"POST","/api/v1/agent/checkin",m.Credential,raw);if r.Code!=200{t.Fatalf("check-in: %d %s",r.Code,r.Body)}
+ var response protocol.CheckinResponse;if err:=json.Unmarshal(r.Body.Bytes(),&response);err!=nil{t.Fatal(err)};if len(response.Jobs)!=1{t.Fatalf("jobs: %s",r.Body)}
+ job,err:=jobs.Verify(pub,response.Jobs[0],m.MachineID,time.Now(),0);if err!=nil||job.Type!=jobs.TypeScript{t.Fatalf("assinatura: %+v %v",job,err)}
+ params,err:=jobs.ParseScriptParams(job.Params);if err!=nil||len(params.Args)!=0||params.SHA256!=bundles[0].SHA256{t.Fatalf("aprovação mudou: %+v %v",params,err)}
 }
 
 func TestStandardizationPanelCRUDAndAuthorization(t *testing.T) {

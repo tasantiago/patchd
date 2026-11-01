@@ -10,7 +10,8 @@ import (
 )
 
 func TestUnixPeerIdentityComesFromKernel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "user.sock")
+	dir,err:=os.MkdirTemp("","pd-");if err!=nil{t.Fatal(err)};t.Cleanup(func(){_ = os.RemoveAll(dir)})
+ path := filepath.Join(dir, "user.sock")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)
