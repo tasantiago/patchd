@@ -134,6 +134,18 @@ func testStandardizationStore(t *testing.T, st standardStore) {
 }
 
 func TestStandardizationStoreMemory(t *testing.T) { testStandardizationStore(t, NewMemory()) }
+
+func TestStandardizationQualifiedDirectoryGroups(t *testing.T) {
+	p := StandardizationPolicy{Name: "Financeiro", Enabled: true, ADGroups: []string{"financeiro@corp.example"}, Apps: []string{"7zip"}}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	p.ADGroups = []string{"financeiro@"}
+	if p.Validate() == nil {
+		t.Fatal("aceitou domínio vazio")
+	}
+}
+
 func TestStandardizationStorePostgres(t *testing.T) {
 	pool := bancoDeTeste(t)
 	if err := Migrate(context.Background(), pool, silencioso()); err != nil {

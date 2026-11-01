@@ -50,6 +50,7 @@ func (i StandardInstaller) Validate() error {
 
 var standardAppID = regexp.MustCompile(`^[a-z0-9][a-z0-9.+-]{0,63}$`)
 var standardMachineID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+var standardQualifiedGroup = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9 ._$-]{0,103}@[A-Za-z0-9][A-Za-z0-9.-]{0,150}$`)
 
 type StandardizationPolicy struct {
 	ID, Revision             int64
@@ -84,7 +85,7 @@ func (p StandardizationPolicy) Validate() error {
 		}
 	}
 	for _, group := range p.ADGroups {
-		if !ValidGroup(group) {
+		if !ValidGroup(group) && !standardQualifiedGroup.MatchString(group) {
 			return errors.New("grupo do AD inválido")
 		}
 	}

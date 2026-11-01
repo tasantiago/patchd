@@ -39,6 +39,9 @@ func TestResolveGroupsAndConflicts(t *testing.T) {
 	if !GroupMember("Financeiro", []string{`CORP\Financeiro`}) || GroupMember(`CORP\RH`, []string{`OUTRO\RH`}) {
 		t.Fatal("associação incorreta")
 	}
+	if !GroupMember("financeiro@corp.example", []string{"Financeiro@CORP.example"}) || GroupMember("financeiro@corp.example", []string{"financeiro@outro.example"}) {
+		t.Fatal("domínio NSS não foi respeitado")
+	}
 	policies[2].Shortcuts[0] = link
 	p, _ = Resolve(policies, "pc", protocol.SelfServiceUser{Groups: []string{`CORP\RH`}}, "windows")
 	if len(p.Shortcuts) != 1 || len(p.Warnings) != 0 {
