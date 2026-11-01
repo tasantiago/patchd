@@ -35,7 +35,7 @@ type agentConfig struct {
 	Inventory       bool // coleta o inventário, imprime em JSON e sai
 	Scan            bool // busca atualizações e histórico, imprime em JSON e sai
 	State           bool // coleta rede e discos (Aula 12.1), imprime em JSON e sai
-	// UserApp: no Windows, o serviço põe o app do usuário (Aula 17.4) para abrir no logon de
+	// UserApp: o serviço põe o aplicativo da sessão para abrir no logon de
 	// todos. false: tira (servidores, máquinas sem usuário).
 	UserApp bool
 	// AllowedSigners (Aula 20.5b, achado F1): no Windows, as únicas organizações (O= da
@@ -76,7 +76,7 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	fs.StringVar(&cfg.CAFile, "ca-file", config.String(look, "PATCHD_CA_FILE", ""),
 		"certificado da CA do servidor, em PEM; com ele, o agente confia só nessa CA (env PATCHD_CA_FILE)")
 	fs.BoolVar(&cfg.UserApp, "user-app", envUserApp,
-		"Windows: abre a Central de software (app do usuário) no logon; -user-app=false tira (env PATCHD_USER_APP)")
+		"abre o aplicativo da sessão no logon (Central no Windows, padronização nos três sistemas); -user-app=false tira (env PATCHD_USER_APP)")
 	var signers string
 	fs.StringVar(&signers, "allowed-signers", config.String(look, "PATCHD_ALLOWED_SIGNERS", ""),
 		"Windows: organizações aceitas na assinatura dos instaladores de terceiros, separadas por ponto e vírgula, "+

@@ -172,7 +172,7 @@ type Dial func(ctx context.Context, ip netip.Addr, port int) bool
 
 // Options reúne o que a varredura usa de fora.
 type Options struct {
-	OnProbe     func(netip.Addr, bool) // opcional: chamado concorrentemente após cada endereço concluído
+ OnProbe     func(netip.Addr, bool) // opcional: chamado concorrentemente após cada endereço concluído
 	Ports       []int                  // nil: DefaultPorts
 	Concurrency int                    // 0: 512
 	Dial        Dial                   // obrigatório

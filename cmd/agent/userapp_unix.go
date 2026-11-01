@@ -20,10 +20,7 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if os.Geteuid() != 0 {
 		return
 	}
-	path := "/etc/xdg/autostart/patchd-standardization.desktop"
-	if runtime.GOOS == "darwin" {
-		path = "/Library/LaunchAgents/com.patchd.standardization.plist"
-	}
+	path:=userAutostartPath()
 	if !enabled {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			logger.Warn("padronização: remover início de sessão", "error", err)
@@ -47,9 +44,7 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
 		return
 	}
-	if err := writeRootFile(path, data, 0644); err != nil {
-		logger.Warn("padronização: gravar início de sessão", "error", err)
-	}
+	if err:=writeRootFile(path,data,0644);err!=nil{logger.Warn("padronização: gravar início de sessão","error",err)}
 }
 
 func unixAutostart(exe, platform string) ([]byte, error) {
@@ -65,4 +60,8 @@ func unixAutostart(exe, platform string) ([]byte, error) {
 	}
 	quoted := `"` + strings.NewReplacer("\\", "\\\\\\\\", "\"", "\\\\\"", "`", "\\\\`", "$", "\\\\$", "%", "%%").Replace(exe) + `"`
 	return []byte("[Desktop Entry]\nType=Application\nName=Padronização patchd\nExec=" + quoted + " app -no-tray\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n"), nil
+}
+
+func userAutostartPath()string{
+ if runtime.GOOS=="darwin"{return "/Library/LaunchAgents/com.patchd.standardization.plist"};return "/etc/xdg/autostart/patchd-standardization.desktop"
 }
