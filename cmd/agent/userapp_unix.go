@@ -47,15 +47,7 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
 		return
 	}
-	// #nosec G301 -- início de sessão de todos os usuários requer travessia do diretório, só root escreve.
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		logger.Warn("padronização: diretório de início de sessão", "error", err)
-		return
-	}
-	// #nosec G306 -- configuração de início de sessão pública, sem credenciais; só root pode alterá-la.
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		logger.Warn("padronização: gravar início de sessão", "error", err)
-	}
+	if err:=writeRootFile(path,data,0644);err!=nil{logger.Warn("padronização: gravar início de sessão","error",err)}
 }
 
 func unixAutostart(exe, platform string) ([]byte, error) {

@@ -39,7 +39,7 @@ type Service struct {
 	Manifest    *thirdparty.Manifest
 	Key         ed25519.PrivateKey
 	PackagesDir string
-	BundlesDir  string
+	BundlesDir string
 	Now         func() time.Time
 	OnCreated   func(jobs.Record, string, string)
 }
@@ -80,15 +80,9 @@ func Resolve(policies []store.StandardizationPolicy, machine string, user protoc
 		}
 		matched = append(matched, p)
 		out.Policies = append(out.Policies, p.Name)
-		if len(platform) == 0 || platform[0] == "windows" {
-			for _, app := range p.Apps {
-				apps[app] = true
-			}
-		}
+		if len(platform)==0 || platform[0]=="windows" {for _, app := range p.Apps { apps[app] = true }}
 		for _, link := range p.Shortcuts {
-			if len(platform) > 0 && !link.SupportsOS(platform[0]) {
-				continue
-			}
+			if len(platform)>0 && !link.SupportsOS(platform[0]) {continue}
 			key := strings.ToLower(link.Name)
 			if old, ok := links[key]; ok && (old.Kind != link.Kind || old.Target != link.Target || old.Icon != link.Icon) {
 				conflicts[key] = true
@@ -128,7 +122,8 @@ func Resolve(policies []store.StandardizationPolicy, machine string, user protoc
 	b, _ := json.Marshal(struct {
 		Policies []store.StandardizationPolicy
 		User     string
-	}{matched, strings.ToLower(user.Account)})
+ Platform []string
+	}{matched, strings.ToLower(user.Account),platform})
 	h := sha256.Sum256(b)
 	out.Revision = hex.EncodeToString(h[:])
 	return out, ids
@@ -145,23 +140,12 @@ func (s *Service) Reconcile(ctx context.Context, machine string, user protocol.S
 	if err != nil {
 		return protocol.StandardizationPlan{}, err
 	}
-	inv, known, err := s.Store.LatestInventory(ctx, machine)
-	if err != nil {
-		return protocol.StandardizationPlan{}, err
-	}
-	platform := inv.OS.Family
-	if platform == "" && inv.OS.ID == "windows" {
-		platform = "windows"
-	}
-	out, apps := Resolve(policies, machine, user, platform)
-	installers := resolveInstallers(policies, machine, user, platform, &out)
-	if len(installers) > protocol.MaxStandardizationApps-len(apps) {
-		installers = installers[:protocol.MaxStandardizationApps-len(apps)]
-		out.Warnings = append(out.Warnings, "Limite de 64 aplicativos resultantes atingido.")
-	}
-	if !known {
-		out.Warnings = append(out.Warnings, "Aguardando inventário para identificar o sistema e aplicar os aplicativos e atalhos.")
-	}
+	inv,known,err:=s.Store.LatestInventory(ctx,machine);if err!=nil{return protocol.StandardizationPlan{},err}
+ platform:=inv.OS.Family;if platform==""&&inv.OS.ID=="windows"{platform="windows"}
+ out, apps := Resolve(policies, machine, user, platform)
+ installers:=resolveInstallers(policies,machine,user,platform,&out)
+ if len(installers)>protocol.MaxStandardizationApps-len(apps){installers=installers[:protocol.MaxStandardizationApps-len(apps)];out.Warnings=append(out.Warnings,"Limite de 64 aplicativos resultantes atingido.")}
+ if !known {out.Warnings=append(out.Warnings,"Aguardando inventário para identificar o sistema e aplicar os aplicativos e atalhos.")}
 	out.GeneratedAt = now
 	locked, err := s.Store.WithStandardizationLock(ctx, machine, func(ctx context.Context) error {
 		if len(apps) > 0 {
@@ -171,14 +155,10 @@ func (s *Service) Reconcile(ctx context.Context, machine string, user protocol.S
 			}
 			out.Apps, out.CreatedJobs = states, n
 		}
-		if len(installers) > 0 {
-			states, n, err := s.scriptApplications(ctx, machine, installers, inv, now, maxBatch-out.CreatedJobs)
-			if err != nil {
-				return err
-			}
-			out.Apps = append(out.Apps, states...)
-			out.CreatedJobs += n
-		}
+        if len(installers)>0 {
+          states,n,err:=s.scriptApplications(ctx,machine,installers,inv,now,maxBatch-out.CreatedJobs);if err!=nil{return err}
+          out.Apps=append(out.Apps,states...);out.CreatedJobs+=n
+        }
 		return s.Store.SaveStandardizationState(ctx, store.StandardizationState{MachineID: machine, Account: user.Account, Plan: out, EvaluatedAt: now})
 	})
 	if err != nil {
@@ -208,9 +188,7 @@ func (s *Service) applications(ctx context.Context, machine string, apps []strin
 	if !found {
 		return block("Aguardando o primeiro inventário.")
 	}
-	if inv.Software == nil {
-		return block("Coleta de software indisponível; nenhuma instalação será inferida como ausente.")
-	}
+	if inv.Software==nil{return block("Coleta de software indisponível; nenhuma instalação será inferida como ausente.")}
 	arch, ok := tpinstall.MachineArch(inv.OS.Arch)
 	if inv.OS.ID != "windows" || !ok {
 		return block("Instalação automática de padrões disponível para Windows com arquitetura suportada.")

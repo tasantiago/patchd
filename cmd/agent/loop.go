@@ -39,7 +39,7 @@ type loopOptions struct {
 	// repassadas ao install da versão nova para o serviço continuar com as mesmas opções.
 	AutoUpdate  bool
 	ServiceArgs []string
-	// UserApp (Aula 17.4): só como serviço do Windows; põe ou tira o app do usuário.
+	// UserApp: põe ou tira o aplicativo de sessão no logon, nos três sistemas.
 	UserApp bool
 	// AllowedSigners (Aula 20.5b): a lista de organizações aceitas nos instaladores.
 	AllowedSigners []string

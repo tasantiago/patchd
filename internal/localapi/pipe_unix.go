@@ -8,13 +8,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"syscall"
 
-	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 var ErrUnsupported = errors.New("canal local indisponível neste sistema")
@@ -31,34 +28,6 @@ func (c *unixConn) Identify() (TokenInfo, error) {
 	return unixIdentity(uid)
 }
 
-func unixIdentity(uid uint32) (TokenInfo, error) {
-	if uid == 0 {
-		return TokenInfo{}, errors.New("use a sessão do usuário, sem sudo")
-	}
-	u, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
-	if err != nil {
-		return TokenInfo{}, err
-	}
-	if u.HomeDir == "" || u.HomeDir == "/" || u.HomeDir == "/var/empty" || u.HomeDir == "/nonexistent" {
-		return TokenInfo{}, errors.New("conta sem perfil de usuário")
-	}
-	info := TokenInfo{UserSID: "unix:" + u.Uid, Account: u.Username, Groups: []TokenGroup{{SID: sidInteractive, Attrs: groupEnabled}}}
-	ids, err := u.GroupIds()
-	if err != nil {
-		return TokenInfo{}, err
-	}
-	if len(ids) > protocol.MaxSelfServiceGroups {
-		return TokenInfo{}, errors.New("grupos demais")
-	}
-	for _, id := range ids {
-		g, err := user.LookupGroupId(id)
-		if err != nil {
-			continue
-		}
-		info.Groups = append(info.Groups, TokenGroup{SID: "unix-group:" + id, Name: g.Name, Attrs: groupEnabled})
-	}
-	return info, nil
-}
 
 func rootOwned(info os.FileInfo) bool {
 	st, ok := info.Sys().(*syscall.Stat_t)
