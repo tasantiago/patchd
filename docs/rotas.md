@@ -29,7 +29,7 @@ Quem pode: qualquer um, só da própria origem. Sem sessão: atende. De outra or
 | POST | `/painel/entrar` | login (conferência de origem, limite de tentativas) |
 | POST | `/painel/sair` | saída (conferência de origem) |
 
-## Agente (11)
+## Agente (13)
 
 Quem pode: máquina registrada (credencial). Sem sessão: 401.
 
@@ -46,6 +46,9 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | POST | `/api/v1/agent/selfservice/catalog` |
 | GET | `/api/v1/agent/selfservice/logo` |
 | POST | `/api/v1/agent/selfservice/request` |
+| POST | `/api/v1/agent/standardization/report` |
+| POST | `/api/v1/agent/standardization` |
+
 
 ## Sessão (página) (17)
 
@@ -84,7 +87,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 401.
 | GET | `/api/v1/machines/{id}/scan` |
 | GET | `/api/v1/machines` |
 
-## Admin (leitura) (9)
+## Admin (leitura) (10)
 
 Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria.
 
@@ -98,9 +101,11 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/maquinas/{id}/historico/{kind}/{report}` |
 | GET | `/painel/maquinas/{id}/historico` |
 | GET | `/painel/maquinas/{id}/mesclar` |
+| GET | `/painel/padronizacao` |
 | GET | `/painel/scripts` |
 
-## Admin (ação) (57)
+
+## Admin (ação) (59)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -151,6 +156,8 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/maquinas/{id}/restaurar` |
 | POST | `/painel/maquinas/{id}/terceiros/atualizar` |
 | POST | `/painel/maquinas/{id}/windows/instalar` |
+| POST | `/painel/padronizacao/{id}/excluir` |
+| POST | `/painel/padronizacao` |
 | POST | `/painel/patch/aprovar-lote` |
 | POST | `/painel/patch/aprovar` |
 | POST | `/painel/patch/correcao` |

@@ -37,6 +37,8 @@ const (
 	OpCatalog = "catalog" // a loja do usuário nesta máquina
 	OpRequest = "request" // pedir atualizar ou instalar
 	OpLogo    = "logo"    // Aula 19.1b: o logotipo do painel, para a Central
+	OpStandardization = "standardization"
+	OpStandardizationReport = "standardization_report"
 )
 
 // Códigos de erro do canal (Response.Code).
@@ -51,10 +53,11 @@ const (
 )
 
 // MaxRequestSize: o pedido é uma linha de JSON pequena; mais que isso é recusado.
-const MaxRequestSize = 4 << 10
+const MaxRequestSize = 64 << 10
 
 // Request é o que o app manda: uma linha de JSON por conexão.
 type Request struct {
+	StandardizationResult *protocol.StandardizationResult `json:"standardization_result,omitempty"`
 	Op     string `json:"op"`
 	App    string `json:"app,omitempty"`
 	Action string `json:"action,omitempty"`
@@ -64,6 +67,7 @@ type Request struct {
 
 // Response é a resposta do agente: uma linha de JSON, e a conexão termina.
 type Response struct {
+	Standardization *protocol.StandardizationPlan `json:"standardization,omitempty"`
 	OK      bool                          `json:"ok"`
 	Code    string                        `json:"code,omitempty"`
 	Error   string                        `json:"error,omitempty"`
@@ -173,6 +177,11 @@ type Conn interface {
 type Backend interface {
 	SelfServiceCatalog(ctx context.Context, u protocol.SelfServiceUser) (protocol.SelfServiceCatalog, error)
 	SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error)
+}
+
+type StandardizationBackend interface {
+	Standardization(context.Context,protocol.SelfServiceUser)(protocol.StandardizationPlan,error)
+	StandardizationReport(context.Context,protocol.SelfServiceUser,protocol.StandardizationResult)error
 }
 
 // LogoBackend (Aula 19.1b): o servidor que entrega o logotipo do painel. Opcional: um
@@ -298,6 +307,18 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 		u.Groups = []string{}
 	}
 	switch req.Op {
+	case OpStandardization,OpStandardizationReport:
+		if wait,ok:=s.allow("standardization:"+id.Account,QueryLimit,QueryWindow);!ok{return limited(wait)}
+		backend,ok:=s.Backend.(StandardizationBackend);if !ok{return fail(CodeOff,"Padronização indisponível neste agente.")}
+		if req.Op==OpStandardization{
+			plan,err:=backend.Standardization(ctx,u);if err!=nil{return s.backendError("padronização",err)}
+			if err:=plan.Check();err!=nil{return fail(CodeServer,"Plano de padronização inválido.")}
+			return Response{OK:true,Account:id.Account,Standardization:&plan}
+		}
+		if req.StandardizationResult==nil{return fail(CodeInvalid,"Resultado ausente.")}
+		if err:=req.StandardizationResult.Check();err!=nil{return fail(CodeInvalid,err.Error())}
+		if err:=backend.StandardizationReport(ctx,u,*req.StandardizationResult);err!=nil{return s.backendError("relatar padronização",err)}
+		return Response{OK:true,Account:id.Account}
 	case OpWhoami, OpCatalog:
 		if wait, ok := s.allow("q:"+id.Account, QueryLimit, QueryWindow); !ok {
 			return limited(wait)

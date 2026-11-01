@@ -292,7 +292,7 @@ func (b pageBase) Section() string {
 		return "Navegação"
 	case "patch":
 		return "Patch"
-	case "campanhas", "jobs", "aneis", "autoatendimento":
+	case "campanhas", "jobs", "aneis", "autoatendimento", "padronizacao":
 		return "Automação"
 	case "configuracao":
 		return "Administração"

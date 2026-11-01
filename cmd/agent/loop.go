@@ -222,6 +222,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	// Job thirdparty (Aula 14.4): só no Windows.
 	if tp := newThirdParty(client, opts.DataDir, opts.AllowedSigners); tp != nil {
 		ag.ThirdParty = tp
+		client.Capabilities=append(client.Capabilities,protocol.CapabilityStandardization)
 	}
 	// Job script (Aula 23.8): em todos os sistemas. O bundle é baixado e extraído na pasta
 	// de dados do agente (só SYSTEM/root), e some ao fim do job.

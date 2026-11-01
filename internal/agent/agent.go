@@ -294,6 +294,7 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 		}
 		inventorySent = true
 		a.Logger.Info("inventário enviado", "status", r.Status, "hash", r.Hash, "software", len(inv.Software))
+		if a.Client.SupportsStandardization(){a.Wake()}
 	}
 	if state.InventoryFirst && (inventorySent || resp.InventoryKnown) {
 		state.InventoryFirst = false // o inventário de depois da instalação já está no servidor

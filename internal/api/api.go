@@ -34,6 +34,14 @@ import (
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
 // tipo com estes métodos serve (a memória, o PostgreSQL, um fake de teste).
 type Store interface {
+	StandardizationPolicies(context.Context) ([]store.StandardizationPolicy,error)
+	SaveStandardizationPolicy(context.Context,store.StandardizationPolicy)(int64,error)
+	DeleteStandardizationPolicy(context.Context,int64,int64)error
+	WithStandardizationLock(context.Context,string,func(context.Context)error)(bool,error)
+	StandardizationJobs(context.Context,string,time.Time)(map[string]store.JobRow,int,error)
+	SaveStandardizationState(context.Context,store.StandardizationState)error
+	StandardizationStates(context.Context)([]store.StandardizationState,error)
+	ReportStandardization(context.Context,string,string,protocol.StandardizationResult,time.Time)error
 	MergeMachines(context.Context, string, string, string, store.AuditEvent) error
 	MachineMergeMembers(context.Context, string) ([]store.MachineMerge, error)
 	MachineReportHistory(context.Context, string, string, int64) ([]store.MachineReportRecord, error)
@@ -237,6 +245,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	// Agente.
 	mux.HandleFunc("POST /api/v1/enroll", a.enroll)
 	mux.Handle("POST /api/v1/agent/checkin", a.machineAuth(a.checkin))
+	mux.Handle("POST /api/v1/agent/standardization", a.machineAuth(a.standardizationUser))
+	mux.Handle("POST /api/v1/agent/standardization/report", a.machineAuth(a.standardizationReport))
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
 	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
@@ -259,6 +269,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /painel/oidc/retorno", a.oidcReturn)
 	mux.Handle("GET /painel/{$}", a.panelPage(a.homePage))
 	mux.Handle("GET /painel/frota", a.panelPage(a.fleetPage))
+	mux.Handle("GET /painel/padronizacao", a.adminAction(a.standardizationPage))
+	mux.Handle("POST /painel/padronizacao", a.sameOrigin(a.adminAction(a.saveStandardization)))
+	mux.Handle("POST /painel/padronizacao/{id}/excluir", a.sameOrigin(a.adminAction(a.deleteStandardization)))
 	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
 	mux.Handle("GET /painel/inventario", a.panelPage(a.equipmentPage))
 	mux.Handle("GET /painel/inventario.csv", a.panelPage(a.equipmentCSV))

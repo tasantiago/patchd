@@ -77,6 +77,7 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- app.Serve(ctx, ln) }()
+	go app.WatchStandardization(ctx, stderr)
 
 	if *noTray {
 		fmt.Fprintf(stdout, "%s\n(Ctrl+C encerra)\n", app.URL())
