@@ -84,7 +84,7 @@ func (m *Manager) Apply(plan protocol.StandardizationPlan) (protocol.Standardiza
 		return result, errors.New("diretórios ou gravador de atalhos inválidos")
 	}
 	if info, err := os.Stat(m.Desktop); err != nil || !info.IsDir() {
-		return result, errors.New("Área de Trabalho indisponível")
+		return result, errors.New("área de trabalho indisponível")
 	}
 	old := manifest{Version: 1, Entries: map[string]owned{}}
 	if data, err := os.ReadFile(m.StatePath); err == nil {

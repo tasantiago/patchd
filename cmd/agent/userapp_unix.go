@@ -47,6 +47,7 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
 		return
 	}
+	// #nosec G301 -- início de sessão de todos os usuários requer travessia do diretório, só root escreve.
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		logger.Warn("padronização: diretório de início de sessão", "error", err)
 		return

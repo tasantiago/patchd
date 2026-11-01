@@ -24,30 +24,19 @@ var ErrStandardizationStale = errors.New("plano mudou; consulte novamente")
 
 // StandardInstaller fixa os bytes e os parâmetros aprovados pelo administrador ao salvar o grupo.
 type StandardInstaller struct {
-	BundleID     int64
+	BundleID int64
 	OS, Software string
-	Params       jobs.ScriptParams
+	Params jobs.ScriptParams
 }
 
-func StandardScriptKey(p jobs.ScriptParams) string {
-	b, _ := json.Marshal(p)
-	sum := sha256.Sum256(b)
-	return "script-" + hex.EncodeToString(sum[:])
+func StandardScriptKey(p jobs.ScriptParams)string {
+	b,_:=json.Marshal(p);sum:=sha256.Sum256(b);return "script-"+hex.EncodeToString(sum[:])
 }
 
-func (i StandardInstaller) Validate() error {
-	if i.BundleID <= 0 || (i.OS != "windows" && i.OS != "linux" && i.OS != "darwin") || strings.TrimSpace(i.Software) != i.Software || i.Software == "" || len(i.Software) > 200 || strings.ContainsAny(i.Software, "\r\n\x00") {
-		return errors.New("instalador exige sistema, pacote e nome exato no inventário")
-	}
-	if err := i.Params.Validate(); err != nil {
-		return err
-	}
-	if (i.OS == "windows") != (i.Params.OS() == "windows") {
-		return errors.New("script incompatível com o sistema selecionado")
-	}
-	return nil
+func(i StandardInstaller)Validate()error {
+	if i.BundleID<=0 || (i.OS!="windows"&&i.OS!="linux"&&i.OS!="darwin") || strings.TrimSpace(i.Software)!=i.Software || i.Software=="" || len(i.Software)>200 || strings.ContainsAny(i.Software,"\r\n\x00") {return errors.New("instalador exige sistema, pacote e nome exato no inventário")}
+	if err:=i.Params.Validate();err!=nil{return err};if (i.OS=="windows")!=(i.Params.OS()=="windows"){return errors.New("script incompatível com o sistema selecionado")};return nil
 }
-
 var standardAppID = regexp.MustCompile(`^[a-z0-9][a-z0-9.+-]{0,63}$`)
 var standardMachineID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
@@ -94,16 +83,12 @@ func (p StandardizationPolicy) Validate() error {
 		}
 	}
 	seen := map[string]bool{}
-	for _, i := range p.Installers {
-		if err := i.Validate(); err != nil {
-			return err
-		}
-	}
+	for _,i:=range p.Installers {if err:=i.Validate();err!=nil{return err}}
 	for _, shortcut := range p.Shortcuts {
 		if err := shortcut.Validate(); err != nil {
 			return err
 		}
-		key := shortcut.OS + ":" + strings.ToLower(shortcut.Name)
+		key := shortcut.OS+":"+strings.ToLower(shortcut.Name)
 		if seen[key] {
 			return errors.New("atalho com nome repetido no grupo")
 		}
@@ -115,10 +100,7 @@ func (p StandardizationPolicy) Validate() error {
 func cloneStandardPolicy(p StandardizationPolicy) StandardizationPolicy {
 	p.Machines, p.ADGroups, p.Apps = slices.Clone(p.Machines), slices.Clone(p.ADGroups), slices.Clone(p.Apps)
 	p.Shortcuts = slices.Clone(p.Shortcuts)
-	p.Installers = slices.Clone(p.Installers)
-	for i := range p.Installers {
-		p.Installers[i].Params.Args = slices.Clone(p.Installers[i].Params.Args)
-	}
+	p.Installers=slices.Clone(p.Installers);for i:=range p.Installers{p.Installers[i].Params.Args=slices.Clone(p.Installers[i].Params.Args)}
 	return p
 }
 
@@ -209,8 +191,8 @@ func (p *Postgres) StandardizationJobs(ctx context.Context, machine string, now 
 	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE machine_id=$1 AND type IN ('thirdparty','script') AND state IN ('pendente','entregue')`, machine).Scan(&open); err != nil {
 		return nil, 0, err
 	}
-	rows, err := p.pool.Query(ctx, `SELECT DISTINCT ON (type,(payload::jsonb)->'params'->>'app',(payload::jsonb)->'params'->>'sha256') id, state, created_at, not_after, delivered_at, finished_at, detail, payload, type
-	 FROM jobs WHERE machine_id=$1 AND type IN ('thirdparty','script') AND created_by=$2 ORDER BY type,(payload::jsonb)->'params'->>'app',(payload::jsonb)->'params'->>'sha256', id DESC`, machine, StandardizationAuthor)
+	rows, err := p.pool.Query(ctx, `SELECT DISTINCT ON (type, CASE WHEN type='thirdparty' THEN (payload::jsonb)->'params'->>'app' ELSE ((payload::jsonb)->'params')::text END) id, state, created_at, not_after, delivered_at, finished_at, detail, payload, type
+	 FROM jobs WHERE machine_id=$1 AND type IN ('thirdparty','script') AND created_by=$2 ORDER BY type, CASE WHEN type='thirdparty' THEN (payload::jsonb)->'params'->>'app' ELSE ((payload::jsonb)->'params')::text END, id DESC`, machine, StandardizationAuthor)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -226,11 +208,7 @@ func (p *Postgres) StandardizationJobs(ctx context.Context, machine string, now 
 		if err := json.Unmarshal([]byte(row.Payload), &payload); err != nil {
 			return nil, 0, err
 		}
-		key, err := standardJobKey(payload)
-		if err != nil {
-			return nil, 0, err
-		}
-		out[key] = row
+		key,err:=standardJobKey(payload);if err!=nil{return nil,0,err};out[key]=row
 	}
 	return out, open, rows.Err()
 }
@@ -383,15 +361,8 @@ func (m *Memory) StandardizationJobs(ctx context.Context, machine string, now ti
 		if err := json.Unmarshal([]byte(j.signed.Payload), &payload); err != nil {
 			return nil, 0, err
 		}
-		key, err := standardJobKey(payload)
-		if err != nil {
-			return nil, 0, err
-		}
-		if old, ok := out[key]; !ok || j.ID > old.ID {
-			row := j.JobRow
-			row.Payload = j.signed.Payload
-			out[key] = row
-		}
+		key,err:=standardJobKey(payload);if err!=nil{return nil,0,err}
+		if old,ok:=out[key];!ok||j.ID>old.ID{row:=j.JobRow;row.Payload=j.signed.Payload;out[key]=row}
 	}
 	return out, open, nil
 }
@@ -469,11 +440,7 @@ func (m *Memory) StandardizationStates(ctx context.Context) ([]StandardizationSt
 	return out, nil
 }
 
-func standardJobKey(payload jobs.Job) (string, error) {
-	if payload.Type == jobs.TypeScript {
-		p, err := jobs.ParseScriptParams(payload.Params)
-		return StandardScriptKey(p), err
-	}
-	p, err := jobs.ParseThirdPartyParams(payload.Params)
-	return p.App, err
+func standardJobKey(payload jobs.Job)(string,error){
+ if payload.Type==jobs.TypeScript {p,err:=jobs.ParseScriptParams(payload.Params);return StandardScriptKey(p),err}
+ p,err:=jobs.ParseThirdPartyParams(payload.Params);return p.App,err
 }

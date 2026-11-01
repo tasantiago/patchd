@@ -71,6 +71,7 @@ func Listen(ctx context.Context, handle func(Conn)) error {
 		return errors.New("o serviço precisa de root para abrir o canal local")
 	}
 	dir := filepath.Dir(socketPath)
+	// #nosec G301 -- diretório público do socket; sem segredos, só root tem escrita.
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}

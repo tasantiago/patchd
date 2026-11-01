@@ -390,7 +390,7 @@ func (a *api) deleteStandardization(w http.ResponseWriter, r *http.Request, s pa
 	rev, _ := strconv.ParseInt(r.PostFormValue("revisao"), 10, 64)
 	err = a.store.DeleteStandardizationPolicy(r.Context(), id, rev)
 	if errors.Is(err, store.ErrStandardizationConflict) {
-		http.Error(w, "O grupo mudou; recarregue antes de excluir.", 409)
+		http.Error(w, "O grupo mudou; recarregue antes de excluir.", http.StatusConflict)
 		return
 	}
 	if err != nil {
