@@ -1222,15 +1222,12 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><div class="card-cab"><h2>Desempenho</h2>{{if .At}}<span class="muted">última medida {{.At}}</span>{{end}}</div>
 {{if not .Has}}<p class="muted">Nenhuma medida desta máquina ainda: o agente manda o desempenho a partir desta versão (atualize o agente), no check-in seguinte.</p>
 {{else}}
-{{if .CPU}}<dl class="dados"><dt>CPU</dt><dd>{{.CPU}}</dd><dt>Memória em uso</dt><dd>{{.Mem}}</dd>{{range .Disks}}<dt>Disco {{.Mount}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Free}}</dd>{{end}}</dl>{{end}}
 <nav class="abas" aria-label="período">{{range .Periods}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
-{{with .Chart}}<svg class="grafico" viewBox="0 0 {{.W}} {{.H}}" role="img" aria-label="{{.Label}}">
-{{range .Grid}}<line class="grade" x1="{{$.Perf.Chart.Left}}" x2="{{$.Perf.Chart.Right}}" y1="{{.Y}}" y2="{{.Y}}"/><text x="0" y="{{.Y}}" dy="3">{{.Label}}</text>{{end}}
-{{range .Ticks}}<text x="{{.X}}" y="{{$.Perf.Chart.H}}" text-anchor="{{.Anchor}}">{{.Label}}</text>{{end}}
-<line class="limite" x1="{{.Left}}" x2="{{.Right}}" y1="{{.UseLimit}}" y2="{{.UseLimit}}"/><line class="limite limite-disco" x1="{{.Left}}" x2="{{.Right}}" y1="{{.DiskLimit}}" y2="{{.DiskLimit}}"/>
-{{range .Disk}}<polyline class="l-disco" points="{{.}}"/>{{end}}{{range .Mem}}<polyline class="l-mem" points="{{.}}"/>{{end}}{{range .CPU}}<polyline class="l-cpu" points="{{.}}"/>{{end}}
-</svg>{{else}}<p class="muted">Sem medidas neste período.</p>{{end}}
-<p class="legenda muted"><span class="m-cpu">CPU</span> <span class="m-mem">memória em uso</span> <span class="m-disco">disco livre (o volume com menos espaço)</span> <span class="m-limite">limites</span>{{if .Hourly}} · média por hora{{else}} · por minuto{{end}}</p>
+<div class="graficos">{{range .Charts}}{{template "perf-grafico" .}}{{end}}</div>
+<p class="muted legenda-geral">{{if .Hourly}}Média por hora; a dica mostra também o pico do intervalo.{{else}}Uma medida por minuto.{{end}} Passe o mouse sobre um gráfico para ver os valores. A linha tracejada vermelha é o limite do alerta; a faixa vermelha, um alerta aberto.</p>
+{{if .Table}}<details class="tabela-grafico"><summary>Ver os valores em tabela</summary><div class="tabela"><table>
+<thead><tr><th>Intervalo</th><th>CPU (média)</th><th>Memória (média)</th><th>Disco (menor livre)</th></tr></thead>
+<tbody>{{range .Table}}<tr><td class="nowrap">{{.When}}</td><td class="num">{{.CPU}}</td><td class="num">{{.Mem}}</td><td class="num">{{.Disk}}</td></tr>{{end}}</tbody></table></div></details>{{end}}
 {{end}}
 </div>
 <div class="card"><div class="card-cab"><h2>Alertas desta máquina</h2><a href="/painel/alertas">todos os alertas</a></div>
@@ -1460,6 +1457,25 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <span></span><span><button type="submit">Gravar janela</button></span>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
+
+{{define "perf-grafico"}}<figure class="grafico-cartao">
+<figcaption><span class="g-titulo">{{.Title}}</span>{{if .Now}} <span class="g-agora">{{.Now}}</span>{{end}}
+{{if .Legend}}<span class="g-legenda">{{range .Series}}<span class="g-chave {{.Class}}">{{.Name}}</span>{{end}}</span>{{end}}{{if .Sub}}<span class="g-sub">{{.Sub}}</span>{{end}}</figcaption>
+{{if .Empty}}<p class="muted">Sem medidas neste período.</p>{{else}}
+<svg class="grafico" viewBox="0 0 {{.W}} {{.H}}" role="img" aria-label="{{.Label}}">
+{{range .Bands}}<rect class="g-alerta" x="{{.X}}" y="{{$.T}}" width="{{.W}}" height="{{$.PlotH}}"/>{{end}}
+{{range .Grid}}<line class="g-grade" x1="{{$.L}}" x2="{{$.R}}" y1="{{.Y}}" y2="{{.Y}}"/><text class="g-eixo" x="{{$.AxisX}}" y="{{.Y}}" dy="3" text-anchor="end">{{.Label}}</text>{{end}}
+{{range .XTicks}}<text class="g-eixo" x="{{.X}}" y="{{$.AxisY}}" text-anchor="{{.Anchor}}">{{.Label}}</text>{{end}}
+<line class="g-limite" x1="{{.L}}" x2="{{.R}}" y1="{{.LimitY}}" y2="{{.LimitY}}"/>
+{{range .Series}}{{$c := .Class}}{{range .Areas}}<polygon class="g-area {{$c}}" points="{{.}}"/>{{end}}{{range .Lines}}<polyline class="g-linha {{$c}}" points="{{.}}"/>{{end}}
+{{if .Lines}}<circle class="g-ponta {{.Class}}" cx="{{.EndX}}" cy="{{.EndY}}" r="4"/>{{if .EndLabel}}<text class="g-valor" x="{{.EndTextX}}" y="{{.EndY}}" dy="4">{{.End}}</text>{{end}}{{end}}{{end}}
+{{range .Zones}}<g class="g-zona"><rect class="g-alvo" x="{{.X}}" y="0" width="{{.W}}" height="{{$.B}}"/>
+<g class="g-dica"><line class="g-guia" x1="{{.LineX}}" x2="{{.LineX}}" y1="{{$.T}}" y2="{{$.B}}"/>{{range .Dots}}<circle class="g-ponta {{.Class}}" cx="{{.X}}" cy="{{.Y}}" r="4"/>{{end}}
+<rect class="g-caixa" x="{{.BoxX}}" y="{{.BoxY}}" width="{{.BoxW}}" height="{{.BoxH}}" rx="6"/><text class="g-quando" x="{{.TextX}}" y="{{.WhenY}}">{{.When}}</text>
+{{range .Rows}}<line class="g-chave-linha {{.Class}}" x1="{{.KeyX1}}" x2="{{.KeyX2}}" y1="{{.Y}}" y2="{{.Y}}" transform="translate(0 -4)"/><text class="g-dica-valor" x="{{.ValueX}}" y="{{.Y}}">{{.Value}}</text><text class="g-dica-nome" x="{{.NameX}}" y="{{.Y}}">{{.Name}}</text>{{end}}
+</g></g>{{end}}
+</svg>{{end}}
+</figure>{{end}}
 
 {{define "alertas"}}{{template "topo" .}}
 <h1>Alertas de desempenho</h1>

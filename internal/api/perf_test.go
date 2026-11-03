@@ -82,7 +82,7 @@ func TestDesempenhoNoPainel(t *testing.T) {
 		t.Fatal(err)
 	}
 	b = pagina(h, "GET", "/painel/maquinas/"+conhecida+"?aba=desempenho", sessaoAdmin, nil).Body.String()
-	for _, want := range []string{`<svg class="grafico"`, `<polyline class="l-cpu" points="`, `<polyline class="l-disco"`, "35% livre", "por minuto",
+	for _, want := range []string{`<svg class="grafico"`, `<polyline class="g-linha s1" points="`, `class="g-zona"`, `class="g-dica-valor"`, "35% livre", "Uma medida por minuto", "Ver os valores em tabela",
 		">aberto<", "Alertas desta máquina"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("aba Desempenho sem %q", want)

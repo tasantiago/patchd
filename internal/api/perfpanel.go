@@ -207,7 +207,8 @@ type perfCard struct {
 	CPU, Mem string
 	Disks    []perfDisk
 	Periods  []perfPeriod
-	Chart    *chartView
+	Charts   []*perfChart // CPU, memória e disco livre
+	Table    []perfTableRow
 	Hourly   bool // a curva é a média por hora
 	Alerts   []perfAlertRow
 	Policy   string
@@ -244,10 +245,19 @@ func (a *api) perfView(r *http.Request, id string, admin bool) (*perfCard, error
 	if err != nil {
 		return nil, err
 	}
-	var pts []chartPoint
+	loc := time.UTC
+	if l, err := time.LoadLocation(a.tz()); a.tz() != "" && err == nil {
+		loc = l
+	}
+	var cpu, mem []valPt
+	disks := map[string][]valPt{}
 	if key == "24h" {
 		for _, s := range recent {
-			pts = append(pts, chartPoint{At: s.At, CPU: s.CPU, Mem: s.Mem, Disk: minDisk(s.Disks)})
+			cpu = append(cpu, valPt{At: s.At, V: s.CPU, Max: s.CPU})
+			mem = append(mem, valPt{At: s.At, V: s.Mem, Max: s.Mem})
+			for m, v := range s.Disks {
+				disks[m] = append(disks[m], valPt{At: s.At, V: v, Max: v})
+			}
 		}
 	} else {
 		c.Hourly = true
@@ -256,7 +266,12 @@ func (a *api) perfView(r *http.Request, id string, admin bool) (*perfCard, error
 			return nil, err
 		}
 		for _, h := range hours {
-			pts = append(pts, chartPoint{At: h.Hour.Add(30 * time.Minute), CPU: h.CPUAvg, Mem: h.MemAvg, Disk: h.DiskMin})
+			at := h.Hour.Add(30 * time.Minute)
+			cpu = append(cpu, valPt{At: at, V: h.CPUAvg, Max: h.CPUMax})
+			mem = append(mem, valPt{At: at, V: h.MemAvg, Max: h.MemMax})
+			if h.DiskMin != nil {
+				disks[diskWorst] = append(disks[diskWorst], valPt{At: at, V: *h.DiskMin, Max: *h.DiskMin})
+			}
 		}
 	}
 	if len(recent) > 0 {
@@ -273,123 +288,64 @@ func (a *api) perfView(r *http.Request, id string, admin bool) (*perfCard, error
 		}
 		sort.Slice(c.Disks, func(i, j int) bool { return c.Disks[i].Mount < c.Disks[j].Mount })
 	}
-	if len(pts) > 0 {
-		c.Has = true
-		gap := 5 * time.Minute
-		if c.Hourly {
-			gap = 2 * time.Hour
-		}
-		c.Chart = drawChart(pts, from, now, gap, p, a.tz())
-	}
 	alerts, err := a.store.PerfAlerts(ctx, store.PerfAlertFilter{MachineID: id, Limit: 20})
 	if err != nil {
 		return nil, err
 	}
 	c.Alerts = a.alertRows(alerts, nil, admin)
+	spans := map[string][]timeSpan{}
+	for _, al := range alerts {
+		end := now
+		if al.ClosedAt != nil {
+			end = *al.ClosedAt
+		}
+		spans[al.Metric] = append(spans[al.Metric], timeSpan{From: al.OpenedAt, To: end})
+	}
+	gap := 5 * time.Minute
+	if c.Hourly {
+		gap = 2 * time.Hour
+	}
+	// Disco: os volumes com menos espaço livre agora, em ordem de ponto de montagem (a cor
+	// segue o volume, não a posição na lista).
+	mounts := make([]string, 0, len(disks))
+	for m := range disks {
+		mounts = append(mounts, m)
+	}
+	lastFree := func(m string) float64 { l := disks[m]; return l[len(l)-1].V }
+	sort.Slice(mounts, func(i, j int) bool { return lastFree(mounts[i]) < lastFree(mounts[j]) })
+	more := 0
+	if len(mounts) > pcMaxDisks {
+		more, mounts = len(mounts)-pcMaxDisks, mounts[:pcMaxDisks]
+	}
+	sort.Strings(mounts)
+	var diskSeries []seriesIn
+	for _, m := range mounts {
+		diskSeries = append(diskSeries, seriesIn{Name: m, Pts: disks[m]})
+	}
+	base := chartIn{From: from, To: now, Gap: gap, Hourly: c.Hourly, Loc: loc}
+	ins := []chartIn{
+		withChart(base, perfeval.MetricCPU, "CPU", p.CPUPct, spans, seriesIn{Name: "CPU", Pts: cpu}),
+		withChart(base, perfeval.MetricMem, "Memória", p.MemPct, spans, seriesIn{Name: "Memória", Pts: mem}),
+		withChart(base, perfeval.MetricDisk, "Disco livre", p.DiskFreePct, spans, diskSeries...),
+	}
+	ins[2].MoreVolums = more
+	for _, in := range ins {
+		if len(in.Series) > 0 {
+			ch := buildChart(in)
+			if !ch.Empty {
+				c.Has = true
+			}
+			c.Charts = append(c.Charts, ch)
+		}
+	}
+	c.Table = perfTable(ins)
 	return c, nil
 }
 
-func minDisk(d map[string]float64) *float64 {
-	var out *float64
-	for _, v := range d {
-		if out == nil || v < *out {
-			vv := v
-			out = &vv
-		}
-	}
-	return out
-}
+// diskWorst: a série por hora do disco (a tabela por hora guarda só o menor livre entre os volumes).
+const diskWorst = "menor livre"
 
-// --- O desenho ----------------------------------------------------------------------
-
-type chartPoint struct {
-	At       time.Time
-	CPU, Mem float64
-	Disk     *float64
-}
-
-type chartView struct {
-	W, H                int
-	CPU, Mem, Disk      []string // segmentos de polyline (um buraco quebra a linha)
-	Grid                []chartTick
-	Ticks               []chartTick
-	Left, Right, Bottom int
-	UseLimit, DiskLimit int // y das linhas de limite
-	Label               string
-}
-
-type chartTick struct {
-	X, Y          int
-	Label, Anchor string
-}
-
-const (
-	chartW, chartH       = 720, 200
-	chartLeft, chartTop  = 34, 8
-	chartRight, chartBot = 712, 182
-)
-
-// drawChart desenha as três curvas de 0 a 100% entre from e to.
-func drawChart(pts []chartPoint, from, to time.Time, gap time.Duration, p protocol.MonitorPolicy, tz string) *chartView {
-	c := &chartView{W: chartW, H: chartH, Left: chartLeft, Right: chartRight, Bottom: chartBot,
-		Label: "Uso de CPU, memória e o volume com menos espaço livre, de 0 a 100%"}
-	span := to.Sub(from)
-	if span <= 0 {
-		span = time.Hour
-	}
-	x := func(t time.Time) int {
-		return chartLeft + int(float64(chartRight-chartLeft)*float64(t.Sub(from))/float64(span))
-	}
-	y := func(v float64) int { return chartBot - int((float64(chartBot-chartTop))*v/100) }
-	for _, v := range []float64{0, 25, 50, 75, 100} {
-		c.Grid = append(c.Grid, chartTick{Y: y(v), Label: strconv.Itoa(int(v)) + "%"})
-	}
-	c.UseLimit, c.DiskLimit = y(p.CPUPct), y(p.DiskFreePct)
-	loc := time.UTC
-	if l, err := time.LoadLocation(tz); tz != "" && err == nil {
-		loc = l
-	}
-	layout := "15:04"
-	if span > 48*time.Hour {
-		layout = "02/01"
-	}
-	for i := 0; i <= 4; i++ {
-		t := from.Add(span * time.Duration(i) / 4)
-		anchor := "middle"
-		switch i {
-		case 0:
-			anchor = "start"
-		case 4:
-			anchor = "end"
-		}
-		c.Ticks = append(c.Ticks, chartTick{X: x(t), Label: t.In(loc).Format(layout), Anchor: anchor})
-	}
-	var cpu, mem, disk []string
-	flush := func() {
-		if len(cpu) > 0 {
-			c.CPU, c.Mem = append(c.CPU, strings.Join(cpu, " ")), append(c.Mem, strings.Join(mem, " "))
-		}
-		if len(disk) > 0 {
-			c.Disk = append(c.Disk, strings.Join(disk, " "))
-		}
-		cpu, mem, disk = nil, nil, nil
-	}
-	var last time.Time
-	for _, pt := range pts {
-		if pt.At.Before(from) || pt.At.After(to) {
-			continue
-		}
-		if !last.IsZero() && pt.At.Sub(last) > gap {
-			flush()
-		}
-		last = pt.At
-		px := strconv.Itoa(x(pt.At))
-		cpu = append(cpu, px+","+strconv.Itoa(y(pt.CPU)))
-		mem = append(mem, px+","+strconv.Itoa(y(pt.Mem)))
-		if pt.Disk != nil {
-			disk = append(disk, px+","+strconv.Itoa(y(*pt.Disk)))
-		}
-	}
-	flush()
-	return c
+func withChart(base chartIn, metric, title string, limit float64, spans map[string][]timeSpan, series ...seriesIn) chartIn {
+	base.Metric, base.Title, base.Limit, base.Alerts, base.Series = metric, title, limit, spans[metric], series
+	return base
 }
