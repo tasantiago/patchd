@@ -26,6 +26,7 @@ import (
 	"github.com/tasantiago/patchd/internal/perfeval"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
+	"github.com/tasantiago/patchd/internal/srvhealth"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/window"
@@ -221,6 +222,7 @@ type api struct {
 	oidc        *oidc.Provider                       // login pelo RHBK (Aula 9.4); nil: desligado
 	oidcLogins  oidcPending                          // logins pelo RHBK em andamento (state → nonce e PKCE)
 	metrics     *Metrics                             // contadores da Aula 10.2; nil: desligados
+	health      *srvhealth.Monitor                   // a aba Saúde (docs/saude-servidor.md); nil: desligada
 	limiter     loginLimiter                         // falhas de login por usuário+IP e por IP
 	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
 	hashSlots   chan struct{}                        // conferências de senha simultâneas

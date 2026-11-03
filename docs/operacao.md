@@ -167,6 +167,14 @@ disco é preciso `VACUUM FULL`, que trava a tabela enquanto roda: só numa janel
 o disco precisar. Acompanhe por `patchd_db_bytes` e `patchd_db_table_bytes{tabela}`; uma
 tabela que cresce sem parar depois da retenção é uma tabela sem retenção.
 
+## Saúde do servidor
+
+**Configuração › Saúde** (só admin) mostra se o servidor precisa de mais CPU, memória, conexões
+do banco ou disco, com o porquê e o que fazer (desenho e regras em `docs/saude-servidor.md`).
+Não depende do Prometheus. No compose, os limites que a tela cita ficam no serviço `server`
+(`cpus:` e `mem_limit:`) e o tamanho do pool na `PATCHD_DATABASE_URL`
+(`...?pool_max_conns=16`); as horas ficam 90 dias em `server_health_hourly`.
+
 ## Métricas e alertas (Aula 10.2)
 
 O servidor publica `GET /metrics` (formato de texto do Prometheus) numa porta só dele:

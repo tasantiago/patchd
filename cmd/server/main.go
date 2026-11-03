@@ -367,6 +367,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if k, ok := st.(perfKeeper); ok { // docs/monitoramento.md
 		go perfLoop(ctx, logger, k)
 	}
+	// Saúde do servidor (docs/saude-servidor.md): mede a si mesmo a cada minuto; com o banco,
+	// guarda as horas por 90 dias. A aba Saúde da Configuração mostra e diz o que aumentar.
+	apiOpts = append(apiOpts, api.WithServerHealth(startServerHealth(ctx, logger, st, cfg, look)))
 	retention := liveRetention(params, cfg.Retention)
 	if p, ok := st.(pruner); ok {
 		logger.Info("retenção: " + describeRetention(retention()) + "; aplicada de hora em hora (patchd-server retention mostra antes)")

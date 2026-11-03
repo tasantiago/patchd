@@ -145,4 +145,18 @@ form.campanha:has(input[name=tipo]:checked:not([value=update]):not([value=window
 form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio{display:none}
 form.campanha:has(input[value=janela]:checked) select[name=prazo]{opacity:.45}
 form.campanha .acoes{display:flex;align-items:center;gap:.75rem}
+/* Saúde do servidor (docs/saude-servidor.md): o veredito, as recomendações e os medidores. */
+.saude-veredito{border-left:5px solid var(--st-ok)}.saude-veredito.borda-atencao{border-left-color:var(--st-reinicio)}.saude-veredito.borda-critico{border-left-color:var(--st-erro)}
+.saude-veredito h2{font-size:1.25rem}
+.saude-recs{list-style:none;margin:0 0 .6rem;padding:0;display:grid;gap:.7rem}
+.rec{display:grid;grid-template-columns:5.6rem 1fr;gap:.8rem;align-items:start;padding:.75rem .9rem;border:1px solid var(--borda);border-radius:var(--raio);background:#fff}
+.rec-critico{background:#fdf1f1;border-color:#f1c4c4}.rec-atencao{background:#fff8e6;border-color:#f3dc9c}
+.rec-tag{display:inline-block;text-align:center;padding:.15rem .45rem;border-radius:999px;font-size:.74rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:var(--st-erro)}
+.rec-atencao .rec-tag{background:var(--st-reinicio);color:#1f2328}
+.rec-corpo p{margin:.25rem 0 0}.rec-acao b{font-weight:600}
+span.nivel-critico{color:var(--st-erro)}span.nivel-ok{color:#0a7d0a}
+.saude-nivel{float:right;text-transform:none;letter-spacing:0;font-weight:600}
+.medidor{display:block;height:8px;border-radius:4px;background:var(--grade);margin:.45rem 0 .4rem;overflow:hidden}
+.medidor-p{display:block;height:100%;border-radius:4px;background:var(--st-ok)}.med-atencao{background:var(--st-reinicio)}.med-critico{background:var(--st-erro)}
+@media (max-width:700px){.rec{grid-template-columns:1fr;gap:.4rem}.rec-tag{justify-self:start}}
 `
