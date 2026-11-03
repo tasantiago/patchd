@@ -34,17 +34,44 @@ type ovRing struct {
 	Ring                                     string
 	Machines, OK, Missing, Reboot, Stale, NA int
 	Pct                                      int
+	Bar                                      segBar
 }
 
 type ovSystem struct {
 	OS                               string
 	Machines, OK, Pending, Exploited int
+	Missing, Reboot, Stale, NA       int
 	Pct                              int
+	Bar                              segBar
 }
 
 type ovExec struct {
 	Type                                   string
 	Created, Done, Failed, Postponed, Open int
+	Bar                                    segBar
+}
+
+// counts: as máquinas por estado, para a barra.
+func (r ovRing) counts() map[string]int {
+	return map[string]int{"em_dia": r.OK, "faltando": r.Missing, "reboot_pendente": r.Reboot, "sem_dado_recente": r.Stale, "desconhecido": r.NA}
+}
+
+func (s ovSystem) counts() map[string]int {
+	return map[string]int{"em_dia": s.OK, "faltando": s.Missing, "reboot_pendente": s.Reboot, "sem_dado_recente": s.Stale, "desconhecido": s.NA}
+}
+
+// execBar: os jobs de um tipo, com a barra do tamanho do volume (comparado ao maior tipo).
+func execBar(e ovExec, most int) segBar {
+	b := makeSegBar("fina", "job", []segPart{
+		{Label: "Concluídos", Class: "st-ok", N: e.Done},
+		{Label: "Sem sucesso", Class: "st-erro", N: e.Failed},
+		{Label: "Adiados ou dispensados", Class: "st-sem", N: e.Postponed},
+		{Label: "Em aberto", Class: "st-aberto", N: e.Open},
+	})
+	if most > 0 {
+		b.W = max(2, e.Created*100/most)
+	}
+	return b
 }
 
 // ovFix: uma correção aguardando aprovação (Aula 15.7). No Windows e no macOS, o item é a
@@ -84,6 +111,10 @@ type overviewView struct {
 	ExecTotal   ovExec
 	Attention   []ovAttention
 	EvaluatedAt string
+	// A barra da frota (a conformidade): o número grande e as máquinas por estado.
+	Fleet              segBar
+	FleetPct           int
+	FleetOK, FleetSize int
 }
 
 // osFamily: o nome do sistema sem a versão ("Windows 11 Pro 25H2" → "Windows").
@@ -181,12 +212,16 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 			sr.OK++
 		case compliance.StateMissing:
 			rr.Missing++
+			sr.Missing++
 		case compliance.StateReboot:
 			rr.Reboot++
+			sr.Reboot++
 		case compliance.StateStale:
 			rr.Stale++
+			sr.Stale++
 		default:
 			rr.NA++
+			sr.NA++
 		}
 	}
 	rings := slices.Sorted(maps.Keys(byRing))
@@ -196,11 +231,13 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	for _, ring := range rings {
 		rr := byRing[ring]
 		rr.Pct = pct(rr.OK, rr.Machines)
+		rr.Bar = stateBar("fina", rr.counts(), false)
 		v.Rings = append(v.Rings, *rr)
 	}
 	for _, fam := range slices.Sorted(maps.Keys(bySystem)) {
 		sr := bySystem[fam]
 		sr.Pct = pct(sr.OK, sr.Machines)
+		sr.Bar = stateBar("fina", sr.counts(), false)
 		v.Systems = append(v.Systems, *sr)
 	}
 
@@ -266,8 +303,13 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 			er.Open += c.N
 		}
 	}
+	most := 0
+	for _, er := range byType {
+		most = max(most, er.Created)
+	}
 	for _, t := range slices.Sorted(maps.Keys(byType)) {
 		er := *byType[t]
+		er.Bar = execBar(er, most)
 		v.Exec = append(v.Exec, er)
 		v.ExecTotal.Created += er.Created
 		v.ExecTotal.Done += er.Done
@@ -287,12 +329,12 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, ok := len(fleet.Machines), fleet.Counts[string(compliance.StateOK)]
+	v.Fleet, v.FleetPct, v.FleetOK, v.FleetSize = stateBar("alta", fleet.Counts, true), pct(ok, total), ok, total
 	waitColor := "v-laranja"
 	if expWaiting > 0 {
 		waitColor = "v-vermelho"
 	}
 	v.KPIs = []ovKPI{
-		{Label: "Máquinas em dia", Value: fmt.Sprintf("%d%%", pct(ok, total)), Sub: fmt.Sprintf("%d de %d", ok, total), Href: "/painel/?estado=em_dia", Color: "v-verde"},
 		{Label: "Sistema: correções aguardando", Value: fmt.Sprint(len(fx.list)), Sub: fx.summary(waiting, expWaiting),
 			Href: (patchQuery{Status: "aguardando"}).href(), Color: waitColor},
 		{Label: "Terceiros com problema", Value: fmt.Sprint(tpInstalls), Sub: fmt.Sprintf("instalações, em %d programa(s)", len(tpPrograms)), Href: "/painel/patch?aba=terceiros", Color: "v-laranja"},

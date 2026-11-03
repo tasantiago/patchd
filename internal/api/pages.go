@@ -891,20 +891,27 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Patch <span class="muted">› Visão geral</span></h1>
 {{template "patch-abas" "geral"}}
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
+{{if .FleetSize}}<div class="card conformidade"><div class="card-cab"><h2>Conformidade da frota</h2></div>
+<div class="conf-corpo"><a class="conf-num" href="/painel/?estado=em_dia"><span class="hero">{{.FleetPct}}%</span><span class="muted">em dia · {{.FleetOK}} de {{.FleetSize}} máquinas</span></a>
+<div class="conf-barra">{{template "segbar" .Fleet}}{{template "estados-legenda"}}</div></div></div>{{end}}
 <ul class="kpis">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>
 <div class="card"><div class="card-cab"><h2>Precisa de atenção</h2><span class="muted">avaliado em {{.EvaluatedAt}}</span></div>
 {{if .Attention}}<ul class="atencao-lista">{{range .Attention}}<li class="{{.Level}}"><a href="{{.Href}}">{{.Text}}</a></li>{{end}}</ul>
 {{else}}<p class="muted">Nada pede atenção agora.</p>{{end}}</div>
 <div class="duas-col">
 <div class="card"><div class="card-cab"><h2>Por anel</h2><a class="muted" href="/painel/aneis">Anéis</a></div>
-{{if .Rings}}<div class="tabela"><table><thead><tr><th>Anel</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
+{{if .Rings}}<ul class="seg-linhas empilhada">{{range .Rings}}<li><span class="seg-nome">Anel {{.Ring}}<small>{{.Machines}} máquina(s)</small></span>{{template "segbar" .Bar}}<span class="seg-fim">{{.Pct}}% em dia</span></li>{{end}}</ul>
+{{template "estados-legenda"}}<details class="tabela-grafico"><summary>Ver em tabela</summary><div class="tabela"><table><thead><tr><th>Anel</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
 <tbody>{{range .Rings}}<tr><td>{{.Ring}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Missing}}</td><td class="num">{{.Reboot}}</td><td class="num">{{.Stale}}</td><td class="num">{{.NA}}</td>
 <td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span class="w{{.Pct}}"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
+</details>
 {{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Por sistema</h2></div>
-{{if .Systems}}<div class="tabela"><table><thead><tr><th>Sistema</th><th>Máquinas</th><th>Em dia</th><th>Pendentes</th><th>Exploradas</th><th>% em dia</th></tr></thead>
+{{if .Systems}}<ul class="seg-linhas empilhada">{{range .Systems}}<li><span class="seg-nome">{{.OS}}<small>{{.Machines}} máquina(s){{if .Pending}} · {{.Pending}} pendentes{{end}}{{if .Exploited}} · <span class="expl">{{.Exploited}} exploradas</span>{{end}}</small></span>{{template "segbar" .Bar}}<span class="seg-fim">{{.Pct}}% em dia</span></li>{{end}}</ul>
+{{template "estados-legenda"}}<details class="tabela-grafico"><summary>Ver em tabela</summary><div class="tabela"><table><thead><tr><th>Sistema</th><th>Máquinas</th><th>Em dia</th><th>Pendentes</th><th>Exploradas</th><th>% em dia</th></tr></thead>
 <tbody>{{range .Systems}}<tr><td>{{.OS}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Pending}}</td><td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td>
 <td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span class="w{{.Pct}}"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
+</details>
 {{else}}<p class="muted">Nenhuma máquina avaliada.</p>{{end}}</div>
 </div>
 <div class="card"><div class="card-cab"><h2>Correções aguardando aprovação</h2><a class="muted" href="{{.FixesHref}}">todos os itens aguardando</a></div>
@@ -915,9 +922,13 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .MoreFixes}}<p class="muted">E mais {{.MoreFixes}} correção(ões): <a href="{{.FixesHref}}">ver todos os itens aguardando</a>.</p>{{end}}
 {{else}}<p class="muted">Nenhuma correção aguardando aprovação.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Execução nos últimos 7 dias</h2><a class="muted" href="/painel/jobs">Jobs</a></div>
-{{if .Exec}}<div class="tabela"><table><thead><tr><th>Tipo</th><th>Criados</th><th>Concluídos</th><th>Sem sucesso</th><th>Adiados</th><th>Em aberto</th></tr></thead>
+{{if .Exec}}<ul class="seg-linhas exec">{{range .Exec}}<li><span class="seg-nome">{{.Type}}</span><div class="seg-trilho">{{template "segbar" .Bar}}</div><span class="seg-fim">{{.Created}} criados</span></li>{{end}}</ul>
+<ul class="seg-legenda"><li><i class="st-ok"></i>Concluídos</li><li><i class="st-erro"></i>Sem sucesso</li><li><i class="st-sem"></i>Adiados ou dispensados</li><li><i class="st-aberto"></i>Em aberto</li></ul>
+<p class="muted">{{.ExecTotal.Created}} jobs criados: {{.ExecTotal.Done}} concluídos, {{.ExecTotal.Failed}} sem sucesso, {{.ExecTotal.Postponed}} adiados, {{.ExecTotal.Open}} em aberto. O comprimento da barra compara o volume entre os tipos.</p>
+<details class="tabela-grafico"><summary>Ver em tabela</summary><div class="tabela"><table><thead><tr><th>Tipo</th><th>Criados</th><th>Concluídos</th><th>Sem sucesso</th><th>Adiados</th><th>Em aberto</th></tr></thead>
 <tbody>{{range .Exec}}<tr><td>{{.Type}}</td><td class="num">{{.Created}}</td><td class="num">{{.Done}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Postponed}}</td><td class="num">{{.Open}}</td></tr>{{end}}
 <tr class="total"><td>Total</td><td class="num">{{.ExecTotal.Created}}</td><td class="num">{{.ExecTotal.Done}}</td><td class="num">{{.ExecTotal.Failed}}</td><td class="num">{{.ExecTotal.Postponed}}</td><td class="num">{{.ExecTotal.Open}}</td></tr></tbody></table></div>
+</details>
 {{else}}<p class="muted">Nenhum job nos últimos 7 dias.</p>{{end}}</div>
 {{end}}
 {{template "fim"}}{{end}}
@@ -1457,6 +1468,10 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <span></span><span><button type="submit">Gravar janela</button></span>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
+
+{{define "segbar"}}<div class="seg seg-{{.Size}} w{{.W}}" role="group" aria-label="{{.Label}}">{{range .Parts}}{{if .Href}}<a class="seg-p {{.Class}} w{{.W}}" href="{{.Href}}">{{else}}<span class="seg-p {{.Class}} w{{.W}}" tabindex="0">{{end}}{{if .Inline}}<span class="seg-rot">{{.Pct}}%</span>{{end}}<span class="seg-dica dica-{{.Align}}" role="tooltip">{{.Tip}}</span>{{if .Href}}</a>{{else}}</span>{{end}}{{end}}</div>{{end}}
+
+{{define "estados-legenda"}}<ul class="seg-legenda"><li><i class="st-ok"></i>Em dia</li><li><i class="st-falta"></i>Faltando</li><li><i class="st-reinicio"></i>Reinício pendente</li><li><i class="st-sem"></i>Sem contato</li><li><i class="st-desc"></i>Desconhecido</li></ul>{{end}}
 
 {{define "perf-grafico"}}<figure class="grafico-cartao">
 <figcaption><span class="g-titulo">{{.Title}}</span>{{if .Now}} <span class="g-agora">{{.Now}}</span>{{end}}
