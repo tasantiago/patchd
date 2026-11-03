@@ -712,13 +712,12 @@ var pages = template.Must(template.New("").Parse(`
 {{range .Rows}}<tr><td>{{.Label}}</td><td>{{if .Set}}cadastrada em {{.SetAt}} por {{.SetBy}}{{if .OtherKey}} <span class="nivel-atencao">· fechada com outra chave de guarda (<code>{{.OtherKey}}</code>): cadastre de novo</span>{{end}}{{else}}<span class="muted">não cadastrada</span>{{end}}</td>
 <td>{{if .Set}}<form class="inline" method="post" action="/painel/configuracao/bios/senha-padrao/remover"><input type="hidden" name="fabricante" value="{{.Vendor}}"><input name="motivo" required minlength="{{$.Fleet.MinReason}}" maxlength="{{$.Fleet.MaxReason}}" placeholder="motivo" aria-label="motivo da remoção da senha padrão da {{.Label}}"> <button class="sec" type="submit">Remover</button></form>{{else}}—{{end}}</td></tr>{{end}}
 </tbody></table></div>
-{{if .On}}<form method="post" action="/painel/configuracao/bios/senha-padrao" autocomplete="off" class="lote">
-<label>Fabricante <select name="fabricante" required>{{range .Rows}}<option value="{{.Vendor}}"{{if eq .Vendor "lenovo"}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
-<input type="password" name="senha" required maxlength="{{.MaxPassword}}" autocomplete="new-password" placeholder="senha padrão" aria-label="senha padrão">
-<input type="password" name="confirmacao" required maxlength="{{.MaxPassword}}" autocomplete="new-password" placeholder="confirme a senha" aria-label="confirmação da senha padrão">
-<input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (chamado, OS...)" aria-label="motivo">
-<button type="submit">Salvar senha padrão</button>
-<span class="muted">Gravar de novo troca a anterior. Na Lenovo: só letras sem acento, números e símbolos, sem espaço, vírgula ou ponto e vírgula.</span>
+{{if .On}}<h3>Cadastrar ou trocar</h3><form class="grade" method="post" action="/painel/configuracao/bios/senha-padrao" autocomplete="off">
+<label for="padrao-fabricante">Fabricante</label><select id="padrao-fabricante" name="fabricante" required>{{range .Rows}}<option value="{{.Vendor}}"{{if eq .Vendor "lenovo"}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label for="padrao-senha">Senha padrão</label><input id="padrao-senha" type="password" name="senha" required maxlength="{{.MaxPassword}}" autocomplete="new-password">
+<label for="padrao-confirmacao">Confirme a senha</label><input id="padrao-confirmacao" type="password" name="confirmacao" required maxlength="{{.MaxPassword}}" autocomplete="new-password">
+<label for="padrao-motivo">Motivo</label><input id="padrao-motivo" name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="chamado, ordem de serviço...">
+<span></span><span><button type="submit">Salvar senha padrão</button> <span class="muted">Gravar de novo troca a anterior. Na Lenovo: só letras sem acento, números e símbolos, sem espaço, vírgula ou ponto e vírgula.</span></span>
 </form>{{end}}
 </div>
 {{end}}{{end}}

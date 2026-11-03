@@ -49,7 +49,7 @@ const dashboardTemplates = `
 
 const dashboardCSS = `
 .dash-personalizar{background:#fff;border:1px solid var(--borda);border-radius:var(--raio);padding:.8rem 1rem;margin:0 0 1.25rem}.dash-personalizar summary{cursor:pointer;font-weight:600;color:var(--azul)}.dash-personalizar fieldset{border:0;padding:1rem 0 .6rem;margin:0}.dash-personalizar legend{font-size:.85rem;padding:.75rem 0 0;color:var(--muted)}.dash-opcoes{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.75rem}.dash-opcoes label{display:flex;align-items:center;gap:.45rem;font-size:.85rem}.dash-config-acoes{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-top:.7rem}
-.dashboard{max-width:94rem;margin:0 auto}
+.dashboard{width:100%}
 .dash-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:1.5rem;margin:.15rem 0 1.5rem}
 .dash-eyebrow{margin:0 0 .4rem;color:var(--azul);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em}
 .dash-cab h1{font-size:1.7rem;letter-spacing:-.035em;margin:0 0 .5rem}.dash-cab p.muted{margin:0;font-size:.9rem}

@@ -39,8 +39,12 @@ const themeCSS = `
 .descoberta-atividade li{display:grid;grid-template-columns:10rem minmax(0,1fr);gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--borda)}
 .descoberta-atividade time{color:var(--muted);font-size:.8rem}
 @media(max-width:700px){.descoberta-campos{grid-template-columns:1fr}.descoberta-atividade li{grid-template-columns:1fr;gap:.2rem}}
+/* Ajustes de largura (telas largas e celular): por último, para vencer as regras acima. */
+select{max-width:100%}form.grade>span:last-child>.muted{flex:1 1 16rem;min-width:0}
+@media (max-width:600px){dl.dados{grid-template-columns:minmax(0,1fr);gap:.1rem}dl.dados dt{margin-top:.5rem}form.grade{grid-template-columns:minmax(0,1fr);gap:.3rem}form.grade>span:empty{display:none}form.grade>span:last-child{grid-column:1/-1;margin-top:.4rem}}
 ` + ui.LayoutCSS + `
-main{max-width:90rem;margin:0 auto;padding:1.5rem 1.5rem 3rem}
+main{padding:1.5rem 1.75rem 3rem}
+form.grade>span:last-child{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .75rem}form.grade input:not([type=checkbox]):not([type=radio]),form.grade select{width:100%}
 /* Páginas com tabelas usam toda a área disponível, inclusive ao recolher o menu. */
 main:has(.tabela){width:100%;max-width:none;min-width:0}
 @media (max-width:600px){main{padding:1rem .9rem 2rem}.barra-topo{padding:0 .8rem}}
@@ -77,11 +81,11 @@ td.nowrap{white-space:nowrap}.barra{display:inline-block;vertical-align:middle;w
 .atencao-lista li.erro{border-left-color:var(--vermelho);background:#fdf2f2}.atencao-lista a{color:var(--texto);text-decoration:none}.atencao-lista a:hover{text-decoration:underline}
 pre.comando{margin:0;padding:.75rem 1rem;background:#0f172a;color:#e2e8f0;border-radius:6px;overflow-x:auto;font-size:.82rem;white-space:pre}
 dd.nivel-atencao,td.nivel-atencao,span.nivel-atencao{color:#8a5a00}dd.nivel-erro,td.nivel-erro,span.nivel-erro{color:var(--vermelho)}dd.nivel-ok{color:var(--verde-ok)}.senha-bios{font-size:1.5rem;letter-spacing:.12em;padding:.2rem .6rem}
-.duas-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(28rem,1fr));gap:0 1.25rem}tr.total td{font-weight:600}
+.duas-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(28rem,100%),1fr));gap:0 1.25rem}tr.total td{font-weight:600}
 .motivos{margin:.15rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.84rem}
 .aviso{padding:.7rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}
 .ok{background:#e7f6ec;border-color:#b4e1c1;color:#14532d}.erro{background:#fbe9e9;border-color:#f3c4c4;color:#8a1c1c}.atencao{background:#fff4dc;border-color:#f6d68f;color:#7a4a00}
-dl.dados{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1.4rem;margin:0}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0}
+dl.dados{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.45rem 1.4rem;margin:0}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .expl{color:var(--vermelho);font-weight:600}.muted{color:var(--muted)}
 .nota{font-size:.78rem;max-width:34rem;margin-top:.15rem}
 .abas{display:flex;flex-wrap:wrap;gap:.25rem;border-bottom:1px solid var(--borda);margin:0 0 1.2rem}
