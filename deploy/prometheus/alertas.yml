@@ -1,5 +1,5 @@
 # Regras de alerta do patchd (Aula 10.2). Conferir: promtool check rules alertas.yml
-# Os limites são pontos de partida: ajuste ao tamanho e ao ritmo da frota.
+# Os limites são pontos de partida: ajuste ao tamanho e ao ritmo do parque.
 groups:
   - name: patchd
     rules:
@@ -72,7 +72,7 @@ groups:
         labels:
           severidade: aviso
         annotations:
-          summary: "Mais de 20% da frota com correção pendente há um dia"
+          summary: "Mais de 20% do parque com correção pendente há um dia"
 
       - alert: PatchdJobsFalhando
         expr: sum by (tipo) (increase(patchd_jobs_encerrados_total{estado=~"falhou|rejeitado"}[1h])) > 3

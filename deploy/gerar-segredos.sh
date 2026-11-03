@@ -147,8 +147,8 @@ else
   falta=1
   cat <<MSG
 chave de jobs: FALTA $DIR/job_signing_key
-  - frota existente: copie a chave privada que o servidor já usa (a do PATCHD_JOB_SIGNING_KEY_FILE);
-  - frota nova:
+  - parque existente: copie a chave privada que o servidor já usa (a do PATCHD_JOB_SIGNING_KEY_FILE);
+  - parque novo:
 $(keygen job job_signing_key)
     e compile os agentes com a pública que ele imprime (PATCHD_JOB_PUBKEY).
   Depois, para o servidor (UID 65532) ler:

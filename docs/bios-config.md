@@ -140,7 +140,7 @@ viram "recusada pela BIOS" (nada foi salvo) e o BitLocker volta; se quebra no me
 incertas e o BitLocker fica suspenso até o reinício.
 
 **Vírgula e ponto e vírgula** separam os campos da Lenovo: nome, valor ou senha com eles são
-recusados pelo agente antes da chamada. As senhas da guarda não têm; a senha da frota digitada
+recusados pelo agente antes da chamada. As senhas da guarda não têm; a senha padrão do parque digitada
 na primeira troca pode ter, e aí a troca precisa ser feita na BIOS.
 
 **A lista fechada** ganhou os nomes da Dell (`WakeOnLan`, `AcPwrRcvry`, `UefiNwStack`,
@@ -153,5 +153,5 @@ Dell (`SecureBootMode`: o modo Audit desliga a conferência).
 **O que não está conferido** (sem Dell nem Lenovo no laboratório desta versão): os nomes dos
 parâmetros dos métodos da Dell em cada geração; se a Lenovo aceita a **primeira** senha de
 supervisor pelo WMI (em vários modelos não: o job volta "acesso negado" e a primeira senha é
-definida na BIOS); e os nomes das configurações nos modelos da frota. O piloto de cada
+definida na BIOS); e os nomes das configurações nos modelos do parque. O piloto de cada
 fabricante começa por uma máquina de bancada, como foi com a HP.

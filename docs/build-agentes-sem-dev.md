@@ -1,7 +1,7 @@
 # Build e publicação de agentes sem o contêiner de desenvolvimento
 
 O servidor do [README](../README.md#instalar-um-servidor-novo-do-zero) é compilado
-pelo Dockerfile de produção. Para uma frota nova, os agentes também podem sair
+pelo Dockerfile de produção. Para um parque novo, os agentes também podem sair
 diretamente do Git e de uma imagem oficial de Go. O fluxo abaixo usa Docker numa
 **estação Linux de build/administração confiável, com Bash**, separada do servidor da aplicação.
 
@@ -10,7 +10,7 @@ Você precisa de Git e Docker nessa estação, do commit usado no servidor e da
 A privada de releases será criada e guardada nesta estação, com cópia protegida
 offline; ela não precisa ir para a VM do servidor.
 
-## Atualizações de uma frota existente
+## Atualizações de um parque existente
 
 Para gerar a próxima versão, siga o [roteiro de atualização do README](../README.md#gerar-e-publicar-uma-nova-versão-do-servidor-e-do-agente).
 Ele atualiza o servidor primeiro e mostra o build/publicação com Docker ou Podman.

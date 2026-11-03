@@ -299,7 +299,7 @@ func printFleet(fleet protocol.ComplianceFleet, summary bool, out io.Writer) {
 	for _, st := range compliance.States {
 		parts = append(parts, fmt.Sprintf("%s %d", st.Label(), fleet.Counts[string(st)]))
 	}
-	fmt.Fprintf(out, "Frota: %d máquina(s): %s\n", len(fleet.Machines), strings.Join(parts, " · "))
+	fmt.Fprintf(out, "Parque: %d máquina(s): %s\n", len(fleet.Machines), strings.Join(parts, " · "))
 	if summary {
 		return
 	}

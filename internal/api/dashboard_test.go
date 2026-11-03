@@ -25,8 +25,8 @@ func TestInicioDashboardECompatibilidade(t *testing.T) {
 	if r.Code != http.StatusOK {
 		t.Fatalf("início: %d", r.Code)
 	}
-	for _, want := range []string{"Visão geral do ambiente", "Conformidade da frota", "Composição do ambiente", "Execuções · últimos 7 dias", "Equipamentos para priorizar",
-		`href="/painel/" title="Início" class="ativo"`, `href="/painel/frota"`, `href="/painel/inventario?status=offline"`, "&lt;script&gt;alert(1)&lt;/script&gt;"} {
+	for _, want := range []string{"Visão geral do ambiente", "Conformidade do parque", "Composição do ambiente", "Execuções · últimos 7 dias", "Equipamentos para priorizar",
+		`href="/painel/" title="Início" class="ativo"`, `href="/painel/parque"`, `href="/painel/inventario?status=offline"`, "&lt;script&gt;alert(1)&lt;/script&gt;"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("faltou %q", want)
 		}
@@ -40,11 +40,17 @@ func TestInicioDashboardECompatibilidade(t *testing.T) {
 		t.Error("dashboard deve manter a política de cache e CSP do painel")
 	}
 	legacy := pagina(h, "GET", "/painel/?estado=faltando", sessaoTeste, nil).Body.String()
-	fleet := pagina(h, "GET", "/painel/frota?estado=faltando", sessaoTeste, nil).Body.String()
-	if legacy != fleet || !strings.Contains(fleet, "<h1>Frota</h1>") {
-		t.Error("links antigos filtrados e rota de frota devem abrir a mesma lista")
+	fleet := pagina(h, "GET", "/painel/parque?estado=faltando", sessaoTeste, nil).Body.String()
+	if legacy != fleet || !strings.Contains(fleet, "<h1>Parque</h1>") {
+		t.Error("links antigos filtrados e a rota do parque devem abrir a mesma lista")
 	}
-	for _, path := range []string{"/painel/", "/painel/frota"} {
+	// "Frota" virou "Parque": o endereço antigo leva ao novo, com o filtro.
+	for from, to := range map[string]string{"/painel/frota?estado=faltando": "/painel/parque?estado=faltando", "/painel/frota.csv": "/painel/parque.csv"} {
+		if r := pagina(h, "GET", from, sessaoTeste, nil); r.Code != http.StatusMovedPermanently || r.Header().Get("Location") != to {
+			t.Errorf("%s: %d %s", from, r.Code, r.Header().Get("Location"))
+		}
+	}
+	for _, path := range []string{"/painel/", "/painel/parque"} {
 		if r := pagina(h, "GET", path, "", nil); r.Code != http.StatusSeeOther || r.Header().Get("Location") != "/painel/entrar" {
 			t.Errorf("%s sem sessão: %d", path, r.Code)
 		}

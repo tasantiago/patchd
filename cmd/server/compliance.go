@@ -27,7 +27,7 @@ const complianceUsage = `uso: patchd-server compliance -machine ID [-v] [-como V
      patchd-server compliance -macos VERSÃO [-modelo ID] [-build BUILD] [-v]
      patchd-server compliance -all [-resumo]
 Com -tempos, no fim, quanto cada consulta ao banco levou e quanto foi comparação em Go.
--all -csv escreve a frota em CSV na saída padrão (separador ";", UTF-8 com BOM, para o
+-all -csv escreve o parque em CSV na saída padrão (separador ";", UTF-8 com BOM, para o
 Excel e o Google Sheets); com -tempos, os tempos saem na saída de erro.
 
 -all: o estado de compliance de cada máquina (RF-23): faltando, reboot pendente, sem dado
@@ -134,7 +134,7 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 	all := fs.Bool("all", false, "o estado de compliance de todas as máquinas")
 	summary := fs.Bool("resumo", false, "com -all: só as contagens por estado")
 	timings := fs.Bool("tempos", false, "mostra quanto cada consulta ao banco levou")
-	asCSV := fs.Bool("csv", false, "com -all: a frota em CSV na saída padrão")
+	asCSV := fs.Bool("csv", false, "com -all: o parque em CSV na saída padrão")
 	modes := 0
 	err := fs.Parse(args)
 	for _, on := range []bool{*machine != "", opts.MacOS != "", *all} {

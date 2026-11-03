@@ -216,6 +216,6 @@ func ringList(ctx context.Context, st ringStore, now time.Time, out io.Writer) e
 		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", strconv.Itoa(r)+pilotLabel(r), count[r], win, next, by)
 	}
 	_ = tw.Flush()
-	fmt.Fprintf(out, "%d máquina(s) na frota\n", len(machines))
+	fmt.Fprintf(out, "%d máquina(s) no parque\n", len(machines))
 	return nil
 }

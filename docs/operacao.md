@@ -42,7 +42,7 @@ cópia antes da troca, nem volta (Aula 23.1).
 
 ## Cópia do banco (Aula 10.1)
 
-Tudo o que o patchd sabe sobre a frota está no PostgreSQL: máquinas, inventários, buscas,
+Tudo o que o patchd sabe sobre o parque está no PostgreSQL: máquinas, inventários, buscas,
 jobs, campanhas, anéis e janelas, tokens de registro, usuários locais e sessões. O
 catálogo (MSRC, USN, Fedora, Apple, KEV) também está, mas se refaz sozinho na próxima
 sincronização.
@@ -136,7 +136,7 @@ Guarde à parte, com o mesmo cuidado:
 | Token das métricas | `deploy/secrets/metrics_token` | gerar outro (apague o arquivo e rode `gerar-segredos.sh`) e trocar no Prometheus |
 | Certificado TLS | `deploy/tls` | pedir outro à CA interna |
 | Configuração | `deploy/.env` | refazer a partir de `deploy/.env.exemplo` |
-| Chave privada de release | offline, fora do servidor | reinstalar a frota com agentes que confiem numa chave nova |
+| Chave privada de release | offline, fora do servidor | reinstalar o parque com agentes que confiem numa chave nova |
 | Versões publicadas do agente | `releases/` | assinar e publicar de novo a partir do build |
 
 ## Retenção do banco (Aula 10.5)
@@ -614,45 +614,45 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
 O agente aceita duas chaves de cada tipo: a atual e a **seguinte**, as duas embutidas no build
 (`PATCHD_JOB_PUBKEY` e `PATCHD_JOB_PUBKEY_NEXT`; `PATCHD_UPDATE_PUBKEY` e
 `PATCHD_UPDATE_PUBKEY_NEXT`). A troca vira três passos, sem máquina parada e sem reinstalar:
-embutir a seguinte, esperar a frota, passar a assinar com ela. O agente informa no estado as
-impressões das chaves que aceita, e Configuração › Sistema › **Chaves na frota** conta quantas
+embutir a seguinte, esperar o parque, passar a assinar com ela. O agente informa no estado as
+impressões das chaves que aceita, e Configuração › Sistema › **Chaves no parque** conta quantas
 máquinas (com estado nos últimos 30 dias) aceitam cada uma; agentes anteriores à 20.7 aparecem
 à parte.
 
 Regras do `scripts/build.sh`: as quatro chaves têm de ser diferentes entre si; as seguintes
 são opcionais. O `patchd-release sign` recusa assinar executáveis que não tragam a chave de
-quem assina (como atual ou como seguinte): a frota instalaria a versão, mas recusaria a
+quem assina (como atual ou como seguinte): o parque instalaria a versão, mas recusaria a
 próxima, e a troca pararia no meio. O `keygen`, o `pubkey` e o `sign` mostram a impressão da
 chave.
 
 **Chave seguinte de release, sempre pronta (F5).** Gere já a próxima, guarde a privada só
 offline (dois pendrives cifrados, em lugares diferentes) e embuta a pública como
 `PATCHD_UPDATE_PUBKEY_NEXT`. Se a atual se perder ou vazar, a próxima versão sai assinada pela
-seguinte, que a frota já aceita.
+seguinte, que o parque já aceita.
 
 Roteiro da chave de **release**:
 
 1. `patchd-release keygen -key <pendrive>/release-N.key` gera a seguinte; a pública vai para
    `PATCHD_UPDATE_PUBKEY_NEXT` (junto das outras, fora do repositório).
 2. Build e publicação de uma versão **assinada pela atual**, com a seguinte embutida.
-3. Esperar "release <seguinte>: N de N" em Chaves na frota.
+3. Esperar "release <seguinte>: N de N" em Chaves no parque.
 4. A seguinte vira a atual: `PATCHD_UPDATE_PUBKEY` = a dela; `PATCHD_UPDATE_PUBKEY_NEXT` = uma
    nova (passo 1 de novo). Build e publicação **assinada pela nova atual**.
 5. A chave antiga sai do uso: os agentes que atualizaram no passo 4 já não a aceitam. Destrua
-   as cópias só depois de "release <antiga>" sumir de Chaves na frota.
+   as cópias só depois de "release <antiga>" sumir de Chaves no parque.
 
 Roteiro da chave de **jobs**:
 
 1. `patchd-server job keygen -out <arquivo>` gera a seguinte (o arquivo fica offline até o
    passo 3); a pública vai para `PATCHD_JOB_PUBKEY_NEXT`.
 2. Build e publicação de uma versão com a seguinte embutida. Esperar "jobs <seguinte>: N" igual
-   ao total em Chaves na frota.
+   ao total em Chaves no parque.
 3. Trocar o conteúdo do segredo `job_signing_key` (o arquivo de `PATCHD_JOB_SIGNING_KEY_FILE`)
    pela seguinte e reiniciar o servidor. A linha passa a mostrar a nova como "a do servidor";
    em atenção (amarelo), alguma máquina ainda não a aceita, e os jobs para ela seriam
    recusados ("assinatura inválida"). Os jobs já criados com a antiga continuam valendo.
 4. Próximo build: `PATCHD_JOB_PUBKEY` = a nova, `PATCHD_JOB_PUBKEY_NEXT` vazia (ou já a
-   próxima). Depois que a frota atualizar, os jobs antigos que restarem na fila vencem sozinhos.
+   próxima). Depois que o parque atualizar, os jobs antigos que restarem na fila vencem sozinhos.
 
 Ainda não giram por este roteiro: a credencial de cada máquina (aposentar e registrar de novo
 continua sendo o caminho) e a aprovação de instaladores por uma segunda chave (seção 5 de
@@ -740,9 +740,9 @@ máquina mostra o cartão **Firmware**:
 - O servidor confere os valores (conjunto fechado); um firmware fora dele é descartado, o resto
   do inventário entra, e o motivo fica nos erros do relatório.
 
-### Firmware na frota (Aula 21.2)
+### Firmware no parque (Aula 21.2)
 
-Inventário › Equipamentos ganhou uma segunda linha de cartões, contando a frota inteira:
+Inventário › Equipamentos ganhou uma segunda linha de cartões, contando o parque inteiro:
 
 | Cartão | Conta as máquinas com |
 |---|---|
@@ -828,7 +828,7 @@ informe o motivo e confirme que representam o mesmo equipamento físico. Nome e 
 sozinhos, não comprovam essa identidade. Prefira o registro usado pela instalação atual.
 
 A mesclagem mantém a credencial, as chaves, o inventário atual e a configuração do registro
-escolhido. O duplicado sai da frota ativa e sua credencial é revogada. Seus relatórios, jobs,
+escolhido. O duplicado sai do parque ativo e sua credencial é revogada. Seus relatórios, jobs,
 solicitações e evidências permanecem nos IDs originais. Não há cópia de credenciais para
 o agente novo nem alteração de envelopes assinados. Jobs pendentes na origem são cancelados,
 e solicitações ainda aguardando aprovação expiram com o motivo registrado. Um job já entregue
@@ -895,8 +895,8 @@ numa máquina, confira no inventário (`patchd-agent -inventory`, `hardware.firm
 `interface` é `hp` e `sure_admin` é `False`.
 
 1. Na aba Hardware da máquina, **Preparar senha nova** (se ainda não houver uma pendente).
-2. **Gravar na BIOS**. Na primeira troca (a BIOS tem a senha da frota e a guarda não), o
-   formulário pede a senha atual: digite a da frota. Ela vai cifrada para a máquina e não fica
+2. **Gravar na BIOS**. Na primeira troca (a BIOS tem a senha padrão do parque e a guarda não), o
+   formulário pede a senha atual: digite a padrão do parque. Ela vai cifrada para a máquina e não fica
    guardada.
 3. A máquina grava no próximo check-in (até 1 h; `Restart-Service patchd-agent` antecipa).
    O cartão mostra a resposta: **ativa**, **falhou** (com o código da HP), **incerta**, ou de
@@ -905,16 +905,16 @@ numa máquina, confira no inventário (`patchd-agent -inventory`, `hardware.firm
    gravação").
 
 **Código 6** (acesso negado): a senha atual não confere. Não repita o pedido às cegas: a BIOS
-da HP pode travar novas tentativas até reiniciar. Confirme a senha da frota antes.
+da HP pode travar novas tentativas até reiniciar. Confirme a senha padrão do parque antes.
 
 **Incerta**: nada mais é gravado nessa máquina até alguém resolver. Revele a nova e a anterior,
 teste qual a BIOS aceita e clique em **A nova vale** ou **A anterior vale**.
 
-## Inventário avulso da frota (Aula 22.1)
+## Inventário avulso do parque (Aula 22.1)
 
-Para a frota que ainda não fala com o servidor (sem o agente instalado, ou sem rota até ele),
+Para o parque que ainda não fala com o servidor (sem o agente instalado, ou sem rota até ele),
 o mesmo executável coleta o inventário só para leitura: `patchd-agent.exe -inventory` não
-instala nada e não fala com ninguém. O roteiro da aula (`lab-coleta-frota.ps1`, fora do
+instala nada e não fala com ninguém. O roteiro da aula (`lab-coleta-parque.ps1`, fora do
 repositório) roda isso pelo PsExec em uma lista de máquinas e grava um `.json` por máquina.
 
 O resumo, sem banco nem servidor:
@@ -1084,7 +1084,7 @@ do tempo: é necessário iniciar outra varredura.
 
 ## Execução de scripts remotos (Aula 23.8)
 
-**Automação › Scripts** executa, nas máquinas da frota, um conjunto de arquivos que você sobe
+**Automação › Scripts** executa, nas máquinas do parque, um conjunto de arquivos que você sobe
 no painel — como as automações do ITOM.
 
 1. **Suba o bundle**: um ZIP com o que a execução precisa — o executável, o `.ini` e o script
@@ -1119,7 +1119,7 @@ Linux, e vice-versa. O agente confere de novo na máquina e recusa o que não fo
   taxa de compressão (zip bomb).
 - **O script roda com a conta do agente**: SYSTEM no Windows, root no Linux. É o que torna a
   coisa útil e perigosa ao mesmo tempo — qualquer admin do painel pode rodar o que quiser na
-  frota. Tudo fica na auditoria (`script.bundle`, `script.executar`), e o bundle, o ponto de
+  parque. Tudo fica na auditoria (`script.bundle`, `script.executar`), e o bundle, o ponto de
   entrada e as máquinas aparecem lá.
 - **Nada fica na máquina**: o ZIP e a pasta extraída são apagados quando o job termina.
 

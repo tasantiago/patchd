@@ -1,5 +1,5 @@
 @echo off
-rem patchd: instalacao do agente na frota Windows.
+rem patchd: instalacao do agente no parque Windows.
 rem   GPO: Configuracao do Computador > Politicas > Configuracoes do Windows > Scripts >
 rem        Inicializacao, com a URL do servidor no campo "Parametros do script".
 rem   ITOM: pacote com estes arquivos e a linha de comando "instalar.cmd <URL>".

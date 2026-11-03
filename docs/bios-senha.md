@@ -3,7 +3,7 @@
 Este documento desenha o substituto do `.bat` de senha da BIOS (achado F3 em
 `docs/seguranca.md`). É a primeira escrita no firmware do Módulo 21: um erro aqui deixa a
 máquina com uma senha que ninguém sabe, e a única saída é a assistência do fabricante. Por
-isso o desenho vem antes do código, e as decisões do fim são de quem opera a frota.
+isso o desenho vem antes do código, e as decisões do fim são de quem opera o parque.
 
 Nenhum valor real (senha, nome de máquina, modelo exato do parque) entra neste arquivo.
 
@@ -11,7 +11,7 @@ Nenhum valor real (senha, nome de máquina, modelo exato do parque) entra neste 
 
 - A senha fica **legível** na máquina: no arquivo, na linha de comando do processo e, às
   vezes, no histórico da GPO ou na pasta de onde o script rodou.
-- É **uma senha para a frota inteira**: quem a lê numa máquina entra na BIOS de todas.
+- É **uma senha para o parque inteiro**: quem a lê numa máquina entra na BIOS de todas.
 - Não há **registro** de quem definiu, quando, nem de quais máquinas ficaram sem.
 - Trocar a senha exige outro `.bat` com a senha velha e a nova, o mesmo problema duas vezes.
 
@@ -88,12 +88,12 @@ fabricante. Duas formas (decisão D1):
 A recomendação era **(b)** se a ida à BIOS fosse rara (formatação, troca de placa), e **(a)** se
 o suporte de campo precisasse da senha toda semana. **Decidido: (a)**, feito na Aula 21.4 (seção 7).
 
-### 3.4 A primeira troca: a senha atual da frota
+### 3.4 A primeira troca: a senha atual do parque
 
 Para trocar uma senha da BIOS, o fabricante exige a senha atual. As máquinas que passaram
-pelo `.bat` têm a senha da frota. Na primeira rotação:
+pelo `.bat` têm a senha padrão do parque. Na primeira rotação:
 
-- o admin digita a senha atual da frota **uma vez**, num formulário do painel;
+- o admin digita a senha atual do parque **uma vez**, num formulário do painel;
 - o servidor a fecha para a caixa de cada máquina alvo, coloca o envelope no job e descarta o
   texto. Ela não vai para o banco aberta, nem para o log, nem para a auditoria (que registra
   só "senha atual informada para N máquinas");
@@ -108,7 +108,7 @@ não pede mais nada.
 | Ação | Quem | Registro |
 |---|---|---|
 | Ver se a máquina tem senha, interface e Secure Boot | leitura e admin | — |
-| Definir ou trocar (uma máquina, um grupo, a frota) | admin | `bios.senha.job` com a lista de máquinas |
+| Definir ou trocar (uma máquina, um grupo, o parque) | admin | `bios.senha.job` com a lista de máquinas |
 | Revelar a senha de uma máquina | admin (D1-a) ou quem guarda a chave (D1-b) | `bios.senha.revelar` com o motivo |
 | Remover a senha | ninguém pelo painel (D5) | — |
 
@@ -133,7 +133,7 @@ senha. Conferir no lab que a máquina sobe sem pedir a chave de recuperação.
 ## 5. O que este desenho não resolve
 
 - **Senha de inicialização** (power-on) e **senha do disco** (HDD/NVMe): fora do escopo; o
-  inventário mostra a de inicialização, e a frota não usa nenhuma das duas.
+  inventário mostra a de inicialização, e o parque não usa nenhuma das duas.
 - **Máquina sem agente** ou com agente anterior à v0.18.2: sem caixa, sem job. O resumo
   mostra "não informada" em "Chave de cifragem".
 - **Troca de placa-mãe**: a senha some com a placa; a guarda continua com a antiga. O
@@ -153,13 +153,13 @@ Respondidas antes da Aula 21.4:
 | D3 | **12 caracteres em todos** | o alfabeto da 3.1 |
 | D4 | **não se sabe** se há HP com Sure Admin | a Aula 21.5 lê esse modo no inventário antes de qualquer gravação, e a máquina nesse modo fica de fora |
 | D5 | não oferecer remoção (recomendação mantida) | — |
-| D6 | piloto | proposta da Aula 21.5: uma HP de bancada, depois um grupo pequeno de HP, depois a frota HP; Dell e Lenovo (desde `docs/bios-config.md`, seção 8) pelo mesmo caminho, uma máquina de bancada de cada |
+| D6 | piloto | proposta da Aula 21.5: uma HP de bancada, depois um grupo pequeno de HP, depois o parque HP; Dell e Lenovo (desde `docs/bios-config.md`, seção 8) pelo mesmo caminho, uma máquina de bancada de cada |
 
 O texto original das perguntas fica abaixo, para registro.
 
 - **D1 — Onde fica a chave de guarda**: (a) no servidor, com "Revelar" no painel; (b) fora do
   servidor, com a revelação por comando no host. Recomendação: (b), salvo uso semanal.
-- **D2 — Senha por máquina ou da frota**: por máquina (recomendação) ou uma senha da frota,
+- **D2 — Senha por máquina ou do parque**: por máquina (recomendação) ou uma senha padrão do parque,
   digitada no painel e entregue fechada (corrige a leitura na máquina, não o alcance do vazamento).
 - **D3 — Tamanho e alfabeto**: 12 caracteres, minúsculas e números sem ambíguos, ou mais
   longo onde o fabricante aceitar (perde a uniformidade entre modelos).
@@ -168,7 +168,7 @@ O texto original das perguntas fica abaixo, para registro.
 - **D5 — Remover a senha pelo painel**: não oferecer (recomendação) ou oferecer, só admin,
   com motivo e aviso.
 - **D6 — Piloto**: em quais máquinas a primeira rotação roda (uma de cada fabricante do
-  lab, depois um grupo pequeno, depois a frota), e quem confere a entrada na BIOS com a
+  lab, depois um grupo pequeno, depois o parque), e quem confere a entrada na BIOS com a
   senha revelada antes de seguir para o grupo seguinte.
 
 ## 7. A guarda (Aula 21.4)
@@ -218,7 +218,7 @@ fluxo e o piloto começando por uma máquina de bancada de cada.
 
 **A senha atual.** BIOS sem senha: não há atual (é uma definição). BIOS com senha e uma ativa
 na guarda: a atual sai da guarda. BIOS com senha e nada na guarda (a primeira troca, depois do
-`.bat`): o admin digita a senha da frota no próprio formulário; ela vai fechada para a caixa e
+`.bat`): o admin digita a senha padrão do parque no próprio formulário; ela vai fechada para a caixa e
 não é gravada em lugar nenhum (nem no banco, nem na trilha, que registra só "senha atual
 informada pelo admin").
 
@@ -253,7 +253,7 @@ chama o fabricante uma vez; o código 6 aparece no cartão com o aviso, e a pró
 uma decisão de alguém.
 
 **O que ainda não está conferido** (o laboratório da 21.5 confere): o nome exato da
-configuração do Sure Admin (`Enhanced BIOS Authentication Mode`) nos modelos da frota; que a
+configuração do Sure Admin (`Enhanced BIOS Authentication Mode`) nos modelos do parque; que a
 troca vale sem reiniciar; que a máquina com BitLocker sobe sem pedir a chave de recuperação.
 
 ## 9. A cópia de emergência fora do servidor (decisão R1 de `docs/bios-config.md`)
@@ -299,12 +299,12 @@ cópias.
 
 **O que isto não cobre:** quem tem a chave de guarda e uma cópia lê a senha sem deixar
 rastro no patchd; por isso a chave fica em cofre com acesso registrado, não num notebook. E a
-senha da frota que o `.bat` deixou legível na máquina continua lá até alguém apagar: depois da
+senha padrão do parque que o `.bat` deixou legível na máquina continua lá até alguém apagar: depois da
 primeira troca pela guarda, ela já não vale na BIOS, mas deve sair do Registro.
 
 ## 10. A senha padrão de cada fabricante
 
-O pedido (30/10/2026): parte das Lenovo da frota tem uma senha de supervisor padrão, posta à
+O pedido (30/10/2026): parte das Lenovo do parque tem uma senha de supervisor padrão, posta à
 mão. Na primeira troca pela guarda, o admin digitava essa senha máquina por máquina (seção 8).
 Agora ela pode ser cadastrada uma vez, por fabricante, em **Configuração › BIOS**.
 

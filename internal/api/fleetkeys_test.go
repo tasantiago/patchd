@@ -29,7 +29,7 @@ func TestChavesNaFrota(t *testing.T) {
 	ctx := context.Background()
 	linha := func() string {
 		b := pagina(h, "GET", "/painel/configuracao", sessaoAdmin, nil).Body.String()
-		i := strings.Index(b, "<dt>Chaves na frota</dt>")
+		i := strings.Index(b, "<dt>Chaves no parque</dt>")
 		if i < 0 {
 			t.Fatalf("sem a linha:\n%s", b)
 		}

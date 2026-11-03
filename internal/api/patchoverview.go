@@ -148,7 +148,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.internalError(w, r, "avaliar a frota", err)
+		a.internalError(w, r, "avaliar o parque", err)
 		return
 	}
 	items, err := a.compliance.Items(ctx)
@@ -349,7 +349,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	if m, ok := fx.concentrated(waiting); ok {
 		v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: "/painel/maquinas/" + m.ID + "?aba=pendencias",
-			Text: fmt.Sprintf("%s concentra %d dos %d itens aguardando (%d%%): atualizar essa máquina muda o retrato da frota",
+			Text: fmt.Sprintf("%s concentra %d dos %d itens aguardando (%d%%): atualizar essa máquina muda o retrato do parque",
 				dash(m.Name), m.N, waiting, pct(m.N, waiting))})
 	}
 	for _, c := range paused {
@@ -375,7 +375,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		{compliance.StateStale, "%d máquina(s) sem contato recente"},
 	} {
 		if n := fleet.Counts[string(s.st)]; n > 0 {
-			v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: "/painel/?estado=" + string(s.st), Text: fmt.Sprintf(s.text, n)})
+			v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: "/painel/parque?estado=" + string(s.st), Text: fmt.Sprintf(s.text, n)})
 		}
 	}
 	if eol > 0 {

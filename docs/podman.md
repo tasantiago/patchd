@@ -143,7 +143,7 @@ canal administrativo autorizado e entregue-os a esse usuário, com as permissõe
 necessárias. Os nomes e a geração do CSR estão no README; para um laboratório sem
 PKI, use [TLS de laboratório](tls-laboratorio.md), a partir de `~/patchd`.
 
-Na primeira subida de uma frota nova, o `atualizar.sh` constrói a imagem e para antes de
+Na primeira subida de um parque novo, o `atualizar.sh` constrói a imagem e para antes de
 subir, pedindo a chave de jobs: ele mostra o `podman run ... job keygen` com a imagem recém
 construída (não há Go na VM). Gere, guarde a pública para o build dos agentes e rode o
 `atualizar.sh` de novo; a construção sai do cache. Com o banco vazio, não há cópia antes da
@@ -228,7 +228,7 @@ O painel não compila o agente: ele distribui a versão publicada na pasta `rele
 (Configuração › Agente, com o token e o comando de instalação). O `deploy/agente.sh` faz a
 versão ali mesmo, sem o ambiente de desenvolvimento e sem Go no host:
 
-### Primeira frota: criar a chave de releases na administração
+### Primeiro parque: criar a chave de releases na administração
 
 Em uma **estação Linux administrativa com Git, Bash e Podman**, use um clone
 separado do mesmo código aprovado para a instalação. A privada fica nessa estação,
@@ -283,7 +283,7 @@ cd ~/patchd
    instalados a recebem no próximo check-in; o painel passa a oferecê-la para download.
 
 **A chave de release não mora no servidor.** Quem a tivesse aqui assinaria um "agente" para
-a frota inteira, passando por cima de toda conferência dos jobs. Em `/dev/shm` ela fica só na
+o parque inteiro, passando por cima de toda conferência dos jobs. Em `/dev/shm` ela fica só na
 memória; o script a passa ao container pela entrada padrão (num tmpfs, nunca em disco) e a
 apaga no fim, mesmo se o build falhar. Fora de `/dev/shm`, o script assina, mas avisa.
 Se ele recusar a execução nas verificações iniciais, antes de começar o build,

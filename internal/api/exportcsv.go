@@ -41,7 +41,7 @@ func (a *api) fleetCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.internalError(w, r, "avaliar a frota", err)
+		a.internalError(w, r, "avaliar o parque", err)
 		return
 	}
 	suffix := ""
@@ -54,7 +54,7 @@ func (a *api) fleetCSV(w http.ResponseWriter, r *http.Request) {
 		}
 		fleet.Machines, suffix = kept, "-"+string(f)
 	}
-	name := fmt.Sprintf("patchd-frota%s-%s.csv", suffix, fleet.EvaluatedAt.UTC().Format("20060102-1504"))
+	name := fmt.Sprintf("patchd-parque%s-%s.csv", suffix, fleet.EvaluatedAt.UTC().Format("20060102-1504"))
 	a.sendCSV(w, r, name, len(fleet.Machines), func(b *bytes.Buffer) error { return export.Fleet(b, fleet) })
 }
 

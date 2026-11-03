@@ -1,7 +1,7 @@
 # Modelo de ameaças do patchd (Aula 20.1)
 
 O patchd tem o poder que um atacante procura: executa como SYSTEM (ou root) em todas as
-máquinas da frota. Este documento diz o que proteger, de quem, por onde cada um pode entrar, o
+máquinas do parque. Este documento diz o que proteger, de quem, por onde cada um pode entrar, o
 que já segura cada caminho e o que falta. É o mapa do bloco de segurança (S1 a S9): cada
 lacuna tem um dono no plano do fim do documento.
 
@@ -14,15 +14,15 @@ fronteira nova. A matriz de rotas (docs/rotas.md) é gerada pelo teste e não pr
 | # | Ativo | Por que importa | Onde fica |
 |---|---|---|---|
 | A1 | **Chave de jobs** (Ed25519) | Quem assina jobs executa, como SYSTEM, os tipos de job que o agente aceita, inclusive instalar um executável | arquivo no servidor (`PATCHD_JOB_SIGNING_KEY_FILE`, segredo do compose) |
-| A2 | **Chave de release** (Ed25519) | Quem assina uma versão do agente troca o próprio agente em toda a frota | fora do servidor e do repositório (`~/.patchd-release`, no host de quem publica) |
+| A2 | **Chave de release** (Ed25519) | Quem assina uma versão do agente troca o próprio agente em todo o parque | fora do servidor e do repositório (`~/.patchd-release`, no host de quem publica) |
 | A3 | **Sessão de admin do painel** | Aprova pacotes, cria campanhas e jobs (assinados pela A1), muda parâmetros e grupos | cookie `HttpOnly`/`SameSite=Strict`; a sessão guardada pelo hash |
 | A4 | **Credencial de cada máquina** | Fala com a API em nome da máquina: manda inventário, recebe jobs dela | agente (arquivo protegido); servidor guarda só o hash |
-| A5 | **Token de enrollment** | Registra máquinas novas na frota | mostrado uma vez; servidor guarda o hash, com prazo e usos |
+| A5 | **Token de enrollment** | Registra máquinas novas no parque | mostrado uma vez; servidor guarda o hash, com prazo e usos |
 | A6 | **Banco** | Inventário (usuários conectados, software: dado pessoal, LGPD), auditoria, aprovações, sessões | PostgreSQL; senha em arquivo |
 | A7 | **Segredos de integração** | Senha do SMTP, segredo do cliente OIDC, senha do banco, token de métricas | arquivos (segredos do compose), nunca no banco nem na tela |
 | A9 | **Chave da caixa de cada máquina** (HPKE, Aula 21.3) | Abre os segredos que o servidor manda só para aquela máquina (a senha da BIOS, 21.5) | agente: `chave-cifragem.key`, protegido como a credencial; o servidor guarda só a pública |
 | A10 | **Chave da guarda da senha da BIOS** (HPKE, Aula 21.4) | Abre todas as senhas de BIOS guardadas | servidor: `PATCHD_BIOS_ESCROW_KEY_FILE` (segredo do compose); duas cópias fora do servidor, longe da cópia do banco |
-| A8 | **Disponibilidade das correções** | Sem o patchd, a frota fica sem atualização: o risco que ele existe para reduzir | servidor, catálogo e cache |
+| A8 | **Disponibilidade das correções** | Sem o patchd, o parque fica sem atualização: o risco que ele existe para reduzir | servidor, catálogo e cache |
 
 ## 2. De quem (atores)
 
@@ -31,8 +31,8 @@ fronteira nova. A matriz de rotas (docs/rotas.md) é gerada pelo teste e não pr
 | T1 Atacante na rede interna | Alcançar a porta do servidor e das máquinas; observar tráfego sem TLS | Credenciais, sessão do painel, jobs forjados |
 | T2 Usuário comum de uma máquina | Rodar programas na própria sessão, abrir a Central, ler arquivos que o Windows deixa | Virar administrador da máquina pelo agente; pedir o que a loja não oferece |
 | T3 Máquina comprometida (agente adulterado) | Usar a credencial dela à vontade | Envenenar o painel (inventário falso, HTML), esgotar o servidor, pegar jobs de outras |
-| T4 Conta do painel comprometida (senha ou sessão) | O que o perfil dela permite | Leitura: dados da frota. Admin: a frota inteira (A3 → A1) |
-| T5 Fonte externa comprometida (catálogo, winget, CDN de instalador) | Mandar dados ou arquivos que o servidor baixa | Instalador adulterado distribuído pela frota |
+| T4 Conta do painel comprometida (senha ou sessão) | O que o perfil dela permite | Leitura: dados do parque. Admin: o parque inteiro (A3 → A1) |
+| T5 Fonte externa comprometida (catálogo, winget, CDN de instalador) | Mandar dados ou arquivos que o servidor baixa | Instalador adulterado distribuído pelo parque |
 | T6 Quem tem acesso ao servidor ou ao banco (operador, backup) | Ler arquivos e tabelas | As chaves e os segredos (A1, A7), o inventário (A6) |
 
 Sobre T6 no ambiente atual (Aula 20.2): o root do host do servidor é de uma equipe de
@@ -59,7 +59,7 @@ seguinte guardada offline).
    dentro: a fronteira de elevação de privilégio.
 4. **Servidor ↔ fontes externas**: dados e arquivos que entram no catálogo e no cache.
 5. **Servidor ↔ banco e segredos**: quem lê o disco ou o dump (T6).
-6. **Publicação ↔ frota**: a release do agente, assinada fora do servidor.
+6. **Publicação ↔ parque**: a release do agente, assinada fora do servidor.
 
 ## 4. Ameaças e controles (STRIDE)
 
@@ -87,7 +87,7 @@ quem resolve.
 | S | Servidor falso entregando jobs | TLS com a CA da instituição (`-ca-file`, 9.2); **jobs assinados (A1) e conferidos pelo agente**; releases assinadas (A2) | — |
 | S | Máquina se passando por outra | A máquina é a dona da credencial: o ID vem da credencial, nunca da URL (4.3) | — |
 | T | Job adulterado no caminho | Assinatura Ed25519 do job, prazo de validade, ID amarrado à máquina (8.1) | — |
-| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura exigida quando o manifesto define; **lista de organizações da própria máquina** (`-allowed-signers`, 20.5b); a chave de jobs gira sem parar a frota (20.7) | Máquina sem a lista; versão antiga de programa da lista: aprovação por segunda chave (desenho na seção 5e) |
+| T | **Servidor comprometido assina job malicioso** | Tipos de job fechados; instalador conferido pelo SHA-256 do job; organização da assinatura exigida quando o manifesto define; **lista de organizações da própria máquina** (`-allowed-signers`, 20.5b); a chave de jobs gira sem parar o parque (20.7) | Máquina sem a lista; versão antiga de programa da lista: aprovação por segunda chave (desenho na seção 5e) |
 | T | Inventário falso (T3) envenena o painel | Escape no HTML; limites de tamanho (8 MiB por corpo, listas); texto limpo na entrada e fuzzing (20.3) | — |
 | D | Máquina enchendo o servidor | Limite de corpo; gzip conferido; **limite de requisições por máquina** (20.5: inventário e busca 20/h, o resto 720/h; 429 com Retry-After) | — |
 | I | Credencial vazada no tráfego | TLS; porta HTTP só para transição e cache (9.3) | Fechar a porta HTTP quando ninguém usar (já possível; registrar) |
@@ -126,17 +126,17 @@ quem resolve.
 | I | **Segredos no contexto do build** (F9, 23.1) | O `.dockerignore` deixa de fora `deploy/secrets`, `deploy/tls`, `deploy/.env`, `deploy/backups` e `releases` | — |
 | E | Proxy do cache de repositórios | Só as origens da lista, só GET/HEAD na porta 80, CONNECT recusado; testes do repocache (6.6) | — |
 
-### 4.6 Publicação ↔ frota
+### 4.6 Publicação ↔ parque
 
 | | Ameaça | Controle | Lacuna |
 |---|---|---|---|
-| T | Release adulterada | Chave de release fora do servidor; manifesto assinado conferido pelo agente; o agente só aceita versão mais nova (5.4, 15.x); a chave gira sem parar a frota (20.7) | — |
+| T | Release adulterada | Chave de release fora do servidor; manifesto assinado conferido pelo agente; o agente só aceita versão mais nova (5.4, 15.x); a chave gira sem parar o parque (20.7) | — |
 | D | Chave de release perdida | **Chave seguinte** embutida nos agentes, com a privada só offline (20.7) | — |
 | T | **Agente feito no servidor** (23.2) | O `deploy/agente.sh` compila num container descartável a partir de um clone do commit; a chave de release chega só na hora, em `/dev/shm` (memória), entra no container pela entrada padrão para um tmpfs e é apagada no fim; o script recusa a chave dentro do repositório e avisa se ela estiver gravada em disco | Durante a assinatura, quem já controlasse o servidor leria a chave: assine com o servidor íntegro e gire a chave (20.7) se houver suspeita |
 
 ## 5. Achados desta revisão
 
-- **F1 — A chave de jobs é a chave da frota.** Quem controla o servidor (ou só lê o arquivo da
+- **F1 — A chave de jobs é a chave do parque.** Quem controla o servidor (ou só lê o arquivo da
   chave de jobs) assina um job `thirdparty` com um executável qualquer e o SHA-256 dele; sem
   `Signer` no job, o agente aceita um arquivo sem assinatura conhecida. **Mitigado na 20.5b**:
   com `-allowed-signers` no serviço do agente, ele só executa instalador com assinatura válida
@@ -158,16 +158,16 @@ quem resolve.
   inventário passou a dizer, máquina a máquina, se a senha de administrador da BIOS está
   definida (HP, Dell e Lenovo, pela interface do fabricante); é como conferir o que o `.bat`
   fez e o que falta, antes de aposentá-lo. **Na 21.2**: o cartão "BIOS sem senha" em
-  Inventário conta a frota e filtra a lista (e o CSV); é a medida do F3. **Na 21.3**: cada
+  Inventário conta o parque e filtra a lista (e o CSV); é a medida do F3. **Na 21.3**: cada
   agente tem uma caixa (par HPKE ML-KEM-768+X25519, a privada protegida como a credencial e a
   pública no estado) para receber a senha fechada, só para ele; o desenho do substituto do
-  `.bat` (senha por máquina, guarda antes de aplicar, primeira troca com a senha da frota
+  `.bat` (senha por máquina, guarda antes de aplicar, primeira troca com a senha padrão do parque
   digitada uma vez, métodos HP/Dell/Lenovo, HP Sure Admin) e as decisões D1 a D6 estão em
   `docs/bios-senha.md`. **Na 21.4**: a guarda no servidor (D1-a): sorteio de 12 caracteres por
   máquina, só o envelope no banco, revelação só de admin, com motivo, auditoria gravada antes
   de mostrar e aviso por e-mail. Risco aceito: quem toma o servidor lê as senhas guardadas
   (ativo A10). **Na 21.5**: a gravação na HP pelo job `bios_password` (senhas fechadas para a
-  caixa da máquina; a da frota digitada uma vez na primeira troca; uma chamada ao fabricante,
+  caixa da máquina; a padrão do parque digitada uma vez na primeira troca; uma chamada ao fabricante,
   sem nova tentativa; Sure Admin respeitado; incerta trava até alguém conferir). Falta aposentar
   o `.bat` depois do piloto. Dell e Lenovo: mesmos jobs e regras (`docs/bios-config.md`,
   seção 8), ainda sem máquina de bancada conferida. **Configurações da BIOS**
@@ -182,7 +182,7 @@ quem resolve.
   fora da trilha. Senha padrão por fabricante (Configuração › BIOS, `docs/bios-senha.md`,
   seção 10): fechada para a chave de guarda, usada só como a atual na primeira troca.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
-  servidor é perder aprovações, auditoria e histórico; a frota continua de pé (o agente não
+  servidor é perder aprovações, auditoria e histórico; o parque continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem
   (`deploy/backup.sh`, o timer do systemd, a cifragem com `age` e o ensaio de restauração:
   Aulas 10.1 e 10.3, em `docs/operacao.md`); falta ligar no servidor de produção: o timer, as
@@ -193,7 +193,7 @@ quem resolve.
   roteiro de produção está na seção 5f. Fica aberto até o roteiro ser cumprido no servidor.
 - **F5 — A chave de release existe numa máquina só, sem cópia** (Aula 20.2). Perder a chave
   impede publicar versões: os agentes só aceitam essa chave, e trocar de chave exige uma
-  release assinada pela antiga. Comprometer a máquina de desenvolvimento compromete a frota.
+  release assinada pela antiga. Comprometer a máquina de desenvolvimento compromete o parque.
   Ações: (1) duas cópias offline cifradas (dois pendrives, guardados em lugares diferentes,
   por exemplo um cofre), com a frase de acesso fora do pendrive; (2) **feito na 20.7**: o
   agente aceita duas chaves (a atual e a seguinte); a seguinte é gerada já, guardada só
@@ -407,21 +407,21 @@ própria ACL (17.3).
 
 ## 5e. Rotação de chaves (S8, Aula 20.7)
 
-As duas chaves que a frota conhece (jobs, A1; release, A2) eram trocáveis só com a frota
+As duas chaves que o parque conhece (jobs, A1; release, A2) eram trocáveis só com o parque
 inteira parada: o agente aceitava uma chave de cada, e a troca exigia que todas as máquinas
 recebessem um agente novo **e** que o servidor mudasse a chave no mesmo instante. Agora:
 
 - **Duas chaves de cada tipo no agente**: a atual e a seguinte, embutidas no build. Um job ou
   um manifesto vale se qualquer uma delas o assinou; as outras conferências (máquina, prazo,
   número do job, versão mais nova) valem igual para as duas.
-- **A frota informa o que aceita**: o estado da máquina leva as impressões (12 hexadecimais)
-  das chaves aceitas, e Configuração › Sistema › Chaves na frota conta. É o que diz quando o
+- **O parque informa o que aceita**: o estado da máquina leva as impressões (12 hexadecimais)
+  das chaves aceitas, e Configuração › Sistema › Chaves no parque conta. É o que diz quando o
   passo seguinte da troca é seguro (roteiro em `docs/operacao.md`).
 - **Travas no build e na assinatura**: as quatro chaves do build são diferentes entre si; o
   `patchd-release sign` não assina executáveis que não confiam na chave que assina.
 - **F5**: a chave seguinte de release existe desde já, só offline. Perder a atual não para as
   atualizações; vazar a atual se responde com uma versão assinada pela seguinte que não aceita
-  mais a vazada (até a frota atualizar, a vazada só serve a quem também controla o servidor,
+  mais a vazada (até o parque atualizar, a vazada só serve a quem também controla o servidor,
   que é quem entrega as versões).
 
 Fica de fora, por decisão: a credencial de cada máquina (não gira; aposentar e registrar de
@@ -478,5 +478,5 @@ computador que está no histórico continua uma decisão em aberto (reescrever o
 | S5 | ZAP (varredura dinâmica) contra o painel do lab, com sessão (feito: seção 5c; F7 e F8 resolvidos na 20.4b; ativa com sessão limpa na 20.4c) | 20.4, 20.4b e 20.4c |
 | S6 | API dos agentes: limite por máquina, F2 e tokens (20.5); F1 com a lista de organizações no agente (20.5b, v0.17.8) | 20.5 e 20.5b |
 | S7 | Elevação local no agente: permissões das pastas, troca entre conferir e executar (feito: seção 5d, v0.17.9) | 20.6 |
-| S8 | Rotação das chaves de jobs e de release sem parar a frota; F5 (feito: seção 5e, v0.17.10) | 20.7 |
+| S8 | Rotação das chaves de jobs e de release sem parar o parque; F5 (feito: seção 5e, v0.17.10) | 20.7 |
 | S9 | Pacote para revisão externa: SBOM, este documento, resultados (feito: seção 5f); cópias do banco no painel e roteiro (F4) | 20.8 |

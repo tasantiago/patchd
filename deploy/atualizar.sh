@@ -56,7 +56,7 @@ banco_no_ar() {
 imagem_existe() { motor image inspect "$IMAGEM:$1" >/dev/null 2>&1; }
 
 # Podman (Aula 23.1): o compose recusava subir sem um arquivo de segredo; aqui a recusa vem
-# antes da troca, com o que falta e como gerar. A chave de jobs de uma frota nova sai da
+# antes da troca, com o que falta e como gerar. A chave de jobs de um parque novo sai da
 # própria imagem que acabou de ser construída (no RHEL não há Go instalado).
 segredos_presentes() {
   [ "$MOTOR" = podman ] || return 0
@@ -74,10 +74,10 @@ segredos_presentes() {
   echo "faltam arquivos que o servidor monta: ${falta[*]}" >&2
   if [[ " ${falta[*]} " == *" deploy/secrets/job_signing_key "* ]]; then
     cat >&2 <<MSG
-chave de jobs de uma frota NOVA, com a imagem que acabou de ser construída:
+chave de jobs de um parque NOVO, com a imagem que acabou de ser construída:
   podman run --rm --userns keep-id:uid=65532,gid=65532 -v "\$PWD/deploy/secrets:/segredos:Z" \\
     $IMAGEM:$1 job keygen -out /segredos/job_signing_key
-  (frota existente: copie a chave que o servidor de hoje usa). A pública impressa vai no
+  (parque existente: copie a chave que o servidor de hoje usa). A pública impressa vai no
   build dos agentes (PATCHD_JOB_PUBKEY).
 MSG
   fi

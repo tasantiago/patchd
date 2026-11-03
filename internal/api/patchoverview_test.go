@@ -29,7 +29,7 @@ func TestVisaoGeralDePatch(t *testing.T) {
 	for _, tr := range []string{
 		`href="/painel/patch?aba=geral" title="Patch › Visão geral" class="ativo"`, `<a href="/painel/patch?aba=geral" class="ativa" aria-current="page">Visão geral</a>`,
 		`<span class="hero">33%</span><span class="muted">em dia · 1 de 3 máquinas</span>`,
-		`<a class="seg-p st-ok w34" href="/painel/?estado=em_dia"><span class="seg-rot">33%</span><span class="seg-dica dica-inicio" role="tooltip">Em dia: 1 máquina (33%)</span></a>`,
+		`<a class="seg-p st-ok w34" href="/painel/parque?estado=em_dia"><span class="seg-rot">33%</span><span class="seg-dica dica-inicio" role="tooltip">Em dia: 1 máquina (33%)</span></a>`,
 		`<span class="seg-nome">Anel 0 (piloto)<small>1 máquina(s)</small></span>`,
 		`<span class="kpi-rot">Sistema: correções aguardando</span><span class="kpi-val v-vermelho">1</span><span class="kpi-sub">1 item(ns) (1 pacote) em 1 máquina(s) · 1 com exploração conhecida</span>`,
 		`<li class="erro"><a href="/painel/patch?status=exploradas">1 item(ns) com exploração conhecida aguardando aprovação</a></li>`,
@@ -102,7 +102,7 @@ func TestCorrecoesAguardando(t *testing.T) {
 			`<td class="num"><span class="expl">2</span></td><td class="num">1</td><td class="nowrap"><a href="/painel/patch?q=26200.9500&amp;status=aguardando">Ver e aprovar</a></td></tr>`,
 		`<tr><td><code>26100.7000</code></td><td>atualização do sistema</td><td>Windows</td><td class="num">5</td>`,
 		`<td>pacote curl</td><td>Ubuntu</td><td class="num">1</td>`,
-		`<li class="atencao"><a href="/painel/maquinas/a-0001?aba=pendencias">pc-esquecido concentra 60 dos 68 itens aguardando (88%): atualizar essa máquina muda o retrato da frota</a></li>`,
+		`<li class="atencao"><a href="/painel/maquinas/a-0001?aba=pendencias">pc-esquecido concentra 60 dos 68 itens aguardando (88%): atualizar essa máquina muda o retrato do parque</a></li>`,
 	} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)

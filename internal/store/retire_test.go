@@ -53,7 +53,7 @@ func testarAposentadoria(t *testing.T, st contratoAposentadoria) {
 
 	lista, _ := st.Machines(ctx)
 	if len(lista) != 1 || lista[0].ID != "atual-0002" {
-		t.Errorf("a aposentada sai da frota: %+v", lista)
+		t.Errorf("a aposentada sai do parque: %+v", lista)
 	}
 	ap, err := st.RetiredMachines(ctx)
 	if err != nil || len(ap) != 1 || ap[0].ID != "antiga-0001" || ap[0].Reason != "registro antigo da VM reinstalada" ||
@@ -71,13 +71,13 @@ func testarAposentadoria(t *testing.T, st contratoAposentadoria) {
 		t.Fatalf("restaurar: %t %v", ok, err)
 	}
 	if ok, _ := st.RestoreMachine(ctx, "antiga-0001"); ok {
-		t.Error("restaurar a que já está na frota não muda nada")
+		t.Error("restaurar a que já está no parque não muda nada")
 	}
 	if _, found, _ := st.MachineByCredential(ctx, cred["antiga-0001"]); !found {
 		t.Error("restaurada, a credencial volta a valer")
 	}
 	if lista, _ := st.Machines(ctx); len(lista) != 2 {
-		t.Errorf("de volta à frota: %d", len(lista))
+		t.Errorf("de volta ao parque: %d", len(lista))
 	}
 	if ap, _ := st.RetiredMachines(ctx); len(ap) != 0 {
 		t.Errorf("sem aposentadas: %+v", ap)

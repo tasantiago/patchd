@@ -306,7 +306,7 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: machineID, Type: jobs.TypeThirdParty, TTL: JobTTL,
 		By: Author(req.Account), Params: raw}, s.Now())
 	if errors.Is(err, jobs.ErrMachineUnavailable) {
-		return refuse("máquina aposentada", "Esta máquina não está mais na frota.")
+		return refuse("máquina aposentada", "Esta máquina não está mais no parque.")
 	}
 	if err != nil {
 		return o, err
@@ -486,7 +486,7 @@ func (s *Service) reboot(ctx context.Context, machineID string, req protocol.Sel
 	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: machineID, Type: jobs.TypeReboot, TTL: ttl,
 		By: Author(req.Account), Params: params}, now)
 	if errors.Is(err, jobs.ErrMachineUnavailable) {
-		return refuse("máquina aposentada", "Esta máquina não está mais na frota.")
+		return refuse("máquina aposentada", "Esta máquina não está mais no parque.")
 	}
 	if err != nil {
 		return o, err
@@ -584,7 +584,7 @@ func (s *Service) Approve(ctx context.Context, id int64, by string) (Approval, s
 	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: q.MachineID, Type: jobs.TypeThirdParty, TTL: JobTTL,
 		By: Author(q.Account), Params: raw}, s.Now())
 	if errors.Is(err, jobs.ErrMachineUnavailable) {
-		return a, "a máquina não está mais na frota", nil
+		return a, "a máquina não está mais no parque", nil
 	}
 	if err != nil {
 		return a, "", err

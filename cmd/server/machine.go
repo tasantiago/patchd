@@ -21,11 +21,11 @@ import (
 const machineUsage = `uso: patchd-server machine <comando> [opções]
 
 comandos:
-  list     lista as máquinas da frota, com os alertas de identidade que ligam umas às
+  list     lista as máquinas do parque, com os alertas de identidade que ligam umas às
            outras (mesma instalação, mesmo hardware); -retired lista as aposentadas
   retire   aposenta: -id ID -reason "motivo". A máquina sai da lista, do compliance e do
            painel, e a credencial dela deixa de valer (o agente recebe 401). Nada é apagado.
-  restore  devolve à frota: -id ID. A credencial volta a valer.
+  restore  devolve ao parque: -id ID. A credencial volta a valer.
 
 ID pode ser o começo do ID, desde que case com uma só máquina. -sem-nome, no list, omite
 o nome das máquinas (para colar a saída num chamado ou no chat).
@@ -91,7 +91,7 @@ func machineCommand(ctx context.Context, st machineStore, args []string, now tim
 		prefix := fs.String("id", "", "ID (ou começo do ID) da máquina")
 		var reason *string
 		if args[0] == "retire" {
-			reason = fs.String("reason", "", "por que a máquina sai da frota (fica registrado)")
+			reason = fs.String("reason", "", "por que a máquina sai do parque (fica registrado)")
 		}
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
@@ -132,9 +132,9 @@ func machineCommand(ctx context.Context, st machineStore, args []string, now tim
 		case !changed:
 			fmt.Fprintf(stderr, "a máquina %s não estava aposentada\n", id)
 		case reason != nil:
-			fmt.Fprintf(stderr, "máquina %s aposentada: saiu da frota, e a credencial dela deixou de valer (restore desfaz)\n", id)
+			fmt.Fprintf(stderr, "máquina %s aposentada: saiu do parque, e a credencial dela deixou de valer (restore desfaz)\n", id)
 		default:
-			fmt.Fprintf(stderr, "máquina %s de volta à frota; a credencial voltou a valer\n", id)
+			fmt.Fprintf(stderr, "máquina %s de volta ao parque; a credencial voltou a valer\n", id)
 		}
 		return exitOK
 	default:

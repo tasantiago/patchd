@@ -99,7 +99,7 @@ As implementações foram conferidas contra `dpkg --compare-versions` e `rpm.ver
 ## Notas por SO
 
 **Windows**
-- Numa frota com WSUS, a busca online do WUA responde "o que o WSUS aprovou". O scan offline com `wsusscn2.cab` é obrigatório para a visão da Microsoft (RF-27).
+- Num parque com WSUS, a busca online do WUA responde "o que o WSUS aprovou". O scan offline com `wsusscn2.cab` é obrigatório para a visão da Microsoft (RF-27).
 - 24H2 e 25H2 compartilham a mesma linha de manutenção; o 25H2 chega por pacote de habilitação. O que mede o nível é o UBR.
 - Entre a instalação da LCU e o reboot, a máquina está instalada, mas não efetiva.
 - Consumidores da saída do agente no Windows precisam decodificar UTF-8.
@@ -122,7 +122,7 @@ As implementações foram conferidas contra `dpkg --compare-versions` e `rpm.ver
 
 ## Catálogos do servidor (Módulo 6)
 
-O servidor baixa os catálogos e cruza com o inventário localmente: o inventário da frota nunca é enviado a uma API externa.
+O servidor baixa os catálogos e cruza com o inventário localmente: o inventário do parque nunca é enviado a uma API externa.
 
 O servidor sincroniza todas as fontes sozinho, a cada `PATCHD_CATALOG_INTERVAL` (padrão `6h`; `0` desliga), com a primeira execução entre 1 e 5 minutos depois da partida. Uma trava no PostgreSQL (`pg_try_advisory_lock`) impede duas sincronizações ao mesmo tempo no mesmo banco, seja o agendamento, um `catalog sync` manual ou outra instância. Cada fonte de cada execução fica registrada em `catalog_runs` (90 dias); uma fonte sem sucesso há mais de 48 h aparece como atrasada no `catalog status` e gera aviso no `compliance` (Aula 6.6).
 
@@ -144,7 +144,7 @@ O servidor guarda, sob demanda, o que o apt das máquinas Ubuntu e o dnf das Fed
 
 - Ligado por `PATCHD_REPO_CACHE_DIR` (pasta absoluta). As origens aceitas vêm de `PATCHD_REPO_CACHE_HOSTS` (padrão `archive.ubuntu.com,security.ubuntu.com`); um espelho interno entra por ali, no `.env`, nunca no repositório.
 - O apt usa o servidor como proxy HTTP só para esses hosts (`Acquire::http::Proxy::<host>`), na mesma porta da API. Pedido de outro host, porta diferente da 80, query string ou `CONNECT` é recusado: o servidor não é um proxy aberto.
-- `InRelease`, `Release` e `Release.gpg`: revalidados na origem (`If-Modified-Since`) no máximo uma vez por minuto. Um `InRelease` com `Date` mais velho que o guardado é recusado (um servidor atrasado da origem não faz a frota voltar no tempo); com a origem fora, o guardado é servido. O Ubuntu não publica `Valid-Until`: a idade do `InRelease` do `-security` é o `catalog_modified_at` que o agente reporta.
+- `InRelease`, `Release` e `Release.gpg`: revalidados na origem (`If-Modified-Since`) no máximo uma vez por minuto. Um `InRelease` com `Date` mais velho que o guardado é recusado (um servidor atrasado da origem não faz o parque voltar no tempo); com a origem fora, o guardado é servido. O Ubuntu não publica `Valid-Until`: a idade do `InRelease` do `-security` é o `catalog_modified_at` que o agente reporta.
 - `by-hash/SHA256/<hash>`: guardado pelo hash, só se o conteúdo conferir (o mesmo arquivo pedido por caminhos diferentes fica uma vez no disco). `pool/...deb`: guardado pelo caminho (a versão está no nome). O resto passa direto, sem guardar.
 - Com a origem fora (rede, DNS, 5xx), os índices guardados são servidos (`STALE`) e, por 1 minuto depois da falha, servidos na hora, sem nova tentativa (antes, cada pedido esperava o DNS falhar de novo: 24 s).
 - Medido no laboratório (Ubuntu 26.04): `apt-get update` com listas vazias = 110 pedidos, 46,8 MB; o segundo = 4 `InRelease` com 304; com o cache, o segundo `update` do zero caiu de 48,9 s para 3,7 s e o download de 233 MB, de 4 min 50 s para 1,9 s.

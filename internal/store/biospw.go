@@ -41,7 +41,7 @@ type BIOSPassword struct {
 }
 
 // ErrNoMachine: a máquina não existe ou está aposentada.
-var ErrNoMachine = errors.New("máquina fora da frota")
+var ErrNoMachine = errors.New("máquina fora padrão do parque")
 
 // CreateBIOSPassword guarda uma senha pendente. Se a máquina já tem uma pendente, devolve
 // essa (created = false) e não grava a nova: a pendente é a que a gravação vai usar.

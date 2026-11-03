@@ -49,7 +49,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | POST | `/api/v1/agent/standardization/report` |
 | POST | `/api/v1/agent/standardization` |
 
-## Sessão (página) (17)
+## Sessão (página) (19)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -68,6 +68,8 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/jobs` |
 | GET | `/painel/maquinas/{id}/pendencias.csv` |
 | GET | `/painel/maquinas/{id}` |
+| GET | `/painel/parque.csv` |
+| GET | `/painel/parque` |
 | GET | `/painel/patch/item` |
 | GET | `/painel/patch/programa` |
 | GET | `/painel/patch` |

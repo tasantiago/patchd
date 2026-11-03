@@ -8,7 +8,7 @@
 #                                            (para voltar a uma anterior, por exemplo)
 #
 # A chave de release NÃO mora no servidor: quem a tivesse aqui assinaria um "agente"
-# qualquer para a frota inteira. Ela vem só na hora, para a memória (/dev/shm), e sai no
+# qualquer para o parque inteiro. Ela vem só na hora, para a memória (/dev/shm), e sai no
 # fim: do seu computador, scp ARQUIVO SEU_USUARIO@SERVIDOR:/dev/shm/ e, como root,
 # chown USUARIO_DO_SERVICO /dev/shm/ARQUIVO. Dentro do container ela fica num tmpfs.
 #

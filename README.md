@@ -185,7 +185,7 @@ Se a rede usa inspeção TLS, obtenha o certificado **público** da CA com a equ
 
 #### 4. Gerar a chave de jobs desta instalação
 
-Para uma **frota nova**, gere o par usando a imagem recém-compilada:
+Para uma **parque novo**, gere o par usando a imagem recém-compilada:
 
 ```bash
 docker run --rm --network none --user "$(id -u):$(id -g)" \
@@ -197,7 +197,7 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
 
 A privada fica em `deploy/secrets/job_signing_key`; a pública, em `job_signing_key.pub`, será usada no build dos agentes. A geração recusa sobrescrever uma privada existente. Guarde uma cópia protegida da privada fora desta VM.
 
-Se estiver **migrando uma frota existente**, preserve a chave de jobs de produção e os dados dessa implantação: gerar outra chave faz os agentes antigos recusarem os jobs. Isso é uma migração, diferente de criar uma instalação independente.
+Se estiver **migrando um parque existente**, preserve a chave de jobs de produção e os dados dessa implantação: gerar outra chave faz os agentes antigos recusarem os jobs. Isso é uma migração, diferente de criar uma instalação independente.
 
 #### 5. Preparar TLS
 
@@ -313,7 +313,7 @@ Para conferir a pública no servidor e criar um token de piloto com um uso e val
 
 O token é exibido uma única vez: guarde-o pelo meio autorizado, sem publicar a saída. Para build e publicação de agentes, consulte [operação e rotação de chaves](docs/operacao.md); no RHEL/Podman, [deploy/agente.sh](deploy/agente.sh) usa uma imagem oficial de Go no próprio host. No Docker, as ferramentas também podem ser executadas em um contêiner oficial de Go, conforme [build de agentes sem o dev](docs/build-agentes-sem-dev.md).
 
-Instale um agente em uma máquina de homologação usando a URL HTTPS, a CA e o token. Confira registro, primeiro check-in e inventário antes de ampliar a frota. Para automação com pacotes ZIP ou scripts avulsos, use [o guia de pacotes de scripts](docs/pacotes-de-scripts.md).
+Instale um agente em uma máquina de homologação usando a URL HTTPS, a CA e o token. Confira registro, primeiro check-in e inventário antes de ampliar o parque. Para automação com pacotes ZIP ou scripts avulsos, use [o guia de pacotes de scripts](docs/pacotes-de-scripts.md).
 
 #### 10. Fechar a instalação com backup e recuperação
 
@@ -433,7 +433,7 @@ podman run --rm --network none \
   > deploy/secrets/job_signing_key.pub
 ```
 
-A privada é criada pelo próprio programa e não é sobrescrita. Preserve-a em backup protegido fora da VM; a pública será embutida nos agentes. Este é o procedimento de uma **frota nova**. Para migrar equipamentos existentes, preserve a chave de jobs de produção e siga o plano de migração; trocar essa chave sem preparar os agentes faz os jobs serem recusados.
+A privada é criada pelo próprio programa e não é sobrescrita. Preserve-a em backup protegido fora da VM; a pública será embutida nos agentes. Este é o procedimento de uma **parque novo**. Para migrar equipamentos existentes, preserve a chave de jobs de produção e siga o plano de migração; trocar essa chave sem preparar os agentes faz os jobs serem recusados.
 
 O `keep-id` apresenta o usuário do serviço como UID 65532 no contêiner. Assim ele lê os segredos e o TLS que pertencem a esse usuário, sem aplicar as ACLs do roteiro Docker. Os sufixos `:Z` preparam os rótulos do SELinux.
 
@@ -504,7 +504,7 @@ podman exec patchd-server /patchd-server job pubkey
 podman exec patchd-server /patchd-server token create -uses 1 -ttl 2h -note 'piloto inicial'
 ```
 
-O token aparece uma vez e permite registrar um equipamento; guarde-o pelo canal autorizado. Para uma frota nova, crie a chave de releases na estação administrativa e faça o [build, assinatura e publicação com Podman](docs/podman.md#agente-compilar-assinar-e-publicar-pelo-servidor-aula-232), usando `deploy/agente.sh`. O painel passa a oferecer os agentes publicados em **Configuração › Agente**. Valide registro, check-in e inventário de uma estação antes de ampliar a instalação.
+O token aparece uma vez e permite registrar um equipamento; guarde-o pelo canal autorizado. Para um parque novo, crie a chave de releases na estação administrativa e faça o [build, assinatura e publicação com Podman](docs/podman.md#agente-compilar-assinar-e-publicar-pelo-servidor-aula-232), usando `deploy/agente.sh`. O painel passa a oferecer os agentes publicados em **Configuração › Agente**. Valide registro, check-in e inventário de uma estação antes de ampliar a instalação.
 
 #### P7. Backup e manutenção
 
@@ -659,13 +659,13 @@ A publicação usa um contêiner temporário com a pasta para escrita: o servido
 
 ### 3. Receber a atualização no próximo check-in
 
-Após publicar, **Configuração › Agente** oferece a nova versão e o servidor a anuncia na resposta aos próximos check-ins. A oferta é global aos agentes elegíveis; esse mecanismo de atualização do próprio agente não usa os anéis das campanhas de instalação de software. Homologue os artefatos em um ambiente de teste antes de publicá-los na frota de produção.
+Após publicar, **Configuração › Agente** oferece a nova versão e o servidor a anuncia na resposta aos próximos check-ins. A oferta é global aos agentes elegíveis; esse mecanismo de atualização do próprio agente não usa os anéis das campanhas de instalação de software. Homologue os artefatos em um ambiente de teste antes de publicá-los no parque de produção.
 
 O agente instalado precisa estar rodando como serviço, com autoatualização ativa, uma versão válida e a pública correspondente à chave que assinou a release. Ele aceita apenas uma versão **mais nova que a instalada**, e o servidor só oferece agentes com versão **menor ou igual à sua**. O agente verifica assinatura, plataforma, tamanho, SHA-256 e identificação do executável antes de iniciar a substituição e o reinício do serviço. Identidade e credencial de registro são preservadas; não é necessário criar outro token de enrollment.
 
 O intervalo padrão é **1 h com variação de ±10%**; rede indisponível e novas tentativas podem aumentar a espera. Para antecipar em uma estação de teste, reinicie o serviço do agente como administrador: `Restart-Service patchd-agent` no Windows ou `sudo systemctl restart patchd-agent` no Linux. Há um atraso aleatório inicial de até cinco minutos. Um processo executado apenas no terminal não habilita a autoatualização do serviço.
 
-Confira em **Inventário** a versão reportada do agente e o último contato de cada equipamento, depois do reinício e do novo check-in. Veja os logs do agente para confirmar instalação ou erro; `release current` comprova a oferta, não a adoção pela frota.
+Confira em **Inventário** a versão reportada do agente e o último contato de cada equipamento, depois do reinício e do novo check-in. Veja os logs do agente para confirmar instalação ou erro; `release current` comprova a oferta, não a adoção pelo parque.
 
 | Se o agente não atualizar | Conferir |
 | --- | --- |

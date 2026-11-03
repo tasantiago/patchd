@@ -47,7 +47,7 @@ minutos por máquina.
 
 ## 4. Os limites e os alertas
 
-Os limites ficam em **Configuração › Parâmetros › Monitoramento**, para a frota toda:
+Os limites ficam em **Configuração › Parâmetros › Monitoramento**, para o parque todo:
 
 | Parâmetro | Padrão |
 |---|---|

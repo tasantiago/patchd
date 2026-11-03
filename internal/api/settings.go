@@ -225,7 +225,7 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	add("Chaves na frota", kv, kl)
+	add("Chaves no parque", kv, kl)
 	switch v, err := a.publishedVersion(); {
 	case a.releases == "":
 		add("Atualização do agente", "desligada (sem PATCHD_RELEASES_DIR)", "atencao")

@@ -212,7 +212,7 @@ func (a *api) dashboardPage(w http.ResponseWriter, r *http.Request) {
 		complianceSub = fmt.Sprintf("%d%% de %d equipamentos avaliados", pct(v.OK, v.FleetTotal), v.FleetTotal)
 	}
 	v.KPIs = append(v.KPIs,
-		dashboardKPI("Em dia", v.OK, v.ComplianceOn && v.FleetTotal > 0, complianceSub, "/painel/frota?estado=em_dia", "v-verde"),
+		dashboardKPI("Em dia", v.OK, v.ComplianceOn && v.FleetTotal > 0, complianceSub, "/painel/parque?estado=em_dia", "v-verde"),
 		dashboardKPI("Com exploração conhecida", v.Exploited, v.ComplianceOn, "equipamentos com correção explorada pendente", (patchQuery{Status: "exploradas"}).href(), "v-vermelho"))
 	a.render(w, r, http.StatusOK, "inicio", v)
 }
@@ -278,7 +278,7 @@ func (v *dashboardView) dashboardFleet(fleet protocol.ComplianceFleet) {
 		{Label: "Avaliação desconhecida", N: counts[compliance.StateUnknown], Pct: pct(counts[compliance.StateUnknown], v.FleetTotal), Color: "desconhecido"},
 	}
 	for _, st := range compliance.States {
-		v.States = append(v.States, dashboardBar{Label: st.Label(), N: counts[st], Pct: pct(counts[st], v.FleetTotal), Color: string(st), Href: "/painel/frota?estado=" + string(st)})
+		v.States = append(v.States, dashboardBar{Label: st.Label(), N: counts[st], Pct: pct(counts[st], v.FleetTotal), Color: string(st), Href: "/painel/parque?estado=" + string(st)})
 	}
 	if warnings {
 		v.Issues = append(v.Issues, "Catálogos: há fontes atrasadas na avaliação; o retrato pode não incluir as correções mais recentes.")

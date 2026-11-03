@@ -268,7 +268,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /painel/oidc/entrar", a.oidcStart)
 	mux.HandleFunc("GET /painel/oidc/retorno", a.oidcReturn)
 	mux.Handle("GET /painel/{$}", a.panelPage(a.homePage))
-	mux.Handle("GET /painel/frota", a.panelPage(a.fleetPage))
+	mux.Handle("GET /painel/parque", a.panelPage(a.fleetPage))
+	// "Frota" virou "Parque": o endereço antigo leva ao novo (favoritos e links salvos).
+	mux.Handle("GET /painel/frota", a.panelPage(movedTo("/painel/parque")))
+	mux.Handle("GET /painel/frota.csv", a.panelPage(movedTo("/painel/parque.csv")))
 	mux.Handle("GET /painel/padronizacao", a.adminAction(a.standardizationPage))
 	mux.Handle("POST /painel/padronizacao", a.sameOrigin(a.adminAction(a.saveStandardization)))
 	mux.Handle("POST /painel/padronizacao/{id}/excluir", a.sameOrigin(a.adminAction(a.deleteStandardization)))
@@ -287,7 +290,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/patch/aprovar-lote", a.sameOrigin(a.adminAction(a.approveBatchAction)))
 	mux.Handle("POST /painel/patch/correcao", a.sameOrigin(a.adminAction(a.approveFixAction)))
 	mux.Handle("GET /painel/aposentadas", a.panelPage(a.retiredPage))
-	mux.Handle("GET /painel/frota.csv", a.panelPage(a.fleetCSV))
+	mux.Handle("GET /painel/parque.csv", a.panelPage(a.fleetCSV))
 	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
@@ -517,4 +520,16 @@ func (a *api) checkClock(r *http.Request, id string, collectedAt time.Time) {
 func (a *api) internalError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	a.logger.Error("falha interna", "op", op, "error", err, "request_id", RequestID(r.Context()))
 	writeError(w, http.StatusInternalServerError, "internal", "erro interno do servidor")
+}
+
+// movedTo redireciona para o endereço novo, com a mesma consulta (?estado=...). A página nova
+// confere a sessão como sempre.
+func movedTo(path string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		to := path
+		if r.URL.RawQuery != "" {
+			to += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, to, http.StatusMovedPermanently)
+	}
 }

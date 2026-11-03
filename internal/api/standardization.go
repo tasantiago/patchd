@@ -358,7 +358,7 @@ func (a *api) saveStandardization(w http.ResponseWriter, r *http.Request, s pane
 	}
 	for _, id := range p.Machines {
 		if !slices.ContainsFunc(ms, func(m protocol.MachineSummary) bool { return m.ID == id }) {
-			bad(errors.New("um computador selecionado não está mais ativo na frota"))
+			bad(errors.New("um computador selecionado não está mais ativo no parque"))
 			return
 		}
 	}

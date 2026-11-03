@@ -21,7 +21,7 @@ const inventoryUsage = `uso: patchd-server inventory summary -dir PASTA [-maquin
 
 Resume uma pasta de inventários avulsos (a saída do "patchd-agent -inventory", um arquivo
 .json por máquina) sem banco nem servidor: o firmware (Aula 21.2) e ligar pela rede (Aula
-22.1), contados. Serve a frota que ainda não fala com o servidor: a coleta roda pelo PsExec
+22.1), contados. Serve o parque que ainda não fala com o servidor: a coleta roda pelo PsExec
 ou pelo ITOM, e o resumo, aqui.
 
   -maquinas  lista também os nomes das máquinas em cada contagem (para você; não repasse:

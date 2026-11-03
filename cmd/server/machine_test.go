@@ -135,7 +135,7 @@ func TestComandosDeMaquina(t *testing.T) {
 	if !strings.Contains(out, "registro antigo da VM reinstalada") || !strings.Contains(out, "APOSENTADA") || !strings.Contains(out, "1 máquina(s)") {
 		t.Errorf("list -retired:\n%s", out)
 	}
-	if code, _, e := roda("restore", "-id", "7aa6"); code != exitOK || !strings.Contains(e, "de volta à frota") {
+	if code, _, e := roda("restore", "-id", "7aa6"); code != exitOK || !strings.Contains(e, "de volta ao parque") {
 		t.Errorf("restore: %d %s", code, e)
 	}
 	if _, _, e := roda("restore", "-id", "7aa6"); !strings.Contains(e, "não estava aposentada") {

@@ -1,7 +1,7 @@
 # Página inicial e indicadores para decisão
 
 Depois do login, `/painel/` abre a visão geral do ambiente. **Início** reúne os
-indicadores; **Frota** (`/painel/frota`) mantém a lista completa, os filtros e a
+indicadores; **Parque** (`/painel/parque`) mantém a lista completa, os filtros e a
 exportação. Links antigos como `/painel/?estado=faltando` continuam funcionando.
 
 A página usa as mesmas fontes do inventário, da conformidade e da operação.
@@ -35,7 +35,7 @@ não são executadas; os contadores normais do menu continuam seguindo seu cache
 
 **— indica dado indisponível**, nunca zero. Uma falha de consulta é sinalizada e
 os demais blocos continuam sendo apresentados quando suas fontes respondem.
-Uma frota vazia não recebe taxa de conformidade de 100%.
+Umo parque vazio não recebe taxa de conformidade de 100%.
 
 ## Gráficos e acompanhamentos
 
@@ -77,7 +77,7 @@ consulta podem aparecer no próximo carregamento.
 
 ## Acesso e operação
 
-Início e Frota exigem uma sessão válida e podem ser lidos pelos perfis de leitura
+Início e Parque exigem uma sessão válida e podem ser lidos pelos perfis de leitura
 e administrador. Ações administrativas continuam nas telas e guardas existentes.
 Nomes e motivos são escapados pelo template. Gráficos usam HTML/CSS do próprio
 painel, com valores em texto, sem JavaScript, CDN ou relaxamento da CSP.

@@ -15,7 +15,7 @@ type dashboardOption struct {
 
 var dashboardOptions = []dashboardOption{
 	{Key: "indicadores", Label: "Indicadores principais"},
-	{Key: "conformidade", Label: "Conformidade da frota"},
+	{Key: "conformidade", Label: "Conformidade do parque"},
 	{Key: "seguranca", Label: "Segurança e correções pendentes"},
 	{Key: "sistemas", Label: "Composição dos sistemas"},
 	{Key: "comunicacao", Label: "Comunicação dos equipamentos"},

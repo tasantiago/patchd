@@ -53,7 +53,7 @@ install:
   -ttl 24h       prazo para o agente receber e executar (10m a 168h)
 plan:
   -machine ID    uma máquina (ID ou começo do ID, como no machine list), com as instalações
-  -all           a frota Windows: quantas máquinas em cada situação, por programa
+  -all           o parque Windows: quantas máquinas em cada situação, por programa
 
 O manifesto de terceiros é o embutido, mais PATCHD_THIRDPARTY_MANIFEST se definido. fetch,
 list e plan usam o PostgreSQL; fetch e list, também PATCHD_CONTENT_DIR/pacotes.

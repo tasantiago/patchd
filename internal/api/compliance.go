@@ -57,7 +57,7 @@ func (a *api) fleetCompliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.internalError(w, r, "avaliar a frota", err)
+		a.internalError(w, r, "avaliar o parque", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, fleet)

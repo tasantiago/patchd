@@ -110,7 +110,7 @@ func stateBar(size string, counts map[string]int, link bool) segBar {
 	for _, s := range ovStates {
 		p := segPart{Label: s.Label, Class: s.Class, N: counts[s.Key]}
 		if link {
-			p.Href = "/painel/?estado=" + s.Key
+			p.Href = "/painel/parque?estado=" + s.Key
 		}
 		parts = append(parts, p)
 	}

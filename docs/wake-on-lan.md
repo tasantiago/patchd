@@ -18,7 +18,7 @@ Nenhum valor real (nome de máquina, MAC, sub-rede) entra aqui.
 | Rede lógica | o pacote mágico é broadcast e não passa pelo roteador | (Aula 22.2: um agente da mesma sub-rede repete o pacote) |
 
 A decisão (pronta, bloqueada, sem informação) fica no servidor (`internal/wake`), com os
-motivos em texto fixo: o cartão da máquina e o resumo da frota contam pelos mesmos textos.
+motivos em texto fixo: o cartão da máquina e o resumo do parque contam pelos mesmos textos.
 
 ## As aulas
 

@@ -1,6 +1,6 @@
 # Padronização de computadores
 
-A área **Automação › Padronização** define o que cada computador precisa ter. Um padrão básico pode atender toda a frota e se somar a grupos como Financeiro e RH. Cada grupo pode conter aplicativos e atalhos. A configuração começa como rascunho; marque **Ativo** para o agente começar a aplicar.
+A área **Automação › Padronização** define o que cada computador precisa ter. Um padrão básico pode atender todo o parque e se somar a grupos como Financeiro e RH. Cada grupo pode conter aplicativos e atalhos. A configuração começa como rascunho; marque **Ativo** para o agente começar a aplicar.
 
 ## Preparar servidor e agentes
 
@@ -62,7 +62,7 @@ Atalhos com o mesmo nome e destinos diferentes em grupos sobrepostos ficam bloqu
 
 Aplicativos de padrões por computador são avaliados no check-in. Os grupos do usuário e os atalhos dependem da sessão ativa. São criados até cinco jobs por avaliação, respeitando a fila de instalações já aberta. Depois da execução, o agente envia novo inventário e antecipa outro check-in. Tentativas sem sucesso são espaçadas por seis horas.
 
-A tabela mostra até 500 avaliações recentes por computador e conta: aplicativos em dia, agendados, em andamento, aguardando ou bloqueados. Os aplicativos são confirmados pelo inventário. Atalhos mostram o último relato da sessão, com sua data; isso não é uma comprovação independente de conformidade de toda a frota.
+A tabela mostra até 500 avaliações recentes por computador e conta: aplicativos em dia, agendados, em andamento, aguardando ou bloqueados. Os aplicativos são confirmados pelo inventário. Atalhos mostram o último relato da sessão, com sua data; isso não é uma comprovação independente de conformidade de todo o parque.
 
 Desativar ou excluir um grupo interrompe novas aplicações desse grupo, mas não desfaz jobs emitidos. Cancele jobs ainda pendentes em **Jobs**, se necessário. Aplicativos instalados permanecem; atalhos gerenciados são revistos na próxima sincronização do usuário.
 

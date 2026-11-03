@@ -144,7 +144,7 @@ func stateColor(s compliance.State) string {
 
 // fleetPage lista a frota com o estado de cada máquina; ?estado= filtra.
 func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
-	v := fleetView{pageBase: a.base(r, "Frota", "frota"), Rings: allRings()}
+	v := fleetView{pageBase: a.base(r, "Parque", "frota"), Rings: allRings()}
 	fleetRingFlash(r.URL.Query(), &v.pageBase)
 	filter := compliance.State(r.URL.Query().Get("estado"))
 	if filter.Rank() < len(compliance.States) {
@@ -162,8 +162,8 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.logger.Error("falha interna", "op", "avaliar a frota", "error", err, "request_id", RequestID(r.Context()))
-		v.Unavailable = "A avaliação da frota falhou; veja o log do servidor."
+		a.logger.Error("falha interna", "op", "avaliar o parque", "error", err, "request_id", RequestID(r.Context()))
+		v.Unavailable = "A avaliação do parque falhou; veja o log do servidor."
 		a.render(w, r, http.StatusOK, "frota", v)
 		return
 	}
@@ -347,7 +347,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	}
 	switch q := r.URL.Query(); {
 	case q.Has("restaurada"):
-		v.Flash = "Máquina devolvida à frota; a credencial dela voltou a valer."
+		v.Flash = "Máquina devolvida ao parque; a credencial dela voltou a valer."
 	case q.Has("anel-alterado"):
 		n, _ := strconv.Atoi(q.Get("anel"))
 		v.Flash = fmt.Sprintf("Máquina no anel %d. Os jobs já criados não mudam; campanhas em andamento usam o anel novo nos próximos anéis que liberarem.", n)
@@ -467,7 +467,7 @@ type retiredView struct {
 func (a *api) retiredPage(w http.ResponseWriter, r *http.Request) {
 	v := retiredView{pageBase: a.base(r, "Máquinas aposentadas", "aposentadas")}
 	if q := r.URL.Query(); q.Has("aposentada") {
-		v.Flash = "Máquina aposentada: saiu da frota, e a credencial dela deixou de valer."
+		v.Flash = "Máquina aposentada: saiu do parque, e a credencial dela deixou de valer."
 	}
 	list, err := a.store.RetiredMachines(r.Context())
 	if err != nil {
@@ -577,7 +577,7 @@ var pages = template.Must(template.New("").Parse(`
 <nav aria-label="principal">
 <p class="grupo"><span class="rot">Navegação</span></p>
 <a href="/painel/" title="Início" {{if eq .Nav "inicio"}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Início</span></a>
-<a href="/painel/frota" title="Frota" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Frota</span></a>
+<a href="/painel/parque" title="Parque" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Parque</span></a>
 <a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + ui.IcInventario + `<span class="rot">Inventário</span></a>
 <a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAposentadas + `<span class="rot">Aposentadas</span></a>
 <a href="/painel/alertas" title="Alertas de desempenho" {{if eq .Nav "alertas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAlertas + `<span class="rot">Alertas</span>{{with .Badges.Alerts}}<span class="cont" title="alertas de desempenho abertos e não reconhecidos">{{.}}</span>{{end}}</a>
@@ -630,16 +630,16 @@ var pages = template.Must(template.New("").Parse(`
 {{end}}{{end}}
 
 {{define "frota"}}{{template "topo" .}}
-<h1>Frota</h1>
+<h1>Parque</h1>
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
-<li><a class="kpi{{if not .Filter}} ativo{{end}}" href="/painel/frota"><span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">{{.Total}}</span></a></li>
-{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/frota?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span></a></li>{{end}}
+<li><a class="kpi{{if not .Filter}} ativo{{end}}" href="/painel/parque"><span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">{{.Total}}</span></a></li>
+{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/parque?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span></a></li>{{end}}
 <li><div class="kpi"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">{{.Exploited}}</span><span class="kpi-sub">máquinas com CVE explorada pendente</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Ainda por HTTP</span><span class="kpi-val v-laranja">{{.HTTP}}</span><span class="kpi-sub">último check-in sem TLS</span></div></li>
 </ul>
 <div class="card"><div class="card-cab"><h2>Máquinas{{if .Filter}} · {{.FilterLabel}}{{end}}</h2>
-<span><span class="muted">Avaliado em {{.EvaluatedAt}}</span> <span class="grupo-btn"><a class="btn" href="/painel/frota.csv{{if .Filter}}?estado={{.Filter}}{{end}}">CSV</a><a class="btn" href="/api/v1/compliance">JSON</a></span></span></div>
+<span><span class="muted">Avaliado em {{.EvaluatedAt}}</span> <span class="grupo-btn"><a class="btn" href="/painel/parque.csv{{if .Filter}}?estado={{.Filter}}{{end}}">CSV</a><a class="btn" href="/api/v1/compliance">JSON</a></span></span></div>
 {{if .Rows}}{{if .Admin}}<form method="post" action="/painel/aneis/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<div class="tabela"><table>
 <thead><tr>{{if .Admin}}<th></th>{{end}}<th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Anel</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
 <tbody>{{range .Rows}}<tr>
@@ -891,8 +891,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Patch <span class="muted">› Visão geral</span></h1>
 {{template "patch-abas" "geral"}}
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
-{{if .FleetSize}}<div class="card conformidade"><div class="card-cab"><h2>Conformidade da frota</h2></div>
-<div class="conf-corpo"><a class="conf-num" href="/painel/?estado=em_dia"><span class="hero">{{.FleetPct}}%</span><span class="muted">em dia · {{.FleetOK}} de {{.FleetSize}} máquinas</span></a>
+{{if .FleetSize}}<div class="card conformidade"><div class="card-cab"><h2>Conformidade do parque</h2></div>
+<div class="conf-corpo"><a class="conf-num" href="/painel/parque?estado=em_dia"><span class="hero">{{.FleetPct}}%</span><span class="muted">em dia · {{.FleetOK}} de {{.FleetSize}} máquinas</span></a>
 <div class="conf-barra">{{template "segbar" .Fleet}}{{template "estados-legenda"}}</div></div></div>{{end}}
 <ul class="kpis">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>
 <div class="card"><div class="card-cab"><h2>Precisa de atenção</h2><span class="muted">avaliado em {{.EvaluatedAt}}</span></div>
@@ -950,7 +950,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <td class="num">{{if .Outdated}}<span class="v-laranja">{{.Outdated}}</span>{{else}}0{{end}}</td><td class="num">{{if .EOL}}<span class="expl">{{.EOL}}</span>{{else}}0{{end}}</td>
 <td><code>{{.Versions}}</code></td><td class="muted">{{.Origin}}</td></tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum programa de terceiros {{if .All}}identificado{{else}}com problema{{end}} na frota.</p>{{end}}
+{{else}}<p class="muted">Nenhum programa de terceiros {{if .All}}identificado{{else}}com problema{{end}} no parque.</p>{{end}}
 </div>{{end}}
 {{template "fim"}}{{end}}
 
@@ -1009,7 +1009,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <button class="sec" type="submit" name="filtro" value="1">Conferir todos os {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
 <span class="muted">Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} itens.{{end}}</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente na frota{{end}}.</p>{{end}}
+{{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}
 </div>{{end}}
 {{template "fim"}}{{end}}
 
@@ -1092,7 +1092,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "maquina"}}{{template "topo" .}}
-<p><a href="/painel/inventario">← Inventário</a> · <a href="/painel/">Frota</a></p>
+<p><a href="/painel/inventario">← Inventário</a> · <a href="/painel/parque">Parque</a></p>
 <h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
 {{if .Admin}}<div class="descoberta-acoes"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/mesclar">Mesclar registro duplicado</a><a class="btn sec" href="/painel/maquinas/{{.D.MachineID}}/historico">Histórico e registros incorporados</a></div>{{end}}
 {{if and .Admin .MergedRecords}}<p class="aviso atencao">{{.MergedRecords}} registro(s) anterior(es) incorporado(s), com {{.MergedBIOS}} senha(s) de BIOS preservada(s). <a href="/painel/maquinas/{{.D.MachineID}}/historico">Consultar histórico e senhas anteriores</a>.</p>{{end}}
@@ -1143,7 +1143,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
 </ul></div>{{end}}
 {{if .Admin}}<section><h2>Aposentar</h2>
-<p class="muted">A máquina sai da frota, do compliance e do painel, e a credencial dela deixa de valer. Nada é apagado; dá para restaurar em Aposentadas.</p>
+<p class="muted">A máquina sai do parque, do compliance e do painel, e a credencial dela deixa de valer. Nada é apagado; dá para restaurar em Aposentadas.</p>
 <form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/aposentar">
 <input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (ex.: registro antigo da VM reinstalada)">
 <button class="perigo" type="submit">Aposentar</button></form></section>{{end}}
@@ -1174,13 +1174,13 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>#</th><th>Estado</th><th>Sorteada</th><th>Por</th><th>Revelações</th>{{if and .Admin .On}}<th>Ações</th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td><span{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.State}}</span>{{if .Result}}<br><span class="muted">{{.Result}}</span>{{end}}</td><td>{{.Created}}</td><td>{{.By}}</td><td>{{.Reveals}}</td>
-{{if and $.BIOS.Admin $.BIOS.On}}<td>{{if .CanWrite}}<form class="inline" method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/{{.ID}}/gravar">{{if $.BIOS.NeedCurrent}}{{if $.BIOS.FleetLabel}}<input type="password" name="senha_atual" maxlength="{{$.BIOS.MaxCurrent}}" autocomplete="off" placeholder="em branco: a padrão da {{$.BIOS.FleetLabel}}" aria-label="senha atual da BIOS (em branco: a senha padrão da {{$.BIOS.FleetLabel}})">{{else}}<input type="password" name="senha_atual" required maxlength="{{$.BIOS.MaxCurrent}}" autocomplete="off" placeholder="senha atual da BIOS" aria-label="senha atual da BIOS (a da frota)">{{end}} {{end}}<button type="submit">Gravar na BIOS</button></form>{{end}}
+{{if and $.BIOS.Admin $.BIOS.On}}<td>{{if .CanWrite}}<form class="inline" method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/{{.ID}}/gravar">{{if $.BIOS.NeedCurrent}}{{if $.BIOS.FleetLabel}}<input type="password" name="senha_atual" maxlength="{{$.BIOS.MaxCurrent}}" autocomplete="off" placeholder="em branco: a padrão da {{$.BIOS.FleetLabel}}" aria-label="senha atual da BIOS (em branco: a senha padrão da {{$.BIOS.FleetLabel}})">{{else}}<input type="password" name="senha_atual" required maxlength="{{$.BIOS.MaxCurrent}}" autocomplete="off" placeholder="senha atual da BIOS" aria-label="senha atual da BIOS (a padrão do parque)">{{end}} {{end}}<button type="submit">Gravar na BIOS</button></form>{{end}}
 {{if .CanResolve}}<form class="inline" method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/{{.ID}}/resolver"><span class="muted">conferida na BIOS:</span> <button class="sec" type="submit" name="valor" value="nova">A nova vale</button> <button class="sec" type="submit" name="valor" value="anterior">A anterior vale</button></form>{{end}}
 {{if .CanReveal}}<form class="inline" method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/{{.ID}}/revelar"><input name="motivo" required minlength="{{$.BIOS.MinReason}}" maxlength="{{$.BIOS.MaxReason}}" placeholder="motivo (chamado, OS...)" aria-label="motivo da revelação da senha #{{.ID}}"> <button class="sec" type="submit">Revelar</button></form>{{else if .OtherKey}}<span class="muted">outra chave de guarda (<code>{{.OtherKey}}</code>)</span>{{else if not .CanWrite}}—{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma senha guardada para esta máquina.</p>{{end}}
 {{if .CanPrepare}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/preparar"><p class="muted">Sorteia uma senha de 12 caracteres e a guarda cifrada. Nada muda na máquina até a gravação.</p><button class="sec" type="submit">Preparar senha nova</button></form>
 {{else if and .Admin .On .Pending}}<p class="muted">A senha #{{.Pending}} está pendente: é ela que a próxima gravação usa.</p>{{end}}
-{{if and .Admin .On .Pending .Blocker}}<p class="aviso atencao">Gravação indisponível: {{.Blocker}}.</p>{{else if and .Admin .On .NeedCurrent .FleetLabel}}<p class="muted">A BIOS já tem senha e a guarda não tem a atual: a primeira troca usa a senha padrão da {{.FleetLabel}} (Configuração › BIOS). Se esta máquina tiver outra, digite-a no campo.</p>{{else if and .Admin .On .NeedCurrent}}<p class="muted">A BIOS já tem senha e a guarda não tem a atual: na primeira troca, digite a senha em uso (a da frota), ou cadastre a senha padrão do fabricante em Configuração › BIOS. Ela vai cifrada para a máquina e não fica guardada.</p>{{end}}
+{{if and .Admin .On .Pending .Blocker}}<p class="aviso atencao">Gravação indisponível: {{.Blocker}}.</p>{{else if and .Admin .On .NeedCurrent .FleetLabel}}<p class="muted">A BIOS já tem senha e a guarda não tem a atual: a primeira troca usa a senha padrão da {{.FleetLabel}} (Configuração › BIOS). Se esta máquina tiver outra, digite-a no campo.</p>{{else if and .Admin .On .NeedCurrent}}<p class="muted">A BIOS já tem senha e a guarda não tem a atual: na primeira troca, digite a senha em uso (a padrão do parque), ou cadastre a senha padrão do fabricante em Configuração › BIOS. Ela vai cifrada para a máquina e não fica guardada.</p>{{end}}
 </div>{{end}}
 <div class="card"><div class="card-cab"><h2>Rede e discos</h2>{{if .Host.Has}}<span class="muted">coletado {{.Host.Age}}</span>{{end}}</div>
 {{if .Host.Has}}<dl class="dados">
@@ -1350,7 +1350,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "jobs"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Jobs</span></h1>
 {{template "automacao-abas" "jobs"}}
-<div class="card"><div class="card-cab"><h2>Mais recentes</h2><span class="muted">Os {{.N}} mais recentes da frota. Para pedir uma busca, abra a máquina na Frota.</span></div>
+<div class="card"><div class="card-cab"><h2>Mais recentes</h2><span class="muted">Os {{.N}} mais recentes do parque. Para pedir uma busca, abra a máquina no Parque.</span></div>
 {{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
@@ -1451,8 +1451,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "aneis"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Anéis e janelas</span></h1>
 {{template "automacao-abas" "aneis"}}
-<p class="muted">Anel 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos anéis em ordem. A janela de manutenção de um anel é quando os jobs "na janela" daquele anel podem rodar. Para pôr máquinas num anel, marque-as na <a href="/painel/">Frota</a> ou use o detalhe da máquina.</p>
-<div class="card"><div class="card-cab"><h2>Anéis em uso</h2><span class="muted">{{.Total}} máquina(s) na frota</span></div>{{if .Rows}}<div class="tabela"><table>
+<p class="muted">Anel 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos anéis em ordem. A janela de manutenção de um anel é quando os jobs "na janela" daquele anel podem rodar. Para pôr máquinas num anel, marque-as na <a href="/painel/parque">Parque</a> ou use o detalhe da máquina.</p>
+<div class="card"><div class="card-cab"><h2>Anéis em uso</h2><span class="muted">{{.Total}} máquina(s) no parque</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Anel</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
 {{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/aneis/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
@@ -1530,12 +1530,12 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 
 {{define "nao-encontrada"}}{{template "topo" .}}
 <h1>Máquina não encontrada</h1>
-<p class="card">Ela não existe, está aposentada, ou o estado de compliance está indisponível. <a href="/painel/">Voltar à frota</a>.</p>
+<p class="card">Ela não existe, está aposentada, ou o estado de compliance está indisponível. <a href="/painel/parque">Voltar ao parque</a>.</p>
 {{template "fim"}}{{end}}
 
 {{define "proibido"}}{{template "topo" .}}
 <h1>Sem permissão</h1>
-<p class="card">Esta ação é do perfil admin. <a href="/painel/">Voltar à frota</a>.</p>
+<p class="card">Esta ação é do perfil admin. <a href="/painel/parque">Voltar ao parque</a>.</p>
 {{template "fim"}}{{end}}
 
 {{define "scripts"}}{{template "topo" .}}
@@ -1598,7 +1598,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><div class="card-cab"><h2>Registro duplicado a incorporar</h2></div>
 <form method="get" class="linha-faixa mescla-escolha"><select name="origem" required aria-label="Registro duplicado"><option value="">Selecione o registro antigo</option>{{range .Candidates}}<option value="{{.ID}}"{{if $.Source}}{{if eq $.Source.ID .ID}} selected{{end}}{{end}}>{{.Name}} · {{.ID}} · {{.Agent}} · {{.LastSeen}}</option>{{end}}</select><button class="sec" type="submit">Revisar mesclagem</button></form>
 {{with .Source}}<dl class="dados"><dt>Nome</dt><dd>{{.Name}}</dd><dt>ID</dt><dd><code>{{.ID}}</code></dd><dt>Serial</dt><dd>{{.Serial}}</dd><dt>Agente</dt><dd>{{.Agent}}</dd><dt>Último contato</dt><dd>{{.LastSeen}}</dd><dt>Senhas de BIOS guardadas</dt><dd>{{.BIOS}}</dd></dl>
-<p class="aviso atencao">Confirme que os dois registros representam o mesmo equipamento físico. Nome ou IP iguais, isoladamente, não comprovam isso. A credencial deste registro será revogada, e ele sairá da frota ativa.</p>
+<p class="aviso atencao">Confirme que os dois registros representam o mesmo equipamento físico. Nome ou IP iguais, isoladamente, não comprovam isso. A credencial deste registro será revogada, e ele sairá do parque ativo.</p>
 <p>Os relatórios, jobs, solicitações, auditoria e senhas de BIOS permanecerão vinculados aos IDs originais e poderão ser consultados no histórico do equipamento ativo. Jobs ainda pendentes na origem serão cancelados; jobs já entregues precisam terminar antes da mesclagem. A operação não instala nem altera o agente.</p>
 <form method="post" action="/painel/maquinas/{{$.Target.ID}}/mesclar" class="descoberta-credencial">
 <input type="hidden" name="origem" value="{{.ID}}"><div class="descoberta-campo"><label for="mescla-motivo">Motivo da mesclagem</label><input id="mescla-motivo" name="motivo" minlength="10" maxlength="500" required placeholder="Ex.: reinstalação do agente no mesmo equipamento"></div>

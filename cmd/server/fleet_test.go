@@ -154,7 +154,7 @@ func TestEstadoDaFrota(t *testing.T) {
 	var out bytes.Buffer
 	printFleet(fleet, false, &out)
 	for _, tr := range []string{
-		"Frota: 7 máquina(s): faltando 1 · reboot pendente 1 · sem dado recente 1 · desconhecido 3 · em dia 1",
+		"Parque: 7 máquina(s): faltando 1 · reboot pendente 1 · sem dado recente 1 · desconhecido 3 · em dia 1",
 		"faltando          ubuntu-p  SO 1  1 pacote ", "1 pacote com correção pendente",
 		"há 30 min", "há 10 dias", "pc-ubuntu",
 	} {
