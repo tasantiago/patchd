@@ -47,6 +47,9 @@ type pageBase struct {
 	AgentVersion  string // a versão publicada do agente
 	ParamsOn      bool   // Aula 19.2: a aba Parâmetros existe (servidor com o serviço de parâmetros)
 	Refresh       int    // Aula 23.3: recarrega a página a cada N segundos (sem JavaScript); 0: não
+	// CheckinWait: quanto um job pode esperar o check-in ("cerca de 15 min"), pelo intervalo de
+	// Configuração › Parâmetros › Agentes.
+	CheckinWait string
 }
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
@@ -58,7 +61,7 @@ func (a *api) base(r *http.Request, title, nav string) pageBase {
 // adminAction, não do contexto).
 func (a *api) baseFor(ctx context.Context, s panel.Session, title, nav string) pageBase {
 	b := pageBase{Brand: a.brandName(), Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav,
-		ServerVersion: a.serverVersion, Logo: a.logoURL(ctx), ParamsOn: a.params != nil}
+		ServerVersion: a.serverVersion, Logo: a.logoURL(ctx), ParamsOn: a.params != nil, CheckinWait: a.checkinWait()}
 	if b.ServerVersion == "" && a.system != nil {
 		b.ServerVersion = a.system.Version
 	}
@@ -1200,7 +1203,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <tbody>{{range .Adapters}}<tr><td>{{.Name}}</td><td><code>{{.MAC}}</code></td><td>{{.Wired}}</td><td>{{.Magic}}</td><td>{{.DeviceWake}}</td></tr>{{end}}</tbody></table></div>{{end}}
 </div>{{end}}
 {{with .WakeOn}}<div class="card" id="ligar"><div class="card-cab"><h2>Ligar agora</h2><span class="muted">pacote mágico pela mesma sub-rede</span></div>
-<p class="muted">O pacote mágico não passa pelo roteador: o patchd pede a até 3 máquinas ligadas da mesma sub-rede (com check-in nas últimas 2 horas) que o mandem, por broadcast local, para {{if .MACs}}<code>{{.MACs}}</code>{{else}}as placas com cabo desta máquina{{end}}. O pedido sai no próximo check-in de um deles (até cerca de 1 h).</p>
+<p class="muted">O pacote mágico não passa pelo roteador: o patchd pede a até 3 máquinas ligadas da mesma sub-rede (com check-in nas últimas 2 horas) que o mandem, por broadcast local, para {{if .MACs}}<code>{{.MACs}}</code>{{else}}as placas com cabo desta máquina{{end}}. O pedido sai no próximo check-in de um deles (até {{$.CheckinWait}}).</p>
 {{if .Pending}}<p class="aviso atencao">{{.Pending}}.</p>
 {{else if .CanRequest}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/ligar"><button type="submit">Ligar pela rede</button></form>
 {{else if not .MACs}}<p class="muted">Sem MAC conhecido de uma placa com cabo: o agente ainda não mandou a rede desta máquina.</p>{{end}}

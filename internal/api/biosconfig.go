@@ -379,7 +379,7 @@ func biosConfigFlash(q map[string][]string, v *machineView) bool {
 		return ""
 	}
 	if get("bios-config") == "pedida" {
-		v.Flash = fmt.Sprintf("Alteração pedida: job %s. A máquina grava no próximo check-in (até 1 h); as mudanças valem no reinício seguinte.", get("job"))
+		v.Flash = fmt.Sprintf("Alteração pedida: job %s. A máquina grava no próximo check-in (até %s); as mudanças valem no reinício seguinte.", get("job"), v.CheckinWait)
 		return true
 	}
 	msg, ok := map[string]string{

@@ -320,7 +320,7 @@ func biosFlash(q map[string][]string, v *machineView) bool {
 		v.Flash = "Esta máquina já tem uma senha pendente; ela é a que será gravada. Nenhuma senha nova foi sorteada."
 		return true
 	case "gravando":
-		v.Flash = fmt.Sprintf("Gravação pedida: job %s. A máquina grava no próximo check-in (até 1 h), e este cartão mostra a resposta.", get("job"))
+		v.Flash = fmt.Sprintf("Gravação pedida: job %s. A máquina grava no próximo check-in (até %s), e este cartão mostra a resposta.", get("job"), v.CheckinWait)
 		return true
 	case "resolvida":
 		v.Flash = "Senha incerta resolvida e registrada na auditoria."

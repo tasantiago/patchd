@@ -155,3 +155,17 @@ func TestRetencaoDaTela(t *testing.T) {
 		t.Errorf("aba Sistema: %q %q", catalog, ret)
 	}
 }
+
+func TestIntervaloDeCheckinDaTela(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSettings(ctx, envDeTeste(nil), store.NewMemory(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if v := s.Value("PATCHD_CHECKIN_MINUTES"); v != "0" {
+		t.Fatalf("padrão %q", v)
+	}
+	if _, err := s.Apply(ctx, map[string]string{"PATCHD_CHECKIN_MINUTES": "7"}, "admin"); err == nil {
+		t.Error("7 min (fora da lista) aceito")
+	}
+	if _, err := s.Apply(ctx, map[string]string{"PATCHD_CHECKIN_MINUTES": "15"}, "admin"); err != nil || s.Value("PATCHD_CHECKIN_MINUTES") != "15" {
+		t.Fatalf("15: %v %q", err, s.Value("PATCHD_CHECKIN_MINUTES"))
+	}
+}

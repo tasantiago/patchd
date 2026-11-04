@@ -130,7 +130,7 @@ func (a *api) wakeActionView(ctx context.Context, id string, hw *protocol.Hardwa
 		if p.SentAt != nil {
 			v.Pending += ": pacote enviado " + ago(now.Sub(*p.SentAt)) + ", esperando o check-in da máquina"
 		} else {
-			v.Pending += ": esperando o check-in de um repetidor (até cerca de 1 h)"
+			v.Pending += ": esperando o check-in de um repetidor (até " + a.checkinWait() + ")"
 		}
 		v.CanRequest = false
 	}
@@ -278,8 +278,8 @@ func (a *api) wakeOnLANAction(w http.ResponseWriter, r *http.Request, s panel.Se
 func wakeFlash(q url.Values, b *pageBase) bool {
 	if q.Get("ligar") == "pedido" {
 		n, _ := strconv.Atoi(q.Get("n"))
-		b.Flash = fmt.Sprintf("Pedido de ligar criado para %d %s da mesma sub-rede. O pacote sai no próximo check-in de um deles (até cerca de 1 h); a máquina conta como ligada no primeiro check-in dela depois disso.",
-			max(n, 1), plural(max(n, 1), "repetidor", "repetidores"))
+		b.Flash = fmt.Sprintf("Pedido de ligar criado para %d %s da mesma sub-rede. O pacote sai no próximo check-in de um deles (até %s); a máquina conta como ligada no primeiro check-in dela depois disso.",
+			max(n, 1), plural(max(n, 1), "repetidor", "repetidores"), b.CheckinWait)
 		return true
 	}
 	msg, ok := map[string]string{

@@ -73,7 +73,20 @@ type CheckinResponse struct {
 	Jobs []SignedJob `json:"jobs,omitempty"`
 	// Monitor: os limites de desempenho da frota (docs/monitoramento.md). Ausente: os padrões.
 	Monitor *MonitorPolicy `json:"monitor,omitempty"`
+	// CheckinMinutes: o intervalo de check-in definido no servidor (Configuração ›
+	// Parâmetros › Agentes), de MinCheckinMinutes a MaxCheckinMinutes. Ausente (0): vale o do
+	// próprio agente (-checkin-interval). Agente anterior: ignora o campo.
+	CheckinMinutes int `json:"checkin_minutes,omitempty"`
 }
+
+// Limites do intervalo de check-in definido no servidor.
+const (
+	MinCheckinMinutes = 5
+	MaxCheckinMinutes = 24 * 60
+)
+
+// ValidCheckinMinutes diz se o intervalo mandado pelo servidor vale.
+func ValidCheckinMinutes(n int) bool { return n >= MinCheckinMinutes && n <= MaxCheckinMinutes }
 
 // RepoCache diz onde as máquinas Linux alcançam o cache de repositórios do servidor.
 type RepoCache struct {

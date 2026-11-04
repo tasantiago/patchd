@@ -585,6 +585,20 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
 - Ficam sempre no ambiente: banco, portas, TLS, chaves e segredos, pastas, a URL pública e os
   endereços do AD e do RHBK. Grupos de acesso: Aula 19.4.
 
+### Intervalo de check-in pela tela
+
+- Configuração › Parâmetros › **Agentes › Intervalo de check-in** (`PATCHD_CHECKIN_MINUTES`):
+  "o de cada agente" (o padrão: vale o `-checkin-interval` de cada máquina, 1 hora se não foi
+  dado) ou 5, 10, 15 e 30 minutos, 1, 2 ou 4 horas para o parque todo.
+- O servidor manda o valor em cada check-in; o agente adota para a próxima espera (a espera em
+  curso termina no intervalo antigo) e o guarda no `state.json`, para valer já depois de
+  reiniciar. Voltar para "o de cada agente" devolve cada máquina ao dela no check-in seguinte.
+  O sorteio de ±10% continua, para o parque não chegar todo no mesmo segundo.
+- Agente anterior a esta versão ignora o campo e continua no próprio intervalo.
+- A busca de atualizações continua diária; o check-in antecipado por mudança (usuário, IP,
+  programa, desempenho) também. O que encurta é a espera por um job (ligar pela rede,
+  reiniciar, atualizar). Mais curto é mais carga: confira Configuração › Saúde depois de mudar.
+
 ### Notificações pela tela (Aula 19.3)
 
 - O cartão Notificações muda servidor SMTP (vazio desliga), segurança (STARTTLS, TLS direto
