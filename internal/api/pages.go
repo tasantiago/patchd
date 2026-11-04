@@ -261,6 +261,7 @@ type machineView struct {
 	BIOSConfig    *biosConfigCard // as configurações da BIOS (só na aba BIOS; docs/bios-config.md)
 	Perf          *perfCard       // o desempenho (só na aba Desempenho; docs/monitoramento.md)
 	Wake          *wakeCard       // Aula 22.1: ligar pela rede
+	WakeOn        *wakeAction     // Aula 22.2: o botão Ligar e os pedidos
 	HWSources     []string
 	Category      string
 	Model, Serial string
@@ -357,6 +358,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		v.Error = fmt.Sprintf("Informe o motivo da aposentadoria (de %d a %d caracteres).", minReasonLength, maxReasonLength)
 	case biosFlash(q, &v):
 	case biosConfigFlash(q, &v):
+	case wakeFlash(q, &v.pageBase):
 	default:
 		jobFlash(q, &v.pageBase)
 	}
@@ -1196,6 +1198,14 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 </dl>
 {{if .Adapters}}<div class="tabela"><table><thead><tr><th>Placa</th><th>MAC</th><th>Cabo</th><th>Magic Packet</th><th>Pode ligar o computador</th></tr></thead>
 <tbody>{{range .Adapters}}<tr><td>{{.Name}}</td><td><code>{{.MAC}}</code></td><td>{{.Wired}}</td><td>{{.Magic}}</td><td>{{.DeviceWake}}</td></tr>{{end}}</tbody></table></div>{{end}}
+</div>{{end}}
+{{with .WakeOn}}<div class="card" id="ligar"><div class="card-cab"><h2>Ligar agora</h2><span class="muted">pacote mágico pela mesma sub-rede</span></div>
+<p class="muted">O pacote mágico não passa pelo roteador: o patchd pede a até 3 máquinas ligadas da mesma sub-rede (com check-in nas últimas 2 horas) que o mandem, por broadcast local, para {{if .MACs}}<code>{{.MACs}}</code>{{else}}as placas com cabo desta máquina{{end}}. O pedido sai no próximo check-in de um deles (até cerca de 1 h).</p>
+{{if .Pending}}<p class="aviso atencao">{{.Pending}}.</p>
+{{else if .CanRequest}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/ligar"><button type="submit">Ligar pela rede</button></form>
+{{else if not .MACs}}<p class="muted">Sem MAC conhecido de uma placa com cabo: o agente ainda não mandou a rede desta máquina.</p>{{end}}
+{{if .Requests}}<div class="tabela"><table><thead><tr><th>Pedido</th><th>Por</th><th>Sub-rede</th><th>Repetidores</th><th>Pacote</th><th>Máquina</th></tr></thead>
+<tbody>{{range .Requests}}<tr><td class="nowrap">{{.When}}</td><td>{{.By}}</td><td><code>{{.Network}}</code></td><td>{{.Relays}}</td><td>{{.Sent}}</td><td{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Answer}}</td></tr>{{end}}</tbody></table></div>{{end}}
 </div>{{end}}
 {{with .BIOS}}<div class="card" id="bios"><div class="card-cab"><h2>Senha da BIOS</h2>{{if .On}}<span class="muted">chave de guarda <code>{{.KeyID}}</code></span>{{end}}</div>
 {{if not .On}}<p class="muted">Guarda desligada: o servidor está sem a chave de guarda (<code>PATCHD_BIOS_ESCROW_KEY_FILE</code>; crie com <code>patchd-server bios keygen</code>).</p>{{end}}

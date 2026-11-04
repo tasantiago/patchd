@@ -44,6 +44,9 @@ type MachineState struct {
 	// que vem no job bios_password. Ausente: o servidor não manda a cópia (um agente anterior
 	// recusaria o campo novo).
 	BIOSCopy bool `json:"bios_copy,omitempty"`
+	// WakeRelay (docs/wake-on-lan.md, Aula 22.2): o agente manda o pacote mágico para outra
+	// máquina da sub-rede (job wake_on_lan). Ausente: o servidor não o escolhe como repetidor.
+	WakeRelay bool `json:"wake_relay,omitempty"`
 }
 
 // keyIDPattern: a impressão curta de uma chave (jobs.KeyID, release.KeyID).

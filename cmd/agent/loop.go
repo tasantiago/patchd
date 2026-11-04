@@ -25,6 +25,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/scriptexec"
+	"github.com/tasantiago/patchd/internal/wol"
 )
 
 // loopOptions é o que o laço de check-in precisa da configuração.
@@ -159,6 +160,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			s.JobKeys, s.ReleaseKeys = jobIDs, releaseIDs
 			s.BoxKey = boxKey
 			s.BIOSCopy = biosPW != nil // docs/bios-senha.md, seção 9: guarda a cópia no Registro
+			s.WakeRelay = true         // docs/wake-on-lan.md, Aula 22.2: repete o pacote mágico
 			return s
 		},
 		DataDir:   opts.DataDir,
@@ -169,6 +171,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 
 	ag.BIOSPassword = biosPW
 	ag.BIOSSettings = biosSettingsRunner(logger, boxPriv) // docs/bios-config.md: nil fora do Windows ou sem a caixa
+	ag.WakeOnLAN = agent.WakeOnLANRunner(wol.Default())   // docs/wake-on-lan.md, Aula 22.2: em todo sistema
 	// A sentinela (docs/monitoramento.md): desempenho a cada minuto e check-in antecipado por
 	// mudança. A lista de software é vigiada no Windows e no Linux; no macOS ela é cara.
 	sampler := perf.New()

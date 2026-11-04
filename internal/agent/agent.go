@@ -78,6 +78,10 @@ type Agent struct {
 	// docs/bios-config.md). nil: o agente recusa esses jobs. Erro com jobs.ErrRefused vira
 	// "rejeitado" (a BIOS não foi tocada); outro erro, "falhou", com uma linha por configuração.
 	BIOSSettings func(ctx context.Context, jobID int64, p jobs.BIOSSettingsParams) (string, error)
+	// WakeOnLAN manda o pacote mágico para acordar outra máquina da mesma sub-rede (job
+	// wake_on_lan, docs/wake-on-lan.md, Aula 22.2). nil: o agente recusa esses jobs. Erro
+	// com jobs.ErrRefused vira "rejeitado" (nada saiu pela rede).
+	WakeOnLAN func(ctx context.Context, p jobs.WakeOnLANParams) (string, error)
 
 	// Watch: a sentinela de desempenho e de mudanças (docs/monitoramento.md). nil: sem
 	// amostras de desempenho e sem check-in antecipado por mudança.
@@ -324,6 +328,12 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// Jobs (Aula 8.1): conferidos e aceitos antes da busca, que um rescan antecipa. O
 	// estado é gravado já aqui: um job aceito não roda de novo nem se o agente cair agora.
 	accepted := a.acceptJobs(resp.Jobs, &state)
+	// Ligar pela rede (Aula 22.2): primeiro, porque é rápido e a máquina a acordar está
+	// esperando a janela; o resultado vai com os outros no fim do ciclo.
+	if len(accepted.wakes) > 0 {
+		state.PendingJobResults = append(state.PendingJobResults, a.runWakeOnLAN(ctx, accepted.wakes)...)
+		a.saveStateOrLog(state)
+	}
 	if len(resp.Jobs) > 0 {
 		a.saveStateOrLog(state)
 	}
