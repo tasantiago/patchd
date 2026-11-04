@@ -31,7 +31,7 @@ func TestInicioDashboardECompatibilidade(t *testing.T) {
 			t.Errorf("faltou %q", want)
 		}
 	}
-	for _, forbidden := range []string{"<script", "style=", `href="/painel/configuracao`, `action="/painel/aneis/maquinas"`} {
+	for _, forbidden := range []string{"<script", "style=", `href="/painel/configuracao`, `action="/painel/grupos-implantacao/maquinas"`} {
 		if strings.Contains(b, forbidden) {
 			t.Errorf("início de leitura contém %q", forbidden)
 		}

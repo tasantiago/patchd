@@ -1,5 +1,5 @@
 // Package window define as janelas de manutenção (RF-25, Aula 8.3): em que dias, a que
-// horas e por quanto tempo um anel aceita jobs. A janela é escrita no horário local de um
+// horas e por quanto tempo um grupo de implantação aceita jobs. A janela é escrita no horário local de um
 // fuso (America/Porto_Velho, por exemplo) e calculada sempre nesse fuso, para que "12:00"
 // continue sendo meio-dia mesmo num fuso com horário de verão.
 package window

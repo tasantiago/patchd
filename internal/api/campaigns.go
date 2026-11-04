@@ -19,12 +19,12 @@ import (
 
 // As campanhas no painel. Aula 8.5: a lista, só leitura. Aula 11.2: o admin cria (com uma
 // tela de conferência antes, porque a campanha vira jobs em máquinas de verdade no minuto
-// seguinte), vê o andamento de cada anel e pausa, retoma ou cancela, com as mesmas regras
+// seguinte), vê o andamento de cada grupo de implantação e pausa, retoma ou cancela, com as mesmas regras
 // da linha de comando (campaign.Change).
 
 const campaignsShown = 50
 
-// As opções do formulário: listas fechadas, como na janela dos anéis.
+// As opções do formulário: listas fechadas, como na janela dos grupos de implantação.
 var (
 	observeHours = []int{0, 1, 4, 12, 24, 48, 72, 168}
 	ttlHours     = []int{1, 3, 6, 12, 24, 72}
@@ -38,7 +38,7 @@ type campaignRow struct {
 	Created                                              string
 }
 
-// ringChoice é um anel no formulário, com o que o admin precisa saber antes de marcar.
+// ringChoice é um grupo de implantação no formulário, com o que o admin precisa saber antes de marcar.
 type ringChoice struct {
 	Ring     int
 	Label    string
@@ -68,7 +68,7 @@ type campaignForm struct {
 	Rings                     []ringChoice
 	Observe, TTL              []hourOption
 	ObserveH, TTLH            int
-	Chosen                    []int // anéis marcados, em ordem
+	Chosen                    []int // grupos de implantação marcados, em ordem
 	Delay                     int   // reboot (Aula 16.5): aviso em minutos
 	Delays                    []int
 }
@@ -114,7 +114,7 @@ func hourOptions(list []int, sel int) []hourOption {
 	return out
 }
 
-// ringChoices monta os anéis 0..9 com quantas máquinas e a janela de cada um.
+// ringChoices monta os grupos de implantação 0..9 com quantas máquinas e a janela de cada um.
 func (a *api) ringChoices(r *http.Request, checked []int) ([]ringChoice, error) {
 	machines, err := a.store.Machines(r.Context())
 	if err != nil {
@@ -149,7 +149,7 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
 	if v.CanNew {
 		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays}
-		// Vindo de "Campanha por anel" na página do programa (Aula 14.8): já preenchido.
+		// Vindo de "Campanha por grupo de implantação" na página do programa (Aula 14.8): já preenchido.
 		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeThirdParty {
 			f.Type, f.Program = jobs.TypeThirdParty, q.Get("programa")
 			f.Name = f.Program
@@ -166,7 +166,7 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		var err error
 		if f.Rings, err = a.ringChoices(r, nil); err != nil {
-			a.internalError(w, r, "listar anéis", err)
+			a.internalError(w, r, "listar grupos de implantação", err)
 			return
 		}
 		if err := a.programChoices(r, &f); err != nil {
@@ -197,7 +197,7 @@ func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int
 	a.render(w, r, status, "campanhas", v)
 }
 
-// ringsProgress: "[0] → 1", com o anel atual entre colchetes.
+// ringsProgress: "[0] → 1", com o grupo de implantação atual entre colchetes.
 func ringsProgress(c campaign.Campaign) string {
 	rings := make([]string, len(c.Rings))
 	for i, x := range c.Rings {
@@ -222,7 +222,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < 0 || n > store.MaxRing || seen[n] {
-			return campaign.Campaign{}, f, fmt.Sprintf("Anéis de 0 a %d, cada um uma vez.", store.MaxRing)
+			return campaign.Campaign{}, f, fmt.Sprintf("Grupos de implantação de 0 a %d, cada um uma vez.", store.MaxRing)
 		}
 		seen[n] = true
 		f.Chosen = append(f.Chosen, n)
@@ -248,11 +248,11 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	case f.Type == jobs.TypeReboot && !containsInt(rebootDelays, f.Delay):
 		return c, f, "Escolha o aviso do reinício da lista."
 	case len(f.Chosen) == 0:
-		return c, f, "Marque ao menos um anel."
+		return c, f, "Marque ao menos um grupo de implantação."
 	case !containsInt(observeHours, f.ObserveH):
 		return c, f, "Escolha a observação da lista."
 	case f.When != "prazo" && f.When != "janela":
-		return c, f, "Escolha quando: com prazo ou na janela de cada anel."
+		return c, f, "Escolha quando: com prazo ou na janela de cada grupo de implantação."
 	case f.When == "prazo" && !containsInt(ttlHours, f.TTLH):
 		return c, f, "Escolha o prazo da lista."
 	}
@@ -309,7 +309,7 @@ func containsStr(list []string, x string) bool {
 // confirmRing é uma linha da conferência.
 type confirmRing struct {
 	Label, Window, Note string
-	Preview             string // thirdparty: o que o anel receberia agora (Aula 14.8)
+	Preview             string // thirdparty: o que o grupo de implantação receberia agora (Aula 14.8)
 	Machines            int
 }
 
@@ -335,10 +335,10 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 	c, f, problem := a.parseCampaignForm(r)
 	choices, err := a.ringChoices(r, f.Chosen)
 	if err != nil {
-		a.internalError(w, r, "listar anéis", err)
+		a.internalError(w, r, "listar grupos de implantação", err)
 		return
 	}
-	// Terceiros (Aula 14.8): a mesma conferência da linha de comando e de cada anel.
+	// Terceiros (Aula 14.8): a mesma conferência da linha de comando e de cada grupo de implantação.
 	if problem == "" && c.Type == jobs.TypeThirdParty {
 		reason, err := a.campaigner().Ready(r.Context(), c.App, c.Version)
 		if err != nil {
@@ -357,7 +357,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			}
 		}
 		if len(missing) > 0 {
-			problem = "Anel sem janela de manutenção: " + strings.Join(missing, ", ") + ". Defina a janela em Anéis ou escolha \"com prazo\"."
+			problem = "Grupo de implantação sem janela de manutenção: " + strings.Join(missing, ", ") + ". Defina a janela em Grupos de implantação ou escolha \"com prazo\"."
 		}
 	}
 	if problem != "" || r.PostFormValue("corrigir") == "1" {
@@ -387,11 +387,11 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 				a.internalError(w, r, "prever a campanha", err)
 				return
 			}
-			v.Warnings = append(v.Warnings, "No programa de terceiros, cada anel recebe o plano da hora em que for liberado: a coluna \"Hoje\" é a previsão de agora. A aprovação e o arquivo no cache são conferidos de novo a cada anel; revogada a aprovação, a campanha pausa.")
+			v.Warnings = append(v.Warnings, "No programa de terceiros, cada grupo de implantação recebe o plano da hora em que for liberado: a coluna \"Hoje\" é a previsão de agora. A aprovação e o arquivo no cache são conferidos de novo a cada grupo de implantação; revogada a aprovação, a campanha pausa.")
 		}
 		v.When = "com prazo de " + hoursLabel(f.TTLH) + " para cada job"
 		if c.UseWindow {
-			v.When = "na próxima janela de manutenção de cada anel"
+			v.When = "na próxima janela de manutenção de cada grupo de implantação"
 		}
 		chosen := make([]string, len(f.Chosen))
 		for i, x := range f.Chosen {
@@ -404,16 +404,16 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			}
 			cr := confirmRing{Label: rc.Label, Machines: rc.Machines, Window: dash(rc.Window), Preview: preview[rc.Ring]}
 			if rc.Machines == 0 {
-				cr.Note = "nenhuma máquina: o anel passa sem jobs"
-				v.Warnings = append(v.Warnings, fmt.Sprintf("O anel %d não tem máquinas.", rc.Ring))
+				cr.Note = "nenhuma máquina: o grupo de implantação passa sem jobs"
+				v.Warnings = append(v.Warnings, fmt.Sprintf("O grupo de implantação %d não tem máquinas.", rc.Ring))
 			}
 			v.Rings = append(v.Rings, cr)
 		}
 		if f.Chosen[0] != store.PilotRing {
-			v.Warnings = append(v.Warnings, "A campanha não começa pelo piloto (anel 0).")
+			v.Warnings = append(v.Warnings, "A campanha não começa pelo piloto (grupo de implantação 0).")
 		}
 		if c.Type == jobs.TypeUpdate {
-			v.Warnings = append(v.Warnings, "No update, só recebe job quem tiver alguma dessas fontes pendente, com a correção aprovada em Patch, na hora em que o anel for liberado.")
+			v.Warnings = append(v.Warnings, "No update, só recebe job quem tiver alguma dessas fontes pendente, com a correção aprovada em Patch, na hora em que o grupo de implantação for liberado.")
 			approvals, err := a.store.PatchApprovals(r.Context())
 			if err != nil {
 				a.internalError(w, r, "listar aprovações", err)
@@ -429,11 +429,11 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			v.Extra = c.Target()
 			v.Warnings = append(v.Warnings, "No reinício, só recebe job quem a busca atual mostra com reinício pendente; o agente confere de novo na hora (sem pendência, o job vira dispensado). Quem estiver conectado vê o aviso na tela pelo prazo escolhido e pode salvar o trabalho; um administrador na máquina pode cancelar.")
 			if !c.UseWindow {
-				v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada anel\".")
+				v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada grupo de implantação\".")
 			}
 		}
 		if c.Type == jobs.TypeWinUpdate {
-			v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que o anel for liberado, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações. O job não reinicia: o reinício é pedido à parte.")
+			v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que o grupo de implantação for liberado, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações. O job não reinicia: o reinício é pedido à parte.")
 			approvals, err := a.store.PatchApprovals(r.Context())
 			if err != nil {
 				a.internalError(w, r, "listar aprovações", err)
@@ -509,7 +509,7 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	v.TypeLabel, v.State, v.StateLabel = typeLabel(c.Type), c.State, campaignLabel(c.State)
 	v.When = "prazo de " + hoursLabel(int(c.TTL.Hours())) + " por job"
 	if c.UseWindow {
-		v.When = "na janela de cada anel"
+		v.When = "na janela de cada grupo de implantação"
 	}
 	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
 	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"
@@ -552,11 +552,11 @@ func campaignFlash(r *http.Request, b *pageBase) {
 	q := r.URL.Query()
 	switch {
 	case q.Has("criada"):
-		b.Flash = "Campanha criada: o servidor libera o primeiro anel no próximo minuto."
+		b.Flash = "Campanha criada: o servidor libera o primeiro grupo de implantação no próximo minuto."
 	case q.Get("feito") == "pausar":
-		b.Flash = "Campanha pausada: nenhum anel novo é liberado; os jobs já criados seguem."
+		b.Flash = "Campanha pausada: nenhum grupo de implantação novo é liberado; os jobs já criados seguem."
 	case q.Get("feito") == "retomar":
-		b.Flash = "Campanha retomada: as falhas do anel atual ficam aceitas, e ela segue."
+		b.Flash = "Campanha retomada: as falhas do grupo de implantação atual ficam aceitas, e ela segue."
 	case q.Get("feito") == "cancelar":
 		n, _ := strconv.Atoi(q.Get("jobs"))
 		b.Flash = fmt.Sprintf("Campanha cancelada; %d job(s) pendente(s) cancelado(s). Os já entregues seguem: o agente pode estar executando.", n)

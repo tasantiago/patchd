@@ -85,7 +85,7 @@ func tokenCreate(ctx context.Context, st *store.Postgres, args []string, stdout,
 	fs.SetOutput(stderr)
 	uses := fs.Int("uses", 1, "número máximo de máquinas; 0 = ilimitado")
 	ttl := fs.Duration("ttl", 24*time.Hour, "validade: 0 = sem vencimento, ex.: 2h, 72h (máximo 720h)")
-	note := fs.String("note", "", "descrição para a lista, ex.: \"piloto anel 0\"")
+	note := fs.String("note", "", "descrição para a lista, ex.: \"piloto grupo de implantação 0\"")
 	if err := fs.Parse(args); err != nil {
 		return exitConfig
 	}

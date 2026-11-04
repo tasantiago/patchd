@@ -28,25 +28,25 @@ func testarAneis(t *testing.T, st contratoAneis) {
 			t.Fatal(err)
 		}
 	}
-	// Toda máquina nasce no anel 1; o piloto é o 0.
+	// Toda máquina nasce no grupo de implantação 1; o piloto é o 0.
 	if r, ok, _ := st.MachineRing(ctx, "anel-a"); !ok || r != DefaultRing {
-		t.Errorf("anel padrão: %d %t", r, ok)
+		t.Errorf("grupo de implantação padrão: %d %t", r, ok)
 	}
 	if ok, err := st.SetMachineRing(ctx, "anel-a", PilotRing); !ok || err != nil {
 		t.Fatalf("piloto: %t %v", ok, err)
 	}
 	if _, err := st.SetMachineRing(ctx, "anel-b", 10); !errors.Is(err, ErrRing) {
-		t.Errorf("anel 10: %v", err)
+		t.Errorf("grupo de implantação 10: %v", err)
 	}
 	if ok, _ := st.SetMachineRing(ctx, "nao-existe", 0); ok {
 		t.Error("máquina inexistente")
 	}
 	_, _ = st.RetireMachine(ctx, "anel-c", "teste", "t")
 	if ok, _ := st.SetMachineRing(ctx, "anel-c", 0); ok {
-		t.Error("aposentada não muda de anel")
+		t.Error("aposentada não muda de grupo de implantação")
 	}
 	if ids, _ := st.RingMachines(ctx, 0); len(ids) != 1 || ids[0] != "anel-a" {
-		t.Errorf("anel 0: %v", ids)
+		t.Errorf("grupo de implantação 0: %v", ids)
 	}
 	ms, _ := st.Machines(ctx)
 	aneis := map[string]int{}

@@ -20,7 +20,7 @@ import (
 )
 
 // Campanha de terceiros pelo painel (Aula 14.8): da página do programa ao formulário já
-// preenchido, a conferência com a previsão de cada anel, e a criação.
+// preenchido, a conferência com a previsão de cada grupo de implantação, e a criação.
 func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 	_, priv, _ := jobs.GenerateKey()
 	dir := t.TempDir()
@@ -59,10 +59,10 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 			State: "DESATUALIZADO", Installed: "25.2.1.1", Reference: "26.8.1.1"}}}}
 	hp := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithJobKey(priv), api.WithThirdPartyManifest(&m))
 	prog := pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoAdmin, nil).Body.String()
-	if !strings.Contains(prog, `<a class="btn" href="/painel/campanhas?programa=libreoffice&#43;26.8.1.1&amp;tipo=thirdparty#nova">Campanha por anel</a>`) {
+	if !strings.Contains(prog, `<a class="btn" href="/painel/campanhas?programa=libreoffice&#43;26.8.1.1&amp;tipo=thirdparty#nova">Campanha por grupo de implantação</a>`) {
 		t.Errorf("programa (admin) sem o link:\n%s", prog)
 	}
-	if strings.Contains(pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoTeste, nil).Body.String(), "Campanha por anel") {
+	if strings.Contains(pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoTeste, nil).Body.String(), "Campanha por grupo de implantação") {
 		t.Error("leitura vê o link")
 	}
 	b = pagina(h, "GET", "/painel/campanhas?tipo=thirdparty&programa=libreoffice+26.8.1.1", sessaoAdmin, nil).Body.String()
@@ -73,7 +73,7 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 		}
 	}
 
-	// Conferência: a previsão por anel; nada criado ainda.
+	// Conferência: a previsão por grupo de implantação; nada criado ainda.
 	b = pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form).Body.String()
 	for _, tr := range []string{"instalar programa de terceiros · programa: libreoffice 26.8.1.1", "<th>Hoje</th>",
 		"<td>1 job(s); fora: 1 sem inventário do Windows</td>", `name="programa" value="libreoffice 26.8.1.1"`, "a campanha pausa"} {

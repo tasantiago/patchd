@@ -29,26 +29,26 @@ comandos:
   create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update|reboot
           [-sources fonte,fonte] [-app programa -version versão] [-kb KB5127648,...] [-delay 15m]
           -rings 0,1 [-observe 24h] [-ttl 24h | -window].
-          O servidor libera o primeiro anel no próximo minuto e cada anel seguinte sozinho,
+          O servidor libera o primeiro grupo de implantação no próximo minuto e cada grupo de implantação seguinte sozinho,
           quando o anterior termina sem falha e a observação passa
   list    lista as campanhas, da mais nova para a mais antiga [-n 20]
-  show    mostra a campanha e os jobs de cada anel: -id N
-  pause   pausa: -id N (os jobs já criados seguem; nenhum anel novo é liberado)
-  resume  retoma uma pausada: -id N (as falhas do anel atual ficam aceitas)
+  show    mostra a campanha e os jobs de cada grupo de implantação: -id N
+  pause   pausa: -id N (os jobs já criados seguem; nenhum grupo de implantação novo é liberado)
+  resume  retoma uma pausada: -id N (as falhas do grupo de implantação atual ficam aceitas)
   cancel  cancela: -id N (os jobs ainda pendentes da campanha são cancelados)
 
 update: -sources são pacotes fonte, como aparecem nas pendências do painel (bluez, curl).
-Cada máquina do anel recebe os binários instalados dessas fontes que estiverem pendentes
+Cada máquina do grupo de implantação recebe os binários instalados dessas fontes que estiverem pendentes
 na avaliação do servidor; quem não tem nenhuma pendente fica sem job.
 
 thirdparty (Aula 14.7): -app é a regra (libreoffice) e -version, a versão aprovada e
-guardada (package list). Cada máquina do anel passa pelo package plan com os instaladores
+guardada (package list). Cada máquina do grupo de implantação passa pelo package plan com os instaladores
 dessa versão: só quem está em ATUALIZAR recebe job; em dia, duplicado, bundle e os outros
-ficam fora, com o motivo nas notas da campanha. A cada anel liberado o servidor confere de
+ficam fora, com o motivo nas notas da campanha. A cada grupo de implantação liberado o servidor confere de
 novo a aprovação e o arquivo no cache: revogada ou faltando, a campanha pausa.
 
 windows_update (Aula 16.4): -kb são os KBs, como aparecem em "Corrigido em" (KB5127648).
-Cada máquina do anel recebe os que corrigem alguma CVE dela aprovada em Patch e que a busca
+Cada máquina do grupo de implantação recebe os que corrigem alguma CVE dela aprovada em Patch e que a busca
 dela mostra pendentes na fonte da política (WSUS); fonte falhando, KB só no catálogo offline
 ou fora da busca: fica sem job, com o motivo nas notas. O job não reinicia.
 
@@ -59,7 +59,7 @@ a campanha). Use -window: sem janela, cada máquina reinicia assim que recebe o 
 
 Jobs adiados (Aula 14.9; agente v0.14.4 ou mais novo): programa aberto ou outro instalador
 rodando não é falha. A campanha pede de novo à mesma máquina a cada 1 h, refazendo o plano
-(se a máquina não precisa mais, o adiado vira "dispensado"), até 24 tentativas no anel;
+(se a máquina não precisa mais, o adiado vira "dispensado"), até 24 tentativas no grupo de implantação;
 esgotadas, conta como falha e pausa.
 `
 
@@ -73,13 +73,13 @@ type campaignStore interface {
 }
 
 // newCampaignEngine monta o motor das campanhas com o PostgreSQL: as pendências vêm da
-// mesma avaliação do painel, e a janela, do anel da máquina. tp decide as campanhas de
+// mesma avaliação do painel, e a janela, do grupo de implantação da máquina. tp decide as campanhas de
 // terceiros (nil: elas pausam, dizendo por quê).
 func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, tp campaign.ThirdPartyPlanner, logger *slog.Logger) *campaign.Engine {
 	cs := newComplianceService(pg, logger)
 	return &campaign.Engine{Store: pg, Key: key, Logger: logger, ThirdParty: tp,
-		// Só o que está aprovado em Patch (Aula 13.2), conferido na hora em que cada anel é
-		// liberado: uma aprovação revogada no meio da campanha já não entra no anel seguinte.
+		// Só o que está aprovado em Patch (Aula 13.2), conferido na hora em que cada grupo de implantação é
+		// liberado: uma aprovação revogada no meio da campanha já não entra no grupo de implantação seguinte.
 		Pending: func(ctx context.Context, id string) ([]protocol.PendingItem, bool, error) {
 			return approvedPending(ctx, cs.Detail, pg.PatchApprovals, id)
 		},
@@ -107,7 +107,7 @@ const campaignEvery = time.Minute
 
 // campaignLocker roda o passo das campanhas sob a trava do banco (Aula 8.5b): dois
 // servidores no mesmo banco (um esquecido no outro terminal, ou as duas instâncias da
-// RF-37) não liberam o mesmo anel duas vezes.
+// RF-37) não liberam o mesmo grupo de implantação duas vezes.
 type campaignLocker interface {
 	WithAdvisoryLock(ctx context.Context, key int64, fn func(context.Context) error) (bool, error)
 }
@@ -125,7 +125,7 @@ func campaignLoop(ctx context.Context, logger *slog.Logger, lock campaignLocker,
 		case err != nil && ctx.Err() == nil:
 			logger.Error("campanhas", "error", err)
 		case !ok && err == nil && !busy:
-			logger.Warn("campanhas: outro servidor no mesmo banco está com a trava; este não libera anéis enquanto isso")
+			logger.Warn("campanhas: outro servidor no mesmo banco está com a trava; este não libera grupos de implantação enquanto isso")
 		}
 		busy = !ok && err == nil
 		select {
@@ -203,10 +203,10 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 		kbList := fs.String("kb", "", "windows_update: KBs, separados por vírgula (KB5127648)")
 		app := fs.String("app", "", "thirdparty: a regra do programa (libreoffice)")
 		ver := fs.String("version", "", "thirdparty: a versão aprovada e guardada")
-		rings := fs.String("rings", "", "anéis em ordem, separados por vírgula (ex.: 0,1)")
-		observe := fs.Duration("observe", 24*time.Hour, "tempo de observação depois de cada anel concluído")
+		rings := fs.String("rings", "", "grupos de implantação em ordem, separados por vírgula (ex.: 0,1)")
+		observe := fs.Duration("observe", 24*time.Hour, "tempo de observação depois de cada grupo de implantação concluído")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo dos jobs sem janela")
-		win := fs.Bool("window", false, "jobs na próxima janela de cada anel")
+		win := fs.Bool("window", false, "jobs na próxima janela de cada grupo de implantação")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
@@ -263,7 +263,7 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 			return exitConfig
 		}
 		// Terceiros: a versão tem de estar pronta já na criação (a mesma conferência de cada
-		// anel), para a campanha não nascer pausada.
+		// grupo de implantação), para a campanha não nascer pausada.
 		if c.Type == jobs.TypeThirdParty {
 			reason := "o servidor está sem as regras de terceiros"
 			if tp != nil {
@@ -282,7 +282,7 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitRuntime
 		}
-		fmt.Fprintf(stderr, "campanha %d criada (%s, anéis %s, observação de %v). O servidor libera o anel %d no próximo minuto;\n"+
+		fmt.Fprintf(stderr, "campanha %d criada (%s, grupos de implantação %s, observação de %v). O servidor libera o grupo de implantação %d no próximo minuto;\n"+
 			"acompanhe com: patchd-server campaign show -id %d\n", id, c.Type, ringsText(c.Rings), c.Observe, c.Rings[0], id)
 		fmt.Fprintln(stdout, id)
 		return exitOK
@@ -370,14 +370,14 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 	}
 	when := fmt.Sprintf("prazo de %v", c.TTL)
 	if c.UseWindow {
-		when = "na janela de cada anel"
+		when = "na janela de cada grupo de implantação"
 	}
 	fmt.Fprintf(stdout, "\njobs: %s; observação: %v\nestado: %s\ndetalhe: %s\n", when, c.Observe, c.State, orDash(c.Detail))
 	for _, n := range c.Notes {
 		fmt.Fprintf(stdout, "liberação: %s\n", n)
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ANEL\tJOB\tMÁQUINA\tESTADO\tDETALHE")
+	fmt.Fprintln(tw, "GRUPO\tJOB\tMÁQUINA\tESTADO\tDETALHE")
 	for idx, ring := range c.Rings {
 		list, err := st.CampaignJobs(ctx, c.ID, idx)
 		if err != nil {
@@ -410,7 +410,7 @@ func ringsText(r []int) string {
 	return strings.Join(s, "→")
 }
 
-// ringsProgress marca o anel atual: "0→[1]→2".
+// ringsProgress marca o grupo de implantação atual: "0→[1]→2".
 func ringsProgress(c campaign.Campaign) string {
 	s := make([]string, len(c.Rings))
 	for i, v := range c.Rings {

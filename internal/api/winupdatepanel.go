@@ -39,7 +39,7 @@ type winKBRow struct {
 	Approved, Waiting, Exploit int
 	State, Label, Class, Note  string
 	WaitingHref                string
-	CampaignHref               string // Aula 16.4: campanha por anel com este KB
+	CampaignHref               string // Aula 16.4: campanha por grupo de implantação com este KB
 }
 
 type winUpdateCard struct {

@@ -51,15 +51,15 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	c3.State = campaign.StateCanceled
 	_, _ = st.SaveCampaign(ctx, c3, campaign.StateRunning)
 
-	// Andamento, com a nota do anel liberado.
+	// Andamento, com a nota do grupo de implantação liberado.
 	agora := time.Now().UTC().Truncate(time.Microsecond)
 	c.CurrentIdx, c.LaunchedIdx, c.RingDoneAt, c.Detail = 1, 1, &agora, "observando"
-	c.Notes = []string{"anel 0: 1 job(s)", "anel 2: 0 job(s); fora: 1 sem pendência aprovada"}
+	c.Notes = []string{"grupo de implantação 0: 1 job(s)", "grupo de implantação 2: 0 job(s); fora: 1 sem pendência aprovada"}
 	if ok, err := st.SaveCampaign(ctx, c, campaign.StateRunning); !ok || err != nil {
 		t.Fatal(ok, err)
 	}
 	if c2, _, _ := st.Campaign(ctx, id); c2.CurrentIdx != 1 || c2.RingDoneAt == nil || !c2.RingDoneAt.Equal(agora) || c2.Detail != "observando" ||
-		len(c2.Notes) != 2 || c2.Notes[1] != "anel 2: 0 job(s); fora: 1 sem pendência aprovada" {
+		len(c2.Notes) != 2 || c2.Notes[1] != "grupo de implantação 2: 0 job(s); fora: 1 sem pendência aprovada" {
 		t.Errorf("gravada: %+v", c2)
 	}
 	if l, _ := st.RunningCampaigns(ctx); len(l) != 1 {
@@ -79,7 +79,7 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 		t.Errorf("lista: %+v", l)
 	}
 
-	// Jobs da campanha, por anel; job avulso fica fora.
+	// Jobs da campanha, por grupo de implantação; job avulso fica fora.
 	for _, idx := range []int{1, 1, -1} {
 		jid, _ := st.NextJobID(ctx)
 		j := NewJob{ID: jid, MachineID: "camp-a", Type: "rescan", Signed: protocol.SignedJob{Payload: "{}", Signature: "s"},
@@ -92,10 +92,10 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 		}
 	}
 	if l, err := st.CampaignJobs(ctx, id, 1); err != nil || len(l) != 2 || l[0].State != "pendente" || l[0].MachineID != "camp-a" {
-		t.Errorf("jobs do anel: %+v %v", l, err)
+		t.Errorf("jobs do grupo de implantação: %+v %v", l, err)
 	}
 	if l, _ := st.CampaignJobs(ctx, id, 0); len(l) != 0 {
-		t.Error("anel sem jobs")
+		t.Error("grupo de implantação sem jobs")
 	}
 	// Aula 14.9: o adiado (aceito pela restrição da 0030) traz quando encerrou e pode ser
 	// dispensado; só o adiado.

@@ -126,7 +126,7 @@ type fleetView struct {
 	Total       int
 	Rows        []fleetRow
 	EvaluatedAt string
-	Rings       []int // anéis oferecidos no lote (admin, Aula 11.1)
+	Rings       []int // grupos de implantação oferecidos no lote (admin, Aula 11.1)
 	FilterLabel string
 	Exploited   int // máquinas com alguma pendência explorada (Aula 11.3)
 	HTTP        int // máquinas cujo último check-in veio sem TLS
@@ -171,7 +171,7 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.Total, v.EvaluatedAt = len(fleet.Machines), fleet.EvaluatedAt.Format("02/01/2006 15:04")+" UTC"
-	// O anel de cada máquina (Aula 11.1): a avaliação não traz, a lista de máquinas traz.
+	// O grupo de implantação de cada máquina (Aula 11.1): a avaliação não traz, a lista de máquinas traz.
 	summaries, err := a.store.Machines(r.Context())
 	if err != nil {
 		a.internalError(w, r, "listar máquinas", err)
@@ -237,7 +237,7 @@ type machineView struct {
 	Jobs                                 jobTable
 	JobsOn                               bool   // o servidor tem a chave: o admin pode pedir a busca
 	Ring                                 string // "0 (piloto)", "1" (Aula 8.3)
-	RingN                                int    // o anel em número, para o formulário (Aula 11.1)
+	RingN                                int    // o grupo de implantação em número, para o formulário (Aula 11.1)
 	Rings                                []int
 	CanUpdate                            bool           // admin, chave de jobs e pendências do Linux aprovadas (Aulas 8.4 e 13.2)
 	NeedApproval                         bool           // há pendências do Linux, mas nenhuma aprovada
@@ -354,9 +354,9 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		v.Flash = "Máquina devolvida ao parque; a credencial dela voltou a valer."
 	case q.Has("anel-alterado"):
 		n, _ := strconv.Atoi(q.Get("anel"))
-		v.Flash = fmt.Sprintf("Máquina no anel %d. Os jobs já criados não mudam; campanhas em andamento usam o anel novo nos próximos anéis que liberarem.", n)
+		v.Flash = fmt.Sprintf("Máquina no grupo de implantação %d. Os jobs já criados não mudam; campanhas em andamento usam o grupo de implantação novo nos próximos grupos que liberarem.", n)
 	case q.Get("erro") == "anel":
-		v.Error = fmt.Sprintf("Escolha um anel de 0 a %d.", store.MaxRing)
+		v.Error = fmt.Sprintf("Escolha um grupo de implantação de 0 a %d.", store.MaxRing)
 	case q.Get("erro") == "motivo":
 		v.Error = fmt.Sprintf("Informe o motivo da aposentadoria (de %d a %d caracteres).", minReasonLength, maxReasonLength)
 	case biosFlash(q, &v):
@@ -367,7 +367,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.JobsOn = a.jobKey != nil
 	if err := a.ringView(r, id, &v); err != nil {
-		a.internalError(w, r, "ler anel e janela", err)
+		a.internalError(w, r, "ler grupo de implantação e janela", err)
 		return
 	}
 	if v.Admin && v.JobsOn {
@@ -593,7 +593,7 @@ var pages = template.Must(template.New("").Parse(`
 <p class="grupo"><span class="rot">Automação</span></p>
 <a href="/painel/campanhas" title="Campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
 <a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Jobs</span></a>
-<a href="/painel/aneis" title="Anéis e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Anéis</span></a>
+<a href="/painel/grupos-implantacao" title="Grupos de implantação e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Grupos de implantação</span></a>
 <a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
 {{if .Admin}}<a href="/painel/padronizacao" title="Padronização" {{if eq .Nav "padronizacao"}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Padronização</span></a>{{end}}
 {{if .Admin}}<a href="/painel/scripts" title="Scripts" {{if eq .Nav "scripts"}}class="ativo" aria-current="page"{{end}}>` + ui.IcScripts + `<span class="rot">Scripts</span></a>{{end}}
@@ -645,8 +645,8 @@ var pages = template.Must(template.New("").Parse(`
 </ul>
 <div class="card"><div class="card-cab"><h2>Máquinas{{if .Filter}} · {{.FilterLabel}}{{end}}</h2>
 <span><span class="muted">Avaliado em {{.EvaluatedAt}}</span> <span class="grupo-btn"><a class="btn" href="/painel/parque.csv{{if .Filter}}?estado={{.Filter}}{{end}}">CSV</a><a class="btn" href="/api/v1/compliance">JSON</a></span></span></div>
-{{if .Rows}}{{if .Admin}}<form method="post" action="/painel/aneis/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<div class="tabela"><table>
-<thead><tr>{{if .Admin}}<th></th>{{end}}<th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Anel</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
+{{if .Rows}}{{if .Admin}}<form method="post" action="/painel/grupos-implantacao/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<div class="tabela"><table>
+<thead><tr>{{if .Admin}}<th></th>{{end}}<th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Grupo de implantação</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
 <tbody>{{range .Rows}}<tr>
 {{if $.Admin}}<td><input type="checkbox" name="maquina" value="{{.ID}}" aria-label="marcar {{.Short}}"></td>{{end}}
 <td><span class="estado {{.State}}">{{.Label}}</span>{{if .Reasons}}<ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}</td>
@@ -654,8 +654,8 @@ var pages = template.Must(template.New("").Parse(`
 <td>{{.Name}}</td><td>{{.OS}}</td><td class="num">{{.Ring}}</td><td>{{.Pending}}</td>
 <td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td>{{.Seen}}</td></tr>
 {{end}}</tbody></table></div>
-{{if .Admin}}<div class="lote"><label>Pôr as marcadas no anel <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
-<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas ficam em <a href="/painel/aneis">Anéis</a>.</span></div></form>{{end}}
+{{if .Admin}}<div class="lote"><label>Pôr as marcadas no grupo de implantação <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
+<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas ficam em <a href="/painel/grupos-implantacao">Grupos de implantação</a>.</span></div></form>{{end}}
 {{else}}<p class="muted">Nenhuma máquina{{if .Filter}} neste estado{{end}}.</p>{{end}}
 </div>
 {{end}}
@@ -703,8 +703,8 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
 
-{{/* Automação (Aula 15.11): campanhas, jobs e anéis numa entrada só do menu, em abas. */}}
-{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/aneis"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Anéis e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a></nav>{{end}}
+{{/* Automação (Aula 15.11): campanhas, jobs e grupos de implantação numa entrada só do menu, em abas. */}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Grupos de implantação e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a></nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
@@ -932,9 +932,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Attention}}<ul class="atencao-lista">{{range .Attention}}<li class="{{.Level}}"><a href="{{.Href}}">{{.Text}}</a></li>{{end}}</ul>
 {{else}}<p class="muted">Nada pede atenção agora.</p>{{end}}</div>
 <div class="duas-col">
-<div class="card"><div class="card-cab"><h2>Por anel</h2><a class="muted" href="/painel/aneis">Anéis</a></div>
-{{if .Rings}}<ul class="seg-linhas empilhada">{{range .Rings}}<li><span class="seg-nome">Anel {{.Ring}}<small>{{.Machines}} máquina(s)</small></span>{{template "segbar" .Bar}}<span class="seg-fim">{{.Pct}}% em dia</span></li>{{end}}</ul>
-{{template "estados-legenda"}}<details class="tabela-grafico"><summary>Ver em tabela</summary><div class="tabela"><table><thead><tr><th>Anel</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
+<div class="card"><div class="card-cab"><h2>Por grupo de implantação</h2><a class="muted" href="/painel/grupos-implantacao">Grupos de implantação e janelas</a></div>
+{{if .Rings}}<ul class="seg-linhas empilhada">{{range .Rings}}<li><span class="seg-nome">Grupo de implantação {{.Ring}}<small>{{.Machines}} máquina(s)</small></span>{{template "segbar" .Bar}}<span class="seg-fim">{{.Pct}}% em dia</span></li>{{end}}</ul>
+{{template "estados-legenda"}}<details class="tabela-grafico"><summary>Ver em tabela</summary><div class="tabela"><table><thead><tr><th>Grupo de implantação</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
 <tbody>{{range .Rings}}<tr><td>{{.Ring}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Missing}}</td><td class="num">{{.Reboot}}</td><td class="num">{{.Stale}}</td><td class="num">{{.NA}}</td>
 <td class="nowrap"><span class="barra" title="{{.Pct}}% em dia"><span class="w{{.Pct}}"></span></span> <span class="muted">{{.Pct}}%</span></td></tr>{{end}}</tbody></table></div>
 </details>
@@ -1000,8 +1000,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <thead><tr><th>Versão</th><th>Instaladores</th><th>Aprovação</th></tr></thead>
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td>
 <td>{{range .Packages}}<div>{{.Type}} · {{.Arch}} · {{.Size}} · <code>{{.SHA}}</code> <span class="muted">{{.Fetched}}</span></div>{{end}}</td>
-<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CampaignHref}} <a class="btn" href="{{.CampaignHref}}">Campanha por anel</a>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
-{{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}
+<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CampaignHref}} <a class="btn" href="{{.CampaignHref}}">Campanha por grupo de implantação</a>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
+{{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no grupo de implantação piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}
 {{if .CanDelete}}<details class="excluir"><summary>Excluir esta versão</summary><form method="post" action="/painel/patch/terceiros/excluir"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Excluir os instaladores da {{.Version}}</button> <span class="muted">dá para baixar de novo depois</span></form></details>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum instalador guardado.{{if not .CanFetch}} No servidor: <code>patchd-server package fetch -app {{.P.AppID}}</code>.{{end}}</p>{{end}}
 {{with .Fetch}}<div class="aviso {{if .Running}}atencao{{else if .OK}}ok{{else}}erro{{end}}"><strong>{{if .Running}}Baixando{{else if .OK}}Download concluído{{else}}O download não deu certo{{end}}</strong> · {{if .Version}}versão {{.Version}}{{else}}a mais nova do winget{{end}}{{if .Kind}} · {{.Kind}}{{end}} · pedido por {{.By}}{{if .Running}} · a página se atualiza sozinha{{end}}
@@ -1061,7 +1061,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <td>{{.Severity}}</td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td class="num">{{.Machines}}</td></tr>{{end}}</tbody></table></div>
 </div>
 <div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
-<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todos os itens (opcional), ex.: testado no anel piloto em 10/10" aria-label="observação"></div>
+<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todos os itens (opcional), ex.: testado no grupo de implantação piloto em 10/10" aria-label="observação"></div>
 <div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if eq (len .Rows) 1}}item{{else}}itens{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
 <span class="muted">O servidor confere cada item de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.</span></div>
 </div></form>
@@ -1086,7 +1086,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 </div>
 <form method="post" action="/painel/patch/correcao"><input type="hidden" name="fix" value="{{.FixedIn}}"><input type="hidden" name="confirmar" value="1"><input type="hidden" name="conferido" value="{{.Digest}}">
 <div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
-<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todas (opcional), ex.: KB testado no anel piloto em 10/10" aria-label="observação"></div>
+<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todas (opcional), ex.: KB testado no grupo de implantação piloto em 10/10" aria-label="observação"></div>
 <div class="lote"><button type="submit">Aprovar {{.Items}} {{if eq .Items 1}}CVE{{else}}CVEs{{end}} da correção</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
 <span class="muted">O servidor refaz a lista no clique e só aprova se for a mesma desta conferência.</span></div>
 </div></form>
@@ -1110,7 +1110,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanRevoke}}<form class="acao" method="post" action="/painel/patch/revogar"><input type="hidden" name="id" value="{{.Item.ID}}"><input type="hidden" name="fix" value="{{.Item.FixedIn}}"><button class="perigo" type="submit">Revogar aprovação</button></form>{{end}}
 {{else}}<p class="muted">Ainda não aprovado. A partir da Aula 13.2, só item aprovado entra em atualização e em campanha.</p>
 {{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/aprovar"><input type="hidden" name="id" value="{{.Item.ID}}"><input type="hidden" name="fix" value="{{.Item.FixedIn}}">
-<input name="nota" maxlength="{{.MaxNote}}" placeholder="Observação (opcional), ex.: testado no anel piloto"><button type="submit">Aprovar</button></form>
+<input name="nota" maxlength="{{.MaxNote}}" placeholder="Observação (opcional), ex.: testado no grupo de implantação piloto"><button type="submit">Aprovar</button></form>
 {{else if not .Admin}}<p class="muted">Aprovar exige o perfil admin.</p>{{end}}{{end}}
 {{if not .Pending}}<p class="aviso atencao">Este item não está pendente em nenhuma máquina na avaliação de agora.</p>{{end}}
 </div></div>
@@ -1149,8 +1149,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Host.SignersKnown}}<dt>Instaladores aceitos</dt>{{if .Host.Signers}}<dd>só os assinados por {{.Host.Signers}}</dd>{{else}}<dd class="nivel-atencao">qualquer assinatura (sem <code>-allowed-signers</code> nesta máquina)</dd>{{end}}{{end}}
 {{if .Host.Has}}<dt>Chave de cifragem</dt>{{if .Host.BoxKeyID}}<dd><code>{{.Host.BoxKeyID}}</code> <span class="muted">(segredos para esta máquina são fechados com ela)</span></dd>{{else}}<dd class="muted">não informada (agente anterior à v0.18.2)</dd>{{end}}{{end}}
 <dt>Canal</dt><dd>{{.Channel}}</dd>
-{{if .Ring}}<dt>Anel</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="anel novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de anel</button></form>{{end}}</dd>
-<dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este anel){{end}}</dd>{{end}}
+{{if .Ring}}<dt>Grupo de implantação</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="grupo de implantação novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de grupo de implantação</button></form>{{end}}</dd>
+<dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este grupo de implantação){{end}}</dd>{{end}}
 </dl></div>
 <div class="card"><div class="card-cab"><h2>Conformidade</h2></div><dl class="dados">
 <dt>Estado</dt><dd><span class="estado {{.D.State}}">{{.Label}}</span></dd>
@@ -1316,7 +1316,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .NeedApproval}}<p class="aviso atencao">Nenhuma pendência desta máquina está aprovada. Só item aprovado em <a href="/painel/patch">Patch</a> pode ser atualizado: abra o item, confira os sistemas afetados e aprove.</p>{{end}}
 {{if .CanUpdate}}<div class="lote">
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
-{{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
+{{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do grupo de implantação</label>{{end}}
 <button type="submit">Atualizar marcados</button>
 <span class="muted">Só as aprovadas em Patch podem ser marcadas. Instala os pacotes binários das fontes marcadas pelo apt ou pelo dnf; o agente confere na busca dele antes, e o resultado vem da busca seguinte. Não reinicia a máquina.</span>
 </div></form>{{end}}
@@ -1327,14 +1327,14 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Problem}}<p class="aviso erro">{{.Problem}}</p>{{end}}
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Atualização</th><th>Corrige até</th><th>CVEs aprovadas</th><th>Aguardando aprovação</th><th>Na busca desta máquina</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td><code>KB{{.KB}}</code>{{if and $.Admin .Approved}} <a class="muted" href="{{.CampaignHref}}">campanha por anel</a>{{end}}</td><td>{{.FixedIn}}</td><td class="num">{{.Approved}}{{if .Exploit}} <span class="expl">{{.Exploit}} explorada(s)</span>{{end}}</td>
+<tbody>{{range .Rows}}<tr><td><code>KB{{.KB}}</code>{{if and $.Admin .Approved}} <a class="muted" href="{{.CampaignHref}}">campanha por grupo de implantação</a>{{end}}</td><td>{{.FixedIn}}</td><td class="num">{{.Approved}}{{if .Exploit}} <span class="expl">{{.Exploit}} explorada(s)</span>{{end}}</td>
 <td class="num">{{if .Waiting}}<a href="{{.WaitingHref}}">{{.Waiting}}</a>{{else}}0{{end}}</td>
 <td><span class="estado {{.Class}}">{{.Label}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma correção do Windows pendente nesta máquina na avaliação de agora.</p>{{end}}
 {{if .Open}}<p class="muted">Instalação em aberto: <a href="/painel/maquinas/{{$.D.MachineID}}?aba=tarefas">job {{.Open}}</a>.</p>{{end}}
 {{if .CanInstall}}<form class="lote" method="post" action="/painel/maquinas/{{$.D.MachineID}}/windows/instalar">
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
-{{if $.Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
+{{if $.Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do grupo de implantação</label>{{end}}
 <button type="submit">Instalar {{range $i, $k := .Installable}}{{if $i}}, {{end}}KB{{$k}}{{end}}</button>
 <span class="muted">Instala pelo Windows Update da própria máquina, da fonte da política (WSUS), só os KBs com CVE aprovada em Patch que a busca mostra pendentes. Não reinicia: o reinício é o bloco abaixo. O resultado vem da busca seguinte.</span>
 </form>{{end}}
@@ -1361,7 +1361,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Host.Active}}<label><input type="checkbox" name="ciente" value="1"> sei que há gente conectada ({{.Host.Active}} {{if eq .Host.Active 1}}sessão ativa{{else}}sessões ativas{{end}}) e quero reiniciar agora</label>{{end}}
 <label>Aviso <select name="aviso">{{range .Delays}}<option value="{{.}}" {{if eq . 15}}selected{{end}}>{{.}} min</option>{{end}}</select></label>
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
-{{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do anel</label>{{end}}
+{{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do grupo de implantação</label>{{end}}
 <button type="submit">Reiniciar com aviso</button></form></section>{{end}}
 {{end}}
 
@@ -1398,9 +1398,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "campanhas"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Campanhas</span></h1>
 {{template "automacao-abas" "campanhas"}}
-<p class="muted">O mesmo pedido passando pelos anéis em ordem: o servidor libera o anel seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
+<p class="muted">O mesmo pedido passando pelos grupos de implantação em ordem: o servidor libera o grupo seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
 <div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Anéis</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
+<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Grupos de implantação</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
@@ -1421,17 +1421,17 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <small class="muted">separados por vírgula</small></div>
 <div class="campo so-reinicio"><label for="aviso">Aviso do reinício</label><select id="aviso" name="aviso">{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Delay}}selected{{end}}>{{.}} min</option>{{end}}</select>
 <small class="muted">quanto tempo quem estiver conectado tem para salvar o trabalho</small></div>
-<fieldset class="campo aneis"><legend>Anéis <small class="muted">em ordem, do menor para o maior</small></legend>
+<fieldset class="campo aneis"><legend>Grupos de implantação <small class="muted">em ordem, do menor para o maior</small></legend>
 <div class="chips">{{range .Form.Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
 {{$vazios := 0}}{{range .Form.Rings}}{{if not (or .Machines .Checked)}}{{$vazios = 1}}{{end}}{{end}}
-{{if $vazios}}<details class="vazios"><summary>Anéis sem máquinas</summary><div class="chips">{{range .Form.Rings}}{{if not (or .Machines .Checked)}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}"> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div></details>{{end}}
+{{if $vazios}}<details class="vazios"><summary>Grupos de implantação sem máquinas</summary><div class="chips">{{range .Form.Rings}}{{if not (or .Machines .Checked)}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}"> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div></details>{{end}}
 </fieldset>
 <div class="campo"><label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
-<small class="muted">depois de um anel terminar sem falha, quanto esperar antes do próximo</small></div>
+<small class="muted">depois de um grupo de implantação terminar sem falha, quanto esperar antes do próximo</small></div>
 <fieldset class="campo quando"><legend>Quando</legend>
 <label class="opcao"><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}><span><b>Já, com prazo de</b>
 <select name="prazo" aria-label="prazo">{{range .Form.TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
-<label class="opcao"><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}><span><b>Na janela de cada anel</b><small>o job de cada máquina espera a janela do anel dela</small></span></label>
+<label class="opcao"><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}><span><b>Na janela de cada grupo de implantação</b><small>o job de cada máquina espera a janela do grupo dela</small></span></label>
 </fieldset>
 <div class="acoes"><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></div>
 </form></section>{{end}}
@@ -1443,12 +1443,12 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Nome</dt><dd>{{.Form.Name}}</dd>
 <dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}{{if .Extra}} · {{.Extra}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
-<dt>Observação</dt><dd>{{.ObserveL}} depois de cada anel concluído</dd>
+<dt>Observação</dt><dd>{{.ObserveL}} depois de cada grupo de implantação concluído</dd>
 </dl></div>
-<div class="card"><div class="card-cab"><h2>Anéis, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Anel</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
+<div class="card"><div class="card-cab"><h2>Grupos de implantação, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Grupo de implantação</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
 <tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td>{{if $.ProgramL}}<td>{{$r.Preview}}</td>{{end}}<td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table></div></div>
 {{range .Warnings}}<p class="aviso atencao">{{.}}</p>{{end}}
-<p>Ao criar, o servidor libera o primeiro anel no próximo minuto: os jobs vão para máquinas de verdade.</p>
+<p>Ao criar, o servidor libera o primeiro grupo de implantação no próximo minuto: os jobs vão para máquinas de verdade.</p>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}">
@@ -1474,10 +1474,10 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 </dl>
 {{if or .CanPause .CanResume .CanCancel}}<div class="lote">
 {{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button class="sec" type="submit">Pausar</button></form>{{end}}
-{{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do anel atual)</button></form>{{end}}
+{{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
 <span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
-{{range .Rings}}<section><h2>Anel {{.Ring}}{{if .Current}} (atual){{end}}</h2>
+{{range .Rings}}<section><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
 {{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th><th>Estado</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
@@ -1490,18 +1490,18 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "aneis"}}{{template "topo" .}}
-<h1>Automação <span class="muted">› Anéis e janelas</span></h1>
+<h1>Automação <span class="muted">› Grupos de implantação e janelas</span></h1>
 {{template "automacao-abas" "aneis"}}
-<p class="muted">Anel 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos anéis em ordem. A janela de manutenção de um anel é quando os jobs "na janela" daquele anel podem rodar. Para pôr máquinas num anel, marque-as na <a href="/painel/parque">Parque</a> ou use o detalhe da máquina.</p>
-<div class="card"><div class="card-cab"><h2>Anéis em uso</h2><span class="muted">{{.Total}} máquina(s) no parque</span></div>{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>Anel</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<p class="muted">Grupo de implantação 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos grupos em ordem. A janela de manutenção de um grupo de implantação é quando os jobs "na janela" daquele grupo podem rodar. Para pôr máquinas num grupo de implantação, marque-as na <a href="/painel/parque">Parque</a> ou use o detalhe da máquina.</p>
+<div class="card"><div class="card-cab"><h2>Grupos de implantação em uso</h2><span class="muted">{{.Total}} máquina(s) no parque</span></div>{{if .Rows}}<div class="tabela"><table>
+<thead><tr><th>Grupo de implantação</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
-{{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/aneis/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/grupos-implantacao/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma máquina e nenhuma janela ainda.</p>{{end}}</div>
-{{if .Admin}}<section><h2>Definir a janela de um anel</h2>
+{{if .Admin}}<section><h2>Definir a janela de um grupo de implantação</h2>
 <p class="muted">Grava ou troca a janela. Uma janela que passa da meia-noite pertence ao dia em que começa (sex 22:00 por 6 h termina sábado às 04:00). Os jobs já criados mantêm a janela que levam assinada.</p>
-<form class="grade" method="post" action="/painel/aneis/janela">
-<label for="anel">Anel</label><select id="anel" name="anel">{{range .Rings}}<option value="{{.}}" {{if eq . 1}}selected{{end}}>{{.}}</option>{{end}}</select>
+<form class="grade" method="post" action="/painel/grupos-implantacao/janela">
+<label for="anel">Grupo de implantação</label><select id="anel" name="anel">{{range .Rings}}<option value="{{.}}" {{if eq . 1}}selected{{end}}>{{.}}</option>{{end}}</select>
 <span>Dias</span><span class="dias">{{range .Days}}<label><input type="checkbox" name="dia" value="{{.Value}}"> {{.Label}}</label>{{end}}</span>
 <label for="inicio">Início</label><input id="inicio" name="inicio" type="time" required value="12:00">
 <label for="duracao">Duração</label><select id="duracao" name="duracao">{{range .Durations}}<option value="{{.Minutes}}" {{if eq .Minutes 120}}selected{{end}}>{{.Label}}</option>{{end}}</select>
@@ -1623,7 +1623,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted">Salvar não executa nada. Ao executar, os valores acima valem apenas para os jobs criados; salve primeiro se quiser reutilizá-los.</p>
 <p class="muted">Marque as máquinas. O script roda com a conta do agente (SYSTEM no Windows, root no Linux), no próximo check-in de cada uma.</p>
 {{if $.Machines}}<div class="tabela"><table>
-<thead><tr><th></th><th>Máquina</th><th>Sistema</th><th>Anel</th><th>Último contato</th></tr></thead>
+<thead><tr><th></th><th>Máquina</th><th>Sistema</th><th>Grupo de implantação</th><th>Último contato</th></tr></thead>
 <tbody>{{range $.Machines}}<tr><td><input type="checkbox" name="maquina" value="{{.ID}}" aria-label="{{.Name}}"></td>
 <td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td>{{.OS}}</td><td>{{.Ring}}</td><td>{{.LastSeen}}</td></tr>{{end}}</tbody></table></div>
 <p class="mt"><button type="submit"{{if $.NoJobKey}} disabled{{end}}>Executar nas máquinas marcadas</button></p>

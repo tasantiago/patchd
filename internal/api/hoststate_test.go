@@ -156,7 +156,7 @@ func TestUsuariosConectados(t *testing.T) {
 		t.Error("a busca em todos os campos inclui a conta")
 	}
 	csv := pagina(h, "GET", "/painel/inventario.csv", sessaoTeste, nil).Body.String()
-	if !strings.Contains(csv, ";anel;usuarios") || !strings.Contains(csv, `Fulano <de> Tal (EXEMPLO\fulano, console); EXEMPLO\suporte (Área de Trabalho Remota, desconectada)`) {
+	if !strings.Contains(csv, ";grupo_implantacao;usuarios") || !strings.Contains(csv, `Fulano <de> Tal (EXEMPLO\fulano, console); EXEMPLO\suporte (Área de Trabalho Remota, desconectada)`) {
 		t.Errorf("CSV:\n%s", csv)
 	}
 }

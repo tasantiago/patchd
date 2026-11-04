@@ -41,7 +41,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	return c, nil
 }
 
-// CreateCampaign grava a campanha nova (em andamento, nenhum anel lançado) e devolve o ID.
+// CreateCampaign grava a campanha nova (em andamento, nenhum grupo de implantação lançado) e devolve o ID.
 func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int64, error) {
 	if c.Sources == nil {
 		c.Sources = []string{}
@@ -110,7 +110,7 @@ func notes(n []string) []string {
 	return n
 }
 
-// CampaignJobs lista os jobs da campanha num anel (posição idx).
+// CampaignJobs lista os jobs da campanha num grupo de implantação (posição idx).
 func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT id, machine_id, state, detail, finished_at FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
@@ -201,7 +201,7 @@ func (m *Memory) SaveCampaign(ctx context.Context, c campaign.Campaign, from str
 	return false, nil
 }
 
-// CampaignJobs lista os jobs da campanha num anel.
+// CampaignJobs lista os jobs da campanha num grupo de implantação.
 func (m *Memory) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

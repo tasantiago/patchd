@@ -29,7 +29,7 @@ type Record struct {
 	CreatedBy string
 	NotBefore time.Time // zero: sem janela (Aula 8.3)
 	NotAfter  time.Time
-	// Campanha (Aula 8.5): CampaignID 0 = job avulso; CampaignIdx = posição do anel nela.
+	// Campanha (Aula 8.5): CampaignID 0 = job avulso; CampaignIdx = posição do grupo de implantação nela.
 	CampaignID  int64
 	CampaignIdx int
 }

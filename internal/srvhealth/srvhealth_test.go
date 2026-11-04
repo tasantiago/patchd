@@ -129,7 +129,7 @@ func TestRingBounded(t *testing.T) {
 		m.tick(at.Add(time.Duration(i) * time.Minute))
 	}
 	if n := len(m.Points(time.Time{})); n != ringSize {
-		t.Fatalf("anel com %d pontos", n)
+		t.Fatalf("buffer circular com %d pontos", n)
 	}
 }
 

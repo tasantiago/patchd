@@ -43,7 +43,7 @@ cópia antes da troca, nem volta (Aula 23.1).
 ## Cópia do banco (Aula 10.1)
 
 Tudo o que o patchd sabe sobre o parque está no PostgreSQL: máquinas, inventários, buscas,
-jobs, campanhas, anéis e janelas, tokens de registro, usuários locais e sessões. O
+jobs, campanhas, grupos de implantação e janelas, tokens de registro, usuários locais e sessões. O
 catálogo (MSRC, USN, Fedora, Apple, KEV) também está, mas se refaz sozinho na próxima
 sincronização.
 
@@ -263,8 +263,8 @@ mesmo `0x80244007`.
 
 O formulário de Automação › Campanhas fica em coluna: o tipo em cartões com uma linha de
 explicação, e só os campos do tipo escolhido à vista (Programa no de terceiros; Fontes ou KBs
-no atualizar pacotes e no Windows; Aviso no reiniciar). Os anéis sem máquinas ficam em
-"Anéis sem máquinas", recolhidos. Tudo por CSS (`:has()`), sem JavaScript, dentro da CSP do
+no atualizar pacotes e no Windows; Aviso no reiniciar). Os grupos de implantação sem máquinas ficam em
+"Grupos de implantação sem máquinas", recolhidos. Tudo por CSS (`:has()`), sem JavaScript, dentro da CSP do
 painel; num navegador sem `:has()`, todos os campos aparecem, como antes. O servidor ignora
 os campos que não valem para o tipo, então nada muda na conferência. `?tipo=reboot` abre
 com o reinício escolhido.
@@ -378,7 +378,7 @@ ou a chave roubada): o job pode dizer o que quiser, a lista é da máquina.
   dispensado, como na 16.5.
 - Dois reinícios na mesma máquina (o do usuário e o de uma campanha, por exemplo): vale o
   mais cedo. O agente cancela o mais tarde, se for o caso, e o job dele volta dispensado
-  ("já havia um reinício agendado para antes"), sem pausar o anel da campanha.
+  ("já havia um reinício agendado para antes"), sem pausar o grupo de implantação da campanha.
 - Em servidor (Windows Server), o app mostra que o reinício é com a TI, e o servidor recusa
   o pedido.
 - O ícone lembra do reinício pendente sem hora escolhida a cada 4 h; o clique abre a aba.

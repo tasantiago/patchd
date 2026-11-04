@@ -1,7 +1,7 @@
 // Package srvhealth mede a saúde do próprio servidor do patchd (docs/saude-servidor.md): a
 // cada minuto, quanto da CPU e da memória disponíveis o processo usa, quanto a máquina inteira
 // usa, o pool de conexões do banco, o espaço das pastas de dados e o tempo das requisições. O
-// minuto fica num anel de 24 horas na memória; a hora fechada vai para o banco (90 dias) pelo
+// minuto fica num buffer circular de 24 horas na memória; a hora fechada vai para o banco (90 dias) pelo
 // Keeper. As regras de Advise dizem o que aumentar.
 //
 // Só a biblioteca padrão e golang.org/x/sys: nada de agente externo. No Linux, os números vêm
@@ -534,7 +534,7 @@ func (m *Monitor) Disks() []Disk {
 	return out
 }
 
-// AddPoint põe um minuto pronto no anel (os testes do painel; a medição usa Run).
+// AddPoint põe um minuto pronto no buffer circular (os testes do painel; a medição usa Run).
 func (m *Monitor) AddPoint(p Point) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -33,7 +33,7 @@ type Memory struct {
 	jobs   []*memJob // fila de jobs (Aula 8.1)
 	jobSeq int64
 
-	windows map[int]RingWindow // janelas de manutenção por anel (Aula 8.3)
+	windows map[int]RingWindow // janelas de manutenção por grupo de implantação (Aula 8.3)
 
 	campaigns   []campaign.Campaign // campanhas (Aula 8.5)
 	campaignSeq int64

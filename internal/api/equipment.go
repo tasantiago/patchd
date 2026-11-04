@@ -55,7 +55,7 @@ var equipColumns = []struct{ Key, Label string }{
 	{"nome", "Nome"}, {"tombo", "Tombo"}, {"local", "Local"}, // Aula 23.6
 	{"status", "Status"}, {"agente", "Agente"}, {"ip", "IP"}, {"usuario", "Usuário"},
 	{"inventario", "Inventário"}, {"contato", "Último contato"}, {"canal", "Canal"},
-	{"so", "Sistema"}, {"categoria", "Categoria"}, {"serial", "Serial"}, {"bios", "Senha da BIOS"}, {"anel", "Anel"},
+	{"so", "Sistema"}, {"categoria", "Categoria"}, {"serial", "Serial"}, {"bios", "Senha da BIOS"}, {"anel", "Grupo de implantação"},
 }
 
 // Filtros do firmware (Aula 21.2): os cartões da segunda linha.
@@ -768,7 +768,7 @@ func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
 	name := "patchd-equipamentos-" + a.now().UTC().Format("20060102-1504") + ".csv"
 	a.sendCSV(w, r, name, len(out), func(b *bytes.Buffer) error {
 		return export.Table(b, []string{"maquina", "nome", "status", "agente", "ip", "ip_origem", "inventario_coletado_utc",
-			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "anel", "usuarios",
+			"ultimo_contato_utc", "canal", "sistema", "categoria", "fabricante", "modelo", "serial", "grupo_implantacao", "usuarios",
 			"firmware_modo", "secure_boot", "tpm", "senha_admin_bios", "senha_bios_fonte",
 			"tombo", "predio", "sala", "uo", "bem", "subgrupo_bem"}, out)
 	})

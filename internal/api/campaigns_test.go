@@ -45,16 +45,16 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		f   url.Values
 		msg string
 	}{
-		"sem anel":          {formCampanha("anel", ""), "Marque ao menos um anel"},
-		"anel repetido":     {formCampanha("anel", "0|0"), "cada um uma vez"},
-		"anel 10":           {formCampanha("anel", "10"), "Anéis de 0 a 9"},
-		"tipo server_url":   {formCampanha("tipo", "server_url"), "Escolha o tipo"},
-		"update sem fontes": {formCampanha("tipo", "update"), "de 1 a 50 fontes"},
-		"fonte estranha":    {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
-		"observação fora":   {formCampanha("observacao", "5"), "observação da lista"},
-		"prazo fora":        {formCampanha("prazo", "2"), "prazo da lista"},
-		"sem nome":          {formCampanha("nome", "   "), "dê um nome"},
-		"janela sem janela": {formCampanha("quando", "janela"), "Anel sem janela de manutenção: 0, 1"},
+		"sem grupo de implantação":      {formCampanha("anel", ""), "Marque ao menos um grupo de implantação"},
+		"grupo de implantação repetido": {formCampanha("anel", "0|0"), "cada um uma vez"},
+		"grupo de implantação 10":       {formCampanha("anel", "10"), "Grupos de implantação de 0 a 9"},
+		"tipo server_url":               {formCampanha("tipo", "server_url"), "Escolha o tipo"},
+		"update sem fontes":             {formCampanha("tipo", "update"), "de 1 a 50 fontes"},
+		"fonte estranha":                {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
+		"observação fora":               {formCampanha("observacao", "5"), "observação da lista"},
+		"prazo fora":                    {formCampanha("prazo", "2"), "prazo da lista"},
+		"sem nome":                      {formCampanha("nome", "   "), "dê um nome"},
+		"janela sem janela":             {formCampanha("quando", "janela"), "Grupo de implantação sem janela de manutenção: 0, 1"},
 	} {
 		r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, c.f)
 		if r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), c.msg) {
@@ -66,10 +66,10 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		t.Error("o formulário volta preenchido")
 	}
 
-	// Conferência: nada criado ainda; os anéis em ordem crescente, com o aviso do anel vazio.
+	// Conferência: nada criado ainda; os grupos de implantação em ordem crescente, com o aviso do grupo de implantação vazio.
 	r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("anel", "3|0"))
 	b = r.Body.String()
-	if r.Code != http.StatusOK || !strings.Contains(b, "Conferir a campanha") || !strings.Contains(b, "O anel 3 não tem máquinas") ||
+	if r.Code != http.StatusOK || !strings.Contains(b, "Conferir a campanha") || !strings.Contains(b, "O grupo de implantação 3 não tem máquinas") ||
 		!strings.Contains(b, `<input type="hidden" name="anel" value="0"><input type="hidden" name="anel" value="3">`) ||
 		!strings.Contains(b, `name="confirmar" value="1"`) || !strings.Contains(b, "thyago · AD · admin") {
 		t.Errorf("conferência:\n%s", b)
@@ -105,7 +105,7 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		t.Error("log")
 	}
 
-	// Na janela, com os anéis com janela: passa.
+	// Na janela, com os grupos de implantação com janela: passa.
 	w := window.Window{Days: window.AllDays, Start: 12 * time.Hour, Duration: time.Hour, Location: time.UTC}
 	_ = st.SetWindow(ctx, 0, w, "x")
 	_ = st.SetWindow(ctx, 1, w, "x")

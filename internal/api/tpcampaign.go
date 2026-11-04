@@ -15,9 +15,9 @@ import (
 
 // Campanha de terceiros pelo painel (Aula 14.8): o formulário de Campanhas ganha o tipo
 // "instalar programa de terceiros", com as versões aprovadas e guardadas; a página do
-// programa leva para ele já preenchido; a conferência mostra, anel a anel, o que cada um
+// programa leva para ele já preenchido; a conferência mostra, grupo de implantação a grupo de implantação, o que cada um
 // receberia agora. A criação passa pela mesma conferência da linha de comando
-// (Campaigner.Ready), e o motor confere de novo a cada anel.
+// (Campaigner.Ready), e o motor confere de novo a cada grupo de implantação.
 
 // campaigner: o planejador das campanhas de terceiros com o banco e a pasta deste servidor.
 // Sem as regras, Ready responde o motivo (nada é criado).
@@ -66,7 +66,7 @@ func (a *api) programChoices(r *http.Request, f *campaignForm) error {
 	return nil
 }
 
-// thirdPartyPreview: por anel escolhido, o que a campanha faria agora ("anel 0: 1 job(s);
+// thirdPartyPreview: por grupo de implantação escolhido, o que a campanha faria agora ("grupo de implantação 0: 1 job(s);
 // fora: 1 sem inventário do Windows"). As máquinas aposentadas não estão na lista.
 func (a *api) thirdPartyPreview(r *http.Request, c campaign.Campaign) (map[int]string, error) {
 	machines, err := a.store.Machines(r.Context())
@@ -91,7 +91,7 @@ func (a *api) thirdPartyPreview(r *http.Request, c campaign.Campaign) (map[int]s
 			}
 			created++
 		}
-		out[ring] = strings.TrimPrefix(campaign.RingNote(ring, created, skipped), "anel "+strconv.Itoa(ring)+": ")
+		out[ring] = strings.TrimPrefix(campaign.RingNote(ring, created, skipped), "grupo de implantação "+strconv.Itoa(ring)+": ")
 	}
 	return out, nil
 }

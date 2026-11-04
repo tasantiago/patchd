@@ -46,10 +46,10 @@ func TestComandosDeCampanha(t *testing.T) {
 		}
 	}
 	code, o, e := roda("create", "-name", "busca geral", "-type", "rescan", "-rings", "0,1", "-observe", "10m", "-ttl", "15m")
-	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, "libera o anel 0 no próximo minuto") {
+	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, "libera o grupo de implantação 0 no próximo minuto") {
 		t.Fatalf("create: %d %q %s", code, o, e)
 	}
-	// O laço do servidor libera o anel 0.
+	// O laço do servidor libera o grupo de implantação 0.
 	_, key, _ := jobs.GenerateKey()
 	eng := &campaign.Engine{Store: mem, Key: key}
 	if err := eng.Step(ctx, agora); err != nil {
@@ -87,7 +87,7 @@ func TestComandosDeCampanha(t *testing.T) {
 }
 
 // Campanha de terceiros pela linha de comando (Aula 14.7): a versão tem de estar pronta na
-// criação; o show diz o programa e o que cada anel liberou.
+// criação; o show diz o programa e o que cada grupo de implantação liberou.
 func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
 	ctx := context.Background()
 	mem := store.NewMemory()
@@ -131,7 +131,7 @@ func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
 	}
 	_, o, _ = roda("show", "-id", "1")
 	for _, tr := range []string{"campanha 1: libreoffice 26.8.1.1", "tipo: thirdparty (programa: libreoffice 26.8.1.1)",
-		"liberação: anel 0: 1 job(s); fora: 1 sem o programa", "92fc3b93  pendente"} {
+		"liberação: grupo de implantação 0: 1 job(s); fora: 1 sem o programa", "92fc3b93  pendente"} {
 		if !strings.Contains(o, tr) {
 			t.Errorf("show: faltou %q\n%s", tr, o)
 		}

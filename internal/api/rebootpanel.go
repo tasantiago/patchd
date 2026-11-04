@@ -66,7 +66,7 @@ func (a *api) rebootAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	// Aula 15.12: reiniciar agora com gente trabalhando na máquina pede confirmação. O aviso
 	// do agente avisa, mas quem decide derrubar o trabalho de alguém é o admin, sabendo disso.
-	// Na janela do anel, não: a janela já é o horário combinado para isso.
+	// Na janela do grupo de implantação, não: a janela já é o horário combinado para isso.
 	active := 0
 	if when == "agora" {
 		h, found, err := a.store.HostState(r.Context(), id)

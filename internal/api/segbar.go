@@ -104,7 +104,7 @@ var ovStates = []ovState{
 }
 
 // stateBar: a barra de estados de um conjunto de máquinas. link: a parte vira link para a frota
-// filtrada (só na barra da frota inteira: a Frota não filtra por anel nem por sistema).
+// filtrada (só na barra da frota inteira: a Frota não filtra por grupo de implantação nem por sistema).
 func stateBar(size string, counts map[string]int, link bool) segBar {
 	parts := make([]segPart, 0, len(ovStates))
 	for _, s := range ovStates {

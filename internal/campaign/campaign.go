@@ -1,5 +1,5 @@
-// Package campaign leva um mesmo pedido pelos anéis, em ordem (Aula 8.5, RF-25): primeiro
-// o piloto; o anel seguinte só recebe jobs quando todos os do anel atual terminaram com
+// Package campaign leva um mesmo pedido pelos grupos de implantação, em ordem (Aula 8.5, RF-25): primeiro
+// o piloto; o grupo de implantação seguinte só recebe jobs quando todos os do grupo de implantação atual terminaram com
 // sucesso e o tempo de observação passou (liberação automática, decisão da Aula 8.4).
 // Qualquer job sem sucesso pausa a campanha: quem decide seguir é o admin.
 package campaign
@@ -34,8 +34,8 @@ const (
 	MaxSources = 50
 )
 
-// Campaign é uma campanha. CurrentIdx é a posição em Rings do anel atual; LaunchedIdx, a
-// do último anel cujos jobs já foram criados (-1: nenhum); AcceptedIdx, a do anel cujas
+// Campaign é uma campanha. CurrentIdx é a posição em Rings do grupo de implantação atual; LaunchedIdx, a
+// do último grupo de implantação cujos jobs já foram criados (-1: nenhum); AcceptedIdx, a do grupo de implantação cujas
 // falhas o admin aceitou ao retomar (-1: nenhum).
 type Campaign struct {
 	ID          int64
@@ -43,7 +43,7 @@ type Campaign struct {
 	Type        string
 	Sources     []string      // update: as fontes (pacotes fonte); windows_update (Aula 16.4): os KBs ("KB5127648")
 	App         string        // thirdparty (Aula 14.7): a regra do programa (libreoffice)
-	Version     string        // thirdparty: a versão aprovada que a campanha leva a todos os anéis
+	Version     string        // thirdparty: a versão aprovada que a campanha leva a todos os grupos de implantação
 	RebootDelay time.Duration // reboot (Aula 16.5): o aviso aos usuários antes do reinício
 	Rings       []int
 	UseWindow   bool
@@ -55,13 +55,13 @@ type Campaign struct {
 	AcceptedIdx int
 	RingDoneAt  *time.Time
 	Detail      string
-	Notes       []string // um resumo por anel liberado: jobs criados e quem ficou fora (Aula 14.7)
+	Notes       []string // um resumo por grupo de implantação liberado: jobs criados e quem ficou fora (Aula 14.7)
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-// Ring é o anel atual.
+// Ring é o grupo de implantação atual.
 func (c Campaign) Ring() int { return c.Rings[c.CurrentIdx] }
 
 // Target diz o que a campanha leva: as fontes do update, ou o programa e a versão.
@@ -101,7 +101,7 @@ func (c Campaign) Validate() error {
 	case c.Type != jobs.TypeThirdParty && (c.App != "" || c.Version != ""):
 		return errors.New("só a campanha de terceiros leva programa e versão")
 	case len(c.Rings) == 0:
-		return errors.New("informe os anéis, em ordem (ex.: 0,1)")
+		return errors.New("informe os grupos de implantação, em ordem (ex.: 0,1)")
 	case c.Observe < 0 || c.Observe > MaxObserve:
 		return fmt.Errorf("observação fora de 0 a %v", MaxObserve)
 	case !c.UseWindow && (c.TTL < jobs.MinTTL || c.TTL > jobs.MaxTTL):
@@ -116,7 +116,7 @@ func (c Campaign) Validate() error {
 	}
 	for i, r := range c.Rings {
 		if r < 0 || r > 9 || (i > 0 && r <= c.Rings[i-1]) {
-			return errors.New("anéis de 0 a 9, em ordem crescente e sem repetição (ex.: 0,1,2)")
+			return errors.New("grupos de implantação de 0 a 9, em ordem crescente e sem repetição (ex.: 0,1,2)")
 		}
 	}
 	return nil
@@ -144,13 +144,13 @@ type Store interface {
 
 // Novas tentativas dos jobs adiados (Aula 14.9): o agente responde "adiado" quando não deu
 // agora (programa aberto, outro instalador rodando). A campanha pede de novo depois de
-// RetryAfter, até MaxAttempts jobs por máquina no anel; esgotadas, conta como falha e pausa.
+// RetryAfter, até MaxAttempts jobs por máquina no grupo de implantação; esgotadas, conta como falha e pausa.
 const (
 	RetryAfter  = time.Hour
 	MaxAttempts = 24
 )
 
-// ThirdPartyPlanner decide a campanha de terceiros (Aula 14.7). Ready confere, a cada anel
+// ThirdPartyPlanner decide a campanha de terceiros (Aula 14.7). Ready confere, a cada grupo de implantação
 // liberado, que a versão continua aprovada e que o instalador confere no cache: reason não
 // vazio pausa a campanha com o motivo. Job decide a máquina: os parâmetros do job, ou por
 // que ela fica fora (skip: "em dia", "duplicado", "sem o programa"...).
@@ -166,12 +166,12 @@ type Engine struct {
 	// Pending devolve as pendências avaliadas da máquina (para o update); found false:
 	// máquina fora da frota.
 	Pending func(ctx context.Context, machineID string) ([]protocol.PendingItem, bool, error)
-	// Window devolve a próxima janela do anel da máquina; ok false: o anel não tem janela.
+	// Window devolve a próxima janela do grupo de implantação da máquina; ok false: o grupo de implantação não tem janela.
 	Window func(ctx context.Context, machineID string, now time.Time) (start, end time.Time, ok bool, err error)
 	// Scan devolve a busca atual da máquina (Aula 16.4, campanha do Windows): o job leva os
 	// UpdateIDs que ela mostra na fonte da política. nil: as máquinas ficam fora.
 	Scan func(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
-	// ThirdParty decide a campanha thirdparty; nil: elas pausam no primeiro anel.
+	// ThirdParty decide a campanha thirdparty; nil: elas pausam no primeiro grupo de implantação.
 	ThirdParty ThirdPartyPlanner
 	Logger     *slog.Logger
 }
@@ -194,8 +194,8 @@ func (e *Engine) Step(ctx context.Context, now time.Time) error {
 	return errors.Join(errs...)
 }
 
-// Advance leva a campanha o mais longe possível agora: cria os jobs do anel atual (se
-// ainda não criou), espera eles terminarem, observa, e passa para o anel seguinte.
+// Advance leva a campanha o mais longe possível agora: cria os jobs do grupo de implantação atual (se
+// ainda não criou), espera eles terminarem, observa, e passa para o grupo de implantação seguinte.
 func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error {
 	if c.State != StateRunning {
 		return nil
@@ -212,12 +212,12 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 			if err != nil {
 				return err
 			}
-			if c.State != StateRunning { // o lançamento pausou (anel sem janela, versão não pronta)
+			if c.State != StateRunning { // o lançamento pausou (grupo de implantação sem janela, versão não pronta)
 				return e.save(ctx, c)
 			}
 			note := RingNote(c.Ring(), n, out)
 			c.Notes = append(slices.Clone(c.Notes), note)
-			e.log(c, "anel liberado", "anel", c.Ring(), "jobs", n, "resumo", note)
+			e.log(c, "grupo de implantação liberado", "anel", c.Ring(), "jobs", n, "resumo", note)
 		}
 		list, err := e.Store.CampaignJobs(ctx, c.ID, c.CurrentIdx)
 		if err != nil {
@@ -229,21 +229,21 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 			if err != nil {
 				return err
 			}
-			if c.State != StateRunning { // a versão deixou de estar pronta, ou o anel ficou sem janela
+			if c.State != StateRunning { // a versão deixou de estar pronta, ou o grupo de implantação ficou sem janela
 				return e.save(ctx, c)
 			}
 			st.open += reissued
 		}
 		switch {
 		case st.open > 0 || st.waiting > 0:
-			c.Detail = fmt.Sprintf("anel %d: %d de %d job(s) em aberto", c.Ring(), st.open+st.waiting, st.machines)
+			c.Detail = fmt.Sprintf("grupo de implantação %d: %d de %d job(s) em aberto", c.Ring(), st.open+st.waiting, st.machines)
 			if st.waiting > 0 {
 				c.Detail += fmt.Sprintf("; %d adiada(s), nova tentativa a partir de %s UTC", st.waiting, st.next.UTC().Format("2006-01-02 15:04"))
 			}
 			return e.save(ctx, c)
 		case len(st.failed) > 0 && c.AcceptedIdx != c.CurrentIdx:
 			c.State = StatePaused
-			c.Detail = fmt.Sprintf("anel %d: %d job(s) sem sucesso (%s); retome (campaign resume) para aceitar e seguir", c.Ring(), len(st.failed), strings.Join(st.failed, ", "))
+			c.Detail = fmt.Sprintf("grupo de implantação %d: %d job(s) sem sucesso (%s); retome (campaign resume) para aceitar e seguir", c.Ring(), len(st.failed), strings.Join(st.failed, ", "))
 			e.log(c, "campanha pausada", "anel", c.Ring(), "sem_sucesso", len(st.failed))
 			return e.save(ctx, c)
 		}
@@ -253,16 +253,16 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 		}
 		last := c.CurrentIdx == len(c.Rings)-1
 		if last {
-			c.State, c.Detail = StateDone, fmt.Sprintf("todos os anéis concluídos (%s)", ringList(c.Rings))
+			c.State, c.Detail = StateDone, fmt.Sprintf("todos os grupos de implantação concluídos (%s)", ringList(c.Rings))
 			e.log(c, "campanha concluída")
 			return e.save(ctx, c)
 		}
 		until := c.RingDoneAt.Add(c.Observe)
 		if len(list) > 0 && now.Before(until) {
-			c.Detail = fmt.Sprintf("anel %d concluído; observando até %s UTC antes do anel %d", c.Ring(), until.UTC().Format("2006-01-02 15:04"), c.Rings[c.CurrentIdx+1])
+			c.Detail = fmt.Sprintf("grupo de implantação %d concluído; observando até %s UTC antes do grupo de implantação %d", c.Ring(), until.UTC().Format("2006-01-02 15:04"), c.Rings[c.CurrentIdx+1])
 			return e.save(ctx, c)
 		}
-		// Anel seguinte. Um anel sem nenhum job (ninguém com o que fazer) não tem o que observar.
+		// Grupo de implantação seguinte. Um grupo de implantação sem nenhum job (ninguém com o que fazer) não tem o que observar.
 		c.CurrentIdx++
 		c.RingDoneAt = nil
 	}
@@ -282,12 +282,12 @@ func (e *Engine) log(c *Campaign, msg string, args ...any) {
 	}
 }
 
-// launch cria os jobs do anel atual: um por máquina do anel (no update, só as que têm
+// launch cria os jobs do grupo de implantação atual: um por máquina do grupo de implantação (no update, só as que têm
 // alguma das fontes pendente; no thirdparty, só as que o plano manda atualizar). out conta
 // as máquinas que ficaram fora, por motivo.
 func (e *Engine) launch(ctx context.Context, c *Campaign, now time.Time) (created int, out map[string]int, err error) {
 	out = map[string]int{}
-	if ok, err := e.ready(ctx, c, fmt.Sprintf("anel %d não liberado", c.Ring())); err != nil || !ok {
+	if ok, err := e.ready(ctx, c, fmt.Sprintf("grupo de implantação %d não liberado", c.Ring())); err != nil || !ok {
 		return 0, out, err
 	}
 	machines, err := e.Store.RingMachines(ctx, c.Ring())
@@ -299,7 +299,7 @@ func (e *Engine) launch(ctx context.Context, c *Campaign, now time.Time) (create
 		switch {
 		case err != nil:
 			return created, out, err
-		case c.State != StateRunning: // anel sem janela
+		case c.State != StateRunning: // grupo de implantação sem janela
 			return created, out, nil
 		case ok:
 			created++
@@ -312,7 +312,7 @@ func (e *Engine) launch(ctx context.Context, c *Campaign, now time.Time) (create
 }
 
 // ready confere, no thirdparty, que a versão continua pronta (Aula 14.7): a aprovação manda
-// a cada anel e a cada nova tentativa. Não pronta: a campanha pausa com o motivo.
+// a cada grupo de implantação e a cada nova tentativa. Não pronta: a campanha pausa com o motivo.
 func (e *Engine) ready(ctx context.Context, c *Campaign, what string) (bool, error) {
 	if c.Type != jobs.TypeThirdParty {
 		return true, nil
@@ -333,7 +333,7 @@ func (e *Engine) ready(ctx context.Context, c *Campaign, what string) (bool, err
 	return false, nil
 }
 
-// issue cria o job de uma máquina no anel atual; sem job, skip diz por quê. Um anel sem
+// issue cria o job de uma máquina no grupo de implantação atual; sem job, skip diz por quê. Um grupo de implantação sem
 // janela pausa a campanha (c.State muda).
 func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Time) (bool, string, error) {
 	req := jobs.Request{MachineID: id, Type: c.Type, TTL: c.TTL, By: "campanha " + fmt.Sprint(c.ID),
@@ -353,7 +353,7 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 		}
 	case jobs.TypeWinUpdate:
 		// Os KBs da campanha que corrigem alguma CVE aprovada desta máquina (Aula 13.2: a
-		// aprovação vale na hora em que o anel é liberado) e que a busca dela mostra na fonte
+		// aprovação vale na hora em que o grupo de implantação é liberado) e que a busca dela mostra na fonte
 		// da política (Aula 16.2: fonte falhando, nem tenta).
 		items, found, err := e.Pending(ctx, id)
 		if err != nil {
@@ -417,7 +417,7 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 		}
 		if !ok {
 			c.State = StatePaused
-			c.Detail = fmt.Sprintf("anel %d sem janela de manutenção (ring window); defina e retome", c.Ring())
+			c.Detail = fmt.Sprintf("grupo de implantação %d sem janela de manutenção (ring window); defina e retome", c.Ring())
 			e.log(c, "campanha pausada", "anel", c.Ring(), "motivo", "sem janela")
 			return false, "", nil
 		}
@@ -433,7 +433,7 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 	return true, "", nil
 }
 
-// ringState: o anel atual, máquina a máquina, pelo job mais recente de cada uma.
+// ringState: o grupo de implantação atual, máquina a máquina, pelo job mais recente de cada uma.
 type ringState struct {
 	machines, open, waiting int
 	failed                  []string
@@ -480,9 +480,9 @@ func ringStatus(list []JobState, now time.Time) ringState {
 
 // retry pede de novo às máquinas adiadas cujo intervalo passou. O plano é refeito: se a
 // máquina não precisa mais (em dia, sem o programa, sem pendência), o adiado vira
-// "dispensado" e ela sai do anel resolvida. Devolve quantos jobs novos foram criados.
+// "dispensado" e ela sai do grupo de implantação resolvida. Devolve quantos jobs novos foram criados.
 func (e *Engine) retry(ctx context.Context, c *Campaign, list []JobState, now time.Time) (int, error) {
-	if ok, err := e.ready(ctx, c, fmt.Sprintf("anel %d: nova tentativa suspensa", c.Ring())); err != nil || !ok {
+	if ok, err := e.ready(ctx, c, fmt.Sprintf("grupo de implantação %d: nova tentativa suspensa", c.Ring())); err != nil || !ok {
 		return 0, err
 	}
 	created := 0
@@ -506,9 +506,9 @@ func (e *Engine) retry(ctx context.Context, c *Campaign, list []JobState, now ti
 	return created, nil
 }
 
-// RingNote resume a liberação de um anel: "anel 0: 1 job; fora: 1 em dia, 2 sem o programa".
+// RingNote resume a liberação de um grupo de implantação: "grupo de implantação 0: 1 job; fora: 1 em dia, 2 sem o programa".
 func RingNote(ring, created int, out map[string]int) string {
-	s := fmt.Sprintf("anel %d: %d job(s)", ring, created)
+	s := fmt.Sprintf("grupo de implantação %d: %d job(s)", ring, created)
 	if len(out) == 0 {
 		return s
 	}
@@ -519,7 +519,7 @@ func RingNote(ring, created int, out map[string]int) string {
 	return s + "; fora: " + strings.Join(parts, ", ")
 }
 
-// Resume retoma uma campanha pausada. Se o anel atual teve falhas, elas ficam aceitas.
+// Resume retoma uma campanha pausada. Se o grupo de implantação atual teve falhas, elas ficam aceitas.
 func Resume(c *Campaign) error {
 	if c.State != StatePaused {
 		return fmt.Errorf("a campanha está %s, não pausada", c.State)
@@ -553,12 +553,12 @@ func ParseRings(s string) ([]int, error) {
 	for _, p := range strings.Split(s, ",") {
 		var r int
 		if _, err := fmt.Sscan(strings.TrimSpace(p), &r); err != nil {
-			return nil, fmt.Errorf("anel %q inválido", p)
+			return nil, fmt.Errorf("grupo de implantação %q inválido", p)
 		}
 		out = append(out, r)
 	}
 	if !slices.IsSorted(out) {
-		return nil, errors.New("anéis em ordem crescente (ex.: 0,1,2)")
+		return nil, errors.New("grupos de implantação em ordem crescente (ex.: 0,1,2)")
 	}
 	return out, nil
 }

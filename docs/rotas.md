@@ -49,7 +49,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | POST | `/api/v1/agent/standardization/report` |
 | POST | `/api/v1/agent/standardization` |
 
-## Sessão (página) (19)
+## Sessão (página) (20)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -63,6 +63,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/campanhas` |
 | GET | `/painel/frota.csv` |
 | GET | `/painel/frota` |
+| GET | `/painel/grupos-implantacao` |
 | GET | `/painel/inventario.csv` |
 | GET | `/painel/inventario` |
 | GET | `/painel/jobs` |
@@ -112,9 +113,6 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | Método | Caminho |
 |---|---|
 | POST | `/painel/alertas/{id}/reconhecer` |
-| POST | `/painel/aneis/janela` |
-| POST | `/painel/aneis/maquinas` |
-| POST | `/painel/aneis/{ring}/remover-janela` |
 | POST | `/painel/autoatendimento/pedidos/{id}/aprovar` |
 | POST | `/painel/autoatendimento/pedidos/{id}/recusar` |
 | POST | `/painel/campanhas/nova` |
@@ -140,6 +138,9 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/descoberta/faixas/{id}/{op}` |
 | POST | `/painel/descoberta/faixas` |
 | POST | `/painel/descoberta/varrer` |
+| POST | `/painel/grupos-implantacao/janela` |
+| POST | `/painel/grupos-implantacao/maquinas` |
+| POST | `/painel/grupos-implantacao/{ring}/remover-janela` |
 | POST | `/painel/jobs/{id}/cancelar` |
 | POST | `/painel/maquinas/{id}/anel` |
 | POST | `/painel/maquinas/{id}/aposentar` |

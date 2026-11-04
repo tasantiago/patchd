@@ -20,7 +20,7 @@ type CampaignStore interface {
 }
 
 // Campaigner decide a campanha de terceiros (Aula 14.7): uma versão aprovada de um
-// programa, levada pelos anéis. Cada máquina passa pelo mesmo plano do painel e do
+// programa, levada pelos grupos de implantação. Cada máquina passa pelo mesmo plano do painel e do
 // package plan, só que com os instaladores guardados daquela versão: quem já está nela
 // (ou acima) fica "em dia"; duplicado, bundle e os outros casos ficam fora, com o motivo.
 type Campaigner struct {
@@ -50,7 +50,7 @@ func versionPackages(all []store.ThirdPartyPackage, app, version string) []store
 	return out
 }
 
-// Ready confere a versão antes de cada anel: regra com install, aprovação em vigor, ao
+// Ready confere a versão antes de cada grupo de implantação: regra com install, aprovação em vigor, ao
 // menos um instalador guardado, cada um conferindo pelo SHA-256 no cache e cabendo num job.
 // reason vazio: pronta. err é falha de leitura (o laço tenta de novo no minuto seguinte).
 func (c Campaigner) Ready(ctx context.Context, app, version string) (string, error) {

@@ -13,7 +13,7 @@ import (
 )
 
 // Aula 16.5: reinício pedido a uma máquina que já não tem reinício pendente volta
-// "dispensado" (nada a fazer), não "rejeitado": numa campanha, não pausa o anel.
+// "dispensado" (nada a fazer), não "rejeitado": numa campanha, não pausa o grupo de implantação.
 func TestReinicioSemPendenciaViraDispensado(t *testing.T) {
 	srv, id, cred := novoServidor(t)
 	pub, priv, _ := jobs.GenerateKey()

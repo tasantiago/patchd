@@ -11,19 +11,19 @@ import (
 	"github.com/tasantiago/patchd/internal/window"
 )
 
-// Anéis e janelas de manutenção (Aula 8.3, RF-25).
+// Grupos de implantação e janelas de manutenção (Aula 8.3, RF-25).
 
-// Limites do anel: 0 é o piloto, 1 é o padrão de toda máquina nova.
+// Limites do grupo de implantação: 0 é o piloto, 1 é o padrão de toda máquina nova.
 const (
 	PilotRing   = 0
 	DefaultRing = 1
 	MaxRing     = 9
 )
 
-// ErrRing: anel fora de 0 a 9.
-var ErrRing = fmt.Errorf("anel fora de 0 a %d", MaxRing)
+// ErrRing: grupo de implantação fora de 0 a 9.
+var ErrRing = fmt.Errorf("grupo de implantação fora de 0 a %d", MaxRing)
 
-// RingWindow é a janela de um anel, com quem a definiu.
+// RingWindow é a janela de um grupo de implantação, com quem a definiu.
 type RingWindow struct {
 	Ring      int
 	Window    window.Window
@@ -38,7 +38,7 @@ func validRing(r int) error {
 	return nil
 }
 
-// SetMachineRing põe a máquina (da frota) no anel. Devolve false se ela não existe ou
+// SetMachineRing põe a máquina (da frota) no grupo de implantação. Devolve false se ela não existe ou
 // está aposentada.
 func (p *Postgres) SetMachineRing(ctx context.Context, id string, ring int) (bool, error) {
 	if err := validRing(ring); err != nil {
@@ -48,7 +48,7 @@ func (p *Postgres) SetMachineRing(ctx context.Context, id string, ring int) (boo
 	return tag.RowsAffected() == 1, err
 }
 
-// MachineRing devolve o anel da máquina da frota.
+// MachineRing devolve o grupo de implantação da máquina da frota.
 func (p *Postgres) MachineRing(ctx context.Context, id string) (int, bool, error) {
 	var r int
 	err := p.pool.QueryRow(ctx, `SELECT ring FROM machines WHERE id = $1 AND retired_at IS NULL`, id).Scan(&r)
@@ -58,7 +58,7 @@ func (p *Postgres) MachineRing(ctx context.Context, id string) (int, bool, error
 	return r, err == nil, err
 }
 
-// RingMachines lista as máquinas da frota no anel, em ordem de ID.
+// RingMachines lista as máquinas da frota no grupo de implantação, em ordem de ID.
 func (p *Postgres) RingMachines(ctx context.Context, ring int) ([]string, error) {
 	rows, err := p.pool.Query(ctx, `SELECT id FROM machines WHERE ring = $1 AND retired_at IS NULL ORDER BY id COLLATE "C"`, ring)
 	if err != nil {
@@ -67,7 +67,7 @@ func (p *Postgres) RingMachines(ctx context.Context, ring int) ([]string, error)
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// SetWindow grava (ou troca) a janela do anel.
+// SetWindow grava (ou troca) a janela do grupo de implantação.
 func (p *Postgres) SetWindow(ctx context.Context, ring int, w window.Window, by string) error {
 	if err := validRing(ring); err != nil {
 		return err
@@ -85,14 +85,14 @@ func (p *Postgres) SetWindow(ctx context.Context, ring int, w window.Window, by 
 	return err
 }
 
-// DeleteWindow remove a janela do anel. Os jobs já criados não mudam: a janela deles
+// DeleteWindow remove a janela do grupo de implantação. Os jobs já criados não mudam: a janela deles
 // está no payload assinado.
 func (p *Postgres) DeleteWindow(ctx context.Context, ring int) (bool, error) {
 	tag, err := p.pool.Exec(ctx, `DELETE FROM maintenance_windows WHERE ring = $1`, ring)
 	return tag.RowsAffected() == 1, err
 }
 
-// Windows lista as janelas, por anel.
+// Windows lista as janelas, por grupo de implantação.
 func (p *Postgres) Windows(ctx context.Context) ([]RingWindow, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT ring, days, start_min, duration_min, timezone, updated_by, updated_at
@@ -111,12 +111,12 @@ func (p *Postgres) Windows(ctx context.Context) ([]RingWindow, error) {
 		}
 		loc, err := time.LoadLocation(tz)
 		if err != nil {
-			return nil, fmt.Errorf("janela do anel %d: fuso %q: %w", rw.Ring, tz, err)
+			return nil, fmt.Errorf("janela do grupo de implantação %d: fuso %q: %w", rw.Ring, tz, err)
 		}
 		// O CHECK do banco já garante; conferir aqui deixa a conversão para uint8 à vista
 		// (Aula 20.2, gosec G115).
 		if days < 1 || days > 127 {
-			return nil, fmt.Errorf("janela do anel %d: dias %d fora de 1 a 127", rw.Ring, days)
+			return nil, fmt.Errorf("janela do grupo de implantação %d: dias %d fora de 1 a 127", rw.Ring, days)
 		}
 		rw.Window = window.Window{Days: window.Days(days), Start: time.Duration(start) * time.Minute,
 			Duration: time.Duration(dur) * time.Minute, Location: loc}
@@ -128,7 +128,7 @@ func (p *Postgres) Windows(ctx context.Context) ([]RingWindow, error) {
 
 // --- Memória -------------------------------------------------------------------------
 
-// SetMachineRing põe a máquina no anel.
+// SetMachineRing põe a máquina no grupo de implantação.
 func (m *Memory) SetMachineRing(ctx context.Context, id string, ring int) (bool, error) {
 	if err := validRing(ring); err != nil {
 		return false, err
@@ -143,7 +143,7 @@ func (m *Memory) SetMachineRing(ctx context.Context, id string, ring int) (bool,
 	return true, nil
 }
 
-// MachineRing devolve o anel da máquina da frota.
+// MachineRing devolve o grupo de implantação da máquina da frota.
 func (m *Memory) MachineRing(ctx context.Context, id string) (int, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -154,7 +154,7 @@ func (m *Memory) MachineRing(ctx context.Context, id string) (int, bool, error) 
 	return mm.ring, true, nil
 }
 
-// RingMachines lista as máquinas da frota no anel.
+// RingMachines lista as máquinas da frota no grupo de implantação.
 func (m *Memory) RingMachines(ctx context.Context, ring int) ([]string, error) {
 	var out []string
 	for _, s := range m.summaries(false) {
@@ -165,7 +165,7 @@ func (m *Memory) RingMachines(ctx context.Context, ring int) ([]string, error) {
 	return out, nil
 }
 
-// SetWindow grava a janela do anel.
+// SetWindow grava a janela do grupo de implantação.
 func (m *Memory) SetWindow(ctx context.Context, ring int, w window.Window, by string) error {
 	if err := validRing(ring); err != nil {
 		return err
@@ -182,7 +182,7 @@ func (m *Memory) SetWindow(ctx context.Context, ring int, w window.Window, by st
 	return nil
 }
 
-// DeleteWindow remove a janela do anel.
+// DeleteWindow remove a janela do grupo de implantação.
 func (m *Memory) DeleteWindow(ctx context.Context, ring int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -191,7 +191,7 @@ func (m *Memory) DeleteWindow(ctx context.Context, ring int) (bool, error) {
 	return ok, nil
 }
 
-// Windows lista as janelas, por anel.
+// Windows lista as janelas, por grupo de implantação.
 func (m *Memory) Windows(ctx context.Context) ([]RingWindow, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -204,7 +204,7 @@ func (m *Memory) Windows(ctx context.Context) ([]RingWindow, error) {
 	return out, nil
 }
 
-// WindowFor acha a janela do anel na lista.
+// WindowFor acha a janela do grupo de implantação na lista.
 func WindowFor(list []RingWindow, ring int) (RingWindow, bool) {
 	for _, w := range list {
 		if w.Ring == ring {

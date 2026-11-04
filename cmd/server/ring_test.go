@@ -27,12 +27,12 @@ func TestAneisJanelasEJobNaJanela(t *testing.T) {
 		return code, o.String(), e.String()
 	}
 
-	if code, _, e := anel("", "set", "-machine", "60ef,92fc", "-ring", "0"); code != exitOK || !strings.Contains(e, "máquina 60ef97e4 no anel 0 (piloto)") ||
-		!strings.Contains(e, "máquina 92fc3b93 no anel 0") {
+	if code, _, e := anel("", "set", "-machine", "60ef,92fc", "-ring", "0"); code != exitOK || !strings.Contains(e, "máquina 60ef97e4 no grupo de implantação 0 (piloto)") ||
+		!strings.Contains(e, "máquina 92fc3b93 no grupo de implantação 0") {
 		t.Fatalf("set: %d %s", code, e)
 	}
 	if code, _, e := anel("", "set", "-machine", "60ef", "-ring", "10"); code != exitConfig || !strings.Contains(e, "-ring") {
-		t.Errorf("anel 10: %d %s", code, e)
+		t.Errorf("grupo de implantação 10: %d %s", code, e)
 	}
 	if code, _, e := anel("", "window", "-ring", "0", "-days", "seg-sex", "-start", "12:00", "-duration", "2h"); code != exitConfig || !strings.Contains(e, "PATCHD_TIMEZONE") {
 		t.Errorf("sem fuso: %d %s", code, e)
@@ -65,7 +65,7 @@ func TestAneisJanelasEJobNaJanela(t *testing.T) {
 		return code, o.String(), e.String()
 	}
 	code, o, e = job("create", "-machine", "60ef", "-type", "rescan", "-window")
-	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, "na janela do anel 0, de 09/10 12:00 a 09/10 14:00 (America/Porto_Velho)") {
+	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, "na janela do grupo de implantação 0, de 09/10 12:00 a 09/10 14:00 (America/Porto_Velho)") {
 		t.Fatalf("create -window: %d %q %s", code, o, e)
 	}
 	if env, _ := mem.DeliverJobs(ctx, "60ef97e4-0001", agora); len(env) != 0 {
@@ -80,7 +80,7 @@ func TestAneisJanelasEJobNaJanela(t *testing.T) {
 		t.Errorf("payload: %+v %v", j, err)
 	}
 
-	// Um para cada máquina do anel; anel sem janela; combinações inválidas.
+	// Um para cada máquina do grupo de implantação; grupo de implantação sem janela; combinações inválidas.
 	code, o, e = job("create", "-ring", "0", "-type", "rescan", "-window")
 	if code != exitOK || strings.Count(o, "\n") != 2 || !strings.Contains(e, "máquina 92fc3b93 na janela") {
 		t.Errorf("create -ring: %d %q %s", code, o, e)
