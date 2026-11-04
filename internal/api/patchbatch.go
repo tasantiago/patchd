@@ -56,6 +56,10 @@ type batchView struct {
 	Note            string
 	Status, Q, Back string
 	Skipped         int // marcados que não estão mais aguardando
+	// Por correção: as linhas são correções, e o lote aprova todos os itens aguardando delas.
+	FixMode  bool
+	FixItems int
+	Hidden   []optView // o resto do filtro (ver, sistema, severidade, por): Value é o nome, Label o valor
 }
 
 // approveBatchAction é a ação das duas etapas: sem confirmar=1, mostra a conferência;
@@ -84,6 +88,10 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 	}
 	if err != nil {
 		a.internalError(w, r, "listar os itens pendentes", err)
+		return
+	}
+	if pq.View == "correcao" {
+		a.approveFixBatch(w, r, s, items, pq, sels, byFilter)
 		return
 	}
 

@@ -169,22 +169,55 @@ type patchView struct {
 	// Aula 15.9: o filtro é uma correção só (CVEs de um build): aprovar inteira.
 	WholeFix  string
 	WholeFixN int
+	// Por correção (pedido de 04/11/2026): as linhas, e os filtros novos para o formulário.
+	View     string
+	FixRows  []fixRow
+	OS, Sev  string
+	Systems  []optView
+	Sevs     []optView
+	Pers     []optView
+	ViewItem string // os links das duas visões, com o mesmo filtro
+	ViewFix  string
+	Per      int
 }
 
 // patchQuery: o que a URL pede, conferido.
 type patchQuery struct {
 	Status, Q string
 	Page      int
+	// View: "" (por item) ou "correcao" (por correção: KB, versão do macOS, pacote).
+	View string
+	// OS: "windows", "linux" ou "macos"; Sev: "critica", "alta", "media" ou "baixa" (no mínimo).
+	OS, Sev string
+	Per     int
 }
 
+// patchPerPageOptions: os tamanhos de página oferecidos.
+var patchPerPageOptions = []int{25, 50, 100, 200}
+
+// sevFilters: o filtro de severidade e o nível mínimo de cada um (severityRank).
+var sevFilters = map[string]int{"critica": 4, "alta": 3, "media": 2, "baixa": 1}
+
 func parsePatchQuery(v url.Values) patchQuery {
-	q := patchQuery{Page: 1, Q: strings.TrimSpace(v.Get("q"))}
+	q := patchQuery{Page: 1, Q: strings.TrimSpace(v.Get("q")), Per: patchPerPage}
 	q.Q = texto.Clip(q.Q, maxSearchLen) // Aula 20.3: sem partir caractere, sem UTF-8 inválido da URL
 	if s := v.Get("status"); s == "aguardando" || s == "aprovados" || s == "exploradas" {
 		q.Status = s
 	}
 	if n, _ := strconv.Atoi(v.Get("pagina")); n > 1 {
 		q.Page = n
+	}
+	if v.Get("ver") == "correcao" {
+		q.View = "correcao"
+	}
+	if o := v.Get("sistema"); o == "windows" || o == "linux" || o == "macos" {
+		q.OS = o
+	}
+	if _, ok := sevFilters[v.Get("severidade")]; ok {
+		q.Sev = v.Get("severidade")
+	}
+	if n, _ := strconv.Atoi(v.Get("por")); slices.Contains(patchPerPageOptions, n) {
+		q.Per = n
 	}
 	return q
 }
@@ -196,6 +229,18 @@ func (q patchQuery) href() string {
 	}
 	if q.Q != "" {
 		v.Set("q", q.Q)
+	}
+	if q.View != "" {
+		v.Set("ver", q.View)
+	}
+	if q.OS != "" {
+		v.Set("sistema", q.OS)
+	}
+	if q.Sev != "" {
+		v.Set("severidade", q.Sev)
+	}
+	if q.Per != patchPerPage && q.Per > 0 {
+		v.Set("por", strconv.Itoa(q.Per))
 	}
 	if q.Page > 1 {
 		v.Set("pagina", strconv.Itoa(q.Page))
@@ -224,6 +269,12 @@ func filterPatch(items []patchItem, q patchQuery) []patchItem {
 				continue
 			}
 		}
+		if q.OS != "" && itemOS(p) != q.OS {
+			continue
+		}
+		if q.Sev != "" && severityRank(p.Severity) < sevFilters[q.Sev] {
+			continue
+		}
 		if needle != "" && !strings.Contains(strings.ToLower(p.ID+" "+p.FixedIn+" "+p.Note), needle) {
 			continue
 		}
@@ -242,8 +293,20 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := parsePatchQuery(r.URL.Query())
-	v := patchView{pageBase: a.base(r, "Patch", "patch"), Status: q.Status, Q: q.Q, HasFilter: q.Status != "" || q.Q != "",
-		MaxBatch: maxApproveBatch}
+	v := patchView{pageBase: a.base(r, "Patch", "patch"), Status: q.Status, Q: q.Q, HasFilter: q.Status != "" || q.Q != "" || q.OS != "" || q.Sev != "",
+		MaxBatch: maxApproveBatch, View: q.View, OS: q.OS, Sev: q.Sev, Per: q.Per}
+	for _, o := range []struct{ V, L string }{{"", "Todos os sistemas"}, {"windows", "Windows"}, {"linux", "Linux"}, {"macos", "macOS"}} {
+		v.Systems = append(v.Systems, optView{Value: o.V, Label: o.L, Selected: o.V == q.OS})
+	}
+	for _, o := range []struct{ V, L string }{{"", "Qualquer severidade"}, {"critica", "Crítica"}, {"alta", "Alta ou mais"}, {"media", "Média ou mais"}, {"baixa", "Baixa ou mais"}} {
+		v.Sevs = append(v.Sevs, optView{Value: o.V, Label: o.L, Selected: o.V == q.Sev})
+	}
+	for _, n := range patchPerPageOptions {
+		v.Pers = append(v.Pers, optView{Value: strconv.Itoa(n), Label: strconv.Itoa(n), Selected: n == q.Per})
+	}
+	vi, vf := q, q
+	vi.View, vf.View, vi.Page, vf.Page = "", "correcao", 1, 1
+	v.ViewItem, v.ViewFix = vi.href(), vf.href()
 	v.Flash, v.Error = batchFlash(r.URL.Query())
 	if a.compliance == nil {
 		v.Unavailable = "Os itens pendentes exigem o PostgreSQL com o catálogo."
@@ -282,6 +345,10 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 	v.KPIAll, v.KPIExpl, v.KPIWait, v.KPIApproved = kpi(""), kpi("exploradas"), kpi("aguardando"), kpi("aprovados")
 
 	found := filterPatch(items, q)
+	if q.View == "correcao" {
+		a.patchFixView(w, r, &v, q, found)
+		return
+	}
 	for _, p := range found {
 		if p.Approval == nil {
 			v.FilterWaiting++
@@ -291,10 +358,10 @@ func (a *api) patchPage(w http.ResponseWriter, r *http.Request) {
 	if v.Admin && q.Q != "" {
 		v.WholeFix, v.WholeFixN = singleFix(found)
 	}
-	pages := max(1, (len(found)+patchPerPage-1)/patchPerPage)
+	pages := max(1, (len(found)+q.Per-1)/q.Per)
 	q.Page = min(q.Page, pages)
 	v.Page = q.Page
-	from, to := (q.Page-1)*patchPerPage, min(q.Page*patchPerPage, len(found))
+	from, to := (q.Page-1)*q.Per, min(q.Page*q.Per, len(found))
 	if len(found) > 0 {
 		v.Shown = fmt.Sprintf("%d–%d de %d", from+1, to, len(found))
 	}
