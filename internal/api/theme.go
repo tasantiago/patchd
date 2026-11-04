@@ -120,7 +120,7 @@ td form{margin:0}form.inline{display:inline;margin-left:.6rem}details.excluir{ma
 details.host summary{cursor:pointer;color:var(--azul);font-size:.84rem}details.host .metodo{margin-top:.7rem}p.rot-metodo{margin:.2rem 0 .25rem;font-weight:600;font-size:.84rem}form.linha-faixa{display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0}form.linha-faixa input[type=text]{flex:1;min-width:11rem}.mt{margin-top:.8rem}
 .lote{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:center}
 th.col-lote,td.col-lote{width:1%;text-align:center}div.acao{display:flex}div.acao input{flex:1 1 20rem}
-form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}
+form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}form.grade>*{min-width:0}@media (max-width:600px){form.grade{grid-template-columns:minmax(0,1fr);gap:.3rem}}
 form.grade input[type=text]{width:100%}
 /* Formulário da campanha (Aula 16.6): campos em coluna; o que não vale para o tipo
 escolhido some, por :has(), sem JavaScript. Navegador sem :has() mostra tudo, como antes. */

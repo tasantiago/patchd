@@ -1042,6 +1042,30 @@ Excel no Windows). Até 20 MB.
   se a contagem for a mesma que a página mostrou; sem filtro, não move nada. Vai para a
   auditoria como `maquina.anel_lote`, com o filtro em palavras.
 
+### Ligar um prédio a um grupo de implantação
+
+Em **Automação › Grupos de implantação e janelas**, o cartão "Grupo de implantação por prédio"
+liga um prédio do patrimônio (o `DEPREDIO` do CSV, exatamente como veio) a um grupo. A partir
+daí as máquinas do prédio vão para esse grupo:
+
+- **ao gravar o vínculo** e **a cada importação do patrimônio**, a frota inteira (a máquina
+  que mudou de prédio no arquivo novo vai para o grupo do prédio novo, se ele tiver vínculo);
+- **no inventário** de uma máquina nova ou renomeada, só ela: a máquina nova do prédio já
+  entra no grupo certo, sem passar pelo padrão.
+
+**Exceções.** A máquina movida à mão (detalhe da máquina, Parque, lote do Inventário ou
+`patchd-server ring`) fica no grupo em que foi posta: o vínculo não a tira dali. A tabela
+mostra, por prédio, quantas máquinas há, quantas estão no grupo e quantas foram movidas à mão;
+**Devolver as N ao grupo** traz as exceções de volta ao vínculo. Ao ligar, a opção "Incluir as
+máquinas do prédio movidas à mão" faz o mesmo de uma vez. Na atualização para esta versão,
+toda máquina que já estava fora do grupo padrão (1) conta como movida à mão, para que o
+primeiro vínculo não tire um piloto do grupo 0.
+
+**Remover o vínculo** não move ninguém: as máquinas ficam no grupo em que estavam. Um prédio
+que sumiu do patrimônio aparece como "fora do patrimônio atual" e não move nada até voltar.
+Auditoria: `predio.grupo` (com quantas mudaram), `predio.grupo_remover` e
+`predio.grupo_excecoes`; a importação do patrimônio diz quantas mudaram de grupo.
+
 ## Descoberta de rede (Aula 23.7)
 
 **Administração › Descoberta** acha máquinas na rede que ainda não têm o agente, para você

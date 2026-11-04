@@ -155,6 +155,13 @@ type Store interface {
 	Windows(ctx context.Context) ([]store.RingWindow, error)
 	// Grupos de implantação e janelas pelo painel (Aula 11.1).
 	SetMachineRing(ctx context.Context, id string, ring int) (bool, error)
+	// Grupo de implantação pelo prédio do patrimônio.
+	BuildingRings(ctx context.Context) ([]store.BuildingRing, error)
+	SetBuildingRing(ctx context.Context, b store.BuildingRing) error
+	DeleteBuildingRing(ctx context.Context, building string) (bool, error)
+	RingPins(ctx context.Context) (map[string]bool, error)
+	ApplyRings(ctx context.Context, target map[string]int) (int, error)
+	UnpinRings(ctx context.Context, ids []string) (int, error)
 	SetWindow(ctx context.Context, ring int, w window.Window, by string) error
 	DeleteWindow(ctx context.Context, ring int) (bool, error)
 	// Campanhas, para a tela (Aula 8.5) e para criar e controlar pelo painel (Aula 11.2).
@@ -322,6 +329,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/grupos-implantacao/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
 	mux.Handle("POST /painel/grupos-implantacao/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
 	mux.Handle("POST /painel/grupos-implantacao/maquinas", a.sameOrigin(a.adminAction(a.fleetRingAction)))
+	mux.Handle("POST /painel/grupos-implantacao/predio", a.sameOrigin(a.adminAction(a.setBuildingRingAction)))
+	mux.Handle("POST /painel/grupos-implantacao/predio/remover", a.sameOrigin(a.adminAction(a.deleteBuildingRingAction)))
+	mux.Handle("POST /painel/grupos-implantacao/predio/excecoes", a.sameOrigin(a.adminAction(a.unpinBuildingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/anel", a.sameOrigin(a.adminAction(a.machineRingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/buscar", a.sameOrigin(a.adminAction(a.rescanAction)))
 	mux.Handle("POST /painel/maquinas/{id}/ligar", a.sameOrigin(a.adminAction(a.wakeOnLANAction))) // docs/wake-on-lan.md, Aula 22.2
@@ -435,6 +445,9 @@ func (a *api) submitInventory(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 	a.checkClock(r, id, rep.CollectedAt)
+	if stored {
+		a.buildingRingFor(r, id, rep.OS.Hostname) // máquina nova ou renomeada: o grupo do prédio
+	}
 
 	status, code := "unchanged", http.StatusOK
 	if stored {
