@@ -1,7 +1,6 @@
 package api
 
 import (
-	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,7 +12,6 @@ import (
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
-	"github.com/tasantiago/patchd/internal/version"
 )
 
 // Aprovação dos instaladores de terceiros no painel (Aula 14.5): na página do programa,
@@ -99,14 +97,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		v.Versions = append(v.Versions, *row)
 	}
 	// A versão mais nova primeiro.
-	slices.SortFunc(v.Versions, func(x, y tpVersionRow) int {
-		nx, _ := thirdparty.Normalize(x.Version)
-		ny, _ := thirdparty.Normalize(y.Version)
-		if c, err := version.CompareDotted(ny, nx); err == nil && c != 0 {
-			return c
-		}
-		return cmp.Compare(y.Version, x.Version)
-	})
+	slices.SortFunc(v.Versions, func(x, y tpVersionRow) int { return compareTPVersion(y.Version, x.Version) })
 	return nil
 }
 

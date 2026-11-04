@@ -285,6 +285,15 @@ com o reinício escolhido.
 - As duas seguem os grupos de implantação em ordem, com observação, prazo ou janela, como as
   outras. Linha de comando: `campaign create -type sistema_todas` ou `-type terceiros_todos`.
 
+### Acompanhar uma campanha grande
+
+A página da campanha mostra os jobs de um grupo de implantação por vez (o atual, ou o
+escolhido em "ver jobs"): os estados viram contadores clicáveis (pendente, concluído, falhou,
+adiado...), a busca acha a máquina pelo nome ou pelo começo do ID, e nas campanhas de
+terceiros dá para filtrar por programa. Cem jobs por página, com anterior/próxima. A máquina
+que fica fora por inteiro (sem inventário do Windows, arquitetura desconhecida) aparece uma
+vez nas notas, não uma vez por programa.
+
 ## Autoatendimento: o canal local no Windows (Aula 17.3)
 
 O agente do Windows atende o app do usuário por um named pipe, `\\.\pipe\patchd-autoatendimento`,
@@ -1007,6 +1016,30 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
 
 Na auditoria: `terceiros.baixar` (com a versão pedida) e `terceiros.excluir`. Sem pasta de
 conteúdo (`PATCHD_CONTENT_DIR`), o painel continua mostrando o comando da linha de comando.
+
+## Aprovação em lote e filtros em Patch
+
+**Sistema operacional.** A lista tem duas visões: **por item** (cada pacote ou CVE) e **por
+correção** (`?ver=correcao`): no Windows, as CVEs de um mesmo KB viram uma linha; no macOS, a
+versão do sistema; no Linux, o pacote fonte na versão que corrige. A linha diz quantos itens
+a correção resolve, a maior severidade, se alguma é explorada, em quantos sistemas e a
+aprovação (aprovada, parcial ou aguardando). Filtros nas duas visões: sistema (Windows,
+Linux, macOS), severidade mínima, busca e itens por página (25, 50, 100 ou 200).
+
+Marque as linhas e **Conferir marcadas**, ou **Conferir todas as N aguardando** do filtro. A
+conferência mostra o que será aprovado e nada é gravado antes do segundo clique; na visão por
+correção, aprovar a correção aprova todas as CVEs aguardando dela. Até 200 itens (ou
+correções) por lote; o resto do filtro fica para o próximo. Auditoria: `patch.aprovar_lote`.
+
+**Terceiros.** A lista ganha a coluna **Instalador** (aguardando a versão guardada mais nova,
+aprovado, nada guardado, ou "o patchd não instala" para programa sem regra de instalação), o
+contador "Instaladores aguardando aprovação", o filtro por essa situação, a busca por nome e
+os itens por página. O admin marca os programas (ou leva todos os aguardando do filtro) e,
+depois da conferência, aprova **a versão guardada mais nova** de cada um, com uma observação
+para todas. O servidor confere de novo no clique: versão já aprovada por outra pessoa,
+excluída ou de programa que saiu do parque fica de fora, com a contagem na mensagem. Cada
+versão aprovada vai para a auditoria como `terceiros.aprovar`, como a aprovação na página do
+programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tudo de uma vez.
 
 ## Localização do patrimônio (Aula 23.6)
 

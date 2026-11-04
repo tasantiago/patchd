@@ -977,17 +977,48 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <li><div class="kpi"><span class="kpi-rot">Programas com problema</span><span class="kpi-val">{{.Programs}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Instalações desatualizadas</span><span class="kpi-val v-laranja">{{.Outdated}}</span><span class="kpi-sub">abaixo da referência ou do mínimo</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Instalações fora de suporte</span><span class="kpi-val v-vermelho">{{.EOL}}</span><span class="kpi-sub">sem correção do fabricante</span></div></li>
+<li><a class="kpi{{if eq .Inst "aguardando"}} ativo{{end}}" href="{{.WaitingHref}}"><span class="kpi-rot">Instaladores aguardando aprovação</span><span class="kpi-val v-laranja">{{.Waiting}}</span><span class="kpi-sub">versão guardada mais nova</span></a></li>
 </ul>
-<div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="/painel/patch?aba=terceiros">só os com problema</a>{{else}}<a href="/painel/patch?aba=terceiros&amp;todos=1">mostrar todos os identificados</a>{{end}}</span></div>
-<p class="muted">Os programas com regra de instalação o patchd atualiza: baixe e aprove a versão na página do programa, e crie a campanha ou o job. Os outros, a lista diz o que distribuir e onde. A referência vem do catálogo de terceiros (winget e feeds dos fabricantes).</p>
-{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>Programa</th><th>Referência</th><th>Instalações</th><th>Desatualizadas</th><th>Fora de suporte</th><th>Versões instaladas</th><th>Origem</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Reference}}</code></td><td class="num">{{.Installs}}</td>
+<div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="{{.ProblemsHref}}">só os com problema</a>{{else}}<a href="{{.AllHref}}">mostrar todos os identificados</a>{{end}}</span></div>
+<p class="muted">Os programas com regra de instalação o patchd atualiza: baixe a versão na página do programa, aprove (aqui em lote, ou lá) e crie a campanha ou o job. Os outros, a lista diz o que distribuir e onde. A referência vem do catálogo de terceiros (winget e feeds dos fabricantes).</p>
+<form class="busca" method="get" action="/painel/patch"><input type="hidden" name="aba" value="terceiros">{{if .All}}<input type="hidden" name="todos" value="1">{{end}}
+<select name="instalador" aria-label="instalador">{{range .Insts}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Programa (chrome, 7-zip…)" aria-label="buscar programa">
+<label>Por página <select name="por">{{range .Pers}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<button type="submit">Buscar</button>{{if .HasFilter}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>
+{{if .Rows}}{{if .CanBatch}}<form method="post" action="/painel/patch/terceiros/aprovar-lote">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}{{end}}
+<div class="tabela"><table>
+<thead><tr>{{if .CanBatch}}<th class="col-lote">Lote</th>{{end}}<th>Programa</th><th>Referência</th><th>Instalações</th><th>Desatualizadas</th><th>Fora de suporte</th><th>Versões instaladas</th><th>Instalador</th><th>Origem</th></tr></thead>
+<tbody>{{range .Rows}}<tr>{{if $.CanBatch}}<td class="col-lote">{{if .Sel}}<input type="checkbox" name="sel" value="{{.Sel}}" aria-label="marcar {{.Program}}">{{end}}</td>{{end}}<td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Reference}}</code></td><td class="num">{{.Installs}}</td>
 <td class="num">{{if .Outdated}}<span class="v-laranja">{{.Outdated}}</span>{{else}}0{{end}}</td><td class="num">{{if .EOL}}<span class="expl">{{.EOL}}</span>{{else}}0{{end}}</td>
-<td><code>{{.Versions}}</code></td><td class="muted">{{.Origin}}</td></tr>{{end}}</tbody></table></div>
+<td><code>{{.Versions}}</code></td><td>{{if .Installer}}<span class="estado {{.InstallerClass}}">{{.Installer}}</span>{{end}}{{if .InstallerNote}} <span class="muted">{{.InstallerNote}}</span>{{end}}</td><td class="muted">{{.Origin}}</td></tr>{{end}}</tbody></table></div>
+{{if .CanBatch}}<div class="lote"><button type="submit">Conferir marcados</button>
+<button class="sec" type="submit" name="filtro" value="1">Conferir todos os {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
+<span class="muted">Aprova a versão guardada mais nova de cada programa. Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} programas.{{end}}</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum programa de terceiros {{if .All}}identificado{{else}}com problema{{end}} no parque.</p>{{end}}
+{{else}}<p class="muted">Nenhum programa de terceiros {{if .HasFilter}}com esse filtro{{else if .All}}identificado{{else}}com problema{{end}} no parque.</p>{{end}}
 </div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "patch-terceiros-lote"}}{{template "topo" .}}
+<p><a href="{{.Back}}">← Programas de terceiros</a></p>
+<h1>Aprovar instaladores em lote <span class="muted">› conferência</span></h1>
+<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}versão será aprovada{{else}}versões serão aprovadas{{end}}. A partir daí, o patchd pode instalá-las onde o plano diz atualizar, por campanha ou job.</p>
+{{if .FilterTotal}}<p class="aviso atencao">O filtro tem {{.FilterTotal}} programas aguardando; este lote leva os {{.Max}} primeiros, pela ordem da lista. Os demais ficam para o próximo lote.</p>{{end}}
+{{if .Skipped}}<p class="muted">{{.Skipped}} marcado(s) ficaram de fora: já aprovados, excluídos, ou fora do parque.</p>{{end}}
+<form method="post" action="/painel/patch/terceiros/aprovar-lote">
+<input type="hidden" name="confirmar" value="1">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+<div class="card"><div class="card-cab"><h2>Versões do lote</h2><span class="muted">instaladores guardados no servidor</span></div>
+<div class="tabela"><table>
+<thead><tr><th>Programa</th><th>Versão a aprovar</th><th>Aprovada hoje</th><th>Instalações</th><th>Com problema</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><input type="hidden" name="sel" value="{{.Sel}}">{{.Program}}</td><td><code>{{.Version}}</code></td><td><code>{{.Approved}}</code></td>
+<td class="num">{{.Installs}}</td><td class="num">{{.Problems}}</td></tr>{{end}}</tbody></table></div>
+</div>
+<div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
+<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todas as versões (opcional), ex.: testado no grupo de implantação piloto" aria-label="observação"></div>
+<div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if eq (len .Rows) 1}}versão{{else}}versões{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
+<span class="muted">O servidor confere cada versão de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.</span></div>
+</div></form>
 {{template "fim"}}{{end}}
 
 {{define "patch-programa"}}{{template "topo" .}}

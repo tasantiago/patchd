@@ -291,6 +291,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))
 	mux.Handle("GET /painel/patch/programa", a.panelPage(a.thirdPartyProgramPage))
 	mux.Handle("POST /painel/patch/terceiros/aprovar", a.sameOrigin(a.adminAction(a.approveThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/aprovar-lote", a.sameOrigin(a.adminAction(a.tpBatchAction)))
 	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/baixar", a.sameOrigin(a.adminAction(a.fetchThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/excluir", a.sameOrigin(a.adminAction(a.deleteThirdPartyAction)))
