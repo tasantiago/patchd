@@ -21,8 +21,7 @@ var panelErrorPage = template.Must(template.New("erro").Parse(`<!doctype html><h
 <p><a href="/painel">Voltar ao início</a></p></div></main></body></html>`))
 
 func panelError(w http.ResponseWriter, requestID string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	pageHeaders(w) // as mesmas defesas das outras páginas: CSP, sem frame, sem cache, nosniff
 	w.WriteHeader(http.StatusInternalServerError)
 	_ = panelErrorPage.Execute(w, requestID)
 }

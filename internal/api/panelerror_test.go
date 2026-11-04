@@ -45,6 +45,10 @@ func TestFalhaInternaNoPainel(t *testing.T) {
 		!strings.Contains(b, "Algo deu errado") || id == "" || !strings.Contains(b, "<code>"+id+"</code>") || strings.Contains(b, "banco fora") {
 		t.Fatalf("página de erro: %d %s\n%s", r.Code, r.Header().Get("Content-Type"), b)
 	}
+	if csp := r.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") || r.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		r.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("cabeçalhos de segurança: %v", r.Header())
+	}
 	if !strings.Contains(log.String(), "banco fora") || !strings.Contains(log.String(), "request_id="+id) {
 		t.Errorf("log:\n%s", log)
 	}
