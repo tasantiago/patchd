@@ -180,9 +180,9 @@ func jobFlash(q map[string][]string, b *pageBase) {
 	case get("erro") == "nada-marcado":
 		b.Error = "Marque ao menos uma pendência do Linux que ainda esteja pendente."
 	case get("erro") == "quando":
-		b.Error = "Escolha quando: agora ou na próxima janela do anel."
+		b.Error = "Escolha quando: agora ou na próxima janela do grupo de implantação."
 	case get("erro") == "sem-janela":
-		b.Error = "O anel desta máquina não tem janela de manutenção (patchd-server ring window); escolha \"agora\"."
+		b.Error = "O grupo de implantação desta máquina não tem janela de manutenção (patchd-server ring window); escolha \"agora\"."
 	case get("erro") == "pacotes":
 		b.Error = "Os pacotes das pendências marcadas não formam um pedido válido (veja o log do servidor)."
 	case get("erro") == "reinicio-aberto" && n > 0:
@@ -191,7 +191,7 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = "A última busca desta máquina não mostra reinício pendente (ou ela é macOS); nada foi pedido."
 	case get("erro") == "reinicio-usuarios":
 		k, _ := strconv.Atoi(get("n"))
-		b.Error = fmt.Sprintf("Há %d %s na máquina agora. Para reiniciar mesmo assim, marque \"sei que há gente conectada\"; ou escolha a janela do anel. Nada foi pedido.",
+		b.Error = fmt.Sprintf("Há %d %s na máquina agora. Para reiniciar mesmo assim, marque \"sei que há gente conectada\"; ou escolha a janela do grupo de implantação. Nada foi pedido.",
 			max(k, 1), plural(max(k, 1), "sessão ativa", "sessões ativas"))
 	case get("erro") == "reinicio-form":
 		b.Error = "Escolha o aviso (5, 15, 30 ou 60 minutos) e quando."
@@ -324,7 +324,7 @@ func (a *api) cancelJobAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	http.Redirect(w, r, fmt.Sprintf("%s?cancelado=1&job=%d", back, id), http.StatusSeeOther)
 }
 
-// ringView preenche o anel e a janela da máquina no detalhe (Aula 8.3).
+// ringView preenche o grupo de implantação e a janela da máquina no detalhe (Aula 8.3).
 func (a *api) ringView(r *http.Request, id string, v *machineView) error {
 	ring, ok, err := a.store.MachineRing(r.Context(), id)
 	if err != nil || !ok {

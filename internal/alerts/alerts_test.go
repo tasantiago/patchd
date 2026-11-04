@@ -89,7 +89,7 @@ func TestPassadas(t *testing.T) {
 			t.Fatal(ok, err)
 		}
 	}
-	pausa("7-Zip outubro", "anel 0: 1 job(s) sem sucesso (estacao-60ef); retome (campaign resume) para aceitar e seguir")
+	pausa("7-Zip outubro", "grupo de implantação 0: 1 job(s) sem sucesso (estacao-60ef); retome (campaign resume) para aceitar e seguir")
 	pausa("manual", "pausada por thyago")
 	_, _ = st.CreateCampaign(ctx, campaign.Campaign{Name: "andando", Type: "update", Sources: []string{"curl"}, Rings: []int{0}})
 
@@ -160,7 +160,7 @@ func TestPassadas(t *testing.T) {
 
 	// A pausa antiga (mais de 7 dias) não avisa.
 	w3 := &Watcher{Store: st, Mail: &caixa{}, Kinds: []string{KindCampaigns}, Now: func() time.Time { return agora.Add(8 * 24 * time.Hour) }}
-	pausa("outra", "anel 0 sem janela de manutenção (ring window); defina e retome")
+	pausa("outra", "grupo de implantação 0 sem janela de manutenção (ring window); defina e retome")
 	if n, _ := w3.Step(ctx); n != 0 {
 		t.Errorf("pausa de 8 dias atrás avisou")
 	}

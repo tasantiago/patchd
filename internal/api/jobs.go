@@ -102,7 +102,7 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	case res.Status == protocol.JobResultRejected && job.Type == jobs.TypeReboot && res.Detail == jobs.RebootNothingPending:
 		// Aula 16.5: a máquina já não tinha reinício pendente (reiniciou por conta própria,
 		// ou a busca da liberação estava velha). Nada a fazer não é falha: numa campanha, uma
-		// recusa pausaria o anel por uma máquina que está em dia.
+		// recusa pausaria o grupo de implantação por uma máquina que está em dia.
 		return jobs.StateDismissed, "dispensado: a máquina já não tinha reinício pendente (o agente conferiu na hora)"
 	case res.Status == protocol.JobResultRejected && job.Type == jobs.TypeReboot && res.Detail == jobs.RebootAlreadyScheduled:
 		// Aula 17.6: dois reinícios (o do usuário e o da TI, por exemplo): vale o mais cedo, e

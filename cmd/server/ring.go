@@ -20,18 +20,18 @@ import (
 const ringUsage = `uso: patchd-server ring <comando> [opções]
 
 comandos:
-  list     os anéis em uso: quantas máquinas, a janela e quando ela abre de novo
-  set      põe máquinas num anel: -machine ID[,ID...] -ring N (0 = piloto, 1 = padrão, até 9)
-  window   define a janela de manutenção do anel: -ring N -days seg-sex -start 12:00
+  list     os grupos de implantação em uso: quantas máquinas, a janela e quando ela abre de novo
+  set      põe máquinas num grupo de implantação: -machine ID[,ID...] -ring N (0 = piloto, 1 = padrão, até 9)
+  window   define a janela de manutenção do grupo de implantação: -ring N -days seg-sex -start 12:00
            -duration 2h [-tz America/Porto_Velho]; -clear remove a janela
 
 Dias: seg, ter, qua, qui, sex, sab, dom, intervalos (seg-sex) e listas (sab,dom), ou
 "todos". O horário é o do fuso -tz (padrão: PATCHD_TIMEZONE). Uma janela que passa da
 meia-noite pertence ao dia em que começa (sex 22:00 por 6h termina sábado às 04:00).
-Os jobs criados com "job create -window" valem só dentro da próxima janela do anel.
+Os jobs criados com "job create -window" valem só dentro da próxima janela do grupo de implantação.
 `
 
-// ringStore é o que os comandos de anel usam do banco.
+// ringStore é o que os comandos de grupo de implantação usam do banco.
 type ringStore interface {
 	machineResolver
 	SetMachineRing(ctx context.Context, id string, ring int) (bool, error)
@@ -51,7 +51,7 @@ func runRing(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		return exitConfig
 	}
 	if cfg.DatabaseURL == "" {
-		fmt.Fprintln(stderr, "patchd-server: os anéis exigem o PostgreSQL (PATCHD_DATABASE_URL ou PATCHD_DATABASE_URL_FILE)")
+		fmt.Fprintln(stderr, "patchd-server: os grupos de implantação exigem o PostgreSQL (PATCHD_DATABASE_URL ou PATCHD_DATABASE_URL_FILE)")
 		return exitConfig
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -86,7 +86,7 @@ func ringCommand(ctx context.Context, st ringStore, args []string, defaultTZ str
 		return exitOK
 	case "set":
 		machines := fs.String("machine", "", "IDs (ou começos de ID), separados por vírgula")
-		ring := fs.Int("ring", -1, "anel: 0 = piloto, 1 = padrão, até 9")
+		ring := fs.Int("ring", -1, "grupo de implantação: 0 = piloto, 1 = padrão, até 9")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
@@ -101,19 +101,19 @@ func ringCommand(ctx context.Context, st ringStore, args []string, defaultTZ str
 			}
 			ok, err := st.SetMachineRing(ctx, id, *ring)
 			if err != nil || !ok {
-				fmt.Fprintf(stderr, "patchd-server: a máquina %s não mudou de anel (%v)\n", short(id), err)
+				fmt.Fprintf(stderr, "patchd-server: a máquina %s não mudou de grupo de implantação (%v)\n", short(id), err)
 				return exitRuntime
 			}
-			fmt.Fprintf(stderr, "máquina %s no anel %d%s\n", short(id), *ring, pilotLabel(*ring))
+			fmt.Fprintf(stderr, "máquina %s no grupo de implantação %d%s\n", short(id), *ring, pilotLabel(*ring))
 		}
 		return exitOK
 	case "window":
-		ring := fs.Int("ring", -1, "anel da janela")
+		ring := fs.Int("ring", -1, "grupo de implantação da janela")
 		days := fs.String("days", "", "dias: seg-sex, sab,dom, todos")
 		start := fs.String("start", "", "início, HH:MM no fuso -tz")
 		dur := fs.Duration("duration", 0, "duração: de 10m a 24h")
 		tz := fs.String("tz", defaultTZ, "fuso horário IANA (env PATCHD_TIMEZONE)")
-		clear := fs.Bool("clear", false, "remove a janela do anel")
+		clear := fs.Bool("clear", false, "remove a janela do grupo de implantação")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
@@ -128,9 +128,9 @@ func ringCommand(ctx context.Context, st ringStore, args []string, defaultTZ str
 				return exitRuntime
 			}
 			if !ok {
-				fmt.Fprintf(stderr, "o anel %d não tinha janela\n", *ring)
+				fmt.Fprintf(stderr, "o grupo de implantação %d não tinha janela\n", *ring)
 			} else {
-				fmt.Fprintf(stderr, "janela do anel %d removida; os jobs já criados mantêm a janela deles\n", *ring)
+				fmt.Fprintf(stderr, "janela do grupo de implantação %d removida; os jobs já criados mantêm a janela deles\n", *ring)
 			}
 			return exitOK
 		}
@@ -144,7 +144,7 @@ func ringCommand(ctx context.Context, st ringStore, args []string, defaultTZ str
 			return exitRuntime
 		}
 		s, e := w.Next(now, window.MinDuration)
-		fmt.Fprintf(stderr, "janela do anel %d: %s; a próxima vai de %s a %s\n", *ring, w,
+		fmt.Fprintf(stderr, "janela do grupo de implantação %d: %s; a próxima vai de %s a %s\n", *ring, w,
 			s.In(w.Location).Format("02/01 15:04"), e.In(w.Location).Format("02/01 15:04"))
 		return exitOK
 	default:
@@ -183,7 +183,7 @@ func parseWindow(days, start string, dur time.Duration, tz string) (window.Windo
 	return w, w.Validate()
 }
 
-// ringList mostra os anéis que têm máquinas ou janela.
+// ringList mostra os grupos de implantação que têm máquinas ou janela.
 func ringList(ctx context.Context, st ringStore, now time.Time, out io.Writer) error {
 	machines, err := st.Machines(ctx)
 	if err != nil {
@@ -198,7 +198,7 @@ func ringList(ctx context.Context, st ringStore, now time.Time, out io.Writer) e
 		count[m.Ring]++
 	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ANEL\tMÁQUINAS\tJANELA\tPRÓXIMA\tDEFINIDA POR")
+	fmt.Fprintln(tw, "GRUPO\tMÁQUINAS\tJANELA\tPRÓXIMA\tDEFINIDA POR")
 	for r := 0; r <= store.MaxRing; r++ {
 		rw, hasWindow := store.WindowFor(windows, r)
 		if count[r] == 0 && !hasWindow {

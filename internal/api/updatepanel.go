@@ -16,7 +16,7 @@ import (
 )
 
 // Atualização pelo painel (Aula 8.4): o admin marca as pendências do Linux e pede
-// "atualizar agora" ou "na próxima janela do anel". O formulário só diz QUAIS pendências;
+// "atualizar agora" ou "na próxima janela do grupo de implantação". O formulário só diz QUAIS pendências;
 // os pacotes e as versões vêm da avaliação que o servidor faz na hora, nunca do navegador.
 
 const panelUpdateTTL = 6 * time.Hour // "agora": o agente tem algumas horas para fazer o check-in
@@ -129,7 +129,7 @@ func (a *api) updateAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	http.Redirect(w, r, fmt.Sprintf("%s?criado=1&job=%d", back, rec.ID), http.StatusSeeOther)
 }
 
-// nextWindow devolve a próxima janela do anel da máquina (ok false: o anel não tem janela).
+// nextWindow devolve a próxima janela do grupo de implantação da máquina (ok false: o grupo de implantação não tem janela).
 func (a *api) nextWindow(r *http.Request, id string) (start, end time.Time, ok bool, err error) {
 	ring, found, err := a.store.MachineRing(r.Context(), id)
 	if err != nil || !found {

@@ -28,7 +28,7 @@ func TestCampanhaSoComAprovados(t *testing.T) {
 	if err != nil || !found || len(items) != 1 || items[0].ID != "rsync" {
 		t.Fatalf("só o rsync: %+v %t %v", items, found, err)
 	}
-	// Revogada a aprovação, o anel seguinte já não leva nada para essa máquina.
+	// Revogada a aprovação, o grupo de implantação seguinte já não leva nada para essa máquina.
 	aprovados = nil
 	if items, found, _ := approvedPending(ctx, detail, approvals, "m-1"); !found || len(items) != 0 {
 		t.Errorf("sem aprovação: %+v", items)

@@ -15,9 +15,9 @@ import (
 	"github.com/tasantiago/patchd/internal/window"
 )
 
-// Anéis e janelas pelo painel (Aula 11.1). Até aqui era só "patchd-server ring": agora o
-// admin põe máquinas num anel (uma a uma no detalhe, ou várias de uma vez na Frota) e
-// define ou remove a janela de manutenção de cada anel. O perfil leitura só vê.
+// Grupos de implantação e janelas pelo painel (Aula 11.1). Até aqui era só "patchd-server ring": agora o
+// admin põe máquinas num grupo de implantação (uma a uma no detalhe, ou várias de uma vez na Frota) e
+// define ou remove a janela de manutenção de cada grupo de implantação. O perfil leitura só vê.
 
 // maxBatch: máquinas por pedido na Frota (a página mostra a frota inteira; 2000 cobre o
 // tribunal com folga e limita o tamanho do formulário).
@@ -86,9 +86,9 @@ func allRings() []int {
 	return out
 }
 
-// ringsPage lista os anéis em uso (máquinas e janela) e, para o admin, o formulário da janela.
+// ringsPage lista os grupos de implantação em uso (máquinas e janela) e, para o admin, o formulário da janela.
 func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
-	v := ringsView{pageBase: a.base(r, "Anéis e janelas", "aneis"), Rings: allRings(), Days: dayValues, Timezone: a.tz()}
+	v := ringsView{pageBase: a.base(r, "Grupos de implantação e janelas", "aneis"), Rings: allRings(), Days: dayValues, Timezone: a.tz()}
 	for _, m := range windowDurations {
 		v.Durations = append(v.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
 	}
@@ -130,17 +130,17 @@ func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, "aneis", v)
 }
 
-// ringsFlash: as mensagens das ações de anel, de uma lista fixa (o número vem da URL e é
+// ringsFlash: as mensagens das ações de grupo de implantação, de uma lista fixa (o número vem da URL e é
 // convertido, nunca repetido como texto).
 func ringsFlash(q url.Values, b *pageBase) {
 	n, _ := strconv.Atoi(q.Get("anel"))
 	switch {
 	case q.Has("janela"):
-		b.Flash = fmt.Sprintf("Janela do anel %d gravada. Vale para os jobs criados daqui em diante; os já criados mantêm a janela deles.", n)
+		b.Flash = fmt.Sprintf("Janela do grupo de implantação %d gravada. Vale para os jobs criados daqui em diante; os já criados mantêm a janela deles.", n)
 	case q.Has("removida"):
-		b.Flash = fmt.Sprintf("Janela do anel %d removida. Jobs \"na janela\" não podem mais ser pedidos para este anel; os já criados não mudam.", n)
+		b.Flash = fmt.Sprintf("Janela do grupo de implantação %d removida. Jobs \"na janela\" não podem mais ser pedidos para este grupo de implantação; os já criados não mudam.", n)
 	case q.Get("erro") == "sem-janela":
-		b.Error = fmt.Sprintf("O anel %d não tinha janela; nada mudou.", n)
+		b.Error = fmt.Sprintf("O grupo de implantação %d não tinha janela; nada mudou.", n)
 	case q.Get("erro") == "dias":
 		b.Error = "Marque ao menos um dia da semana."
 	case q.Get("erro") == "inicio":
@@ -150,11 +150,11 @@ func ringsFlash(q url.Values, b *pageBase) {
 	case q.Get("erro") == "fuso":
 		b.Error = "Fuso horário desconhecido (use um nome IANA, como America/Porto_Velho)."
 	case q.Get("erro") == "anel":
-		b.Error = fmt.Sprintf("Escolha um anel de 0 a %d.", store.MaxRing)
+		b.Error = fmt.Sprintf("Escolha um grupo de implantação de 0 a %d.", store.MaxRing)
 	}
 }
 
-// formRing lê o anel do formulário (0 a MaxRing).
+// formRing lê o grupo de implantação do formulário (0 a MaxRing).
 func formRing(r *http.Request, field string) (int, bool) {
 	n, err := strconv.Atoi(strings.TrimSpace(r.PostFormValue(field)))
 	if err != nil || n < 0 || n > store.MaxRing {
@@ -163,10 +163,10 @@ func formRing(r *http.Request, field string) (int, bool) {
 	return n, true
 }
 
-// setWindowAction grava a janela do anel a partir do formulário.
+// setWindowAction grava a janela do grupo de implantação a partir do formulário.
 func (a *api) setWindowAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	_ = r.ParseForm()
-	back := func(q string) { http.Redirect(w, r, "/painel/aneis?"+q, http.StatusSeeOther) }
+	back := func(q string) { http.Redirect(w, r, "/painel/grupos-implantacao?"+q, http.StatusSeeOther) }
 	ring, ok := formRing(r, "anel")
 	if !ok {
 		back("erro=anel")
@@ -209,9 +209,9 @@ func (a *api) setWindowAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		a.internalError(w, r, "gravar janela", err)
 		return
 	}
-	a.logger.Info("janela do anel definida pelo painel", "ring", ring, "janela", win.String(),
+	a.logger.Info("janela do grupo de implantação definida pelo painel", "ring", ring, "janela", win.String(),
 		"username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "janela.definir", fmt.Sprintf("anel %d", ring), win.String())
+	a.audit(r, s, "janela.definir", fmt.Sprintf("grupo de implantação %d", ring), win.String())
 	back(fmt.Sprintf("janela=1&anel=%d", ring))
 }
 
@@ -242,11 +242,11 @@ func loadZone(tz string) (*time.Location, error) {
 	return time.LoadLocation(tz)
 }
 
-// deleteWindowAction remove a janela do anel.
+// deleteWindowAction remove a janela do grupo de implantação.
 func (a *api) deleteWindowAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	ring, err := strconv.Atoi(r.PathValue("ring"))
 	if err != nil || ring < 0 || ring > store.MaxRing {
-		http.Redirect(w, r, "/painel/aneis?erro=anel", http.StatusSeeOther)
+		http.Redirect(w, r, "/painel/grupos-implantacao?erro=anel", http.StatusSeeOther)
 		return
 	}
 	ok, err := a.store.DeleteWindow(r.Context(), ring)
@@ -255,15 +255,15 @@ func (a *api) deleteWindowAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	if !ok {
-		http.Redirect(w, r, fmt.Sprintf("/painel/aneis?erro=sem-janela&anel=%d", ring), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao?erro=sem-janela&anel=%d", ring), http.StatusSeeOther)
 		return
 	}
-	a.logger.Info("janela do anel removida pelo painel", "ring", ring, "username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "janela.remover", fmt.Sprintf("anel %d", ring), "")
-	http.Redirect(w, r, fmt.Sprintf("/painel/aneis?removida=1&anel=%d", ring), http.StatusSeeOther)
+	a.logger.Info("janela do grupo de implantação removida pelo painel", "ring", ring, "username", s.Username, "request_id", RequestID(r.Context()))
+	a.audit(r, s, "janela.remover", fmt.Sprintf("grupo de implantação %d", ring), "")
+	http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao?removida=1&anel=%d", ring), http.StatusSeeOther)
 }
 
-// machineRingAction põe uma máquina num anel, pelo detalhe.
+// machineRingAction põe uma máquina num grupo de implantação, pelo detalhe.
 func (a *api) machineRingAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	id := r.PathValue("id")
 	if !machineIDPattern.MatchString(id) {
@@ -277,20 +277,20 @@ func (a *api) machineRingAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	changed, err := a.store.SetMachineRing(r.Context(), id, ring)
 	if err != nil {
-		a.internalError(w, r, "mudar anel", err)
+		a.internalError(w, r, "mudar grupo de implantação", err)
 		return
 	}
 	if !changed {
 		http.NotFound(w, r) // não existe ou está aposentada
 		return
 	}
-	a.logger.Info("anel da máquina alterado pelo painel", "machine_id", id, "ring", ring,
+	a.logger.Info("grupo de implantação da máquina alterado pelo painel", "machine_id", id, "ring", ring,
 		"username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "maquina.anel", id, fmt.Sprintf("anel %d", ring))
+	a.audit(r, s, "maquina.anel", id, fmt.Sprintf("grupo de implantação %d", ring))
 	http.Redirect(w, r, fmt.Sprintf("%s?anel-alterado=1&anel=%d", machinePath(id), ring), http.StatusSeeOther)
 }
 
-// fleetRingAction põe várias máquinas num anel, a partir da Frota.
+// fleetRingAction põe várias máquinas num grupo de implantação, a partir da Frota.
 func (a *api) fleetRingAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	_ = r.ParseForm()
 	// Volta para a Frota com o mesmo filtro; o filtro só passa se for um estado conhecido.
@@ -318,7 +318,7 @@ func (a *api) fleetRingAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		}
 		changed, err := a.store.SetMachineRing(r.Context(), id, ring)
 		if err != nil {
-			a.internalError(w, r, "mudar anel", err)
+			a.internalError(w, r, "mudar grupo de implantação", err)
 			return
 		}
 		if changed {
@@ -327,9 +327,9 @@ func (a *api) fleetRingAction(w http.ResponseWriter, r *http.Request, s panel.Se
 			skipped++
 		}
 	}
-	a.logger.Info("anel alterado pelo painel em lote", "ring", ring, "maquinas", moved, "ignoradas", skipped,
+	a.logger.Info("grupo de implantação alterado pelo painel em lote", "ring", ring, "maquinas", moved, "ignoradas", skipped,
 		"username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "maquina.anel_lote", fmt.Sprintf("anel %d", ring), fmt.Sprintf("%d movida(s), %d ignorada(s)", moved, skipped))
+	a.audit(r, s, "maquina.anel_lote", fmt.Sprintf("grupo de implantação %d", ring), fmt.Sprintf("%d movida(s), %d ignorada(s)", moved, skipped))
 	http.Redirect(w, r, fmt.Sprintf("%smovidas=%d&ignoradas=%d&anel=%d", back, moved, skipped, ring), http.StatusSeeOther)
 }
 
@@ -340,13 +340,13 @@ func fleetRingFlash(q url.Values, b *pageBase) {
 	case q.Has("movidas"):
 		moved, _ := strconv.Atoi(q.Get("movidas"))
 		skipped, _ := strconv.Atoi(q.Get("ignoradas"))
-		b.Flash = fmt.Sprintf("%d máquina(s) no anel %d.", moved, ring)
+		b.Flash = fmt.Sprintf("%d máquina(s) no grupo de implantação %d.", moved, ring)
 		if skipped > 0 {
 			b.Flash += fmt.Sprintf(" %d ignorada(s): aposentadas ou inexistentes.", skipped)
 		}
 	case q.Get("erro") == "nenhuma":
 		b.Error = fmt.Sprintf("Marque de 1 a %d máquinas.", maxBatch)
 	case q.Get("erro") == "anel":
-		b.Error = fmt.Sprintf("Escolha um anel de 0 a %d.", store.MaxRing)
+		b.Error = fmt.Sprintf("Escolha um grupo de implantação de 0 a %d.", store.MaxRing)
 	}
 }

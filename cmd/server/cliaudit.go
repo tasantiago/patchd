@@ -15,7 +15,7 @@ import (
 )
 
 // Auditoria da linha de comando (Aula 18.1). Até aqui, a trilha via o painel e o agente; o
-// que o operador fazia no terminal (criar job, mexer em anel, aprovar programa, publicar
+// que o operador fazia no terminal (criar job, mexer em grupo de implantação, aprovar programa, publicar
 // release) só aparecia no histórico do shell dele. Agora todo subcomando que muda alguma
 // coisa vira um evento "cli.COMANDO.SUBCOMANDO", com quem rodou, as opções (sem segredos) e
 // o resultado. Consultas (list, show, status) não entram.

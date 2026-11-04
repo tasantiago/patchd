@@ -14,7 +14,7 @@ import (
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
-// A campanha de terceiros (Aula 14.7): a versão pronta a cada anel, e a decisão por máquina.
+// A campanha de terceiros (Aula 14.7): a versão pronta a cada grupo de implantação, e a decisão por máquina.
 func TestCampaigner(t *testing.T) {
 	ctx := context.Background()
 	m, _ := thirdparty.Default()

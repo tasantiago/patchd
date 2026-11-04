@@ -148,8 +148,8 @@ func TestAnelEJanelaNoDetalhe(t *testing.T) {
 	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
 	ctx := context.Background()
 	maq := "/painel/maquinas/60ef97e4-0001"
-	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); !strings.Contains(b, "<dt>Anel</dt><dd>1</dd>") || !strings.Contains(b, "jobs com janela não podem") {
-		t.Errorf("anel padrão, sem janela:\n%s", b)
+	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); !strings.Contains(b, "<dt>Grupo de implantação</dt><dd>1</dd>") || !strings.Contains(b, "jobs com janela não podem") {
+		t.Errorf("grupo de implantação padrão, sem janela:\n%s", b)
 	}
 	if ok, _ := st.SetMachineRing(ctx, "60ef97e4-0001", 0); !ok {
 		t.Fatal("anel")
@@ -164,7 +164,7 @@ func TestAnelEJanelaNoDetalhe(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String()
-	for _, tr := range []string{"<dt>Anel</dt><dd>0 (piloto)</dd>", "todos 03:00-03:10 (America/Porto_Velho)", "<td>abre em 2 h 59 min</td>"} {
+	for _, tr := range []string{"<dt>Grupo de implantação</dt><dd>0 (piloto)</dd>", "todos 03:00-03:10 (America/Porto_Velho)", "<td>abre em 2 h 59 min</td>"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
 		}
@@ -242,7 +242,7 @@ func TestAtualizarPeloPainel(t *testing.T) {
 		t.Errorf("segundo pedido: %s", l)
 	}
 
-	// Na janela do anel: o job leva o início da janela.
+	// Na janela do grupo de implantação: o job leva o início da janela.
 	_, _ = st.FinishJob(ctx, 1, jobs.StateDone, "x", time.Now().UTC())
 	pvh, _ := time.LoadLocation("America/Porto_Velho")
 	_ = st.SetWindow(ctx, 1, window.Window{Days: window.AllDays, Start: 3 * time.Hour, Duration: time.Hour, Location: pvh}, "t")
@@ -275,13 +275,13 @@ func TestPaginaDeCampanhas(t *testing.T) {
 	id, _ := st.CreateCampaign(ctx, campaign.Campaign{Name: "libreoffice 26.8.1.1", Type: jobs.TypeThirdParty, App: "libreoffice",
 		Version: "26.8.1.1", Rings: []int{0, 1}, TTL: 24 * time.Hour, CreatedBy: "thyago"})
 	c, _, _ := st.Campaign(ctx, id)
-	c.Notes, c.LaunchedIdx = []string{"anel 0: 1 job(s); fora: 1 em dia"}, 0
+	c.Notes, c.LaunchedIdx = []string{"grupo de implantação 0: 1 job(s); fora: 1 em dia"}, 0
 	_, _ = st.SaveCampaign(ctx, c, campaign.StateRunning)
 	if b := pagina(h, "GET", "/painel/campanhas", sessaoTeste, nil).Body.String(); !strings.Contains(b, "<td>instalar programa de terceiros</td><td>libreoffice 26.8.1.1</td>") {
 		t.Errorf("lista com terceiros:\n%s", b)
 	}
 	b = pagina(h, "GET", fmt.Sprintf("/painel/campanhas/%d", id), sessaoTeste, nil).Body.String()
-	for _, tr := range []string{"<dt>Programa</dt><dd>libreoffice 26.8.1.1</dd>", "<dt>Liberações</dt><dd><div>anel 0: 1 job(s); fora: 1 em dia</div></dd>"} {
+	for _, tr := range []string{"<dt>Programa</dt><dd>libreoffice 26.8.1.1</dd>", "<dt>Liberações</dt><dd><div>grupo de implantação 0: 1 job(s); fora: 1 em dia</div></dd>"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("campanha de terceiros: faltou %q", tr)
 		}

@@ -170,7 +170,7 @@ func PolicySourceProblem(rep protocol.PatchScanReport) string {
 	return "a busca não traz a fonte da política (wua-default)"
 }
 
-// Campanha "atualizar o Windows" (Aula 16.4): a campanha leva KBs; cada máquina do anel
+// Campanha "atualizar o Windows" (Aula 16.4): a campanha leva KBs; cada máquina do grupo de implantação
 // recebe os que corrigem alguma CVE aprovada dela e que a fonte da política mostra pendentes.
 
 var kbTarget = regexp.MustCompile(`^(?:KB)?([0-9]{4,8})$`)

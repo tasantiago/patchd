@@ -239,7 +239,7 @@ Primeira passada (Go 1.27.1):
   do BER ficam, com `//lint:ignore` e o motivo.
 - **gosec**: 179 achados no Linux e mais 74 só no Windows. Corrigidos: a ocupação do disco
   com livre > total (vinha do agente: T3), o escape `\UFFFFFFFF` no YAML do winget, o
-  `uint64` do WMI acima do `int64`, os dias da janela do anel, o `-` no começo de um nome de
+  `uint64` do WMI acima do `int64`, os dias da janela do grupo de implantação, o `-` no começo de um nome de
   conta no macOS, os ícones da Central montados sem `template.HTML`.
 
 Segunda ocorrência (Aula 20.2c, 21/10/2026): o CI apontou a **GO-2026-6809**

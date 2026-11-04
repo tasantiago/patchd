@@ -26,7 +26,7 @@ const ResultGrace = 2 * time.Hour
 
 // RebootNothingPending é o motivo da recusa do agente quando, na hora do job, a máquina já
 // não tem reinício pendente. O servidor lê esse texto exato (Aula 16.5): não é falha, é
-// "nada a fazer", e o job vira dispensado (numa campanha, a máquina sai do anel resolvida).
+// "nada a fazer", e o job vira dispensado (numa campanha, a máquina sai do grupo de implantação resolvida).
 const RebootNothingPending = "nenhum reinício pendente nesta máquina; nada a fazer"
 
 // MaxScheduledReboot (Aula 17.6): o usuário escolhe a hora do reinício até 12 h à frente.

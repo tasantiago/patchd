@@ -30,7 +30,7 @@ comandos:
           o PATCHD_JOB_PUBKEY) e a impressão curta que aparece nos logs
   create  cria um job: -machine ID (ou -ring N) -type rescan|update|windows_update|reboot|server_url [-packages p=v,...] [-kb N,...] [-delay 15m] [-url https://...]
           [-ttl 24h | -window]. O agente o recebe no próximo check-in (ou na janela do
-          anel), confere a assinatura e executa
+          grupo de implantação), confere a assinatura e executa
   list    lista os jobs, do mais novo para o mais antigo: [-machine ID] [-n 20]
   cancel  cancela um job ainda não entregue: -id N
 
@@ -57,7 +57,7 @@ type jobStore interface {
 	ExpireJobs(ctx context.Context, now time.Time) (int64, error)
 	Jobs(ctx context.Context, machineID string, limit int) ([]store.JobRow, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
-	// Anéis e janelas (Aula 8.3).
+	// Grupos de implantação e janelas (Aula 8.3).
 	MachineRing(ctx context.Context, id string) (int, bool, error)
 	RingMachines(ctx context.Context, ring int) ([]string, error)
 	Windows(ctx context.Context) ([]store.RingWindow, error)
@@ -183,14 +183,14 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 	switch args[0] {
 	case "create":
 		prefix := fs.String("machine", "", "ID (ou começo do ID) da máquina")
-		ringFlag := fs.Int("ring", -1, "em vez de -machine: um job para cada máquina do anel")
+		ringFlag := fs.Int("ring", -1, "em vez de -machine: um job para cada máquina do grupo de implantação")
 		typ := fs.String("type", "", "tipo do job: rescan, update, windows_update, reboot ou server_url")
 		kbList := fs.String("kb", "", "windows_update: números de KB, separados por vírgula (ex.: 5127648)")
 		pkgList := fs.String("packages", "", "update: pacote=versão_mínima, separados por vírgula (ex.: curl=8.18.0-1ubuntu2.10)")
 		delay := fs.Duration("delay", 15*time.Minute, "reboot: aviso aos usuários antes do reinício (2m a 60m)")
 		newURL := fs.String("url", "", "server_url: o endereço HTTPS deste servidor para o agente usar (ex.: $PATCHD_PUBLIC_URL)")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo para o agente receber e executar (máximo 168h)")
-		inWindow := fs.Bool("window", false, "só na próxima janela do anel da máquina (o prazo é o fim da janela)")
+		inWindow := fs.Bool("window", false, "só na próxima janela do grupo de implantação da máquina (o prazo é o fim da janela)")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
@@ -273,7 +273,7 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 				return exitRuntime
 			}
 			if len(ids) == 0 {
-				fmt.Fprintf(stderr, "patchd-server: o anel %d não tem máquinas (ring set)\n", *ringFlag)
+				fmt.Fprintf(stderr, "patchd-server: o grupo de implantação %d não tem máquinas (ring set)\n", *ringFlag)
 				return exitRuntime
 			}
 			targets = ids
@@ -303,18 +303,18 @@ func jobCommand(ctx context.Context, st jobStore, key ed25519.PrivateKey, args [
 			if *inWindow {
 				ring, ok, err := st.MachineRing(ctx, id)
 				if err != nil || !ok {
-					fmt.Fprintf(stderr, "patchd-server: anel da máquina %s: %v\n", short(id), err)
+					fmt.Fprintf(stderr, "patchd-server: grupo de implantação da máquina %s: %v\n", short(id), err)
 					return exitRuntime
 				}
 				rw, ok := store.WindowFor(windows, ring)
 				if !ok {
-					fmt.Fprintf(stderr, "patchd-server: o anel %d (máquina %s) não tem janela; defina com ring window ou crie sem -window\n", ring, short(id))
+					fmt.Fprintf(stderr, "patchd-server: o grupo de implantação %d (máquina %s) não tem janela; defina com ring window ou crie sem -window\n", ring, short(id))
 					return exitRuntime
 				}
 				start, end := rw.Window.Next(now, jobs.MinTTL)
 				req.NotBefore, req.TTL = start, end.Sub(later(now, start))
 				loc := rw.Window.Location
-				where = fmt.Sprintf(" na janela do anel %d, de %s a %s (%s)", ring, start.In(loc).Format("02/01 15:04"), end.In(loc).Format("02/01 15:04"), loc)
+				where = fmt.Sprintf(" na janela do grupo de implantação %d, de %s a %s (%s)", ring, start.In(loc).Format("02/01 15:04"), end.In(loc).Format("02/01 15:04"), loc)
 			}
 			rec, err := jobs.Issue(ctx, st, key, req, now)
 			if errors.Is(err, jobs.ErrMachineUnavailable) {
@@ -497,7 +497,7 @@ func printJobs(list []store.JobRow, now time.Time, out io.Writer) {
 }
 
 // winUpdateParams monta o windows_update de uma máquina a partir da busca atual dela (Aula
-// 16.1). skip: nenhum dos KBs está pendente nela (num anel, as outras seguem). Um KB que só
+// 16.1). skip: nenhum dos KBs está pendente nela (num grupo de implantação, as outras seguem). Um KB que só
 // o catálogo offline mostra entra, com o aviso de que o agente vai recusar.
 func winUpdateParams(ctx context.Context, st jobStore, id, kbList string, stderr io.Writer) (json.RawMessage, bool, int) {
 	var kbs []string

@@ -14,7 +14,7 @@ func TestOperacoesDoAdmin(t *testing.T) {
 	a := novoAmbiente(t)
 	ctx := context.Background()
 	id := a.cria(campaign.Campaign{Name: "busca", Type: jobs.TypeRescan, Rings: []int{0, 1}, Observe: time.Hour, TTL: 24 * time.Hour})
-	c := a.passo(id, 0) // anel 0 liberado: 1 job pendente
+	c := a.passo(id, 0) // grupo de implantação 0 liberado: 1 job pendente
 	if c.State != campaign.StateRunning || c.LaunchedIdx != 0 {
 		t.Fatalf("liberação: %+v", c)
 	}
@@ -37,7 +37,7 @@ func TestOperacoesDoAdmin(t *testing.T) {
 	if _, err := campaign.Change(ctx, a.st, velha, campaign.OpPause, "beltrano"); !errors.Is(err, campaign.ErrChanged) {
 		t.Errorf("cópia velha: %v", err)
 	}
-	// Retomar e cancelar: o job pendente do anel 0 é cancelado.
+	// Retomar e cancelar: o job pendente do grupo de implantação 0 é cancelado.
 	if _, err := campaign.Change(ctx, a.st, c, campaign.OpResume, "fulano"); err != nil {
 		t.Fatal(err)
 	}

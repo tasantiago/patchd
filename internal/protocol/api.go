@@ -32,7 +32,7 @@ type MachineSummary struct {
 	InventoryChangedAt *time.Time `json:"inventory_changed_at,omitempty"` // quando o inventário mudou pela última vez
 	ScanReceivedAt     *time.Time `json:"scan_received_at,omitempty"`     // última busca de atualizações recebida
 	RebootPending      *bool      `json:"reboot_pending,omitempty"`       // da última busca; null = não sabe
-	Ring               int        `json:"ring"`                           // anel (Aula 8.3): 0 = piloto, 1 = padrão
+	Ring               int        `json:"ring"`                           // grupo de implantação (Aula 8.3): 0 = piloto, 1 = padrão
 	CheckinTLS         *bool      `json:"checkin_tls,omitempty"`          // canal do último check-in (Aula 9.2); null = nenhum ainda
 }
 

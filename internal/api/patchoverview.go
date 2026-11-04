@@ -15,7 +15,7 @@ import (
 )
 
 // Patch › Visão geral (Aula 15.1): o retrato do patch da frota numa página, para quem
-// abre o painel de manhã. O que está em dia por anel e por sistema, o que espera decisão
+// abre o painel de manhã. O que está em dia por grupo de implantação e por sistema, o que espera decisão
 // (aprovação, campanha pausada), o que a execução fez nos últimos 7 dias e o que pede
 // atenção agora. Tudo vem das mesmas fontes das outras telas (a avaliação de agora, as
 // aprovações, os jobs e as campanhas): nada é guardado à parte.
@@ -29,7 +29,7 @@ type ovKPI struct {
 	Label, Value, Sub, Href, Color string
 }
 
-// ovRing: um anel, com as máquinas por estado e a parte em dia.
+// ovRing: um grupo de implantação, com as máquinas por estado e a parte em dia.
 type ovRing struct {
 	Ring                                     string
 	Machines, OK, Missing, Reboot, Stale, NA int
@@ -177,7 +177,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	now := a.now()
 	v.EvaluatedAt = fleet.EvaluatedAt.Format("02/01/2006 15:04") + " UTC"
 
-	// Frota: por anel e por sistema.
+	// Frota: por grupo de implantação e por sistema.
 	ringOf := map[string]int{}
 	for _, m := range machines {
 		ringOf[m.ID] = m.Ring

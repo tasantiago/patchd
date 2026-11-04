@@ -1,6 +1,6 @@
 # Ligar pela rede: acordar, atualizar, desligar (Módulo 22)
 
-O objetivo do módulo: ligar as máquinas de madrugada, dentro da janela do anel, deixar as
+O objetivo do módulo: ligar as máquinas de madrugada, dentro da janela do grupo de implantação, deixar as
 atualizações rodarem e desligar de novo só as que o patchd acordou. Este documento é o mapa;
 cada aula preenche uma parte.
 
@@ -30,7 +30,7 @@ motivos em texto fixo: o cartão da máquina e o resumo do parque contam pelos m
   pacote mágico para uma lista fechada de MACs (só broadcast local, porta 9, sem destino livre:
   o agente não vira ferramenta de varredura). Botão "Ligar pela rede" na aba Hardware. Detalhes
   na seção "Acordar" abaixo.
-- **22.3: a janela.** No início da janela do anel, o servidor acorda as máquinas desligadas que
+- **22.3: a janela.** No início da janela do grupo de implantação, o servidor acorda as máquinas desligadas que
   têm pendências; no fim, um job de desligar só para as que o patchd acordou e sem usuário
   conectado. Cada máquina guarda "acordou / não acordou": é a medida do módulo.
 - **22.4: a BIOS.** Ligar o Wake on LAN e desligar a economia profunda pela interface do

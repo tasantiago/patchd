@@ -383,21 +383,21 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		go catalogLoop(ctx, logger, pg, srcs, liveCatalogInterval(params), firstCatalogRun(), params.Changed())
 	}
 
-	// Campanhas (Aula 8.5): o servidor libera os anéis sozinho; precisa da chave de jobs.
+	// Campanhas (Aula 8.5): o servidor libera os grupos de implantação sozinho; precisa da chave de jobs.
 	switch pg, ok := st.(*store.Postgres); {
 	case !ok:
 	case jobKey == nil:
-		logger.Info("campanhas paradas (sem PATCHD_JOB_SIGNING_KEY_FILE): nenhum anel é liberado")
+		logger.Info("campanhas paradas (sem PATCHD_JOB_SIGNING_KEY_FILE): nenhum grupo de implantação é liberado")
 	default:
 		var tp campaign.ThirdPartyPlanner
 		switch c, err := newCampaigner(pg, look); {
 		case err != nil:
-			logger.Error("campanhas de terceiros paradas (pausam no primeiro anel)", "error", err)
+			logger.Error("campanhas de terceiros paradas (pausam no primeiro grupo de implantação)", "error", err)
 		default:
 			tp = c
 		}
 		go campaignLoop(ctx, logger, pg, newCampaignEngine(pg, jobKey, tp, logger))
-		logger.Info("campanhas ligadas: o servidor libera os anéis a cada minuto")
+		logger.Info("campanhas ligadas: o servidor libera os grupos de implantação a cada minuto")
 	}
 
 	// Estado de compliance (RF-23, Aula 7.4): avaliado contra o catálogo do mesmo banco.

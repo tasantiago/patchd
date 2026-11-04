@@ -84,7 +84,7 @@ func TestContadoresDoMenu(t *testing.T) {
 	id, _ := st.CreateCampaign(ctx, campaign.Campaign{Name: "busca", Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Hour, CreatedBy: "thyago"})
 	c, _, _ := st.Campaign(ctx, id)
 	from := c.State
-	c.State, c.Detail = campaign.StatePaused, "anel 0: 1 job(s) sem sucesso"
+	c.State, c.Detail = campaign.StatePaused, "grupo de implantação 0: 1 job(s) sem sucesso"
 	if ok, err := st.SaveCampaign(ctx, c, from); !ok || err != nil {
 		t.Fatal(ok, err)
 	}

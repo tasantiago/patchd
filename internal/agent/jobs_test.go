@@ -314,7 +314,7 @@ func TestReinicioPorJob(t *testing.T) {
 	}
 
 	// 3. Sem reinício pendente: nada a fazer, sem tocar na máquina. Desde a Aula 16.5 o
-	// servidor registra como dispensado (não é falha; numa campanha, não pausa o anel).
+	// servidor registra como dispensado (não é falha; numa campanha, não pausa o grupo de implantação).
 	j3 := criaJob(t, srv, priv, id, reboot(5))
 	a.CheckIn(ctx)
 	if e := estadoDoJob(srv, id, j3); e.State != jobs.StateDismissed || !strings.Contains(e.Detail, "já não tinha reinício pendente") || len(agendados) != 1 {

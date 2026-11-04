@@ -150,10 +150,10 @@ type Store interface {
 	RestoreMachine(ctx context.Context, id string) (bool, error)
 	// Fila de jobs (Aula 8.1).
 	JobStore
-	// Anel e janela da máquina, para o detalhe (Aula 8.3).
+	// Grupo de implantação e janela da máquina, para o detalhe (Aula 8.3).
 	MachineRing(ctx context.Context, id string) (int, bool, error)
 	Windows(ctx context.Context) ([]store.RingWindow, error)
-	// Anéis e janelas pelo painel (Aula 11.1).
+	// Grupos de implantação e janelas pelo painel (Aula 11.1).
 	SetMachineRing(ctx context.Context, id string, ring int) (bool, error)
 	SetWindow(ctx context.Context, ring int, w window.Window, by string) error
 	DeleteWindow(ctx context.Context, ring int) (bool, error)
@@ -223,7 +223,7 @@ type api struct {
 	jobKey      ed25519.PrivateKey                   // nil: o painel mostra os jobs, mas não cria (Aula 8.2)
 	escrow      *escrowKey                           // guarda da senha da BIOS (Aula 21.4); nil: desligada
 	publicURL   string                               // URL HTTPS anunciada aos agentes (Aula 9.2); vazio: sem botão de troca
-	timezone    string                               // fuso sugerido na janela dos anéis (Aula 11.1)
+	timezone    string                               // fuso sugerido na janela dos grupos de implantação (Aula 11.1)
 	brand       string                               // nome no topo do painel (Aula 11.3)
 	oidc        *oidc.Provider                       // login pelo RHBK (Aula 9.4); nil: desligado
 	oidcLogins  oidcPending                          // logins pelo RHBK em andamento (state → nonce e PKCE)
@@ -316,10 +316,11 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))
 	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.staleAfter(a.campaignChangeAction))))
-	mux.Handle("GET /painel/aneis", a.panelPage(a.ringsPage))
-	mux.Handle("POST /painel/aneis/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
-	mux.Handle("POST /painel/aneis/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
-	mux.Handle("POST /painel/aneis/maquinas", a.sameOrigin(a.adminAction(a.fleetRingAction)))
+	mux.Handle("GET /painel/grupos-implantacao", a.panelPage(a.ringsPage))
+	mux.Handle("GET /painel/aneis", a.panelPage(movedTo("/painel/grupos-implantacao"))) // o endereço antigo (era "Anéis")
+	mux.Handle("POST /painel/grupos-implantacao/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
+	mux.Handle("POST /painel/grupos-implantacao/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
+	mux.Handle("POST /painel/grupos-implantacao/maquinas", a.sameOrigin(a.adminAction(a.fleetRingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/anel", a.sameOrigin(a.adminAction(a.machineRingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/buscar", a.sameOrigin(a.adminAction(a.rescanAction)))
 	mux.Handle("POST /painel/maquinas/{id}/ligar", a.sameOrigin(a.adminAction(a.wakeOnLANAction))) // docs/wake-on-lan.md, Aula 22.2
