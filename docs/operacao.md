@@ -1013,6 +1013,19 @@ Excel no Windows). Até 20 MB.
   fora do arquivo) e as últimas importações. Cada envio fica na auditoria como
   `patrimonio.importar`; só o perfil admin envia.
 
+## Grupo de implantação por faixa de IP ou prédio
+
+- No **Inventário**, a busca com o campo **IP** (ou em todos os campos) aceita uma faixa:
+  `10.1.2.0/24`, `10.1.2.10-10.1.2.50`, `10.1.2.10-50` (o fim muda só o último número) ou
+  `10.1.2.*`. A máquina entra se algum IPv4 dela (das placas no último estado, ou o endereço
+  do check-in) estiver na faixa. Um IP sozinho continua a busca por texto.
+- O filtro de **prédio** vem do patrimônio (Localização do patrimônio, abaixo). Faixa, prédio,
+  status, sistema e firmware se combinam.
+- Com qualquer filtro, o admin vê **Pôr as N máquinas encontradas no grupo de implantação X**:
+  move todas as do filtro (não só as da página). O servidor refaz o filtro na hora e só move
+  se a contagem for a mesma que a página mostrou; sem filtro, não move nada. Vai para a
+  auditoria como `maquina.anel_lote`, com o filtro em palavras.
+
 ## Descoberta de rede (Aula 23.7)
 
 **Administração › Descoberta** acha máquinas na rede que ainda não têm o agente, para você

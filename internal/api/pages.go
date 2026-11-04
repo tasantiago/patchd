@@ -681,6 +681,9 @@ var pages = template.Must(template.New("").Parse(`
 <label>Por página <select name="por">{{range .Pers}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
 <button type="submit">Buscar</button>{{if .HasFilter}} <a href="/painel/inventario">Limpar</a>{{end}}
 </form>
+<p class="muted nota">No campo IP, a busca aceita uma faixa: <code>10.1.2.0/24</code>, <code>10.1.2.10-10.1.2.50</code>, <code>10.1.2.10-50</code> ou <code>10.1.2.*</code>.{{if .Range}} Mostrando a {{.Range}}.{{end}}</p>
+{{with .Batch}}<form class="lote" method="post" action="/painel/inventario/grupo">{{if .Q}}<input type="hidden" name="q" value="{{.Q}}"><input type="hidden" name="campo" value="{{.Field}}">{{end}}{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Firmware}}<input type="hidden" name="firmware" value="{{.Firmware}}">{{end}}{{if .Building}}<input type="hidden" name="predio" value="{{.Building}}">{{end}}<input type="hidden" name="n" value="{{.N}}">
+<label>Pôr {{if eq .N 1}}a máquina encontrada{{else}}as {{.N}} máquinas encontradas{{end}} no grupo de implantação <select name="anel" required><option value="" selected disabled>escolha</option>{{range .Rings}}<option value="{{.}}">{{.}}{{if eq . 0}} (piloto){{else if eq . 1}} (padrão){{end}}</option>{{end}}</select></label> <button type="submit">Mover</button> <span class="muted">todas as do filtro, não só as desta página</span></form>{{end}}
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr>{{range .Cols}}<th{{if .Sort}} aria-sort="{{.Sort}}"{{end}}><a href="{{.Href}}">{{.Label}}{{if .Arrow}} {{.Arrow}}{{end}}</a></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr>
@@ -1492,7 +1495,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "aneis"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Grupos de implantação e janelas</span></h1>
 {{template "automacao-abas" "aneis"}}
-<p class="muted">Grupo de implantação 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos grupos em ordem. A janela de manutenção de um grupo de implantação é quando os jobs "na janela" daquele grupo podem rodar. Para pôr máquinas num grupo de implantação, marque-as na <a href="/painel/parque">Parque</a> ou use o detalhe da máquina.</p>
+<p class="muted">Grupo de implantação 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos grupos em ordem. A janela de manutenção de um grupo de implantação é quando os jobs "na janela" daquele grupo podem rodar. Para pôr máquinas num grupo de implantação, marque-as na <a href="/painel/parque">Parque</a>, use o detalhe da máquina ou filtre o <a href="/painel/inventario">Inventário</a> por faixa de IP ou prédio e mova todas as encontradas de uma vez.</p>
 <div class="card"><div class="card-cab"><h2>Grupos de implantação em uso</h2><span class="muted">{{.Total}} máquina(s) no parque</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Grupo de implantação</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
