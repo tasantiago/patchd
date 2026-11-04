@@ -61,6 +61,7 @@ type Memory struct {
 	biosPasswords []BIOSPassword               // guarda da senha da BIOS (Aula 21.4), ID = posição + 1
 	biosFleet     map[string]BIOSFleetPassword // a senha padrão de cada fabricante (docs/bios-senha.md, seção 10)
 	perfData      *memPerf                     // desempenho e alertas (docs/monitoramento.md)
+	wakeRequests  []WakeRequest                // pedidos de ligar pela rede (Aula 22.2), ID = posição + 1
 
 	locations    []AssetLocation // localização do patrimônio (Aula 23.6)
 	assetImports []AssetImport

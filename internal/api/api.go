@@ -71,6 +71,12 @@ type Store interface {
 	ResolveBIOSPassword(ctx context.Context, id int64, newValid bool, result string, at time.Time) (bool, error)
 	// Desempenho e alertas (docs/monitoramento.md).
 	SavePerf(ctx context.Context, machineID string, samples []protocol.PerfSample, policy protocol.MonitorPolicy, now time.Time) ([]perfeval.Change, error)
+	// Ligar pela rede (docs/wake-on-lan.md, Aula 22.2).
+	WakeRelayHosts(ctx context.Context, exclude string, since time.Time) ([]store.WakeHost, error)
+	CreateWakeRequest(ctx context.Context, r store.WakeRequest) (int64, error)
+	WakeRequests(ctx context.Context, machineID string, limit int) ([]store.WakeRequest, error)
+	MarkWakeSent(ctx context.Context, jobID int64, relay string, at time.Time) (bool, error)
+	MarkWakeAnswered(ctx context.Context, machineID string, at time.Time) error
 	PerfSamples(ctx context.Context, machineID string, since time.Time) ([]protocol.PerfSample, error)
 	PerfHourly(ctx context.Context, machineID string, since time.Time) ([]store.PerfHour, error)
 	PerfAlerts(ctx context.Context, f store.PerfAlertFilter) ([]store.PerfAlert, error)
@@ -316,6 +322,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/aneis/maquinas", a.sameOrigin(a.adminAction(a.fleetRingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/anel", a.sameOrigin(a.adminAction(a.machineRingAction)))
 	mux.Handle("POST /painel/maquinas/{id}/buscar", a.sameOrigin(a.adminAction(a.rescanAction)))
+	mux.Handle("POST /painel/maquinas/{id}/ligar", a.sameOrigin(a.adminAction(a.wakeOnLANAction))) // docs/wake-on-lan.md, Aula 22.2
 	mux.Handle("POST /painel/jobs/{id}/cancelar", a.sameOrigin(a.adminAction(a.cancelJobAction)))
 	mux.Handle("POST /painel/maquinas/{id}/atualizar", a.sameOrigin(a.adminAction(a.updateAction)))
 	mux.Handle("POST /painel/maquinas/{id}/reiniciar", a.sameOrigin(a.adminAction(a.rebootAction)))

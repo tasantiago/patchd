@@ -28,6 +28,10 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	a.checkClock(r, id, req.SentAt)
 	a.saveHostState(r, id, req.State)
+	// Ligar pela rede (Aula 22.2): o check-in depois do pacote é a resposta da máquina.
+	if err := a.store.MarkWakeAnswered(r.Context(), id, a.now()); err != nil {
+		a.logger.Error("ligar pela rede: anotar a resposta", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
+	}
 	policy := a.monitorPolicy()
 	a.savePerf(r, id, req.Perf, policy)
 	if req.Reason != "" {

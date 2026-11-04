@@ -159,4 +159,6 @@ span.nivel-critico{color:var(--st-erro)}span.nivel-ok{color:#0a7d0a}
 .medidor{display:block;height:8px;border-radius:4px;background:var(--grade);margin:.45rem 0 .4rem;overflow:hidden}
 .medidor-p{display:block;height:100%;border-radius:4px;background:var(--st-ok)}.med-atencao{background:var(--st-reinicio)}.med-critico{background:var(--st-erro)}
 @media (max-width:700px){.rec{grid-template-columns:1fr;gap:.4rem}.rec-tag{justify-self:start}}
+/* Ligar agora (docs/wake-on-lan.md, Aula 22.2). */
+#ligar form{margin:0 0 1rem}td.nivel-ok{color:#0a7d0a}
 `

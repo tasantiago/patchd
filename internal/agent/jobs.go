@@ -24,6 +24,13 @@ type acceptedJobs struct {
 	scripts    []acceptedScript
 	// docs/bios-config.md
 	biosSettings []acceptedBIOSSettings
+	// docs/wake-on-lan.md, Aula 22.2
+	wakes []acceptedWake
+}
+
+type acceptedWake struct {
+	id int64
+	p  jobs.WakeOnLANParams
 }
 
 type acceptedBIOSSettings struct {
@@ -155,6 +162,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: alterar configurações da BIOS", "job_id", j.ID, "fabricante", p.Vendor, "alteracoes", len(p.Changes))
 			acc.biosSettings = append(acc.biosSettings, acceptedBIOSSettings{id: j.ID, p: p})
+		case jobs.TypeWakeOnLAN:
+			p, _ := jobs.ParseWakeOnLANParams(j.Params) // o Verify já conferiu
+			if a.WakeOnLAN == nil {
+				why := "este agente não manda o pacote mágico"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: ligar outra máquina pela rede", "job_id", j.ID, "maquina", p.Target, "rede", p.Network, "macs", len(p.MACs))
+			acc.wakes = append(acc.wakes, acceptedWake{id: j.ID, p: p})
 		case jobs.TypeServerURL:
 			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
 			reject := func(why string) {
@@ -340,6 +357,26 @@ func (a *Agent) runBIOSSettings(ctx context.Context, list []acceptedBIOSSettings
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}
 	return out, ran
+}
+
+// runWakeOnLAN manda o pacote mágico de cada job (docs/wake-on-lan.md, Aula 22.2).
+func (a *Agent) runWakeOnLAN(ctx context.Context, list []acceptedWake) (out []PendingJobResult) {
+	for _, j := range list {
+		detail, err := a.WakeOnLAN(ctx, j.p)
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrRefused):
+			status, detail = protocol.JobResultRejected, err.Error()
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case err != nil:
+			status, detail = protocol.JobResultFailed, err.Error()
+			a.Logger.Error("pacote mágico não enviado", "job_id", j.id, "error", detail)
+		default:
+			a.Logger.Info("pacote mágico enviado", "job_id", j.id, "maquina", j.p.Target, "detail", detail)
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out
 }
 
 // joinDetail junta o erro e o detalhe (o que o instalador disse antes de falhar).

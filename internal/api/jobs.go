@@ -75,6 +75,9 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 	if changed {
 		a.count(jobsOf, job.Type, state)
 	}
+	if job.Type == jobs.TypeWakeOnLAN { // Aula 22.2: o pedido de ligar anota quem mandou o pacote
+		a.wakeJobFinished(r.Context(), job, state)
+	}
 	if job.Type == jobs.TypeBIOSPassword { // Aula 21.5: a guarda segue o job
 		if err := a.settleBIOS(r.Context(), machineID); err != nil {
 			a.logger.Error("senha da BIOS: guarda não fechada (o cartão fecha depois)", "job_id", id, "error", err)
@@ -125,6 +128,11 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	}
 	if job.Type == jobs.TypeBIOSSettings { // docs/bios-config.md
 		return a.judgeBIOSSettings(r, job, res)
+	}
+	if job.Type == jobs.TypeWakeOnLAN {
+		// docs/wake-on-lan.md, Aula 22.2: o job é do repetidor, e o efeito dele é o pacote na
+		// rede, que só o repetidor vê. Se a máquina acordou, conta o pedido (o check-in dela).
+		return jobs.StateDone, "pacote enviado: " + res.Detail
 	}
 	// Os outros tipos exigem uma busca recebida depois da entrega: é nela que o efeito aparece.
 	at, err := a.store.ScanReceivedAt(r.Context(), job.MachineID)

@@ -65,6 +65,8 @@ func typeLabel(t string) string {
 		return "gravar a senha da BIOS"
 	case jobs.TypeBIOSSettings:
 		return "alterar configurações da BIOS"
+	case jobs.TypeWakeOnLAN:
+		return "ligar outra máquina pela rede"
 	}
 	return t
 }

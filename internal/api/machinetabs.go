@@ -281,6 +281,15 @@ func (a *api) inventoryView(r *http.Request, id string, v *machineView) error {
 		v.Model = strings.TrimSpace(hw.Manufacturer + " " + hw.Model)
 		v.Serial = serialText(hw.SerialNumber)
 	}
+	if v.Tab == "hardware" { // Aula 22.2: o botão Ligar e os pedidos
+		h, _, err := a.store.HostState(r.Context(), id)
+		if err != nil {
+			return err
+		}
+		if v.WakeOn, err = a.wakeActionView(r.Context(), id, inv.Hardware, h.State, v.Admin); err != nil {
+			return err
+		}
+	}
 	v.SoftwareCount = len(inv.Software)
 	if v.Tab == "software" {
 		v.Software = softwareTab(id, inv, r.URL.Query(), a.stamp)
