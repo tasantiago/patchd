@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 )
 
 type bancoComplianceFalso struct {
+	mu       sync.Mutex // o cache avalia em paralelo; pedidoEc e pedidoW são anotados
 	inv      map[string]protocol.InventoryReport
 	ubuntu   []compliance.Advisory
 	fedora   []compliance.Advisory
@@ -104,7 +106,9 @@ func (b *bancoComplianceFalso) UbuntuEcosystemsKnown(context.Context) ([]string,
 }
 
 func (b *bancoComplianceFalso) UbuntuAdvisories(_ context.Context, eco string, _ []string) ([]compliance.Advisory, error) {
+	b.mu.Lock()
 	b.pedidoEc = eco
+	b.mu.Unlock()
 	return b.ubuntu, nil
 }
 
@@ -123,7 +127,9 @@ func (b *bancoComplianceFalso) WindowsProducts(context.Context) ([]compliance.MS
 }
 
 func (b *bancoComplianceFalso) WindowsFixes(_ context.Context, ids []string) ([]compliance.WindowsFix, error) {
+	b.mu.Lock()
 	b.pedidoW = ids
+	b.mu.Unlock()
 	return b.windows, nil
 }
 

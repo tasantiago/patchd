@@ -404,6 +404,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	var tpRules *thirdparty.Manifest // Aula 23.3: as mesmas regras para o download pelo painel
 	if pg, ok := st.(*store.Postgres); ok {
 		cs := newComplianceService(pg, logger)
+		go cs.Warm(ctx) // o cache das avaliações quente: as páginas do parque não reavaliam tudo
 		// Programas de terceiros no painel (Aula 13.3): o mesmo manifesto da linha de comando.
 		path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
 		manifest, err := thirdparty.Load(path)

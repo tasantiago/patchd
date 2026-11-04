@@ -169,6 +169,15 @@ tabela que cresce sem parar depois da retenção é uma tabela sem retenção.
 
 ## Saúde do servidor
 
+**Páginas do parque.** Parque, Visão geral, Patch e Terceiros mostram a compliance de todas as
+máquinas. A avaliação de cada uma (o inventário inteiro contra o catálogo) fica guardada na
+memória do servidor e só é refeita quando chega inventário ou busca nova, quando o catálogo
+sincroniza, ou depois de 15 minutos; um laço a cada 5 minutos refaz o que mudou, para a página
+não pagar. Reiniciar o servidor esvazia o cache: a primeira passada, 30 segundos depois da
+partida, avalia o parque todo (com 300 máquinas, menos de meio segundo; avaliação de uma
+máquina acima de 1 s vai para o log como lenta). O último contato e o reinício pendente valem
+na hora, sem esperar o cache.
+
 **Configuração › Saúde** (só admin) mostra se o servidor precisa de mais CPU, memória, conexões
 do banco ou disco, com o porquê e o que fazer (desenho e regras em `docs/saude-servidor.md`).
 Não depende do Prometheus. No compose, os limites que a tela cita ficam no serviço `server`

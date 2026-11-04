@@ -75,8 +75,12 @@ func TestAvaliacaoLentaEInterrompida(t *testing.T) {
 	if err == nil || strings.Contains(log.String(), "level=ERROR") {
 		t.Errorf("cancelado: %v\n%s", err, log.String())
 	}
-	cs := (&complianceService{st: canceladoNoMeio{b}, logger: slog.New(slog.NewTextHandler(log, nil)), now: func() time.Time { return agora }}).
-		status(context.Background(), b.maquinas[0], agora)
+	f, err := (&complianceService{st: canceladoNoMeio{b}, logger: slog.New(slog.NewTextHandler(log, nil)), now: func() time.Time { return agora }}).
+		Fleet(context.Background())
+	if err != nil || len(f.Machines) != 1 {
+		t.Fatalf("interrompida no meio: %v", err)
+	}
+	cs := f.Machines[0]
 	if cs.State != string(compliance.StateUnknown) || strings.Contains(log.String(), "level=ERROR") {
 		t.Errorf("interrompida no meio: %+v\n%s", cs, log.String())
 	}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -25,20 +26,216 @@ type fleetStore interface {
 	Machines(ctx context.Context) ([]protocol.MachineSummary, error)
 }
 
-// complianceService calcula o estado de compliance (RF-23) sob demanda, a cada pedido:
-// a avaliação de uma máquina leva milissegundos, e a frota do laboratório é pequena. Com
-// a frota real, o resultado passa a ser gravado (pendência de escala, RNF-07).
+// complianceService calcula o estado de compliance (RF-23). A avaliação de uma máquina lê o
+// inventário inteiro (centenas de pacotes) e o catálogo; refeita a cada página para o parque
+// todo, ela é o que deixa Parque, Visão geral e Patch lentos. Por isso cada avaliação fica
+// guardada na memória (evalCache) e só é refeita quando o inventário, a busca ou o catálogo
+// mudam, ou depois de evalTTL (avisos que dependem do relógio, como catálogo atrasado).
 type complianceService struct {
 	st     fleetStore
 	logger *slog.Logger
 	now    func() time.Time
-	// manifest: os programas de terceiros (Aula 13.3); nil: o Detail e o Items não os
-	// avaliam. O Fleet nunca avalia: o estado da máquina não depende deles.
+	// manifest: os programas de terceiros (Aula 13.3); nil: não os avalia. O estado da
+	// máquina não depende deles; a avaliação guardada já os traz para o Detail e o Items.
 	manifest *thirdparty.Manifest
+
+	cache evalCache
+	fill  sync.Mutex // um preenchimento do parque por vez: o segundo pedido acha o cache pronto
 }
 
 func newComplianceService(st fleetStore, logger *slog.Logger) *complianceService {
 	return &complianceService{st: st, logger: logger, now: func() time.Time { return time.Now().UTC() }}
+}
+
+// Cache das avaliações.
+const (
+	// evalTTL: uma avaliação guardada vale no máximo isso, mesmo sem mudança (os avisos de
+	// catálogo atrasado e o suporte do macOS dependem do relógio).
+	evalTTL = 15 * time.Minute
+	// evalWorkers: avaliações em paralelo quando faltam muitas (o pool do banco tem folga).
+	evalWorkers = 4
+	// warmEvery: o laço que mantém o cache quente (a primeira página do dia não paga o parque).
+	warmEvery = 5 * time.Minute
+)
+
+type evalEntry struct {
+	key string // inventário, busca e catálogo
+	at  time.Time
+	ev  machineEval
+}
+
+type evalCache struct {
+	mu      sync.Mutex
+	entries map[string]evalEntry
+}
+
+func (c *evalCache) get(id, key string, now time.Time) (machineEval, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[id]
+	if !ok || e.key != key || now.Sub(e.at) >= evalTTL || now.Before(e.at) {
+		return machineEval{}, false
+	}
+	return e.ev, true
+}
+
+func (c *evalCache) put(id, key string, at time.Time, ev machineEval) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[string]evalEntry{}
+	}
+	c.entries[id] = evalEntry{key: key, at: at, ev: ev}
+}
+
+// keep tira do cache as máquinas que saíram do parque.
+func (c *evalCache) keep(ids map[string]bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id := range c.entries {
+		if !ids[id] {
+			delete(c.entries, id)
+		}
+	}
+}
+
+// catalogKey resume o estado do catálogo (a última sincronização de cada fonte, boa ou não):
+// uma sincronização nova muda a chave e as avaliações são refeitas.
+func (s *complianceService) catalogKey(ctx context.Context) (string, error) {
+	st, err := s.st.CatalogStatus(ctx, catalogSourceNames)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, c := range st {
+		fmt.Fprintf(&b, "%s:%v:%v:%d;", c.Source, c.LastOK, c.LastFail, c.Runs)
+	}
+	return b.String(), nil
+}
+
+func evalKey(m protocol.MachineSummary, catalog string) string {
+	scan := ""
+	if m.ScanReceivedAt != nil {
+		scan = m.ScanReceivedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return m.InventoryHash + "|" + scan + "|" + catalog
+}
+
+// result é a avaliação de uma máquina, guardada ou nova.
+type result struct {
+	ev  *machineEval
+	err error
+}
+
+// evaluateAll devolve a avaliação de cada máquina: as guardadas, e as que faltam feitas agora,
+// em paralelo. Um erro de uma máquina não derruba as outras. whole: list é o parque inteiro
+// (as máquinas fora dela saem do cache); falso no detalhe de uma máquina.
+func (s *complianceService) evaluateAll(ctx context.Context, list []protocol.MachineSummary, now time.Time, whole bool) (map[string]result, error) {
+	catalog, err := s.catalogKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]result, len(list))
+	var missing []protocol.MachineSummary
+	ids := make(map[string]bool, len(list))
+	collect := func() {
+		missing = missing[:0]
+		for _, m := range list {
+			ids[m.ID] = true
+			if ev, ok := s.cache.get(m.ID, evalKey(m, catalog), now); ok {
+				out[m.ID] = result{ev: &ev}
+			} else if _, done := out[m.ID]; !done {
+				missing = append(missing, m)
+			}
+		}
+	}
+	collect()
+	if len(missing) > 0 {
+		s.fill.Lock() // quem chegou junto espera e acha o cache pronto
+		collect()
+		s.evaluateMissing(ctx, missing, catalog, now, out)
+		s.fill.Unlock()
+	}
+	if whole {
+		s.cache.keep(ids)
+	}
+	return out, ctx.Err()
+}
+
+func (s *complianceService) evaluateMissing(ctx context.Context, missing []protocol.MachineSummary, catalog string, now time.Time, out map[string]result) {
+	if len(missing) == 0 {
+		return
+	}
+	type done struct {
+		id string
+		r  result
+	}
+	work := make(chan protocol.MachineSummary)
+	results := make(chan done)
+	var wg sync.WaitGroup
+	for range min(evalWorkers, len(missing)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for m := range work {
+				ev, err := s.evaluateOne(ctx, m, catalog, now)
+				results <- done{m.ID, result{ev: ev, err: err}}
+			}
+		}()
+	}
+	go func() {
+		defer close(work)
+		for _, m := range missing {
+			select {
+			case work <- m:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() { wg.Wait(); close(results) }()
+	for d := range results {
+		out[d.id] = d.r
+	}
+}
+
+// evaluateOne avalia uma máquina e guarda (só o que deu certo e não foi interrompido).
+func (s *complianceService) evaluateOne(ctx context.Context, m protocol.MachineSummary, catalog string, now time.Time) (*machineEval, error) {
+	start := time.Now()
+	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now, Manifest: s.manifest})
+	if d := time.Since(start); d > slowEvaluation && err == nil {
+		s.logger.Warn("avaliação de compliance lenta", "machine_id", m.ID, "duration_ms", d.Milliseconds(),
+			"dica", "patchd-server compliance -machine ID -tempos mostra a consulta responsável")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if ctx.Err() == nil {
+		s.cache.put(m.ID, evalKey(m, catalog), now, ev)
+	}
+	return &ev, nil
+}
+
+// Warm mantém o cache quente até o ctx acabar: a cada warmEvery, avalia o que mudou.
+func (s *complianceService) Warm(ctx context.Context) {
+	t := time.NewTimer(30 * time.Second) // depois da partida assentar
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		wctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+		start := time.Now()
+		if _, err := s.Fleet(wctx); err != nil && ctx.Err() == nil {
+			s.logger.Warn("compliance: aquecer o cache", "error", err)
+		} else if d := time.Since(start); d > 10*time.Second {
+			s.logger.Info("compliance: cache aquecido", "duration_ms", d.Milliseconds())
+		}
+		cancel()
+		t.Reset(warmEvery)
+	}
 }
 
 // Fleet avalia todas as máquinas, na ordem do que pede ação primeiro.
@@ -52,11 +249,12 @@ func (s *complianceService) Fleet(ctx context.Context) (protocol.ComplianceFleet
 	for _, st := range compliance.States {
 		fleet.Counts[string(st)] = 0
 	}
+	evals, err := s.evaluateAll(ctx, list, now, true)
+	if err != nil {
+		return protocol.ComplianceFleet{}, err
+	}
 	for _, m := range list {
-		if err := ctx.Err(); err != nil {
-			return protocol.ComplianceFleet{}, err
-		}
-		cs := s.status(ctx, m, now)
+		cs, _ := s.statusOf(m, now, evals[m.ID])
 		fleet.Counts[cs.State]++
 		fleet.Machines = append(fleet.Machines, cs)
 	}
@@ -88,7 +286,11 @@ func (s *complianceService) Detail(ctx context.Context, id string) (protocol.Com
 			continue
 		}
 		now := s.now()
-		cs, ev := s.evaluate(ctx, m, now, s.manifest)
+		evals, err := s.evaluateAll(ctx, []protocol.MachineSummary{m}, now, false)
+		if err != nil {
+			return protocol.ComplianceDetail{}, false, err
+		}
+		cs, ev := s.statusOf(m, now, evals[m.ID])
 		d := protocol.ComplianceDetail{ComplianceStatus: cs, AgentVersion: m.AgentVersion, Items: []protocol.PendingItem{}}
 		if ev != nil {
 			d.Target, d.Items = pendingItems(*ev)
@@ -107,12 +309,13 @@ func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems,
 		return nil, err
 	}
 	now := s.now()
+	evals, err := s.evaluateAll(ctx, list, now, true)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]protocol.MachineItems, 0, len(list))
 	for _, m := range list {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		cs, ev := s.evaluate(ctx, m, now, s.manifest)
+		cs, ev := s.statusOf(m, now, evals[m.ID])
 		mi := protocol.MachineItems{MachineID: m.ID, Hostname: m.Hostname, OS: cs.OS, Catalog: cs.Catalog, Unit: cs.PendingUnit,
 			Items: []protocol.PendingItem{}}
 		if ev != nil {
@@ -124,37 +327,27 @@ func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems,
 	return out, nil
 }
 
-// status avalia uma máquina. Um erro na avaliação de uma máquina não derruba a frota:
-// ela fica "desconhecido" e o erro vai para o log.
-func (s *complianceService) status(ctx context.Context, m protocol.MachineSummary, now time.Time) protocol.ComplianceStatus {
-	cs, _ := s.evaluate(ctx, m, now, nil)
-	return cs
-}
-
-// evaluate devolve o estado e a avaliação (nil se a avaliação falhou).
-func (s *complianceService) evaluate(ctx context.Context, m protocol.MachineSummary, now time.Time, manifest *thirdparty.Manifest) (protocol.ComplianceStatus, *machineEval) {
+// statusOf monta o estado de uma máquina a partir da avaliação (guardada ou nova). O último
+// contato e o reinício pendente vêm do resumo, na hora: "sem contato" não espera o cache. Um
+// erro na avaliação de uma máquina não derruba o parque: ela fica "desconhecido" e o erro vai
+// para o log.
+func (s *complianceService) statusOf(m protocol.MachineSummary, now time.Time, r result) (protocol.ComplianceStatus, *machineEval) {
 	cs := protocol.ComplianceStatus{
 		MachineID: m.ID, Hostname: m.Hostname, OS: strings.TrimSpace(m.OSName + " " + m.OSVersion),
 		LastSeenAt: m.LastSeenAt, EvaluatedAt: now,
 	}
 	f := compliance.Facts{LastSeen: m.LastSeenAt, RebootPending: m.RebootPending}
-	start := time.Now()
-	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now, Manifest: manifest})
-	if d := time.Since(start); d > slowEvaluation && err == nil {
-		s.logger.Warn("avaliação de compliance lenta", "machine_id", m.ID, "duration_ms", d.Milliseconds(),
-			"dica", "patchd-server compliance -machine ID -tempos mostra a consulta responsável")
-	}
 	var evp *machineEval
 	switch {
-	case errors.Is(err, context.Canceled):
+	case r.ev == nil && r.err == nil, errors.Is(r.err, context.Canceled), errors.Is(r.err, context.DeadlineExceeded):
 		// O cliente desistiu (recarregou a página): não é falha do servidor.
 		f.Unevaluated = "avaliação interrompida"
-	case err != nil:
-		s.logger.Error("avaliação de compliance", "machine_id", m.ID, "error", err)
+	case r.err != nil:
+		s.logger.Error("avaliação de compliance", "machine_id", m.ID, "error", r.err)
 		f.Unevaluated = "erro na avaliação (veja o log do servidor)"
 	default:
-		fillFacts(&f, &cs, ev)
-		evp = &ev
+		fillFacts(&f, &cs, *r.ev)
+		evp = r.ev
 	}
 	state, reasons := compliance.Classify(f, now)
 	cs.State = string(state)
