@@ -126,6 +126,7 @@ type equip struct {
 	LastSeen                                                                time.Time
 	Collected                                                               *time.Time
 	ip                                                                      netip.Addr
+	ips                                                                     []netip.Addr          // todos os IPv4 (placas e check-in), para a faixa
 	Users                                                                   []protocol.LoggedUser // Aula 15.6
 	// Aula 21.2: o firmware, das colunas do inventário.
 	FWMode, FWTPM, FWInterface string
@@ -220,6 +221,16 @@ func buildEquip(rows []store.InventoryRow, now time.Time) []equip {
 			e.HasState = true
 			e.IP = r.State.PrimaryIPv4(r.CheckinAddr)
 			e.Users = r.State.Users
+			for _, n := range r.State.Interfaces {
+				for _, a := range n.IPv4 {
+					if p, err := netip.ParsePrefix(a); err == nil && !p.Addr().IsLinkLocalUnicast() && !p.Addr().IsLoopback() {
+						e.ips = append(e.ips, p.Addr())
+					}
+				}
+			}
+		}
+		if a, err := netip.ParseAddr(r.CheckinAddr); err == nil {
+			e.ips = append(e.ips, a.Unmap())
 		}
 		if e.IP == "" && r.CheckinAddr != "" {
 			e.IP, e.IPFromCheckin = r.CheckinAddr, true
@@ -299,6 +310,20 @@ func (q equipQuery) values() url.Values {
 	return v
 }
 
+// ipRange: a busca é uma faixa de IP (no campo IP ou em todos os campos).
+func (q equipQuery) ipRange() (ipRange, bool) {
+	if q.Field != "ip" && q.Field != "todos" {
+		return ipRange{}, false
+	}
+	return parseIPRange(q.Q)
+}
+
+// hasFilter: a lista está filtrada (o lote só vale com filtro: nada de mover o parque inteiro
+// por engano).
+func (q equipQuery) hasFilter() bool {
+	return q.Q != "" || q.Status != "" || q.Firmware != "" || q.Building != ""
+}
+
 func (q equipQuery) href(path string) string {
 	if v := q.values(); len(v) > 0 {
 		return path + "?" + v.Encode()
@@ -345,9 +370,15 @@ func (e equip) userTexts() []string {
 	return out
 }
 
-// filterEquip: status e busca (sem diferença de maiúsculas, em qualquer parte do texto).
+// inRange: algum IPv4 da máquina está na faixa.
+func (e equip) inRange(r ipRange) bool { return slices.ContainsFunc(e.ips, r.contains) }
+
+// filterEquip: status e busca (sem diferença de maiúsculas, em qualquer parte do texto). Na
+// busca por IP (ou em todos os campos), uma faixa (10.1.2.0/24, 10.1.2.10-50, 10.1.2.*) vale
+// pela faixa, não pelo texto.
 func filterEquip(list []equip, q equipQuery) []equip {
 	needle := strings.ToLower(q.Q)
+	rng, isRange := q.ipRange()
 	out := []equip{}
 	for _, e := range list {
 		switch q.Status {
@@ -370,7 +401,11 @@ func filterEquip(list []equip, q equipQuery) []equip {
 		if q.Building != "" && e.Asset.Building != q.Building {
 			continue
 		}
-		if needle != "" && !slices.ContainsFunc(e.texts(q.Field), func(s string) bool { return strings.Contains(strings.ToLower(s), needle) }) {
+		if isRange {
+			if !e.inRange(rng) {
+				continue
+			}
+		} else if needle != "" && !slices.ContainsFunc(e.texts(q.Field), func(s string) bool { return strings.Contains(strings.ToLower(s), needle) }) {
 			continue
 		}
 		out = append(out, e)
@@ -528,6 +563,16 @@ type equipView struct {
 	HasFilter                 bool
 	Buildings                 []optView // Aula 23.6: os prédios do patrimônio com máquina
 	Building                  string
+	Range                     string      // a busca é uma faixa de IP: o que ela cobre
+	Batch                     *equipBatch // o lote "pôr as encontradas no grupo" (admin, com filtro)
+}
+
+// equipBatch: o formulário do lote, com o filtro em campos escondidos e a contagem que o
+// admin viu (o servidor refaz o filtro e confere).
+type equipBatch struct {
+	Q, Field, Status, Firmware, Building string
+	N                                    int
+	Rings                                []int
 }
 
 // fwCard: um cartão do firmware: a contagem e o link do filtro (que mantém a busca e o status).
@@ -664,7 +709,15 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 
 	found := filterEquip(all, q)
 	sortEquip(found, q.Order, q.Desc)
-	v.Found, v.HasFilter = len(found), q.Q != "" || q.Status != "" || q.Firmware != "" || q.Building != ""
+	v.Found, v.HasFilter = len(found), q.hasFilter()
+	if r, ok := q.ipRange(); ok {
+		v.Range = fmt.Sprintf("faixa de IP de %s a %s", r.lo, r.hi)
+	}
+	fleetRingFlash(r.URL.Query(), &v.pageBase) // a volta do lote
+	equipBatchFlash(r.URL.Query(), &v.pageBase)
+	if v.Admin && v.HasFilter && len(found) > 0 {
+		v.Batch = &equipBatch{Q: q.Q, Field: q.Field, Status: q.Status, Firmware: q.Firmware, Building: q.Building, N: len(found), Rings: allRings()}
+	}
 	csvQ := q
 	csvQ.Page, csvQ.Per = 1, defaultPerPage
 	v.CSV = csvQ.href("/painel/inventario.csv")

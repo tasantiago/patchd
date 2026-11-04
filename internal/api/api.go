@@ -285,6 +285,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/padronizacao/{id}/excluir", a.sameOrigin(a.adminAction(a.deleteStandardization)))
 	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
 	mux.Handle("GET /painel/inventario", a.panelPage(a.equipmentPage))
+	mux.Handle("POST /painel/inventario/grupo", a.sameOrigin(a.adminAction(a.equipBatchAction))) // pôr as encontradas num grupo de implantação
 	mux.Handle("GET /painel/inventario.csv", a.panelPage(a.equipmentCSV))
 	mux.Handle("GET /painel/patch", a.panelPage(a.patchPage))
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))
