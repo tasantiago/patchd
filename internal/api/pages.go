@@ -50,6 +50,8 @@ type pageBase struct {
 	// CheckinWait: quanto um job pode esperar o check-in ("cerca de 15 min"), pelo intervalo de
 	// Configuração › Parâmetros › Agentes.
 	CheckinWait string
+	// Evaluating: o aviso de que parte do parque ainda está em avaliação (evaluatingNotice).
+	Evaluating string
 }
 
 func (a *api) base(r *http.Request, title, nav string) pageBase {
@@ -170,6 +172,7 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		a.render(w, r, http.StatusOK, "frota", v)
 		return
 	}
+	evaluatingNotice(&v.pageBase, fleet)
 	v.Total, v.EvaluatedAt = len(fleet.Machines), fleet.EvaluatedAt.Format("02/01/2006 15:04")+" UTC"
 	// O grupo de implantação de cada máquina (Aula 11.1): a avaliação não traz, a lista de máquinas traz.
 	summaries, err := a.store.Machines(r.Context())
@@ -614,7 +617,7 @@ var pages = template.Must(template.New("").Parse(`
 <form method="post" action="/painel/sair"><button type="submit" class="sair">` + ui.IcSair + `Sair</button></form></div></details>
 </header>
 <main>
-{{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}
+{{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}{{if .Evaluating}}<p class="aviso atencao" role="status">{{.Evaluating}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
 {{end}}
 

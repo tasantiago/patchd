@@ -40,12 +40,32 @@ type complianceService struct {
 	manifest *thirdparty.Manifest
 
 	cache evalCache
-	fill  sync.Mutex // um preenchimento do parque por vez: o segundo pedido acha o cache pronto
+	// fill: um preenchimento do parque por vez (o segundo pedido acha o cache pronto). Canal
+	// de uma vaga, e não Mutex, para a página desistir de esperar (fillWait).
+	fill chan struct{}
+	// kick acorda o Warm: a página achou avaliações vencidas demais para refazer na hora.
+	kick chan struct{}
+	once sync.Once // cria fill e kick (o serviço também é montado sem o construtor, nos testes)
+}
+
+func (s *complianceService) chans() {
+	s.once.Do(func() {
+		if s.fill == nil {
+			s.fill = make(chan struct{}, 1)
+		}
+		if s.kick == nil {
+			s.kick = make(chan struct{}, 1)
+		}
+	})
 }
 
 func newComplianceService(st fleetStore, logger *slog.Logger) *complianceService {
 	return &complianceService{st: st, logger: logger, now: func() time.Time { return time.Now().UTC() }}
 }
+
+// errEvaluating: a máquina ainda não tem avaliação nenhuma e o servidor está calculando
+// (o Warm, ou outra página); a página mostra "em avaliação" e se recarrega.
+var errEvaluating = errors.New("em avaliação")
 
 // Cache das avaliações.
 const (
@@ -58,6 +78,16 @@ const (
 	warmEvery = 5 * time.Minute
 )
 
+// fillWait: quanto a página espera outro preenchimento (o Warm leva minutos depois de uma
+// sincronização do catálogo) antes de mostrar o que já tem. Variável para os testes.
+var fillWait = 2 * time.Second
+
+// syncRefreshMax: até quantas avaliações (vencidas ou que faltam) a página faz na hora. Acima
+// disso (o catálogo sincronizou, o prazo venceu para o parque inteiro, o servidor acabou de
+// subir), ela mostra a avaliação anterior, ou "em avaliação", e acorda o Warm, em vez de pagar
+// o parque dentro do prazo da página. Variável para os testes.
+var syncRefreshMax = 50
+
 type evalEntry struct {
 	key string // inventário, busca e catálogo
 	at  time.Time
@@ -69,14 +99,15 @@ type evalCache struct {
 	entries map[string]evalEntry
 }
 
-func (c *evalCache) get(id, key string, now time.Time) (machineEval, bool) {
+// get devolve a avaliação guardada (ok) e se ela ainda vale (fresh): mesma chave, dentro do prazo.
+func (c *evalCache) get(id, key string, now time.Time) (ev machineEval, fresh, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[id]
-	if !ok || e.key != key || now.Sub(e.at) >= evalTTL || now.Before(e.at) {
-		return machineEval{}, false
+	if !ok {
+		return machineEval{}, false, false
 	}
-	return e.ev, true
+	return e.ev, e.key == key && now.Sub(e.at) < evalTTL && !now.Before(e.at), true
 }
 
 func (c *evalCache) put(id, key string, at time.Time, ev machineEval) {
@@ -123,43 +154,119 @@ func evalKey(m protocol.MachineSummary, catalog string) string {
 
 // result é a avaliação de uma máquina, guardada ou nova.
 type result struct {
-	ev  *machineEval
-	err error
+	ev    *machineEval
+	err   error
+	stale bool // a avaliação anterior: a de agora está sendo feita em segundo plano
 }
 
+// Modos do evaluateAll.
+const (
+	modePage = iota // página do parque: avaliação anterior quando refazer custa demais
+	modeWarm        // o Warm: refaz tudo o que venceu
+	modeOne         // o detalhe de uma máquina: sempre a avaliação de agora, sem a vaga do parque
+)
+
 // evaluateAll devolve a avaliação de cada máquina: as guardadas, e as que faltam feitas agora,
-// em paralelo. Um erro de uma máquina não derruba as outras. whole: list é o parque inteiro
-// (as máquinas fora dela saem do cache); falso no detalhe de uma máquina.
-func (s *complianceService) evaluateAll(ctx context.Context, list []protocol.MachineSummary, now time.Time, whole bool) (map[string]result, error) {
+// em paralelo. Um erro de uma máquina não derruba as outras. Na página, o prazo esgotado não é
+// erro: o que não deu tempo fica com a avaliação anterior, ou "em avaliação" (errEvaluating).
+// Só o cancelamento (o cliente desistiu) volta como erro.
+func (s *complianceService) evaluateAll(ctx context.Context, list []protocol.MachineSummary, now time.Time, mode int) (map[string]result, error) {
 	catalog, err := s.catalogKey(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]result, len(list))
-	var missing []protocol.MachineSummary
+	stale := map[string]machineEval{}
+	var todo []protocol.MachineSummary
 	ids := make(map[string]bool, len(list))
 	collect := func() {
-		missing = missing[:0]
+		todo = todo[:0]
+		var old []protocol.MachineSummary
 		for _, m := range list {
 			ids[m.ID] = true
-			if ev, ok := s.cache.get(m.ID, evalKey(m, catalog), now); ok {
+			if _, done := out[m.ID]; done {
+				continue
+			}
+			ev, fresh, ok := s.cache.get(m.ID, evalKey(m, catalog), now)
+			switch {
+			case fresh:
 				out[m.ID] = result{ev: &ev}
-			} else if _, done := out[m.ID]; !done {
-				missing = append(missing, m)
+				delete(stale, m.ID)
+			case ok:
+				stale[m.ID] = ev
+				old = append(old, m)
+			default:
+				todo = append(todo, m)
 			}
 		}
+		if mode == modePage && len(todo)+len(old) > syncRefreshMax {
+			// Muitas de uma vez (o catálogo sincronizou, o prazo venceu para o parque, o
+			// servidor acabou de subir): a página usa as anteriores, ou mostra "em
+			// avaliação", e o Warm refaz.
+			todo = todo[:0]
+			s.wake()
+			return
+		}
+		todo = append(todo, old...)
 	}
 	collect()
-	if len(missing) > 0 {
-		s.fill.Lock() // quem chegou junto espera e acha o cache pronto
-		collect()
-		s.evaluateMissing(ctx, missing, catalog, now, out)
-		s.fill.Unlock()
+	switch {
+	case len(todo) == 0:
+	case mode == modeOne:
+		s.evaluateMissing(ctx, todo, catalog, now, out)
+	case s.acquire(ctx, mode):
+		collect() // quem preencheu antes deixou o cache pronto
+		s.evaluateMissing(ctx, todo, catalog, now, out)
+		<-s.fill
+	default:
+		s.wake()
 	}
-	if whole {
+	// O que ficou sem avaliação de agora: a anterior, ou "em avaliação".
+	for _, m := range list {
+		if r, done := out[m.ID]; done && r.ev != nil {
+			continue
+		}
+		if ev, ok := stale[m.ID]; ok {
+			out[m.ID] = result{ev: &ev, stale: true}
+		} else if _, done := out[m.ID]; !done || errors.Is(out[m.ID].err, context.DeadlineExceeded) {
+			out[m.ID] = result{err: errEvaluating}
+		}
+	}
+	if mode != modeOne {
 		s.cache.keep(ids)
 	}
-	return out, ctx.Err()
+	if errors.Is(ctx.Err(), context.Canceled) || (mode == modeWarm && ctx.Err() != nil) {
+		return out, ctx.Err()
+	}
+	return out, nil
+}
+
+// acquire pega a vaga do preenchimento. A página espera no máximo fillWait; o Warm, o
+// quanto o prazo dele deixar.
+func (s *complianceService) acquire(ctx context.Context, mode int) bool {
+	s.chans()
+	var limit <-chan time.Time
+	if mode == modePage {
+		t := time.NewTimer(fillWait)
+		defer t.Stop()
+		limit = t.C
+	}
+	select {
+	case s.fill <- struct{}{}:
+		return true
+	case <-ctx.Done():
+	case <-limit:
+	}
+	return false
+}
+
+// wake acorda o Warm sem esperar (se já houver um aviso, basta ele).
+func (s *complianceService) wake() {
+	s.chans()
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
 }
 
 func (s *complianceService) evaluateMissing(ctx context.Context, missing []protocol.MachineSummary, catalog string, now time.Time, out map[string]result) {
@@ -218,6 +325,7 @@ func (s *complianceService) evaluateOne(ctx context.Context, m protocol.MachineS
 
 // Warm mantém o cache quente até o ctx acabar: a cada warmEvery, avalia o que mudou.
 func (s *complianceService) Warm(ctx context.Context) {
+	s.chans()
 	t := time.NewTimer(30 * time.Second) // depois da partida assentar
 	defer t.Stop()
 	for {
@@ -225,10 +333,11 @@ func (s *complianceService) Warm(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-s.kick:
 		}
 		wctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 		start := time.Now()
-		if _, err := s.Fleet(wctx); err != nil && ctx.Err() == nil {
+		if _, err := s.fleet(wctx, modeWarm); err != nil && ctx.Err() == nil {
 			s.logger.Warn("compliance: aquecer o cache", "error", err)
 		} else if d := time.Since(start); d > 10*time.Second {
 			s.logger.Info("compliance: cache aquecido", "duration_ms", d.Milliseconds())
@@ -240,6 +349,10 @@ func (s *complianceService) Warm(ctx context.Context) {
 
 // Fleet avalia todas as máquinas, na ordem do que pede ação primeiro.
 func (s *complianceService) Fleet(ctx context.Context) (protocol.ComplianceFleet, error) {
+	return s.fleet(ctx, modePage)
+}
+
+func (s *complianceService) fleet(ctx context.Context, mode int) (protocol.ComplianceFleet, error) {
 	list, err := s.st.Machines(ctx)
 	if err != nil {
 		return protocol.ComplianceFleet{}, err
@@ -249,12 +362,19 @@ func (s *complianceService) Fleet(ctx context.Context) (protocol.ComplianceFleet
 	for _, st := range compliance.States {
 		fleet.Counts[string(st)] = 0
 	}
-	evals, err := s.evaluateAll(ctx, list, now, true)
+	evals, err := s.evaluateAll(ctx, list, now, mode)
 	if err != nil {
 		return protocol.ComplianceFleet{}, err
 	}
 	for _, m := range list {
-		cs, _ := s.statusOf(m, now, evals[m.ID])
+		r := evals[m.ID]
+		switch {
+		case errors.Is(r.err, errEvaluating):
+			fleet.Evaluating++
+		case r.stale:
+			fleet.Refreshing++
+		}
+		cs, _ := s.statusOf(m, now, r)
 		fleet.Counts[cs.State]++
 		fleet.Machines = append(fleet.Machines, cs)
 	}
@@ -286,7 +406,7 @@ func (s *complianceService) Detail(ctx context.Context, id string) (protocol.Com
 			continue
 		}
 		now := s.now()
-		evals, err := s.evaluateAll(ctx, []protocol.MachineSummary{m}, now, false)
+		evals, err := s.evaluateAll(ctx, []protocol.MachineSummary{m}, now, modeOne)
 		if err != nil {
 			return protocol.ComplianceDetail{}, false, err
 		}
@@ -309,7 +429,7 @@ func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems,
 		return nil, err
 	}
 	now := s.now()
-	evals, err := s.evaluateAll(ctx, list, now, true)
+	evals, err := s.evaluateAll(ctx, list, now, modePage)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +459,8 @@ func (s *complianceService) statusOf(m protocol.MachineSummary, now time.Time, r
 	f := compliance.Facts{LastSeen: m.LastSeenAt, RebootPending: m.RebootPending}
 	var evp *machineEval
 	switch {
+	case errors.Is(r.err, errEvaluating):
+		f.Unevaluated = "em avaliação: o servidor está calculando, recarregue em instantes"
 	case r.ev == nil && r.err == nil, errors.Is(r.err, context.Canceled), errors.Is(r.err, context.DeadlineExceeded):
 		// O cliente desistiu (recarregou a página): não é falha do servidor.
 		f.Unevaluated = "avaliação interrompida"

@@ -544,6 +544,10 @@ func (a *api) checkClock(r *http.Request, id string, collectedAt time.Time) {
 // internalError registra a causa e responde 500 sem expor detalhes internos ao cliente.
 func (a *api) internalError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	a.logger.Error("falha interna", "op", op, "error", err, "request_id", RequestID(r.Context()))
+	if isPanel(r) {
+		panelError(w, RequestID(r.Context()))
+		return
+	}
 	writeError(w, http.StatusInternalServerError, "internal", "erro interno do servidor")
 }
 

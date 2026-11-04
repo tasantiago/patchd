@@ -151,6 +151,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		a.internalError(w, r, "avaliar o parque", err)
 		return
 	}
+	evaluatingNotice(&v.pageBase, fleet)
 	items, err := a.compliance.Items(ctx)
 	if a.canceled(r, err) {
 		return

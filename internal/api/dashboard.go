@@ -203,6 +203,7 @@ func (a *api) dashboardPage(w http.ResponseWriter, r *http.Request) {
 			issue("Conformidade", err)
 		} else {
 			v.ComplianceOn = true
+			evaluatingNotice(&v.pageBase, fleet)
 			v.EvaluatedAt = fleet.EvaluatedAt.UTC().Format("02/01/2006 15:04") + " UTC"
 			v.dashboardFleet(fleet)
 		}

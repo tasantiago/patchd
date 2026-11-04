@@ -113,6 +113,10 @@ func withRecover(logger *slog.Logger, next http.Handler) http.Handler {
 				"stack", string(debug.Stack()),
 				"request_id", RequestID(r.Context()),
 			)
+			if isPanel(r) {
+				panelError(w, RequestID(r.Context()))
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "internal", "erro interno do servidor")
 		}()
 		next.ServeHTTP(w, r)

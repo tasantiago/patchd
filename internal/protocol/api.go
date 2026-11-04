@@ -146,6 +146,10 @@ type ComplianceFleet struct {
 	EvaluatedAt time.Time          `json:"evaluated_at"`
 	Counts      map[string]int     `json:"counts"` // por estado, com os cinco sempre presentes
 	Machines    []ComplianceStatus `json:"machines"`
+	// Evaluating: máquinas ainda sem avaliação (o servidor está calculando); Refreshing: com
+	// a avaliação anterior, enquanto a de agora é feita em segundo plano.
+	Evaluating int `json:"evaluating,omitempty"`
+	Refreshing int `json:"refreshing,omitempty"`
 }
 
 // PendingItem é uma pendência da máquina: um pacote fonte (Linux) ou uma CVE (Windows,
