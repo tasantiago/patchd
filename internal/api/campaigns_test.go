@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/window"
 )
@@ -295,5 +297,61 @@ func TestCampanhasDeTudoPeloPainel(t *testing.T) {
 	b = pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, "todas as atualizações do sistema aprovadas em Patch") {
 		t.Errorf("a lista não mostra o alvo:\n%.3000s", b)
+	}
+}
+
+// O detalhe da campanha com muitos jobs: contadores por estado, filtro por estado e máquina,
+// páginas de 100, e só o grupo escolhido mostra a tabela.
+func TestCampanhaFiltroEPaginas(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	ctx := context.Background()
+	id, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "muitos", Type: jobs.TypeRescan, Rings: []int{0, 1}, TTL: time.Hour, CreatedBy: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _, _ := st.Campaign(ctx, id)
+	c.LaunchedIdx, c.CurrentIdx = 1, 1
+	_, _ = st.SaveCampaign(ctx, c, campaign.StateRunning)
+	agora := time.Now()
+	for i := 0; i < 180; i++ {
+		maq := "60ef97e4-0001"
+		if i >= 150 {
+			maq = "7aa604f7-0002"
+		}
+		jid, _ := st.NextJobID(ctx)
+		if err := st.CreateJob(ctx, store.NewJob{ID: jid, MachineID: maq, Type: jobs.TypeRescan, Signed: protocol.SignedJob{Payload: "{}", Signature: "s"},
+			CreatedBy: "t", NotAfter: agora.Add(time.Hour), CampaignID: id, CampaignIdx: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if i%18 == 0 {
+			_, _ = st.FinishJob(ctx, jid, jobs.StateDone, "ok", agora)
+		}
+	}
+	base := fmt.Sprintf("/painel/campanhas/%d", id)
+	b := pagina(h, "GET", base, sessaoTeste, nil).Body.String()
+	for _, quer := range []string{"pendente</span> <b>170</b>", "concluído</span> <b>10</b>", "1–100 de 180", "próxima ›", `name="q"`} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("página: falta %q", quer)
+		}
+	}
+	if n := strings.Count(b, `<td class="num">`); n != 100 {
+		t.Errorf("%d linhas na primeira página", n)
+	}
+	b = pagina(h, "GET", base+"?grupo=1&pagina=2", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "101–180 de 180") || !strings.Contains(b, "‹ anterior") {
+		t.Error("segunda página")
+	}
+	b = pagina(h, "GET", base+"?grupo=1&estado=concluido", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "1–10 de 10") || !strings.Contains(b, `class="chip ativo"`) {
+		t.Error("filtro por estado")
+	}
+	b = pagina(h, "GET", base+"?grupo=1&q=7aa6", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "1–30 de 30") {
+		t.Error("filtro por máquina")
+	}
+	// O grupo 0 (sem jobs) não mostra tabela nem filtro.
+	b = pagina(h, "GET", base+"?grupo=0", sessaoTeste, nil).Body.String()
+	if strings.Contains(b, "1–100 de 180") || !strings.Contains(b, "ver os jobs") {
+		t.Error("o grupo 0 escolhido não mostra os jobs do 1")
 	}
 }

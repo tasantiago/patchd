@@ -3,7 +3,9 @@ package api
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -15,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // As campanhas no painel. Aula 8.5: a lista, só leitura. Aula 11.2: o admin cria (com uma
@@ -465,7 +468,7 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 type campaignJobRow struct {
 	ID                                   int64
 	MachineID, Short, Name, State, Label string
-	Detail                               string
+	Detail, Slot                         string
 }
 
 type campaignRingView struct {
@@ -473,7 +476,32 @@ type campaignRingView struct {
 	Current bool
 	Status  string // "ainda não liberado", "nenhuma máquina com o que fazer", ""
 	Jobs    []campaignJobRow
+	// Os contadores por estado (cada um filtra a tabela), o total e o link para ver a tabela
+	// deste grupo (só o grupo escolhido mostra os jobs).
+	Counts   []campaignCount
+	Total    int
+	Href     string
+	Selected bool
+	HasSlot  bool // campanha com um job por programa: a coluna Programa
+	// A tabela filtrada e paginada.
+	Found      int
+	Shown      string
+	Prev, Next string
+	Q, Filter  string
+	Slot       string
+	Slots      []optView
+	Idx        int
+	CampaignID int64
 }
+
+type campaignCount struct {
+	State, Label, Href string
+	N                  int
+	Active             bool
+}
+
+// campaignJobsPerPage: os jobs mostrados por página no detalhe da campanha.
+const campaignJobsPerPage = 100
 
 type campaignView struct {
 	pageBase
@@ -526,8 +554,32 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 			names[m.ID] = m.Hostname
 		}
 	}
+	// O grupo cuja tabela aparece (?grupo=, a posição na campanha; padrão: o atual) e o
+	// filtro dela: estado, máquina (nome ou ID) e programa, com páginas de 100.
+	q := r.URL.Query()
+	sel := min(max(c.CurrentIdx, 0), len(c.Rings)-1)
+	if n, err := strconv.Atoi(q.Get("grupo")); err == nil && n >= 0 && n < len(c.Rings) {
+		sel = n
+	}
+	filter, needle, slot := q.Get("estado"), strings.ToLower(strings.TrimSpace(texto.Clip(q.Get("q"), 100))), texto.Clip(q.Get("programa"), 64)
+	page, _ := strconv.Atoi(q.Get("pagina"))
+	page = max(page, 1)
+	base := fmt.Sprintf("/painel/campanhas/%d", c.ID)
+	href := func(idx int, estado, busca, prog string, pg int) string {
+		u := url.Values{"grupo": {strconv.Itoa(idx)}}
+		for k, v := range map[string]string{"estado": estado, "q": busca, "programa": prog} {
+			if v != "" {
+				u.Set(k, v)
+			}
+		}
+		if pg > 1 {
+			u.Set("pagina", strconv.Itoa(pg))
+		}
+		return base + "?" + u.Encode() + "#grupo-" + strconv.Itoa(idx)
+	}
 	for idx, ring := range c.Rings {
-		rv := campaignRingView{Ring: ringLabel(ring), Current: idx == c.CurrentIdx && c.State != campaign.StateDone}
+		rv := campaignRingView{Ring: ringLabel(ring), Current: idx == c.CurrentIdx && c.State != campaign.StateDone,
+			Idx: idx, CampaignID: c.ID, Selected: idx == sel, Href: href(idx, "", "", "", 1)}
 		list, err := a.store.CampaignJobs(r.Context(), c.ID, idx)
 		if err != nil {
 			a.internalError(w, r, "listar jobs da campanha", err)
@@ -539,9 +591,62 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		case len(list) == 0:
 			rv.Status = "nenhuma máquina com o que fazer"
 		}
+		rv.Total = len(list)
+		counts, slots := map[string]int{}, map[string]bool{}
 		for _, j := range list {
+			counts[j.State]++
+			if j.Slot != "" {
+				slots[j.Slot] = true
+			}
+		}
+		rv.HasSlot = len(slots) > 0
+		for _, st := range []string{jobs.StatePending, jobs.StateDelivered, jobs.StateDone, jobs.StatePostponed, jobs.StateFailed,
+			jobs.StateRejected, jobs.StateDismissed, jobs.StateExpired, jobs.StateCanceled} {
+			if counts[st] == 0 {
+				continue
+			}
+			active := rv.Selected && filter == st
+			next := st
+			if active {
+				next = "" // clicar no ativo tira o filtro
+			}
+			rv.Counts = append(rv.Counts, campaignCount{State: st, Label: stateLabel(st), N: counts[st], Active: active,
+				Href: href(idx, next, needle, slot, 1)})
+		}
+		if !rv.Selected {
+			v.Rings = append(v.Rings, rv)
+			continue
+		}
+		rv.Q, rv.Filter, rv.Slot = needle, filter, slot
+		for _, sl := range slices.Sorted(maps.Keys(slots)) {
+			rv.Slots = append(rv.Slots, optView{Value: sl, Label: sl, Selected: sl == slot})
+		}
+		var found []campaign.JobState
+		for _, j := range list {
+			switch {
+			case filter != "" && j.State != filter:
+			case slot != "" && j.Slot != slot:
+			case needle != "" && !strings.Contains(strings.ToLower(names[j.MachineID]), needle) && !strings.HasPrefix(j.MachineID, needle):
+			default:
+				found = append(found, j)
+			}
+		}
+		rv.Found = len(found)
+		pages := max(1, (len(found)+campaignJobsPerPage-1)/campaignJobsPerPage)
+		pg := min(page, pages)
+		from, to := (pg-1)*campaignJobsPerPage, min(pg*campaignJobsPerPage, len(found))
+		if len(found) > 0 {
+			rv.Shown = fmt.Sprintf("%d–%d de %d", from+1, to, len(found))
+		}
+		if pg > 1 {
+			rv.Prev = href(idx, filter, needle, slot, pg-1)
+		}
+		if pg < pages {
+			rv.Next = href(idx, filter, needle, slot, pg+1)
+		}
+		for _, j := range found[from:to] {
 			rv.Jobs = append(rv.Jobs, campaignJobRow{ID: j.ID, MachineID: j.MachineID, Short: short(j.MachineID),
-				Name: dash(names[j.MachineID]), State: j.State, Label: stateLabel(j.State), Detail: dash(j.Detail)})
+				Name: dash(names[j.MachineID]), State: j.State, Label: stateLabel(j.State), Detail: dash(j.Detail), Slot: dash(j.Slot)})
 		}
 		v.Rings = append(v.Rings, rv)
 	}
