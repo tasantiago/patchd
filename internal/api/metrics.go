@@ -41,12 +41,13 @@ func WithMetrics(m *Metrics) Option {
 
 // observe registra a requisição já atendida (chamado pelo log de acesso).
 func (a *api) observe(r *http.Request, status int, d time.Duration) {
-	if a.metrics == nil {
-		return
-	}
 	route := r.Pattern
 	if route == "" {
 		route = "(nenhuma)"
+	}
+	a.health.Observe(route, status, d, transferRoute(route)) // a aba Saúde (docs/saude-servidor.md); nil: desligada
+	if a.metrics == nil {
+		return
 	}
 	a.metrics.requests.Inc(route, strconv.Itoa(status))
 	a.metrics.seconds.Add(d.Seconds(), route)

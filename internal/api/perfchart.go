@@ -53,6 +53,27 @@ type chartIn struct {
 	Hourly     bool
 	Loc        *time.Location
 	MoreVolums int // volumes que ficaram de fora do desenho
+	// Para medidas fora de 0 a 100% (a saúde do servidor): o topo do eixo, o texto de um valor
+	// e a palavra depois do valor atual. Zero: 100, pctLabel e "em uso" (ou "livre" no disco).
+	Top     float64
+	Fmt     func(float64) string
+	NowWord string
+}
+
+func (in chartIn) top() float64 {
+	if in.Top > 0 {
+		return in.Top
+	}
+	return 100
+}
+
+func (in chartIn) y(v float64) int { return pcY(100 * v / in.top()) }
+
+func (in chartIn) label(v float64) string {
+	if in.Fmt != nil {
+		return in.Fmt(v)
+	}
+	return pctLabel(v)
 }
 
 type perfChart struct {
@@ -157,14 +178,16 @@ func buildChart(in chartIn) *perfChart {
 	if in.Loc == nil {
 		in.Loc = time.UTC
 	}
-	for _, v := range []float64{0, 50, 100} {
-		c.Grid = append(c.Grid, chartTick{Y: pcY(v), Label: pctLabel(v)})
+	for _, v := range []float64{0, in.top() / 2, in.top()} {
+		c.Grid = append(c.Grid, chartTick{Y: in.y(v), Label: in.label(v)})
 	}
 	c.XTicks = timeTicks(in.From, in.To, in.Loc)
-	c.LimitY = pcY(in.Limit)
-	c.LimitLabel = "limite " + pctLabel(in.Limit)
-	if in.Metric == perfeval.MetricDisk {
-		c.LimitLabel += " livre"
+	if in.Limit > 0 {
+		c.LimitY = in.y(in.Limit)
+		c.LimitLabel = "limite " + in.label(in.Limit)
+		if in.Metric == perfeval.MetricDisk {
+			c.LimitLabel += " livre"
+		}
 	}
 	for _, a := range in.Alerts {
 		from, to := a.From, a.To
@@ -202,10 +225,10 @@ func buildChart(in chartIn) *perfChart {
 				flush()
 			}
 			last = p.At
-			x, y := pcX(p.At, in.From, in.To), pcY(p.V)
+			x, y := pcX(p.At, in.From, in.To), in.y(p.V)
 			seg = append(seg, strconv.Itoa(x)+","+strconv.Itoa(y))
 			segX = append(segX, x)
-			ln.EndX, ln.EndY, ln.EndTextX, ln.End = x, y, x+8, pctLabel(p.V)
+			ln.EndX, ln.EndY, ln.EndTextX, ln.End = x, y, x+8, in.label(p.V)
 			drawn = true
 			if len(in.Series) == 1 {
 				pk := p
@@ -234,19 +257,26 @@ func buildChart(in chartIn) *perfChart {
 	}
 	if len(in.Series) == 1 && len(c.Series[0].Lines) > 0 {
 		c.Now = c.Series[0].End
-		if in.Metric != perfeval.MetricDisk {
+		switch {
+		case in.NowWord != "":
+			c.Now += " " + in.NowWord
+		case in.Fmt != nil:
+		case in.Metric != perfeval.MetricDisk:
 			c.Now += " em uso"
-		} else {
+		default:
 			c.Now += " livre"
 		}
 	}
-	sub := []string{c.LimitLabel}
+	var sub []string
+	if c.LimitLabel != "" {
+		sub = append(sub, c.LimitLabel)
+	}
 	if peak != nil {
 		word := "pico"
 		if in.Metric == perfeval.MetricDisk {
 			word = "menor"
 		}
-		sub = append(sub, fmt.Sprintf("%s %s em %s", word, pctLabel(peak.V), in.when(peak.At)))
+		sub = append(sub, fmt.Sprintf("%s %s em %s", word, in.label(peak.V), in.when(peak.At)))
 	}
 	if n := len(c.Bands); n > 0 {
 		word := "1 alerta no período"
@@ -259,7 +289,7 @@ func buildChart(in chartIn) *perfChart {
 		sub = append(sub, fmt.Sprintf("mais %d volume(s) na tabela", in.MoreVolums))
 	}
 	c.Sub = strings.Join(sub, " · ")
-	c.Label = in.Title + ", de 0 a 100%, de " + in.when(in.From) + " a " + in.when(in.To)
+	c.Label = in.Title + ", de " + in.label(0) + " a " + in.label(in.top()) + ", de " + in.when(in.From) + " a " + in.when(in.To)
 	c.Zones = buildZones(in)
 	return c
 }
@@ -311,18 +341,18 @@ func buildZones(in chartIn) []chartZone {
 				at = best.At
 			}
 			cls := "s" + strconv.Itoa(i+1)
-			val := pctLabel(best.V)
+			val := in.label(best.V)
 			if in.Metric == perfeval.MetricDisk {
 				val += " livre"
 			}
 			rows = append(rows, chartTipRow{Value: val, Name: s.Name, Class: cls})
-			dots = append(dots, chartDot{X: pcX(best.At, in.From, in.To), Y: pcY(best.V), Class: cls})
+			dots = append(dots, chartDot{X: pcX(best.At, in.From, in.To), Y: in.y(best.V), Class: cls})
 			if len(in.Series) == 1 && worst != best.V {
 				word := "pico do intervalo"
 				if in.Metric == perfeval.MetricDisk {
 					word = "menor do intervalo"
 				}
-				rows = append(rows, chartTipRow{Value: pctLabel(worst), Name: word, Class: "pico"})
+				rows = append(rows, chartTipRow{Value: in.label(worst), Name: word, Class: "pico"})
 			}
 		}
 		if len(rows) == 0 {

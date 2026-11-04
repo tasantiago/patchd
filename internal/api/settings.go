@@ -97,6 +97,8 @@ type settingsView struct {
 	Params      []paramGroup     // aba Parâmetros (Aula 19.2)
 	Assets      *assetView       // aba Patrimônio (Aula 23.6)
 	Fleet       *biosFleetView   // aba BIOS: a senha padrão de cada fabricante (docs/bios-senha.md, seção 10)
+	Health      *healthView      // aba Saúde: o servidor e o que aumentar (docs/saude-servidor.md)
+	HealthOn    bool
 }
 
 func (a *api) settingsTabs(tab string) string {
@@ -105,6 +107,10 @@ func (a *api) settingsTabs(tab string) string {
 		return tab
 	case "parametros":
 		if a.params != nil {
+			return tab
+		}
+	case "saude":
+		if a.health != nil {
 			return tab
 		}
 	}
@@ -117,6 +123,7 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	v := settingsView{pageBase: a.baseFor(r.Context(), s, "Configuração", "configuracao"), Tab: a.settingsTabs(q.Get("aba")),
 		MaxUses: panelTokenMaxUses, MaxNote: panelTokenMaxNote, TTLs: tokenHourOptions(24)}
 	v.Sub = v.Tab
+	v.HealthOn = a.health != nil
 	switch {
 	case q.Has("revogado"):
 		v.Flash = fmt.Sprintf("Token %s revogado: nenhuma máquina nova se registra com ele.", q.Get("revogado"))
@@ -128,6 +135,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	case "descoberta":
 		w.Header().Set("Cache-Control", "no-store")
 		v.Discovery, err = a.discoveryConfig(r.Context())
+	case "saude":
+		w.Header().Set("Cache-Control", "no-store")
+		v.Health, err = a.healthTab(r)
 	case "bios":
 		fleetFlash(q, &v)
 		v.Fleet, err = a.fleetTab(r.Context())

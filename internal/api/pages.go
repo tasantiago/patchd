@@ -703,7 +703,36 @@ var pages = template.Must(template.New("").Parse(`
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a><a href="/painel/configuracao?aba=descoberta"{{if eq .Tab "descoberta"}} class="ativa" aria-current="page"{{end}}>Descoberta</a><a href="/painel/configuracao?aba=bios"{{if eq .Tab "bios"}} class="ativa" aria-current="page"{{end}}>BIOS</a></nav>
+<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .HealthOn}}<a href="/painel/configuracao?aba=saude"{{if eq .Tab "saude"}} class="ativa" aria-current="page"{{end}}>Saúde</a>{{end}}{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a><a href="/painel/configuracao?aba=descoberta"{{if eq .Tab "descoberta"}} class="ativa" aria-current="page"{{end}}>Descoberta</a><a href="/painel/configuracao?aba=bios"{{if eq .Tab "bios"}} class="ativa" aria-current="page"{{end}}>BIOS</a></nav>
+{{if eq .Tab "saude"}}{{with .Health}}
+<div class="card saude-veredito borda-{{.Report.Level}}"><div class="card-cab"><h2>{{.Report.Verdict}}</h2><span class="muted">medindo desde {{.Since}}</span></div>
+{{if .Report.Detail}}<p>{{.Report.Detail}}</p>{{end}}
+{{if .Report.Advice}}<ol class="saude-recs">{{range .Report.Advice}}<li class="rec rec-{{.Level}}"><span class="rec-tag">{{.LevelText}}</span><div class="rec-corpo"><strong>{{.Resource}}: {{.Title}}</strong><p>{{.Why}}</p><p class="rec-acao"><b>O que fazer:</b> {{.Action}}</p></div></li>{{end}}</ol>{{end}}
+{{if or .Report.Capacity .Report.Growth}}<p class="muted">{{.Report.Capacity}}{{if and .Report.Capacity .Report.Growth}} {{end}}{{.Report.Growth}}</p>{{end}}
+</div>
+<ul class="kpis saude-kpis" aria-label="recursos do servidor">{{range .Report.Gauges}}<li><div class="kpi"><span class="kpi-rot">{{.Resource}} <span class="saude-nivel nivel-{{.Level}}">{{.LevelText}}</span></span><span class="kpi-val">{{.Value}}</span>{{if ge .Pct 0}}<span class="medidor" aria-hidden="true"><span class="medidor-p med-{{.Level}} w{{.Pct}}"></span></span>{{end}}<span class="kpi-sub">{{.Sub}}</span></div></li>{{end}}</ul>
+<div class="card"><div class="card-cab"><h2>Ao longo do tempo</h2><span class="muted">{{if .NoHistory}}sem banco: só as 24 horas deste processo{{else}}24 horas por minuto (memória do processo); 7 a 90 dias por hora (banco){{end}}</span></div>
+<nav class="abas" aria-label="período">{{range .Periods}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
+<div class="graficos">{{range .Charts}}{{template "perf-grafico" .}}{{end}}</div>
+<p class="muted legenda-geral">{{if .Hourly}}Média por hora (a memória da máquina e o tempo de resposta, o pico da hora); a dica mostra também o pico do intervalo.{{else}}Uma medida por minuto; reiniciar o servidor zera as 24 horas (as horas fechadas ficam no banco).{{end}} A linha tracejada é a referência das regras. O tempo de resposta não conta os downloads de arquivo (catálogo, pacotes, versões do agente).</p>
+</div>
+<div class="card"><div class="card-cab"><h2>Onde o servidor gasta tempo</h2><span class="muted">desde a partida · {{.RoutesAll}} rotas</span></div>
+{{if .Routes}}<div class="tabela"><table><thead><tr><th>Rota</th><th class="num">Requisições</th><th class="num">Média</th><th class="num">Maior</th><th class="num">Acima de 1 s</th><th class="num">Erros 5xx</th><th class="num">Do tempo total</th></tr></thead>
+<tbody>{{range .Routes}}<tr><td><code>{{.Route}}</code></td><td class="num">{{.Count}}</td><td class="num{{if .Level}} nivel-{{.Level}}{{end}}">{{.Avg}}</td><td class="num">{{.Max}}</td><td class="num">{{.Slow}}</td><td class="num">{{.Errors}}</td><td class="num">{{.Share}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma requisição desde a partida.</p>{{end}}</div>
+<div class="duas-col">
+{{if .DB}}<div class="card"><div class="card-cab"><h2>Banco</h2><span class="muted">PostgreSQL</span></div>
+<dl class="dados">{{range .DB}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
+{{if .Tables}}<div class="tabela"><table><thead><tr><th>Maiores tabelas</th><th class="num">Tamanho</th></tr></thead><tbody>{{range .Tables}}<tr><td><code>{{.Name}}</code></td><td class="num">{{.Size}}</td></tr>{{end}}</tbody></table></div>{{end}}
+</div>{{end}}
+<div class="card"><div class="card-cab"><h2>Processo e disco</h2></div>
+<dl class="dados">{{range .Process}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
+{{if .Disks}}<div class="tabela"><table><thead><tr><th>Pasta</th><th class="num">Livre</th><th class="num">Total</th><th class="num">%</th></tr></thead>
+<tbody>{{range .Disks}}<tr><td>{{.Name}}<br><code class="muted">{{.Dir}}</code></td>{{if .Note}}<td colspan="3" class="muted">{{.Note}}</td>{{else}}<td class="num">{{.Free}}</td><td class="num">{{.Total}}</td><td class="num{{if .Level}} nivel-{{.Level}}{{end}}">{{.Pct}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma pasta de dados configurada (PATCHD_RELEASES_DIR, PATCHD_CONTENT_DIR, PATCHD_REPO_CACHE_DIR).</p>{{end}}
+</div>
+</div>
+{{end}}{{end}}
 {{if eq .Tab "bios"}}{{with .Fleet}}
 <div class="card" id="senha-padrao"><div class="card-cab"><h2>Senha padrão da BIOS</h2>{{if .On}}<span class="muted">chave de guarda <code>{{.KeyID}}</code></span>{{end}}</div>
 <p class="muted">A senha que as máquinas de um fabricante já têm antes da primeira troca pela guarda (posta à mão ou pelo <code>.bat</code>). Com ela aqui, a primeira troca de cada máquina usa esta senha como a atual, sem digitar máquina por máquina. Fica cifrada para a chave de guarda, não aparece de novo nesta tela e só sai do servidor cifrada para a máquina, no job de troca. Depois da troca, cada máquina passa a ter a própria senha.</p>
@@ -1480,7 +1509,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{range .Bands}}<rect class="g-alerta" x="{{.X}}" y="{{$.T}}" width="{{.W}}" height="{{$.PlotH}}"/>{{end}}
 {{range .Grid}}<line class="g-grade" x1="{{$.L}}" x2="{{$.R}}" y1="{{.Y}}" y2="{{.Y}}"/><text class="g-eixo" x="{{$.AxisX}}" y="{{.Y}}" dy="3" text-anchor="end">{{.Label}}</text>{{end}}
 {{range .XTicks}}<text class="g-eixo" x="{{.X}}" y="{{$.AxisY}}" text-anchor="{{.Anchor}}">{{.Label}}</text>{{end}}
-<line class="g-limite" x1="{{.L}}" x2="{{.R}}" y1="{{.LimitY}}" y2="{{.LimitY}}"/>
+{{if .LimitLabel}}<line class="g-limite" x1="{{.L}}" x2="{{.R}}" y1="{{.LimitY}}" y2="{{.LimitY}}"/>{{end}}
 {{range .Series}}{{$c := .Class}}{{range .Areas}}<polygon class="g-area {{$c}}" points="{{.}}"/>{{end}}{{range .Lines}}<polyline class="g-linha {{$c}}" points="{{.}}"/>{{end}}
 {{if .Lines}}<circle class="g-ponta {{.Class}}" cx="{{.EndX}}" cy="{{.EndY}}" r="4"/>{{if .EndLabel}}<text class="g-valor" x="{{.EndTextX}}" y="{{.EndY}}" dy="4">{{.End}}</text>{{end}}{{end}}{{end}}
 {{range .Zones}}<g class="g-zona"><rect class="g-alvo" x="{{.X}}" y="0" width="{{.W}}" height="{{$.B}}"/>
