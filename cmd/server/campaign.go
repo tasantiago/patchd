@@ -26,7 +26,7 @@ import (
 const campaignUsage = `uso: patchd-server campaign <comando> [opções]
 
 comandos:
-  create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update|reboot
+  create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update|reboot|sistema_todas|terceiros_todos
           [-sources fonte,fonte] [-app programa -version versão] [-kb KB5127648,...] [-delay 15m]
           -rings 0,1 [-observe 24h] [-ttl 24h | -window].
           O servidor libera o primeiro grupo de implantação no próximo minuto e cada grupo de implantação seguinte sozinho,
@@ -36,6 +36,12 @@ comandos:
   pause   pausa: -id N (os jobs já criados seguem; nenhum grupo de implantação novo é liberado)
   resume  retoma uma pausada: -id N (as falhas do grupo de implantação atual ficam aceitas)
   cancel  cancela: -id N (os jobs ainda pendentes da campanha são cancelados)
+
+sistema_todas: cada máquina recebe tudo o que está pendente nela e aprovado em Patch (Linux: um
+update com os pacotes, até 100; Windows: um windows_update com os KBs que a fonte da política
+mostra, até 20). macOS fica fora.
+terceiros_todos: cada programa com versão aprovada e instalador pronto vai para a versão aprovada
+mais nova, um job por programa, só onde já está instalado em versão antiga.
 
 update: -sources são pacotes fonte, como aparecem nas pendências do painel (bluez, curl).
 Cada máquina do grupo de implantação recebe os binários instalados dessas fontes que estiverem pendentes
@@ -197,7 +203,7 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 	switch args[0] {
 	case "create":
 		name := fs.String("name", "", "nome da campanha")
-		typ := fs.String("type", "", "rescan, update, thirdparty, windows_update ou reboot")
+		typ := fs.String("type", "", "rescan, update, thirdparty, windows_update, reboot, sistema_todas (todas as atualizações do sistema aprovadas) ou terceiros_todos (todos os programas aprovados)")
 		delay := fs.Duration("delay", 0, "reboot: aviso aos usuários antes do reinício (2m a 60m; padrão 15m)")
 		sources := fs.String("sources", "", "update: pacotes fonte, separados por vírgula")
 		kbList := fs.String("kb", "", "windows_update: KBs, separados por vírgula (KB5127648)")

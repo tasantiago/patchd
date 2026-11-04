@@ -73,3 +73,31 @@ func TestCampaigner(t *testing.T) {
 		t.Errorf("antiga: %+v %q %v", p, skip, err)
 	}
 }
+
+// A campanha de todos os programas aprovados leva a versão aprovada mais nova de cada programa
+// com "install" nas regras (a comparação é numérica: 26.10 vem depois de 26.9).
+func TestCampaignerAprovados(t *testing.T) {
+	ctx := context.Background()
+	m, _ := thirdparty.Default()
+	st := store.NewMemory()
+	for _, a := range []store.ThirdPartyApproval{
+		{AppID: "libreoffice", Version: "26.9.1"}, {AppID: "libreoffice", Version: "26.10.0"}, {AppID: "libreoffice", Version: "26.2"},
+		{AppID: "7zip", Version: "26.04"}, {AppID: "vcredist-2008", Version: "9.0"}, // sem "install": fora
+	} {
+		a.ApprovedBy = "ana"
+		if _, err := st.ApproveThirdParty(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := (Campaigner{Store: st, Manifest: m}).Approved(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, a := range list {
+		got[a.App] = a.Version
+	}
+	if got["libreoffice"] != "26.10.0" || got["7zip"] != "26.04" || len(got) != 2 {
+		t.Fatalf("aprovados: %+v", list)
+	}
+}

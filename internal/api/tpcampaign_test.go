@@ -101,3 +101,21 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 		t.Errorf("forjado: %d", r.Code)
 	}
 }
+
+// Com as regras de terceiros, o formulário oferece a campanha de todos os programas aprovados.
+func TestCampanhaTodosOsProgramasPeloPainel(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	m, _ := thirdparty.Default()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(&m))
+	if b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="terceiros_todos"`) {
+		t.Fatal("sem a opção de todos os programas")
+	}
+	f := formCampanha("tipo", "terceiros_todos", "nome", "programas")
+	f.Set("confirmar", "1")
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); r.Code != http.StatusSeeOther {
+		t.Fatalf("criar: %d\n%s", r.Code, r.Body.String())
+	}
+	if c, _, _ := st.Campaign(context.Background(), 1); c.Type != "terceiros_todos" || c.App != "" {
+		t.Errorf("campanha: %+v", c)
+	}
+}

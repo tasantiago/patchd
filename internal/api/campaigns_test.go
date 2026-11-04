@@ -269,3 +269,31 @@ func TestCampanhaDeReinicioPeloPainel(t *testing.T) {
 		t.Error("detalhe")
 	}
 }
+
+// As campanhas de "tudo" pelo painel: todas as atualizações do sistema (sempre) e todos os
+// programas aprovados (só com as regras de terceiros).
+func TestCampanhasDeTudoPeloPainel(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `value="sistema_todas"`) || strings.Contains(b, `value="terceiros_todos"`) {
+		t.Fatal("o formulário: sistema sempre; terceiros só com as regras")
+	}
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "terceiros_todos")); r.Code != http.StatusUnprocessableEntity {
+		t.Errorf("terceiros sem regras: %d", r.Code)
+	}
+	f := formCampanha("tipo", "sistema_todas", "nome", "tudo de novembro", "fontes", "curl")
+	f.Set("confirmar", "1")
+	r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
+	if r.Code != http.StatusSeeOther {
+		t.Fatalf("criar: %d\n%s", r.Code, r.Body.String())
+	}
+	c, _, _ := st.Campaign(context.Background(), 1)
+	if c.Type != "sistema_todas" || len(c.Sources) != 0 || c.Name != "tudo de novembro" {
+		t.Errorf("campanha: %+v", c)
+	}
+	b = pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "todas as atualizações do sistema aprovadas em Patch") {
+		t.Errorf("a lista não mostra o alvo:\n%.3000s", b)
+	}
+}

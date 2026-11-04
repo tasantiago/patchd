@@ -243,8 +243,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	switch {
 	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && f.Type != jobs.TypeWinUpdate && f.Type != jobs.TypeReboot &&
-		(f.Type != jobs.TypeThirdParty || a.tpManifest == nil):
-		return c, f, "Escolha o tipo: buscar atualizações, atualizar pacotes, instalar atualizações do Windows, reiniciar ou instalar programa de terceiros."
+		f.Type != campaign.TypeOSAll && ((f.Type != jobs.TypeThirdParty && f.Type != campaign.TypeThirdPartyAll) || a.tpManifest == nil):
+		return c, f, "Escolha o tipo: todas as atualizações do sistema, todos os programas aprovados, buscar atualizações, atualizar pacotes, instalar atualizações do Windows, reiniciar ou instalar programa de terceiros."
 	case f.Type == jobs.TypeReboot && !containsInt(rebootDelays, f.Delay):
 		return c, f, "Escolha o aviso do reinício da lista."
 	case len(f.Chosen) == 0:

@@ -159,6 +159,14 @@ span.nivel-critico{color:var(--st-erro)}span.nivel-ok{color:#0a7d0a}
 .medidor{display:block;height:8px;border-radius:4px;background:var(--grade);margin:.45rem 0 .4rem;overflow:hidden}
 .medidor-p{display:block;height:100%;border-radius:4px;background:var(--st-ok)}.med-atencao{background:var(--st-reinicio)}.med-critico{background:var(--st-erro)}
 @media (max-width:700px){.rec{grid-template-columns:1fr;gap:.4rem}.rec-tag{justify-self:start}}
+/* Formulário empilhado (Scripts): rótulo em cima, campo na largura do bloco, dica embaixo. */
+form.formulario{display:flex;flex-direction:column;gap:1rem}
+form.formulario .campo{display:flex;flex-direction:column;gap:.3rem;max-width:46rem}
+form.formulario .campo>label{font-weight:600;font-size:.88rem}
+form.formulario .campo input:not([type=checkbox]):not([type=radio]),form.formulario .campo select{width:100%}
+form.formulario .campo .muted{font-size:.82rem}
+form.formulario>button{align-self:flex-start}
+form.formulario>p{margin:0}
 /* Ligar agora (docs/wake-on-lan.md, Aula 22.2). */
 #ligar form{margin:0 0 1rem}td.nivel-ok{color:#0a7d0a}
 `

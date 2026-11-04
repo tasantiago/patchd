@@ -1412,6 +1412,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
 <div class="campo"><label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro"></div>
 <fieldset class="campo tipos"><legend>Tipo</legend>
+<label class="opcao"><input type="radio" name="tipo" value="sistema_todas" {{if eq .Form.Type "sistema_todas"}}checked{{end}}><span><b>Todas as atualizações do sistema</b><small>cada máquina recebe tudo o que está pendente nela e aprovado em Patch: pacotes no Linux, KBs no Windows (nunca reinicia)</small></span></label>
+{{if .Form.TPOn}}<label class="opcao"><input type="radio" name="tipo" value="terceiros_todos" {{if eq .Form.Type "terceiros_todos"}}checked{{end}}><span><b>Todos os programas de terceiros aprovados (Windows)</b><small>cada programa vai para a versão aprovada mais nova, só onde já está instalado</small></span></label>{{end}}
 <label class="opcao"><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}><span><b>Buscar atualizações</b><small>a máquina faz a busca agora; nada é instalado</small></span></label>
 <label class="opcao"><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}><span><b>Atualizar pacotes (Linux)</b><small>apt ou dnf, só os pacotes fonte indicados</small></span></label>
 <label class="opcao"><input type="radio" name="tipo" value="windows_update" {{if eq .Form.Type "windows_update"}}checked{{end}}><span><b>Instalar atualizações do Windows</b><small>os KBs indicados, pelo WSUS; nunca reinicia</small></span></label>
@@ -1590,7 +1592,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 
 <div class="card"><div class="card-cab"><h2>Novo pacote de script</h2><span class="muted">ZIP com arquivos auxiliares ou script avulso</span></div>
 <p class="muted">Envie um ZIP de até {{.MaxMiB}} MiB ou um script de até 16 MiB. Windows: PowerShell, Batch e VBScript; Linux/macOS: Bash. O Run começa na raiz do pacote e pode acessar os arquivos por caminho relativo.</p>
-<form method="post" action="/painel/scripts" enctype="multipart/form-data">
+<form class="formulario" method="post" action="/painel/scripts" enctype="multipart/form-data">
 <div class="campo"><label for="script-nome">Nome do pacote</label><input id="script-nome" type="text" name="nome" maxlength="64" placeholder="opcional; usa o nome do arquivo"></div>
 <div class="campo"><label for="script-nota">Descrição</label><input id="script-nota" type="text" name="nota" maxlength="200"></div>
 <div class="campo"><label for="script-arquivo">Arquivo</label><input id="script-arquivo" type="file" name="arquivo" accept=".zip,.ps1,.bat,.cmd,.vbs,.sh" required></div>
@@ -1612,7 +1614,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{else}}<p class="muted">Nenhum pacote ainda. Envie um ZIP ou script acima.</p>{{end}}</div>
 
 {{with .Chosen}}{{$chosen := .}}<div class="card" id="executar"><div class="card-cab"><h2>Executar: {{.Name}}</h2><span class="muted">{{.OSLabel}} · {{.Files}} arquivo(s)</span></div>
-<form method="post" action="/painel/scripts/{{.ID}}/executar">
+<form class="formulario" method="post" action="/painel/scripts/{{.ID}}/executar">
 <div class="campo"><label for="entrada">Run</label>
 <select id="entrada" name="entrada" required><option value="">Escolha o arquivo de entrada</option>{{range .Entries}}<option value="{{.}}"{{if eq . $chosen.Entry}} selected{{end}}>{{.}}</option>{{end}}</select>
 <span class="muted">o arquivo do ZIP por onde a execução começa; ele chama os outros</span></div>

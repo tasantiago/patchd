@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
@@ -67,6 +68,10 @@ func typeLabel(t string) string {
 		return "alterar configurações da BIOS"
 	case jobs.TypeWakeOnLAN:
 		return "ligar outra máquina pela rede"
+	case campaign.TypeOSAll: // tipos de campanha, não de job
+		return "todas as atualizações do sistema"
+	case campaign.TypeThirdPartyAll:
+		return "todos os programas de terceiros aprovados"
 	}
 	return t
 }

@@ -104,3 +104,22 @@ func ParamsFromPending(items []protocol.PendingItem, sources []string) UpdatePar
 	}
 	return p
 }
+
+// ParamsFromPendingAll: os pacotes de todas as pendências (a campanha de todas as atualizações
+// do sistema), na ordem das pendências (as exploradas primeiro).
+func ParamsFromPendingAll(items []protocol.PendingItem) UpdateParams {
+	var p UpdateParams
+	seen := map[string]bool{}
+	for _, it := range items {
+		if it.FixedIn == "" {
+			continue
+		}
+		for _, bin := range it.Packages {
+			if !seen[bin] {
+				seen[bin] = true
+				p.Packages = append(p.Packages, Package{Name: bin, MinVersion: it.FixedIn})
+			}
+		}
+	}
+	return p
+}

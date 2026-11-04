@@ -230,3 +230,17 @@ func PolicyWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdatePara
 	p, _, _ := WinUpdatesForKBs(rep, use)
 	return p, ""
 }
+
+// KBsInPendingAll: os KBs de todas as pendências (a campanha de todas as atualizações do
+// sistema), sem repetir, na ordem das pendências (as exploradas primeiro).
+func KBsInPendingAll(items []protocol.PendingItem) []string {
+	var out []string
+	for _, it := range items {
+		for _, m := range kbInFixedIn.FindAllStringSubmatch(it.FixedIn, -1) {
+			if !slices.Contains(out, m[1]) {
+				out = append(out, m[1])
+			}
+		}
+	}
+	return out
+}

@@ -269,6 +269,22 @@ painel; num navegador sem `:has()`, todos os campos aparecem, como antes. O serv
 os campos que não valem para o tipo, então nada muda na conferência. `?tipo=reboot` abre
 com o reinício escolhido.
 
+### Campanhas de "tudo"
+
+- **Todas as atualizações do sistema** (`sistema_todas`): cada máquina do grupo de implantação
+  recebe, no próximo check-in (ou na janela), tudo o que está pendente nela **e aprovado em
+  Patch**. Linux: um job de atualizar pacotes com os pacotes (até 100, as exploradas primeiro);
+  Windows: um job de atualizações do Windows com os KBs que a fonte da política mostra (até 20;
+  nunca reinicia). O macOS fica fora ("sem instalação pelo patchd"). Para liberar tudo de uma
+  vez, aprove em lote em Patch antes.
+- **Todos os programas de terceiros aprovados** (`terceiros_todos`, com as regras de
+  terceiros): cada programa vai para a versão aprovada mais nova, **só onde já está
+  instalado** em versão antiga; um job por programa. Programa aprovado sem instalador pronto
+  fica fora, nas notas da campanha ("vscode 1.141.0 não pronto"). Um adiado tenta de novo só
+  aquele programa.
+- As duas seguem os grupos de implantação em ordem, com observação, prazo ou janela, como as
+  outras. Linha de comando: `campaign create -type sistema_todas` ou `-type terceiros_todos`.
+
 ## Autoatendimento: o canal local no Windows (Aula 17.3)
 
 O agente do Windows atende o app do usuário por um named pipe, `\\.\pipe\patchd-autoatendimento`,

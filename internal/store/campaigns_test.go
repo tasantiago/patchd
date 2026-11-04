@@ -97,6 +97,20 @@ func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	if l, _ := st.CampaignJobs(ctx, id, 0); len(l) != 0 {
 		t.Error("grupo de implantação sem jobs")
 	}
+	// O job de terceiros traz o programa (o slot): na campanha de todos os programas, uma
+	// máquina tem um job por programa.
+	tpj, _ := st.NextJobID(ctx)
+	if err := st.CreateJob(ctx, NewJob{ID: tpj, MachineID: "camp-a", Type: "thirdparty", CreatedBy: "t", NotAfter: agora.Add(time.Hour),
+		Signed:     protocol.SignedJob{Payload: `{"id":1,"type":"thirdparty","params":{"app":"7zip","version":"26.04"}}`, Signature: "s"},
+		CampaignID: id, CampaignIdx: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := st.CampaignJobs(ctx, id, 3); len(l) != 1 || l[0].Slot != "7zip" {
+		t.Errorf("slot do programa: %+v", l)
+	}
+	if l, _ := st.CampaignJobs(ctx, id, 1); l[0].Slot != "" {
+		t.Errorf("rescan sem slot: %+v", l[0])
+	}
 	// Aula 14.9: o adiado (aceito pela restrição da 0030) traz quando encerrou e pode ser
 	// dispensado; só o adiado.
 	l, _ := st.CampaignJobs(ctx, id, 1)
