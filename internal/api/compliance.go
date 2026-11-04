@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -83,4 +84,20 @@ func (a *api) machineCompliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cs)
+}
+
+// evalRefresh: de quanto em quanto a página se recarrega enquanto há máquinas em avaliação.
+const evalRefresh = 15
+
+// evaluatingNotice avisa, na página, que parte do parque ainda não tem avaliação (o servidor
+// está calculando: depois de reiniciar, ou máquinas novas) e recarrega a página até terminar.
+// As que estão com a avaliação anterior só são mencionadas: os números já valem.
+func evaluatingNotice(b *pageBase, f protocol.ComplianceFleet) {
+	switch {
+	case f.Evaluating > 0:
+		b.Evaluating = fmt.Sprintf("%d máquina(s) ainda em avaliação: o servidor está calculando e esta página se atualiza sozinha. Até lá, elas contam como desconhecido.", f.Evaluating)
+		b.Refresh = evalRefresh
+	case f.Refreshing > 0:
+		b.Evaluating = fmt.Sprintf("O catálogo mudou: %d máquina(s) aparecem com a avaliação anterior enquanto o servidor refaz a de agora, em segundo plano.", f.Refreshing)
+	}
 }

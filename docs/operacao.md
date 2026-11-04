@@ -178,6 +178,17 @@ partida, avalia o parque todo (com 300 máquinas, menos de meio segundo; avalia�
 máquina acima de 1 s vai para o log como lenta). O último contato e o reinício pendente valem
 na hora, sem esperar o cache.
 
+A página refaz na hora no máximo 50 avaliações (inventários novos, uma busca que chegou). Quando
+são muitas de uma vez (o catálogo sincronizou, o prazo venceu para o parque inteiro, o servidor
+acabou de subir), ela **não espera**: mostra a avaliação anterior, com o aviso "O catálogo
+mudou: N máquina(s) aparecem com a avaliação anterior…", e acorda o laço, que refaz em segundo
+plano. A máquina que ainda não tem avaliação nenhuma conta como desconhecido, com o motivo "em
+avaliação"; o aviso no topo diz quantas são e a página se recarrega a cada 15 segundos até
+terminar. Antes disso, uma Visão geral aberta nessa hora esperava o parque inteiro e, passados
+45 segundos, dava erro interno. Uma falha interna numa tela do painel mostra a página "Algo deu
+errado" com o **código do pedido**: é o `request_id` da linha `falha interna` no log, que diz
+o que falhou (`op`) e por quê (`error`).
+
 **Configuração › Saúde** (só admin) mostra se o servidor precisa de mais CPU, memória, conexões
 do banco ou disco, com o porquê e o que fazer (desenho e regras em `docs/saude-servidor.md`).
 Não depende do Prometheus. No compose, os limites que a tela cita ficam no serviço `server`

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -88,5 +90,79 @@ func TestCacheDasAvaliacoes(t *testing.T) {
 	fleet()
 	if _, ok := s.cache.entries["m3"]; ok {
 		t.Error("a aposentada ficou no cache")
+	}
+}
+
+// Muitas vencidas de uma vez (o catálogo sincronizou): a página mostra a avaliação anterior na
+// hora e acorda o Warm, que refaz. Com o preenchimento ocupado, a máquina sem avaliação nenhuma
+// aparece "em avaliação" em vez de a página esperar o prazo e dar erro.
+func TestPaginaNaoPagaOParqueInteiro(t *testing.T) {
+	maxAntes, esperaAntes := syncRefreshMax, fillWait
+	syncRefreshMax, fillWait = 1, 50*time.Millisecond
+	t.Cleanup(func() { syncRefreshMax, fillWait = maxAntes, esperaAntes })
+
+	agora := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	inv := protocol.InventoryReport{SchemaVersion: 1, CollectedAt: agora, OS: protocol.OSInfo{ID: "ubuntu", Name: "Ubuntu", Version: "26.04"}}
+	b := &contaLeituras{bancoFrota: &bancoFrota{bancoComplianceFalso: &bancoComplianceFalso{
+		inv: map[string]protocol.InventoryReport{"m1": inv, "m2": inv, "m3": inv, "m4": inv}, situacao: map[string]store.CatalogSourceStatus{}}}}
+	for _, id := range []string{"m1", "m2", "m3"} {
+		b.maquinas = append(b.maquinas, protocol.MachineSummary{ID: id, LastSeenAt: agora, InventoryHash: "h-" + id})
+	}
+	s := newComplianceService(b, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.now = func() time.Time { return agora }
+	ctx := context.Background()
+	// Servidor que acabou de subir: o cache vazio não vira 3 avaliações dentro da página.
+	if f, err := s.Fleet(ctx); err != nil || f.Evaluating != 3 || b.leituras.Load() != 0 {
+		t.Fatalf("cache vazio: err=%v %+v leituras=%d", err, f, b.leituras.Load())
+	}
+	<-s.kick
+	if _, err := s.fleet(ctx, modeWarm); err != nil {
+		t.Fatal(err)
+	}
+	b.leituras.Store(0)
+
+	b.situacao["ubuntu"] = store.CatalogSourceStatus{Source: "ubuntu", Runs: 1}
+	f, err := s.Fleet(ctx)
+	if err != nil || b.leituras.Swap(0) != 0 || f.Refreshing != 3 || f.Counts["desconhecido"] != 0 {
+		t.Fatalf("vencidas: err=%v refreshing=%d counts=%v", err, f.Refreshing, f.Counts)
+	}
+	select {
+	case <-s.kick:
+	default:
+		t.Error("o Warm não foi acordado")
+	}
+	// O Warm refaz as três; depois a página acha tudo em dia.
+	if _, err := s.fleet(ctx, modeWarm); err != nil || b.leituras.Swap(0) != 3 {
+		t.Fatalf("warm: %v", err)
+	}
+	if f, _ := s.Fleet(ctx); f.Refreshing != 0 || f.Evaluating != 0 {
+		t.Errorf("depois do warm: %+v", f)
+	}
+
+	// Preenchimento ocupado (o Warm rodando) e uma máquina nova: a página não espera.
+	s.fill <- struct{}{}
+	b.maquinas = append(b.maquinas, protocol.MachineSummary{ID: "m4", LastSeenAt: agora, InventoryHash: "h-m4"})
+	inicio := time.Now()
+	f, err = s.Fleet(ctx)
+	if err != nil || f.Evaluating != 1 || time.Since(inicio) > time.Second {
+		t.Fatalf("ocupado: err=%v evaluating=%d em %v", err, f.Evaluating, time.Since(inicio))
+	}
+	for _, m := range f.Machines {
+		if m.MachineID == "m4" && (m.State != "desconhecido" || !strings.Contains(strings.Join(m.Reasons, " "), "em avaliação")) {
+			t.Errorf("m4: %+v", m)
+		}
+	}
+	<-s.fill
+	if f, _ := s.Fleet(ctx); f.Evaluating != 0 || b.leituras.Load() != 1 {
+		t.Errorf("livre de novo: %+v leituras=%d", f, b.leituras.Load())
+	}
+
+	// O prazo da página esgotado não vira erro (era o 500 da Visão geral).
+	b.maquinas = append(b.maquinas, protocol.MachineSummary{ID: "m5", LastSeenAt: agora, InventoryHash: "h-m5"})
+	dctx, cancel := context.WithTimeout(ctx, time.Nanosecond)
+	defer cancel()
+	time.Sleep(time.Millisecond)
+	if _, err := s.Fleet(dctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("prazo: %v", err)
 	}
 }
