@@ -1482,11 +1482,18 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
 <span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
-{{range .Rings}}<section><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2>
+{{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
-{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th><th>Estado</th><th>Detalhe</th></tr></thead>
-<tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
-<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>{{end}}</section>{{end}}
+{{if .Counts}}<ul class="chips camp-estados" aria-label="jobs por estado">{{range .Counts}}<li><a class="chip{{if .Active}} ativo{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}}><span class="job {{.State}}">{{.Label}}</span> <b>{{.N}}</b></a></li>{{end}}</ul>{{end}}
+{{if .Selected}}{{if .Total}}<form class="busca" method="get" action="/painel/campanhas/{{.CampaignID}}#grupo-{{.Idx}}"><input type="hidden" name="grupo" value="{{.Idx}}">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}
+{{if .Slots}}<select name="programa" aria-label="programa"><option value="">Todos os programas</option>{{range .Slots}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Máquina: nome ou começo do ID" aria-label="buscar máquina">
+<button type="submit">Filtrar</button>{{if or .Q .Filter .Slot}} <a href="{{.Href}}">Limpar</a>{{end}}</form>{{end}}
+{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th>{{if .HasSlot}}<th>Programa</th>{{end}}<th>Estado</th><th>Detalhe</th></tr></thead>
+<tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{if $rv.HasSlot}}<td>{{.Slot}}</td>{{end}}
+<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else if .Total}}<p class="muted">Nenhum job com esse filtro.</p>{{end}}{{end}}</div>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "campanha-nao-encontrada"}}{{template "topo" .}}
