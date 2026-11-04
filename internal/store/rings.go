@@ -38,13 +38,13 @@ func validRing(r int) error {
 	return nil
 }
 
-// SetMachineRing põe a máquina (da frota) no grupo de implantação. Devolve false se ela não existe ou
-// está aposentada.
+// SetMachineRing põe a máquina (da frota) no grupo de implantação, à mão: ela passa a ser
+// exceção ao vínculo do prédio (BuildingRing). Devolve false se ela não existe ou está aposentada.
 func (p *Postgres) SetMachineRing(ctx context.Context, id string, ring int) (bool, error) {
 	if err := validRing(ring); err != nil {
 		return false, err
 	}
-	tag, err := p.pool.Exec(ctx, `UPDATE machines SET ring = $2 WHERE id = $1 AND retired_at IS NULL`, id, ring)
+	tag, err := p.pool.Exec(ctx, `UPDATE machines SET ring = $2, ring_manual = true WHERE id = $1 AND retired_at IS NULL`, id, ring)
 	return tag.RowsAffected() == 1, err
 }
 
@@ -139,7 +139,7 @@ func (m *Memory) SetMachineRing(ctx context.Context, id string, ring int) (bool,
 	if mm == nil || !mm.retiredAt.IsZero() {
 		return false, nil
 	}
-	mm.ring = ring
+	mm.ring, mm.ringManual = ring, true
 	return true, nil
 }
 

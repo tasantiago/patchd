@@ -162,6 +162,11 @@ func (a *api) importAssetsAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	a.assetsChanged()
+	// O prédio das máquinas pode ter mudado: os vínculos de prédio valem de novo.
+	moved, err := a.applyBuildingRings(r.Context())
+	if err != nil {
+		a.logger.Error("grupo de implantação pelo prédio depois da importação", "error", err)
+	}
 	linked := 0
 	if assets, err := a.assetMap(r.Context()); err == nil {
 		if rows, err := a.store.InventoryList(r.Context()); err == nil {
@@ -175,10 +180,16 @@ func (a *api) importAssetsAction(w http.ResponseWriter, r *http.Request, s panel
 		}
 	}
 	detail := fmt.Sprintf("%d bens · %d linhas sem tombo · %d repetidos · %d máquinas ligadas", len(list), res.Skipped, res.Duplicates, linked)
+	if moved > 0 {
+		detail += fmt.Sprintf(" · %d mudaram de grupo pelo prédio", moved)
+	}
 	a.audit(r, s, "patrimonio.importar", name, detail)
 	a.logger.Info("patrimônio importado", "file", name, "assets", len(list), "skipped", res.Skipped, "duplicates", res.Duplicates,
 		"linked", linked, "converted_cp1252", res.Converted, "username", s.Username, "request_id", RequestID(r.Context()))
 	q := url.Values{"importado": {strconv.Itoa(len(list))}, "ligadas": {strconv.Itoa(linked)}}
+	if moved > 0 {
+		q.Set("grupo", strconv.Itoa(moved))
+	}
 	if res.Skipped > 0 {
 		var lines []string
 		for _, l := range res.SkippedAt {
@@ -201,6 +212,9 @@ func assetsFlash(q url.Values, v *pageBase) {
 	case q.Has("importado"):
 		v.Flash = fmt.Sprintf("Patrimônio importado: %d bens, %d máquina(s) do inventário ligadas pelo tombo. A localização anterior foi substituída.",
 			num("importado"), num("ligadas"))
+		if n := num("grupo"); n > 0 {
+			v.Flash += fmt.Sprintf(" %d máquina(s) mudaram de grupo de implantação pelo vínculo do prédio.", n)
+		}
 		if n := num("ignoradas"); n > 0 {
 			var lines []string
 			for _, p := range strings.Split(q.Get("linhas"), ",") {

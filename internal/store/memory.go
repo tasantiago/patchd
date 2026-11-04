@@ -33,7 +33,8 @@ type Memory struct {
 	jobs   []*memJob // fila de jobs (Aula 8.1)
 	jobSeq int64
 
-	windows map[int]RingWindow // janelas de manutenção por grupo de implantação (Aula 8.3)
+	windows       map[int]RingWindow      // janelas de manutenção por grupo de implantação (Aula 8.3)
+	buildingRings map[string]BuildingRing // grupo de implantação pelo prédio
 
 	campaigns   []campaign.Campaign // campanhas (Aula 8.5)
 	campaignSeq int64
@@ -90,6 +91,7 @@ type memMachine struct {
 	retiredReason      string
 	retiredBy          string
 	ring               int                    // Aula 8.3; 1 na criação, como o DEFAULT da coluna
+	ringManual         bool                   // movida à mão: exceção ao vínculo do prédio
 	checkinTLS         *bool                  // Aula 9.2; nil até o primeiro check-in
 	state              *protocol.MachineState // Aula 12.1; só o último
 	stateAt            time.Time

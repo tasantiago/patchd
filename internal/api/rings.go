@@ -56,6 +56,10 @@ type ringsView struct {
 	Days      []struct{ Value, Label string }
 	Durations []durationOption
 	Timezone  string
+	// Grupo de implantação por prédio (buildingrings.go).
+	HasAssets    bool
+	Buildings    []buildingRingRow
+	BuildingOpts []buildingOption
 }
 
 func ringLabel(r int) string {
@@ -108,6 +112,10 @@ func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
 		count[m.Ring]++
 	}
 	v.Total = len(machines)
+	if err := a.buildingRings(r.Context(), &v, machines); err != nil {
+		a.internalError(w, r, "listar os vínculos de prédio", err)
+		return
+	}
 	now := a.now()
 	for ring := 0; ring <= store.MaxRing; ring++ {
 		rw, has := store.WindowFor(windows, ring)
@@ -134,7 +142,20 @@ func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
 // convertido, nunca repetido como texto).
 func ringsFlash(q url.Values, b *pageBase) {
 	n, _ := strconv.Atoi(q.Get("anel"))
+	moved, _ := strconv.Atoi(q.Get("movidas"))
+	moved = max(moved, 0)
 	switch {
+	case q.Has("vinculo"):
+		b.Flash = fmt.Sprintf("Prédio ligado ao grupo de implantação %d: %d máquina(s) mudaram de grupo. As movidas à mão ficaram onde estão; as novas do prédio entram no grupo no primeiro inventário.", n, moved)
+	case q.Has("vinculo-removido"):
+		b.Flash = "Vínculo removido. As máquinas do prédio ficaram no grupo em que estavam."
+	case q.Has("devolvidas"):
+		d, _ := strconv.Atoi(q.Get("devolvidas"))
+		b.Flash = fmt.Sprintf("%d exceção(ões) devolvida(s) ao vínculo; %d máquina(s) mudaram de grupo.", max(d, 0), moved)
+	case q.Get("erro") == "predio":
+		b.Error = "Escolha um prédio do patrimônio atual (Configuração › Patrimônio)."
+	case q.Get("erro") == "sem-vinculo":
+		b.Error = "Esse prédio não tinha vínculo; nada mudou."
 	case q.Has("janela"):
 		b.Flash = fmt.Sprintf("Janela do grupo de implantação %d gravada. Vale para os jobs criados daqui em diante; os já criados mantêm a janela deles.", n)
 	case q.Has("removida"):

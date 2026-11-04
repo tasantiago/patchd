@@ -1555,12 +1555,26 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "aneis"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Grupos de implantação e janelas</span></h1>
 {{template "automacao-abas" "aneis"}}
-<p class="muted">Grupo de implantação 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos grupos em ordem. A janela de manutenção de um grupo de implantação é quando os jobs "na janela" daquele grupo podem rodar. Para pôr máquinas num grupo de implantação, marque-as na <a href="/painel/parque">Parque</a>, use o detalhe da máquina ou filtre o <a href="/painel/inventario">Inventário</a> por faixa de IP ou prédio e mova todas as encontradas de uma vez.</p>
+<p class="muted">Grupo de implantação 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos grupos em ordem. A janela de manutenção de um grupo de implantação é quando os jobs "na janela" daquele grupo podem rodar. Para pôr máquinas num grupo de implantação, marque-as na <a href="/painel/parque">Parque</a>, use o detalhe da máquina, filtre o <a href="/painel/inventario">Inventário</a> por faixa de IP ou prédio e mova todas as encontradas de uma vez, ou ligue um prédio a um grupo (abaixo) para que as máquinas dele, inclusive as novas, entrem sozinhas.</p>
 <div class="card"><div class="card-cab"><h2>Grupos de implantação em uso</h2><span class="muted">{{.Total}} máquina(s) no parque</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Grupo de implantação</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
 {{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/grupos-implantacao/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma máquina e nenhuma janela ainda.</p>{{end}}</div>
+<div class="card" id="predios"><div class="card-cab"><h2>Grupo de implantação por prédio</h2><span class="muted">do patrimônio (Configuração › Patrimônio)</span></div>
+<p class="muted">As máquinas de um prédio vão para o grupo ligado a ele: ao gravar o vínculo, a cada importação do patrimônio e no primeiro inventário de uma máquina nova (ou renomeada). Quem foi movido à mão fica como exceção, no grupo em que está, até ser devolvido ao vínculo. Remover o vínculo não move ninguém.</p>
+{{if .Buildings}}<div class="tabela"><table>
+<thead><tr><th>Prédio</th><th>Grupo de implantação</th><th>Máquinas no prédio</th><th>No grupo</th><th>Movidas à mão</th><th>Definido por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Buildings}}<tr><td>{{.Building}}{{if .Missing}} <span class="muted">fora do patrimônio atual</span>{{end}}</td><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td class="num">{{.InRing}}</td><td class="num">{{.Pinned}}</td><td>{{.By}} · {{.Updated}}</td>
+{{if $.Admin}}<td>{{if .Pinned}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/excecoes"><input type="hidden" name="predio" value="{{.Building}}"><button class="sec" type="submit">Devolver as {{.Pinned}} ao grupo {{.Ring}}</button></form> {{end}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/remover"><input type="hidden" name="predio" value="{{.Building}}"><button class="perigo" type="submit">Remover vínculo</button></form></td>{{end}}</tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum prédio ligado a grupo de implantação.</p>{{end}}
+{{if .Admin}}{{if .BuildingOpts}}<form class="grade" method="post" action="/painel/grupos-implantacao/predio">
+<label for="predio">Prédio</label><select id="predio" name="predio" required>{{range .BuildingOpts}}<option value="{{.Name}}">{{.Name}} · {{.Machines}} máquina(s){{if ge .Ring 0}} · hoje no grupo {{.Ring}}{{end}}</option>{{end}}</select>
+<label for="anel-predio">Grupo de implantação</label><select id="anel-predio" name="anel">{{range .Rings}}<option value="{{.}}" {{if eq . 1}}selected{{end}}>{{.}}</option>{{end}}</select>
+<span></span><label><input type="checkbox" name="excecoes" value="1"> Incluir as máquinas do prédio movidas à mão (deixam de ser exceção)</label>
+<span></span><span><button type="submit">Ligar prédio ao grupo</button></span>
+</form>{{else if not .HasAssets}}<p class="muted">Importe o CSV do patrimônio em <a href="/painel/configuracao?aba=patrimonio">Configuração › Patrimônio</a> para ligar prédios a grupos.</p>{{end}}{{end}}
+</div>
 {{if .Admin}}<section><h2>Definir a janela de um grupo de implantação</h2>
 <p class="muted">Grava ou troca a janela. Uma janela que passa da meia-noite pertence ao dia em que começa (sex 22:00 por 6 h termina sábado às 04:00). Os jobs já criados mantêm a janela que levam assinada.</p>
 <form class="grade" method="post" action="/painel/grupos-implantacao/janela">
