@@ -198,7 +198,7 @@ func jobFlash(q map[string][]string, b *pageBase) {
 	case get("erro") == "cancelar" && n > 0:
 		b.Error = fmt.Sprintf("O job %d não está mais pendente; nada mudou. Um job entregue não se cancela: o agente pode estar executando.", n)
 	case get("criado") != "" && n > 0:
-		b.Flash = fmt.Sprintf("Job %d criado: a máquina recebe no próximo check-in (até cerca de 1 h; reiniciar o agente antecipa).", n)
+		b.Flash = fmt.Sprintf("Job %d criado: a máquina recebe no próximo check-in (até %s; reiniciar o agente antecipa).", n, b.CheckinWait)
 	case get("cancelado") != "" && n > 0:
 		b.Flash = fmt.Sprintf("Job %d cancelado.", n)
 	}

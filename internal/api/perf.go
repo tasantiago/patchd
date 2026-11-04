@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -31,6 +32,32 @@ func (a *api) monitorPolicy() protocol.MonitorPolicy {
 		return protocol.DefaultMonitorPolicy
 	}
 	return p
+}
+
+// checkinMinutes: o intervalo de check-in de Configuração › Parâmetros › Agentes; 0 (o
+// padrão, ou valor fora dos limites): cada agente usa o seu.
+func (a *api) checkinMinutes() int {
+	if a.params == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(a.params.Value("PATCHD_CHECKIN_MINUTES"))
+	if err != nil || !protocol.ValidCheckinMinutes(n) {
+		return 0
+	}
+	return n
+}
+
+// checkinWait: a espera máxima por um check-in, em palavras ("cerca de 15 min"). Sem o
+// parâmetro, o padrão dos agentes (1 hora).
+func (a *api) checkinWait() string {
+	switch n := a.checkinMinutes(); {
+	case n == 0 || n == 60:
+		return "cerca de 1 h"
+	case n%60 == 0:
+		return fmt.Sprintf("cerca de %d h", n/60)
+	default:
+		return fmt.Sprintf("cerca de %d min", n)
+	}
 }
 
 // savePerf grava as amostras. Como o estado da máquina, é dado de conveniência: um lote fora

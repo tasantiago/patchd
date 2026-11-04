@@ -90,6 +90,8 @@ type Agent struct {
 	ws        *watchState
 	// wakeReason: o motivo do check-in antecipado (vai no check-in, para o log do servidor).
 	wakeReason atomic.Value
+	// serverEvery: o intervalo de check-in mandado pelo servidor, em minutos; 0: Interval.
+	serverEvery atomic.Int64
 
 	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
 	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
@@ -187,9 +189,12 @@ func (a *Agent) waitTurn(ctx context.Context, d time.Duration) (woke bool, err e
 // Run executa o laço até o contexto acabar. Encerramento pedido não é erro.
 func (a *Agent) Run(ctx context.Context) error {
 	a.defaults()
-	wait := initialDelay(a.rand, a.Interval)
+	if st, err := loadState(a.DataDir); err == nil && protocol.ValidCheckinMinutes(st.ServerCheckinMinutes) {
+		a.serverEvery.Store(int64(st.ServerCheckinMinutes))
+	}
+	wait := initialDelay(a.rand, a.every())
 	a.Logger.Info("laço de check-in iniciado", "first_checkin_in", wait.Round(time.Second).String(),
-		"interval", a.Interval.String(), "scan_every", a.ScanEvery.String())
+		"interval", a.every().String(), "scan_every", a.ScanEvery.String())
 
 	if a.Watch != nil {
 		go a.watchLoop(ctx)
@@ -219,13 +224,46 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if out == outcomeTransient {
 			failures++
-			wait = backoff(a.rand, failures, a.Interval)
+			wait = backoff(a.rand, failures, a.every())
 		} else {
 			failures = 0
-			wait = nextCheckin(a.rand, a.Interval)
+			wait = nextCheckin(a.rand, a.every())
 		}
 		a.Logger.Debug("próximo check-in agendado", "in", wait.Round(time.Second).String(), "consecutive_failures", failures)
 	}
+}
+
+// every é o intervalo de check-in que vale: o do servidor, se ele mandou, ou o do agente.
+func (a *Agent) every() time.Duration {
+	if m := a.serverEvery.Load(); m > 0 {
+		return time.Duration(m) * time.Minute
+	}
+	return a.Interval
+}
+
+// applyServerInterval adota o intervalo mandado no check-in (0 ou fora dos limites: volta ao
+// do agente). Devolve true se mudou (o estado precisa ser gravado).
+func (a *Agent) applyServerInterval(minutes int, state *State) bool {
+	if !protocol.ValidCheckinMinutes(minutes) {
+		if minutes != 0 {
+			a.Logger.Warn("intervalo de check-in do servidor fora dos limites; vale o do agente", "minutos", minutes)
+		}
+		minutes = 0
+	}
+	if int64(minutes) == a.serverEvery.Load() && state.ServerCheckinMinutes == minutes {
+		return false
+	}
+	before := a.every()
+	a.serverEvery.Store(int64(minutes))
+	state.ServerCheckinMinutes = minutes
+	if a.every() != before {
+		origem := "servidor"
+		if minutes == 0 {
+			origem = "agente"
+		}
+		a.Logger.Info("intervalo de check-in mudou", "de", before.String(), "para", a.every().String(), "origem", origem)
+	}
+	return true
 }
 
 // CheckIn executa um ciclo completo e devolve o resultado.
@@ -289,6 +327,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	}
 	a.wakeReason.Store("")
 	a.perfSent(len(perf), resp.Monitor)
+	if a.applyServerInterval(resp.CheckinMinutes, &state) {
+		a.saveStateOrLog(state)
+	}
 	a.checkClock(resp.ServerTime)
 	inventorySent := false
 	if !resp.InventoryKnown && inv.Hash != "" {

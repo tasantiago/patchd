@@ -38,6 +38,10 @@ type State struct {
 	// ainda não chegou ao servidor. Os resultados esperam: o servidor confere o job pelo
 	// inventário, e um resultado antes dele viraria "falhou".
 	InventoryFirst bool `json:"inventory_first,omitempty"`
+	// ServerCheckinMinutes: o último intervalo de check-in mandado pelo servidor
+	// (Configuração › Parâmetros › Agentes). Guardado para valer já depois de reiniciar,
+	// antes do primeiro check-in; 0: vale o do agente.
+	ServerCheckinMinutes int `json:"server_checkin_minutes,omitempty"`
 }
 
 // PendingServerMove guarda o job server_url até a troca ser tentada.

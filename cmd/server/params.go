@@ -32,6 +32,15 @@ import (
 // settingsRefresh: a cada quanto o servidor relê a tabela (outro servidor no mesmo banco).
 const settingsRefresh = 30 * time.Second
 
+// checkinChoices: as opções do intervalo de check-in dos agentes, em minutos ("0": o de cada
+// agente, -checkin-interval, 1 h por padrão).
+var checkinChoices = []settings.Option{
+	{Value: "0", Label: "o de cada agente (-checkin-interval; 1 hora por padrão)"},
+	{Value: "5", Label: "a cada 5 minutos"}, {Value: "10", Label: "a cada 10 minutos"}, {Value: "15", Label: "a cada 15 minutos"},
+	{Value: "30", Label: "a cada 30 minutos"}, {Value: "60", Label: "de hora em hora"}, {Value: "120", Label: "a cada 2 horas"},
+	{Value: "240", Label: "a cada 4 horas"},
+}
+
 // catalogChoices: as opções do intervalo do catálogo na tela.
 var catalogChoices = []settings.Option{
 	{Value: "0", Label: "desligada (só patchd-server catalog sync)"},
@@ -120,6 +129,25 @@ func settingDefs(look config.Lookup) []settings.Def {
 					return "", fmt.Errorf("use um número de %d a %d", protocol.MinPolicyMins, protocol.MaxPolicyMins)
 				}
 				return strconv.Itoa(n), nil
+			}},
+		{Key: "PATCHD_CHECKIN_MINUTES", Group: "Agentes", Label: "Intervalo de check-in", Kind: settings.Select, Options: checkinChoices,
+			Default: "0", Help: "De quanto em quanto tempo cada agente fala com o servidor: é quanto um job (ligar, reiniciar, atualizar) pode esperar. Mais curto, mais carga no servidor (veja Configuração › Saúde). A busca de atualizações continua diária.",
+			Effect: "a partir do próximo check-in de cada máquina (a espera em curso termina no intervalo antigo)", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				for _, o := range checkinChoices {
+					if o.Value == v {
+						return v, nil
+					}
+				}
+				return "", errors.New("escolha uma das opções da lista")
+			},
+			Show: func(v string) string {
+				for _, o := range checkinChoices {
+					if o.Value == v {
+						return o.Label
+					}
+				}
+				return v
 			}},
 		{Key: "PATCHD_CATALOG_INTERVAL", Group: "Catálogo", Label: "Sincronização automática", Kind: settings.Select, Options: catalogChoices,
 			Default: "6h", Help: "De quanto em quanto tempo o servidor busca as fontes do catálogo (Microsoft, Ubuntu, Fedora, Apple, KEV, terceiros).",
