@@ -61,7 +61,7 @@ body.entrar{min-height:100vh;background:linear-gradient(180deg,var(--marinho) 0 
 .entrar-marca img{max-width:5.5rem;max-height:5.5rem;object-fit:contain}
 .entrar-marca .escudo{display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:12px;background:var(--destaque)}
 .entrar-marca .escudo svg{width:2rem;height:2rem}
-main.entrar{max-width:26rem;padding-top:0}main.entrar h1{margin-top:0}main.entrar .card{box-shadow:0 10px 30px rgba(17,24,39,.12)}
+main.entrar{max-width:26rem;margin:0 auto;padding-top:0}main.entrar h1{margin-top:0}main.entrar .card{box-shadow:0 10px 30px rgba(17,24,39,.12)}
 main.entrar label{display:block;margin-top:.9rem;font-weight:500}main.entrar input{display:block;width:100%;margin-top:.3rem}
 main.entrar button{margin-top:1.3rem;width:100%;padding:.55rem}main.entrar small{color:var(--muted)}
 a.sso{display:block;text-align:center;padding:.55rem;border:1px solid var(--azul);border-radius:6px;text-decoration:none;color:var(--azul);font-weight:500}
