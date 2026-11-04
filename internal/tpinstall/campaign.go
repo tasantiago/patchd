@@ -3,13 +3,17 @@ package tpinstall
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/version"
 )
 
 // CampaignStore é o que a campanha de terceiros lê do banco.
@@ -123,4 +127,33 @@ func (c Campaigner) Job(ctx context.Context, machineID, app, version string) (*j
 		return &p, "", nil
 	}
 	return nil, "sem o programa", nil
+}
+
+// Approved lista, para a campanha de todos os programas aprovados, a versão aprovada mais nova
+// de cada programa que tem "install" nas regras (implementa campaign.ThirdPartyCatalog). Se a
+// versão está pronta, quem decide é o Ready, a cada grupo de implantação.
+func (c Campaigner) Approved(ctx context.Context) ([]campaign.AppVersion, error) {
+	approvals, err := c.Store.ThirdPartyApprovals(ctx)
+	if err != nil {
+		return nil, err
+	}
+	best := map[string]string{}
+	for _, a := range approvals {
+		if c.rule(a.AppID) == nil {
+			continue
+		}
+		cur, ok := best[a.AppID]
+		if !ok {
+			best[a.AppID] = a.Version
+			continue
+		}
+		if n, err := version.CompareDotted(a.Version, cur); (err == nil && n > 0) || (err != nil && a.Version > cur) {
+			best[a.AppID] = a.Version
+		}
+	}
+	out := make([]campaign.AppVersion, 0, len(best))
+	for _, app := range slices.Sorted(maps.Keys(best)) {
+		out = append(out, campaign.AppVersion{App: app, Version: best[app]})
+	}
+	return out, nil
 }

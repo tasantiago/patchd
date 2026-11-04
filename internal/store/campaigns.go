@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/jobs"
 )
 
 // Campanhas (Aula 8.5).
@@ -113,14 +115,16 @@ func notes(n []string) []string {
 // CampaignJobs lista os jobs da campanha num grupo de implantação (posição idx).
 func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, machine_id, state, detail, finished_at FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
+		SELECT id, machine_id, state, detail, finished_at, type, payload FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (campaign.JobState, error) {
 		var j campaign.JobState
-		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt)
+		var typ, payload string
+		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt, &typ, &payload)
 		j.FinishedAt = utc(j.FinishedAt)
+		j.Slot = jobSlot(typ, payload)
 		return j, err
 	})
 }
@@ -208,7 +212,8 @@ func (m *Memory) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaig
 	var out []campaign.JobState
 	for _, j := range m.jobs {
 		if j.campaignID == id && j.campaignIdx == idx {
-			out = append(out, campaign.JobState{ID: j.ID, MachineID: j.MachineID, State: j.State, Detail: j.Detail, FinishedAt: j.FinishedAt})
+			out = append(out, campaign.JobState{ID: j.ID, MachineID: j.MachineID, State: j.State, Detail: j.Detail, FinishedAt: j.FinishedAt,
+				Slot: jobSlot(j.Type, j.signed.Payload)})
 		}
 	}
 	return out, nil
@@ -225,4 +230,21 @@ func (m *Memory) DismissJob(ctx context.Context, id int64, why string) (bool, er
 		}
 	}
 	return false, nil
+}
+
+// jobSlot: o que distingue os jobs de uma mesma máquina numa campanha (o programa, no de
+// terceiros); vazio nos outros tipos.
+func jobSlot(typ, payload string) string {
+	if typ != jobs.TypeThirdParty {
+		return ""
+	}
+	var j struct {
+		Params struct {
+			App string `json:"app"`
+		} `json:"params"`
+	}
+	if json.Unmarshal([]byte(payload), &j) != nil {
+		return ""
+	}
+	return j.Params.App
 }

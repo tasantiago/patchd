@@ -1412,6 +1412,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
 <div class="campo"><label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro"></div>
 <fieldset class="campo tipos"><legend>Tipo</legend>
+<label class="opcao"><input type="radio" name="tipo" value="sistema_todas" {{if eq .Form.Type "sistema_todas"}}checked{{end}}><span><b>Todas as atualizações do sistema</b><small>cada máquina recebe tudo o que está pendente nela e aprovado em Patch: pacotes no Linux, KBs no Windows (nunca reinicia)</small></span></label>
+{{if .Form.TPOn}}<label class="opcao"><input type="radio" name="tipo" value="terceiros_todos" {{if eq .Form.Type "terceiros_todos"}}checked{{end}}><span><b>Todos os programas de terceiros aprovados (Windows)</b><small>cada programa vai para a versão aprovada mais nova, só onde já está instalado</small></span></label>{{end}}
 <label class="opcao"><input type="radio" name="tipo" value="rescan" {{if eq .Form.Type "rescan"}}checked{{end}}><span><b>Buscar atualizações</b><small>a máquina faz a busca agora; nada é instalado</small></span></label>
 <label class="opcao"><input type="radio" name="tipo" value="update" {{if eq .Form.Type "update"}}checked{{end}}><span><b>Atualizar pacotes (Linux)</b><small>apt ou dnf, só os pacotes fonte indicados</small></span></label>
 <label class="opcao"><input type="radio" name="tipo" value="windows_update" {{if eq .Form.Type "windows_update"}}checked{{end}}><span><b>Instalar atualizações do Windows</b><small>os KBs indicados, pelo WSUS; nunca reinicia</small></span></label>

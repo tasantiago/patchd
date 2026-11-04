@@ -34,6 +34,30 @@ const (
 	MaxSources = 50
 )
 
+// Campanhas de "tudo" (pedido de 04/11/2026): não são um tipo de job, e cada máquina recebe o que
+// falta para ela, no próximo check-in (ou na janela do grupo de implantação).
+const (
+	// TypeOSAll: todas as atualizações do sistema pendentes e aprovadas em Patch. Linux: um
+	// update com os pacotes; Windows: um windows_update com os KBs (o que a fonte da política
+	// mostra). O macOS fica fora (o patchd não instala atualização do macOS).
+	TypeOSAll = "sistema_todas"
+	// TypeThirdPartyAll: todos os programas de terceiros aprovados, cada um na versão aprovada
+	// mais nova e só onde já está instalado em versão antiga (um job por programa).
+	TypeThirdPartyAll = "terceiros_todos"
+)
+
+// AppVersion é um programa e a versão aprovada que a campanha leva.
+type AppVersion struct{ App, Version string }
+
+// ThirdPartyCatalog lista os programas aprovados (a versão aprovada mais nova de cada um), para
+// a campanha TypeThirdPartyAll. O ThirdPartyPlanner que também for um catálogo serve a ela.
+type ThirdPartyCatalog interface {
+	Approved(ctx context.Context) ([]AppVersion, error)
+}
+
+// isAll: a campanha é de "tudo".
+func isAll(t string) bool { return t == TypeOSAll || t == TypeThirdPartyAll }
+
 // Campaign é uma campanha. CurrentIdx é a posição em Rings do grupo de implantação atual; LaunchedIdx, a
 // do último grupo de implantação cujos jobs já foram criados (-1: nenhum); AcceptedIdx, a do grupo de implantação cujas
 // falhas o admin aceitou ao retomar (-1: nenhum).
@@ -66,6 +90,12 @@ func (c Campaign) Ring() int { return c.Rings[c.CurrentIdx] }
 
 // Target diz o que a campanha leva: as fontes do update, ou o programa e a versão.
 func (c Campaign) Target() string {
+	switch c.Type {
+	case TypeOSAll:
+		return "todas as atualizações do sistema aprovadas em Patch"
+	case TypeThirdPartyAll:
+		return "todos os programas de terceiros aprovados, onde já estão instalados"
+	}
 	if c.Type == jobs.TypeThirdParty {
 		return c.App + " " + c.Version
 	}
@@ -80,7 +110,7 @@ func (c Campaign) Validate() error {
 	switch {
 	case strings.TrimSpace(c.Name) == "" || len(c.Name) > 100:
 		return errors.New("dê um nome à campanha (até 100 caracteres)")
-	case !jobs.KnownType(c.Type):
+	case !jobs.KnownType(c.Type) && !isAll(c.Type):
 		return fmt.Errorf("tipo de job desconhecido %q", c.Type)
 	case c.Type == jobs.TypeReboot && (c.RebootDelay < jobs.MinRebootDelay || c.RebootDelay > jobs.MaxRebootDelay):
 		return fmt.Errorf("o aviso do reinício fica entre %v e %v", jobs.MinRebootDelay, jobs.MaxRebootDelay)
@@ -129,6 +159,9 @@ type JobState struct {
 	State      string
 	Detail     string
 	FinishedAt *time.Time // quando encerrou (Aula 14.9: o adiado conta o intervalo daqui)
+	// Slot: o que o job leva, quando uma máquina recebe mais de um na mesma campanha (na de
+	// todos os programas de terceiros, o programa). Vazio: um job por máquina.
+	Slot string
 }
 
 // Store é o que a campanha usa do banco.
@@ -294,6 +327,30 @@ func (e *Engine) launch(ctx context.Context, c *Campaign, now time.Time) (create
 	if err != nil {
 		return 0, out, err
 	}
+	if c.Type == TypeThirdPartyAll {
+		apps, notReady, err := e.readyApps(ctx)
+		if err != nil {
+			return 0, out, err
+		}
+		for _, r := range notReady {
+			out[r]++
+		}
+		for _, id := range machines {
+			n, skips, err := e.issueApps(ctx, c, id, apps, "", now)
+			if err != nil {
+				return created, out, err
+			}
+			if c.State != StateRunning {
+				return created, out, nil
+			}
+			created += n
+			for _, sk := range skips {
+				out[sk]++
+			}
+		}
+		c.LaunchedIdx = c.CurrentIdx
+		return created, out, nil
+	}
 	for _, id := range machines {
 		ok, skip, err := e.issue(ctx, c, id, now)
 		switch {
@@ -339,6 +396,8 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 	req := jobs.Request{MachineID: id, Type: c.Type, TTL: c.TTL, By: "campanha " + fmt.Sprint(c.ID),
 		CampaignID: c.ID, CampaignIdx: c.CurrentIdx}
 	switch c.Type {
+	case TypeOSAll:
+		return e.issueOSAll(ctx, c, req, id, now)
 	case jobs.TypeUpdate:
 		items, found, err := e.Pending(ctx, id)
 		if err != nil {
@@ -410,6 +469,11 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 			return false, "", err
 		}
 	}
+	return e.send(ctx, c, req, id, now)
+}
+
+// send cria o job pedido (na janela do grupo de implantação, se a campanha usa janela).
+func (e *Engine) send(ctx context.Context, c *Campaign, req jobs.Request, id string, now time.Time) (bool, string, error) {
 	if c.UseWindow {
 		start, end, ok, err := e.Window(ctx, id, now)
 		if err != nil {
@@ -444,9 +508,10 @@ type ringState struct {
 func ringStatus(list []JobState, now time.Time) ringState {
 	latest, attempts := map[string]JobState{}, map[string]int{}
 	for _, j := range list {
-		attempts[j.MachineID]++
-		if cur, ok := latest[j.MachineID]; !ok || j.ID > cur.ID {
-			latest[j.MachineID] = j
+		k := j.MachineID + "\x00" + j.Slot // uma máquina com vários programas: cada um conta
+		attempts[k]++
+		if cur, ok := latest[k]; !ok || j.ID > cur.ID {
+			latest[k] = j
 		}
 	}
 	st := ringState{machines: len(latest)}
@@ -486,8 +551,32 @@ func (e *Engine) retry(ctx context.Context, c *Campaign, list []JobState, now ti
 		return 0, err
 	}
 	created := 0
+	var apps []AppVersion
+	if c.Type == TypeThirdPartyAll {
+		var err error
+		if apps, _, err = e.readyApps(ctx); err != nil {
+			return 0, err
+		}
+	}
 	for _, j := range list {
-		ok, skip, err := e.issue(ctx, c, j.MachineID, now)
+		var ok bool
+		var skip string
+		var err error
+		if c.Type == TypeThirdPartyAll {
+			// A nova tentativa é do mesmo programa (o slot), não de todos de novo.
+			var n int
+			var skips []string
+			n, skips, err = e.issueApps(ctx, c, j.MachineID, apps, j.Slot, now)
+			ok = n > 0
+			if !ok {
+				skip = "o programa não está mais aprovado ou pronto"
+				if len(skips) > 0 {
+					skip = skips[0]
+				}
+			}
+		} else {
+			ok, skip, err = e.issue(ctx, c, j.MachineID, now)
+		}
 		switch {
 		case err != nil:
 			return created, err
@@ -561,4 +650,124 @@ func ParseRings(s string) ([]int, error) {
 		return nil, errors.New("grupos de implantação em ordem crescente (ex.: 0,1,2)")
 	}
 	return out, nil
+}
+
+// issueOSAll: o job do sistema da máquina com todas as pendências aprovadas dela. Linux: os
+// pacotes (até jobs.MaxPackages, as exploradas primeiro); Windows: os KBs que a fonte da
+// política mostra (até jobs.MaxWinUpdates).
+func (e *Engine) issueOSAll(ctx context.Context, c *Campaign, req jobs.Request, id string, now time.Time) (bool, string, error) {
+	items, found, err := e.Pending(ctx, id)
+	if err != nil {
+		return false, "", err
+	}
+	if !found || len(items) == 0 {
+		return false, "sem pendência aprovada", nil
+	}
+	if p := jobs.ParamsFromPendingAll(items); len(p.Packages) > 0 {
+		if len(p.Packages) > jobs.MaxPackages {
+			p.Packages = p.Packages[:jobs.MaxPackages] // o resto fica para a próxima campanha
+		}
+		req.Type = jobs.TypeUpdate
+		if req.Params, err = json.Marshal(p); err != nil {
+			return false, "", err
+		}
+		return e.send(ctx, c, req, id, now)
+	}
+	kbs := jobs.KBsInPendingAll(items)
+	if len(kbs) == 0 {
+		return false, "sem instalação pelo patchd (macOS)", nil
+	}
+	if e.Scan == nil {
+		return false, "sem busca", nil
+	}
+	rep, ok, err := e.Scan(ctx, id)
+	if err != nil {
+		return false, "", err
+	}
+	if !ok {
+		return false, "sem busca", nil
+	}
+	if len(kbs) > jobs.MaxWinUpdates {
+		kbs = kbs[:jobs.MaxWinUpdates]
+	}
+	p, skip := jobs.PolicyWinUpdates(rep, kbs)
+	if skip != "" {
+		return false, skip, nil
+	}
+	req.Type = jobs.TypeWinUpdate
+	if req.Params, err = json.Marshal(p); err != nil {
+		return false, "", err
+	}
+	return e.send(ctx, c, req, id, now)
+}
+
+// readyApps: os programas aprovados que estão prontos agora (aprovação em vigor, instalador
+// no cache). notReady: um resumo de cada um que ficou fora, para as notas da campanha.
+func (e *Engine) readyApps(ctx context.Context) (apps []AppVersion, notReady []string, err error) {
+	cat, ok := e.ThirdParty.(ThirdPartyCatalog)
+	if e.ThirdParty == nil || !ok {
+		return nil, []string{"servidor sem as regras de terceiros"}, nil
+	}
+	list, err := cat.Approved(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, a := range list {
+		reason, err := e.ThirdParty.Ready(ctx, a.App, a.Version)
+		if err != nil {
+			return nil, nil, err
+		}
+		if reason != "" {
+			notReady = append(notReady, a.App+" "+a.Version+" não pronto")
+			continue
+		}
+		apps = append(apps, a)
+	}
+	return apps, notReady, nil
+}
+
+// issueApps cria um job por programa que a máquina tem em versão antiga. only: só esse programa
+// (a nova tentativa de um adiado). skips: por que nenhum foi, quando nenhum foi.
+func (e *Engine) issueApps(ctx context.Context, c *Campaign, id string, apps []AppVersion, only string, now time.Time) (int, []string, error) {
+	created := 0
+	reasons := map[string]bool{}
+	for _, a := range apps {
+		if only != "" && a.App != only {
+			continue
+		}
+		p, skip, err := e.ThirdParty.Job(ctx, id, a.App, a.Version)
+		if err != nil {
+			return created, nil, err
+		}
+		if p == nil {
+			if skip != "sem o programa" && skip != "" {
+				reasons[a.App+": "+skip] = true
+			}
+			continue
+		}
+		req := jobs.Request{MachineID: id, Type: jobs.TypeThirdParty, TTL: c.TTL, By: "campanha " + fmt.Sprint(c.ID),
+			CampaignID: c.ID, CampaignIdx: c.CurrentIdx}
+		if req.Params, err = json.Marshal(p); err != nil {
+			return created, nil, err
+		}
+		ok, skip, err := e.send(ctx, c, req, id, now)
+		if err != nil {
+			return created, nil, err
+		}
+		if c.State != StateRunning {
+			return created, nil, nil
+		}
+		if ok {
+			created++
+		} else if skip != "" {
+			reasons[skip] = true
+		}
+	}
+	if created > 0 {
+		return created, nil, nil
+	}
+	if len(reasons) == 0 {
+		return 0, []string{"nenhum programa aprovado para atualizar"}, nil
+	}
+	return 0, slices.Sorted(maps.Keys(reasons)), nil
 }
