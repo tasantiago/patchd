@@ -414,6 +414,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		}
 		cs.manifest = &manifest
 		apiOpts = append(apiOpts, api.WithCompliance(cs))
+		apiOpts = append(apiOpts, api.WithBackground(ctx)) // as regras dos grupos de implantação, a cada 5 min
 		// O mesmo manifesto confere, no inventário, o efeito do job thirdparty (Aula 14.4).
 		apiOpts = append(apiOpts, api.WithThirdPartyManifest(&manifest))
 		tpRules = &manifest

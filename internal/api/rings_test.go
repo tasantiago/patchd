@@ -14,12 +14,18 @@ func TestJanelasPeloPainel(t *testing.T) {
 	h, st, log := ambientePaginas(t, api.WithTimezone("America/Porto_Velho"))
 	ctx := context.Background()
 
-	// Leitura vê a tabela, sem formulário; o admin vê o formulário com o fuso sugerido.
+	// O resumo tem um cartão por grupo; a janela fica nas regras do grupo. Leitura vê, sem
+	// formulário; o admin vê o formulário com o fuso sugerido.
 	b := pagina(h, "GET", "/painel/grupos-implantacao", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Grupos de implantação e janelas</span></h1>") || !strings.Contains(b, "1 (padrão)") || strings.Contains(b, `action="/painel/grupos-implantacao/janela"`) {
+	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Grupos de implantação e janelas</span></h1>") || !strings.Contains(b, "Grupo 1 (padrão)") ||
+		!strings.Contains(b, `href="/painel/grupos-implantacao/0"`) {
+		t.Errorf("resumo:\n%s", b)
+	}
+	regras := "/painel/grupos-implantacao/0?aba=regras"
+	if b := pagina(h, "GET", regras, sessaoTeste, nil).Body.String(); strings.Contains(b, `action="/painel/grupos-implantacao/janela"`) || !strings.Contains(b, "Janela de manutenção") {
 		t.Errorf("leitura:\n%s", b)
 	}
-	b = pagina(h, "GET", "/painel/grupos-implantacao", sessaoAdmin, nil).Body.String()
+	b = pagina(h, "GET", regras, sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, `action="/painel/grupos-implantacao/janela"`) || !strings.Contains(b, `value="America/Porto_Velho"`) {
 		t.Errorf("admin:\n%s", b)
 	}
@@ -60,13 +66,13 @@ func TestJanelasPeloPainel(t *testing.T) {
 	if w, _ := st.Windows(ctx); len(w) != 0 {
 		t.Fatal("formulário ruim gravou janela")
 	}
-	if b := pagina(h, "GET", "/painel/grupos-implantacao?erro=fuso", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Fuso horário desconhecido") {
+	if b := pagina(h, "GET", regras+"&erro=fuso", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Fuso horário desconhecido") {
 		t.Error("mensagem do fuso")
 	}
 
 	// O admin grava: a janela passa da meia-noite, com quem definiu.
 	r := pagina(h, "POST", "/painel/grupos-implantacao/janela", sessaoAdmin, janela)
-	if r.Code != http.StatusSeeOther || local(r) != "/painel/grupos-implantacao?janela=1&anel=0" {
+	if r.Code != http.StatusSeeOther || local(r) != "/painel/grupos-implantacao/0?aba=regras&janela=1&anel=0" {
 		t.Fatalf("gravar: %d %s", r.Code, local(r))
 	}
 	w, _ := st.Windows(ctx)
@@ -77,15 +83,15 @@ func TestJanelasPeloPainel(t *testing.T) {
 		t.Error("log da janela")
 	}
 	b = pagina(h, "GET", local(r), sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, "Janela do grupo de implantação 0 gravada") || !strings.Contains(b, "0 (piloto)") || !strings.Contains(b, `action="/painel/grupos-implantacao/0/remover-janela"`) {
+	if !strings.Contains(b, "Janela do grupo de implantação 0 gravada") || !strings.Contains(b, "› 0 (piloto)") || !strings.Contains(b, `action="/painel/grupos-implantacao/0/remover-janela"`) {
 		t.Errorf("depois de gravar:\n%s", b)
 	}
 
 	// Remover; remover de novo diz que não havia.
-	if r := pagina(h, "POST", "/painel/grupos-implantacao/0/remover-janela", sessaoAdmin, url.Values{}); local(r) != "/painel/grupos-implantacao?removida=1&anel=0" {
+	if r := pagina(h, "POST", "/painel/grupos-implantacao/0/remover-janela", sessaoAdmin, url.Values{}); local(r) != "/painel/grupos-implantacao/0?aba=regras&removida=1&anel=0" {
 		t.Errorf("remover: %s", local(r))
 	}
-	if r := pagina(h, "POST", "/painel/grupos-implantacao/0/remover-janela", sessaoAdmin, url.Values{}); local(r) != "/painel/grupos-implantacao?erro=sem-janela&anel=0" {
+	if r := pagina(h, "POST", "/painel/grupos-implantacao/0/remover-janela", sessaoAdmin, url.Values{}); local(r) != "/painel/grupos-implantacao/0?aba=regras&erro=sem-janela&anel=0" {
 		t.Errorf("remover de novo: %s", local(r))
 	}
 	if r := pagina(h, "POST", "/painel/grupos-implantacao/99/remover-janela", sessaoAdmin, url.Values{}); !strings.Contains(local(r), "erro=anel") {

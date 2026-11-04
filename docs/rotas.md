@@ -49,7 +49,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | POST | `/api/v1/agent/standardization/report` |
 | POST | `/api/v1/agent/standardization` |
 
-## Sessão (página) (20)
+## Sessão (página) (21)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -63,6 +63,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/campanhas` |
 | GET | `/painel/frota.csv` |
 | GET | `/painel/frota` |
+| GET | `/painel/grupos-implantacao/{ring}` |
 | GET | `/painel/grupos-implantacao` |
 | GET | `/painel/inventario.csv` |
 | GET | `/painel/inventario` |
@@ -106,7 +107,7 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/padronizacao` |
 | GET | `/painel/scripts` |
 
-## Admin (ação) (65)
+## Admin (ação) (71)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -138,8 +139,14 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/descoberta/faixas/{id}/{op}` |
 | POST | `/painel/descoberta/faixas` |
 | POST | `/painel/descoberta/varrer` |
+| POST | `/painel/grupos-implantacao/colar` |
+| POST | `/painel/grupos-implantacao/devolver` |
+| POST | `/painel/grupos-implantacao/faixa/remover` |
+| POST | `/painel/grupos-implantacao/faixa` |
 | POST | `/painel/grupos-implantacao/janela` |
 | POST | `/painel/grupos-implantacao/maquinas` |
+| POST | `/painel/grupos-implantacao/mover` |
+| POST | `/painel/grupos-implantacao/nome` |
 | POST | `/painel/grupos-implantacao/predio/excecoes` |
 | POST | `/painel/grupos-implantacao/predio/remover` |
 | POST | `/painel/grupos-implantacao/predio` |

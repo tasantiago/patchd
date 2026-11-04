@@ -1206,7 +1206,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Host.SignersKnown}}<dt>Instaladores aceitos</dt>{{if .Host.Signers}}<dd>só os assinados por {{.Host.Signers}}</dd>{{else}}<dd class="nivel-atencao">qualquer assinatura (sem <code>-allowed-signers</code> nesta máquina)</dd>{{end}}{{end}}
 {{if .Host.Has}}<dt>Chave de cifragem</dt>{{if .Host.BoxKeyID}}<dd><code>{{.Host.BoxKeyID}}</code> <span class="muted">(segredos para esta máquina são fechados com ela)</span></dd>{{else}}<dd class="muted">não informada (agente anterior à v0.18.2)</dd>{{end}}{{end}}
 <dt>Canal</dt><dd>{{.Channel}}</dd>
-{{if .Ring}}<dt>Grupo de implantação</dt><dd>{{.Ring}}{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="grupo de implantação novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de grupo de implantação</button></form>{{end}}</dd>
+{{if .Ring}}<dt>Grupo de implantação</dt><dd><a href="/painel/grupos-implantacao/{{.RingN}}">{{.Ring}}</a>{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="grupo de implantação novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de grupo de implantação</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este grupo de implantação){{end}}</dd>{{end}}
 </dl></div>
 <div class="card"><div class="card-cab"><h2>Conformidade</h2></div><dl class="dados">
@@ -1558,36 +1558,134 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "aneis"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Grupos de implantação e janelas</span></h1>
 {{template "automacao-abas" "aneis"}}
-<p class="muted">Grupo de implantação 0 é o piloto e 1 é o padrão (máquina nova entra no 1); campanhas passam pelos grupos em ordem. A janela de manutenção de um grupo de implantação é quando os jobs "na janela" daquele grupo podem rodar. Para pôr máquinas num grupo de implantação, marque-as na <a href="/painel/parque">Parque</a>, use o detalhe da máquina, filtre o <a href="/painel/inventario">Inventário</a> por faixa de IP ou prédio e mova todas as encontradas de uma vez, ou ligue um prédio a um grupo (abaixo) para que as máquinas dele, inclusive as novas, entrem sozinhas.</p>
-<div class="card"><div class="card-cab"><h2>Grupos de implantação em uso</h2><span class="muted">{{.Total}} máquina(s) no parque</span></div>{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>Grupo de implantação</th><th>Máquinas</th><th>Janela</th><th>Próxima</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
-<tbody>{{range .Rows}}<tr><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td>{{.Window}}</td><td>{{.Next}}</td><td>{{.By}}{{if .HasWindow}} · {{.Updated}}{{end}}</td>
-{{if $.Admin}}<td>{{if .HasWindow}}<form method="post" action="/painel/grupos-implantacao/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhuma máquina e nenhuma janela ainda.</p>{{end}}</div>
-<div class="card" id="predios"><div class="card-cab"><h2>Grupo de implantação por prédio</h2><span class="muted">do patrimônio (Configuração › Patrimônio)</span></div>
-<p class="muted">As máquinas de um prédio vão para o grupo ligado a ele: ao gravar o vínculo, a cada importação do patrimônio e no primeiro inventário de uma máquina nova (ou renomeada). Quem foi movido à mão fica como exceção, no grupo em que está, até ser devolvido ao vínculo. Remover o vínculo não move ninguém.</p>
-{{if .Buildings}}<div class="tabela"><table>
-<thead><tr><th>Prédio</th><th>Grupo de implantação</th><th>Máquinas no prédio</th><th>No grupo</th><th>Movidas à mão</th><th>Definido por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
-<tbody>{{range .Buildings}}<tr><td>{{.Building}}{{if .Missing}} <span class="muted">fora do patrimônio atual</span>{{end}}</td><td>{{.Label}}</td><td class="num">{{.Machines}}</td><td class="num">{{.InRing}}</td><td class="num">{{.Pinned}}</td><td>{{.By}} · {{.Updated}}</td>
-{{if $.Admin}}<td>{{if .Pinned}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/excecoes"><input type="hidden" name="predio" value="{{.Building}}"><button class="sec" type="submit">Devolver as {{.Pinned}} ao grupo {{.Ring}}</button></form> {{end}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/remover"><input type="hidden" name="predio" value="{{.Building}}"><button class="perigo" type="submit">Remover vínculo</button></form></td>{{end}}</tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhum prédio ligado a grupo de implantação.</p>{{end}}
-{{if .Admin}}{{if .BuildingOpts}}<form class="grade" method="post" action="/painel/grupos-implantacao/predio">
-<label for="predio">Prédio</label><select id="predio" name="predio" required>{{range .BuildingOpts}}<option value="{{.Name}}">{{.Name}} · {{.Machines}} máquina(s){{if ge .Ring 0}} · hoje no grupo {{.Ring}}{{end}}</option>{{end}}</select>
-<label for="anel-predio">Grupo de implantação</label><select id="anel-predio" name="anel">{{range .Rings}}<option value="{{.}}" {{if eq . 1}}selected{{end}}>{{.}}</option>{{end}}</select>
-<span></span><label><input type="checkbox" name="excecoes" value="1"> Incluir as máquinas do prédio movidas à mão (deixam de ser exceção)</label>
-<span></span><span><button type="submit">Ligar prédio ao grupo</button></span>
-</form>{{else if not .HasAssets}}<p class="muted">Importe o CSV do patrimônio em <a href="/painel/configuracao?aba=patrimonio">Configuração › Patrimônio</a> para ligar prédios a grupos.</p>{{end}}{{end}}
-</div>
-{{if .Admin}}<section><h2>Definir a janela de um grupo de implantação</h2>
-<p class="muted">Grava ou troca a janela. Uma janela que passa da meia-noite pertence ao dia em que começa (sex 22:00 por 6 h termina sábado às 04:00). Os jobs já criados mantêm a janela que levam assinada.</p>
-<form class="grade" method="post" action="/painel/grupos-implantacao/janela">
-<label for="anel">Grupo de implantação</label><select id="anel" name="anel">{{range .Rings}}<option value="{{.}}" {{if eq . 1}}selected{{end}}>{{.}}</option>{{end}}</select>
+<p class="muted">Campanhas passam pelos grupos em ordem: 0 é o piloto e 1 é o padrão (máquina nova entra no 1). Abra um grupo para ver as máquinas dele, adicionar outras (por filtro ou colando uma lista de nomes, IPs ou tombos), ligar prédios e faixas de IP e definir a janela de manutenção.</p>
+<p class="muted">{{.Total}} máquina(s) no parque.</p>
+<ul class="kpis">{{range .Cards}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">Grupo {{.Label}}</span><span class="kpi-val">{{.Machines}}</span><span class="kpi-sub">máquina(s){{if .Pinned}} · {{.Pinned}} à mão{{end}}{{if .Conflicts}} · <span class="v-laranja">{{.Conflicts}} em conflito</span>{{end}}</span>
+<span class="kpi-sub">{{if .HasWindow}}Janela {{.Window}} · próxima {{.Next}}{{else}}Sem janela{{end}}</span>
+<span class="kpi-sub">{{if or .Buildings .Ranges}}Regras: {{if .Buildings}}{{.Buildings}} prédio(s){{end}}{{if and .Buildings .Ranges}}, {{end}}{{if .Ranges}}{{.Ranges}} faixa(s) de IP{{end}}{{else}}Sem regras{{end}}</span></a></li>{{end}}</ul>
+{{if .Empty}}<p class="muted">Grupos vazios: {{range $i, $c := .Empty}}{{if $i}}, {{end}}<a href="{{$c.Href}}">{{$c.Ring}}</a>{{end}}.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "grupo-abas"}}<nav class="abas" aria-label="abas do grupo"><a href="{{index .TabHrefs "maquinas"}}"{{if eq .Tab "maquinas"}} class="ativa" aria-current="page"{{end}}>Máquinas ({{.Machines}})</a>{{if .Admin}}<a href="{{index .TabHrefs "adicionar"}}"{{if eq .Tab "adicionar"}} class="ativa" aria-current="page"{{end}}>Adicionar</a><a href="{{index .TabHrefs "colar"}}"{{if eq .Tab "colar"}} class="ativa" aria-current="page"{{end}}>Colar lista</a>{{end}}<a href="{{index .TabHrefs "regras"}}"{{if eq .Tab "regras"}} class="ativa" aria-current="page"{{end}}>Regras e janela</a></nav>{{end}}
+
+{{define "grupo-filtro"}}<form class="busca" method="get" action="/painel/grupos-implantacao/{{.Ring}}">{{if ne .Tab "maquinas"}}<input type="hidden" name="aba" value="{{.Tab}}">{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Nome, IP, tombo ou faixa (10.1.2.0/24)" aria-label="buscar máquina">
+{{if .Buildings}}<select name="predio" aria-label="prédio">{{range .Buildings}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+{{if eq .Tab "maquinas"}}<select name="como" aria-label="como entrou">{{range .Origins}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{else}}<select name="de" aria-label="grupo atual">{{range .Froms}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+<button type="submit">Buscar</button>{{if .HasFilter}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>{{end}}
+
+{{define "grupo"}}{{template "topo" .}}
+<p><a href="/painel/grupos-implantacao">← Grupos de implantação</a></p>
+<h1>Grupo de implantação <span class="muted">› {{.Label}}</span></h1>
+<p class="muted">{{.Machines}} máquina(s){{if .Pinned}} · {{.Pinned}} movida(s) à mão{{end}}{{if .Conflicts}} · <span class="v-laranja">{{.Conflicts}} com regras em conflito</span>{{end}} · {{if .HasWindow}}janela {{.Window}}, próxima {{.Next}}{{else}}sem janela{{end}}</p>
+{{template "grupo-abas" .}}
+{{if eq .Tab "maquinas"}}<div class="card"><div class="card-cab"><h2>Máquinas do grupo</h2><span class="muted">"Como entrou": à mão (fica mesmo com regra), pelo prédio, pela faixa de IP, ou sem regra</span></div>
+{{template "grupo-filtro" .}}
+{{if .Rows}}{{if .Admin}}<form method="post" action="/painel/grupos-implantacao/mover"><input type="hidden" name="volta" value="{{.Ring}}"><input type="hidden" name="aba" value="maquinas">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}{{end}}
+<div class="tabela"><table>
+<thead><tr>{{if .Admin}}<th class="col-lote">Lote</th>{{end}}<th>Máquina</th><th>Local</th><th>IP</th><th>Sistema</th><th>Último contato</th><th>Como entrou</th></tr></thead>
+<tbody>{{range .Rows}}<tr>{{if $.Admin}}<td class="col-lote"><input type="checkbox" name="sel" value="{{.ID}}" aria-label="marcar {{.Name}}"></td>{{end}}<td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td>{{.Local}}</td><td><code>{{.IP}}</code></td><td>{{.OS}}</td><td>{{.LastSeen}}</td>
+<td><span class="estado {{.Origin.Class}}">{{.Origin.Label}}</span>{{if .Origin.Conflict}}<div class="muted nota v-laranja">{{.Origin.Conflict}}</div>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{if .Admin}}<div class="lote"><label>Mover para <select name="destino">{{range .Targets}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select></label>
+<button type="submit">Conferir marcadas</button><button class="sec" type="submit" name="filtro" value="1">Conferir todas as {{.Found}}{{if .HasFilter}} do filtro{{end}}</button>
+<button class="sec" type="submit" formaction="/painel/grupos-implantacao/devolver">Devolver marcadas às regras</button>
+<span class="muted">Nada muda antes da conferência. "Devolver às regras" tira o "à mão": o prédio ou a faixa valem de novo.</span></div></form>{{end}}
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next2}}<a href="{{.Next2}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhuma máquina{{if .HasFilter}} com esse filtro{{else}} neste grupo{{end}}.</p>{{end}}</div>
+{{else if eq .Tab "adicionar"}}<div class="card"><div class="card-cab"><h2>Adicionar ao grupo {{.Label}}</h2><span class="muted">máquinas de outros grupos</span></div>
+{{template "grupo-filtro" .}}
+{{if .Rows}}<form method="post" action="/painel/grupos-implantacao/mover"><input type="hidden" name="volta" value="{{.Ring}}"><input type="hidden" name="aba" value="adicionar"><input type="hidden" name="destino" value="{{.Ring}}">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+<div class="tabela"><table>
+<thead><tr><th class="col-lote">Lote</th><th>Máquina</th><th>Grupo atual</th><th>Local</th><th>IP</th><th>Sistema</th><th>Último contato</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td class="col-lote"><input type="checkbox" name="sel" value="{{.ID}}" aria-label="marcar {{.Name}}"></td><td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td>{{.Group}}</td><td>{{.Local}}</td><td><code>{{.IP}}</code></td><td>{{.OS}}</td><td>{{.LastSeen}}</td></tr>{{end}}</tbody></table></div>
+<div class="lote"><button type="submit">Conferir marcadas</button><button class="sec" type="submit" name="filtro" value="1">Conferir todas as {{.Found}}{{if .HasFilter}} do filtro{{end}}</button>
+<span class="muted">A conferência mostra de que grupos elas saem. Até {{.MaxBatch}} por lote.</span></div></form>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next2}}<a href="{{.Next2}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhuma máquina de outro grupo{{if .HasFilter}} com esse filtro{{end}}.</p>{{end}}</div>
+{{else if eq .Tab "colar"}}<div class="card"><div class="card-cab"><h2>Colar lista</h2><span class="muted">um por linha: nome, IP ou tombo</span></div>
+<p class="muted">Cole direto da planilha: vale a primeira coluna de cada linha, o nome com ou sem o domínio (<code>FJ088594</code>, <code>fj088594.tj.local</code>), o IP ou o tombo (<code>88594</code>). O servidor mostra o que achou, o que não achou (com nomes parecidos) e o que é ambíguo, antes de mover. Até {{.MaxPaste}} linhas.</p>
+<form method="post" action="/painel/grupos-implantacao/colar"><input type="hidden" name="destino" value="{{.Ring}}">
+<textarea name="lista" rows="12" required aria-label="lista de máquinas" placeholder="FJ088594&#10;FJ088595&#10;10.1.2.33&#10;88601"></textarea>
+<div class="lote"><button type="submit">Procurar as máquinas</button><span class="muted">Nada muda antes da conferência.</span></div></form></div>
+{{else}}{{template "grupo-regras" .}}{{end}}
+{{template "fim"}}{{end}}
+
+{{define "grupo-regras"}}<div class="card" id="nome"><div class="card-cab"><h2>Nome</h2><span class="muted">só para reconhecer o grupo; campanhas e jobs usam o número</span></div>
+{{if .Admin}}<form class="grade" method="post" action="/painel/grupos-implantacao/nome"><input type="hidden" name="anel" value="{{.Ring}}">
+<label for="nome-grupo">Nome do grupo {{.Ring}}</label><input id="nome-grupo" name="nome" value="{{.Name}}" maxlength="{{.MaxName}}" placeholder="ex.: Piloto TI, Fórum Cível">
+<span></span><span><button type="submit">Gravar nome</button> <span class="muted">vazio apaga o nome</span></span></form>{{else}}<p>{{if .Name}}{{.Name}}{{else}}<span class="muted">sem nome</span>{{end}}</p>{{end}}</div>
+<div class="card" id="predios"><div class="card-cab"><h2>Prédios</h2><span class="muted">do patrimônio (Configuração › Patrimônio)</span></div>
+<p class="muted">As máquinas de um prédio ligado vão para este grupo: ao gravar, a cada importação do patrimônio e no primeiro inventário de uma máquina nova. O prédio vence a faixa de IP; quem foi movido à mão fica onde está.</p>
+{{if .BuildingRows}}<div class="tabela"><table>
+<thead><tr><th>Prédio</th><th>Máquinas no prédio</th><th>No grupo</th><th>Movidas à mão</th><th>Definido por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .BuildingRows}}<tr><td>{{.Building}}{{if .Missing}} <span class="muted">fora do patrimônio atual</span>{{end}}</td><td class="num">{{.Machines}}</td><td class="num">{{.InRing}}</td><td class="num">{{.Pinned}}</td><td>{{.By}} · {{.Updated}}</td>
+{{if $.Admin}}<td>{{if .Pinned}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/excecoes"><input type="hidden" name="predio" value="{{.Building}}"><button class="sec" type="submit">Devolver as {{.Pinned}} ao grupo</button></form> {{end}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/remover"><input type="hidden" name="predio" value="{{.Building}}"><button class="perigo" type="submit">Remover</button></form></td>{{end}}</tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum prédio ligado a este grupo.</p>{{end}}
+{{if .Admin}}{{if .BuildingOpts}}<form class="grade" method="post" action="/painel/grupos-implantacao/predio"><input type="hidden" name="anel" value="{{.Ring}}">
+<label for="predio">Ligar o prédio</label><select id="predio" name="predio" required>{{range .BuildingOpts}}<option value="{{.Name}}">{{.Name}} · {{.Machines}} máquina(s){{if ge .Ring 0}} · hoje ligado ao grupo {{.Ring}}{{end}}</option>{{end}}</select>
+<span></span><label><input type="checkbox" name="excecoes" value="1"> Incluir as máquinas do prédio movidas à mão</label>
+<span></span><span><button type="submit">Conferir</button> <span class="muted">a próxima tela diz quantas máquinas mudam</span></span>
+</form>{{else if not .HasAssets}}<p class="muted">Importe o CSV do patrimônio em <a href="/painel/configuracao?aba=patrimonio">Configuração › Patrimônio</a> para ligar prédios.</p>{{end}}{{end}}</div>
+<div class="card" id="faixas"><div class="card-cab"><h2>Faixas de IP</h2><span class="muted">pelos IPs das placas e do check-in</span></div>
+<p class="muted">As máquinas com algum IP na faixa vão para este grupo, em até 5 minutos depois do check-in. Entre duas faixas, vale a menor; duas do mesmo tamanho que dizem grupos diferentes são conflito, e a máquina fica onde está.</p>
+{{if .IPRows}}<div class="tabela"><table>
+<thead><tr><th>Faixa</th><th>De – até</th><th>Máquinas na faixa</th><th>No grupo</th><th>Movidas à mão</th><th>Definida por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .IPRows}}<tr><td><code>{{.Spec}}</code></td><td><code>{{.Range}}</code></td><td class="num">{{.Machines}}</td><td class="num">{{.InRing}}</td><td class="num">{{.Pinned}}</td><td>{{.By}} · {{.Updated}}</td>
+{{if $.Admin}}<td><form class="inline" method="post" action="/painel/grupos-implantacao/faixa/remover"><input type="hidden" name="id" value="{{.ID}}"><button class="perigo" type="submit">Remover</button></form></td>{{end}}</tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma faixa ligada a este grupo.</p>{{end}}
+{{if .Admin}}<form class="grade" method="post" action="/painel/grupos-implantacao/faixa"><input type="hidden" name="anel" value="{{.Ring}}">
+<label for="faixa">Ligar a faixa</label><input id="faixa" name="faixa" required maxlength="64" placeholder="10.1.2.0/24, 10.1.2.10-50 ou 10.1.*">
+<span></span><label><input type="checkbox" name="excecoes" value="1"> Incluir as máquinas da faixa movidas à mão</label>
+<span></span><span><button type="submit">Conferir</button> <span class="muted">a próxima tela diz quantas máquinas mudam</span></span>
+</form>{{end}}</div>
+<div class="card" id="janela"><div class="card-cab"><h2>Janela de manutenção</h2><span class="muted">{{if .HasWindow}}{{.Window}} · próxima {{.Next}} · {{.WindowBy}}{{else}}sem janela{{end}}</span></div>
+<p class="muted">Quando os jobs "na janela" deste grupo podem rodar. Uma janela que passa da meia-noite pertence ao dia em que começa (sex 22:00 por 6 h termina sábado às 04:00). Os jobs já criados mantêm a janela que levam assinada.</p>
+{{if .Admin}}{{if .HasWindow}}<form class="inline" method="post" action="/painel/grupos-implantacao/{{.Ring}}/remover-janela"><button class="perigo" type="submit">Remover janela</button></form>{{end}}
+<form class="grade" method="post" action="/painel/grupos-implantacao/janela"><input type="hidden" name="anel" value="{{.Ring}}">
 <span>Dias</span><span class="dias">{{range .Days}}<label><input type="checkbox" name="dia" value="{{.Value}}"> {{.Label}}</label>{{end}}</span>
 <label for="inicio">Início</label><input id="inicio" name="inicio" type="time" required value="12:00">
 <label for="duracao">Duração</label><select id="duracao" name="duracao">{{range .Durations}}<option value="{{.Minutes}}" {{if eq .Minutes 120}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <label for="fuso">Fuso</label><input id="fuso" name="fuso" type="text" required maxlength="64" value="{{.Timezone}}" placeholder="America/Porto_Velho">
 <span></span><span><button type="submit">Gravar janela</button></span>
-</form></section>{{end}}
+</form>{{end}}</div>{{end}}
+
+{{define "grupo-mover"}}{{template "topo" .}}
+<p><a href="{{.Back}}">← Voltar</a></p>
+<h1>Mover para o grupo {{.DestLabel}} <span class="muted">› conferência</span></h1>
+<p class="aviso atencao">{{len .IDs}} máquina(s) vão para o grupo {{.DestLabel}}: {{range $i, $f := .From}}{{if $i}}, {{end}}{{$f.N}} saem do grupo {{$f.Label}}{{end}}.{{if .Already}} {{.Already}} já estavam nele.{{end}}{{if .Unknown}} {{.Unknown}} não estão mais no parque.{{end}}</p>
+{{if .FilterTotal}}<p class="aviso atencao">O filtro tem {{.FilterTotal}} máquinas; este lote leva as {{.Max}} primeiras, por nome.</p>{{end}}
+{{if .PinnedNote}}<p class="muted">Algumas têm regra (prédio ou faixa) que diz outro grupo. Movidas assim, passam a ser "à mão" e ficam neste grupo até alguém devolvê-las às regras.</p>{{else}}<p class="muted">Movidas assim, passam a ser "à mão": nenhuma regra de prédio ou faixa as tira deste grupo.</p>{{end}}
+<form method="post" action="/painel/grupos-implantacao/mover"><input type="hidden" name="confirmar" value="1"><input type="hidden" name="destino" value="{{.Dest}}"><input type="hidden" name="volta" value="{{.BackRing}}"><input type="hidden" name="aba" value="{{.BackTab}}">{{range .IDs}}<input type="hidden" name="id" value="{{.}}">{{end}}
+<div class="card"><div class="card-cab"><h2>Máquinas</h2><span class="muted">{{len .IDs}}</span></div>
+<p>{{range $i, $n := .Names}}{{if $i}}, {{end}}{{$n}}{{end}}{{if .More}} e mais {{.More}}{{end}}.</p>
+<div class="lote"><button type="submit">Mover {{len .IDs}} máquina(s)</button><a class="btn" href="{{.Back}}">Voltar sem mover</a></div></div></form>
+{{template "fim"}}{{end}}
+
+{{define "grupo-colar"}}{{template "topo" .}}
+<p><a href="{{.Back}}">← Colar lista</a></p>
+<h1>Colar lista no grupo {{.DestLabel}} <span class="muted">› o que foi achado</span></h1>
+<p class="aviso {{if .Found}}atencao{{else}}erro{{end}}">{{.Lines}} linha(s): {{len .Found}} máquina(s) para mover{{if .Already}}, {{len .Already}} já no grupo{{end}}{{if .Missing}}, {{len .Missing}} não achada(s){{end}}{{if .Ambiguous}}, {{len .Ambiguous}} ambígua(s){{end}}{{if .Repeated}}, {{.Repeated}} repetida(s){{end}}.</p>
+{{if .Found}}<form method="post" action="/painel/grupos-implantacao/mover"><input type="hidden" name="destino" value="{{.Dest}}"><input type="hidden" name="volta" value="{{.Dest}}"><input type="hidden" name="aba" value="maquinas">{{range .IDs}}<input type="hidden" name="sel" value="{{.}}">{{end}}
+<div class="card"><div class="card-cab"><h2>Achadas</h2><span class="muted">{{len .Found}}</span></div><div class="tabela"><table>
+<thead><tr><th>Linha</th><th>Colado</th><th>Máquina</th><th>Achada pelo</th><th>Grupo atual</th></tr></thead>
+<tbody>{{range .Found}}<tr><td class="num">{{.Line}}</td><td><code>{{.Token}}</code></td><td>{{.Name}}</td><td>{{.How}}</td><td>{{.Group}}</td></tr>{{end}}</tbody></table></div>
+<div class="lote"><button type="submit">Conferir a mudança</button><a class="btn" href="{{.Back}}">Voltar</a></div></div></form>{{end}}
+{{if .Missing}}<div class="card"><div class="card-cab"><h2>Não achadas</h2><span class="muted">{{len .Missing}}</span></div><div class="tabela"><table>
+<thead><tr><th>Linha</th><th>Colado</th><th>Nomes parecidos</th></tr></thead>
+<tbody>{{range .Missing}}<tr><td class="num">{{.Line}}</td><td><code>{{.Token}}</code></td><td>{{range $i, $n := .Similar}}{{if $i}}, {{end}}{{$n}}{{else}}<span class="muted">—</span>{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+{{if .Ambiguous}}<div class="card"><div class="card-cab"><h2>Ambíguas</h2><span class="muted">acham mais de uma máquina; cole o nome completo</span></div><div class="tabela"><table>
+<thead><tr><th>Linha</th><th>Colado</th><th>Máquinas</th></tr></thead>
+<tbody>{{range .Ambiguous}}<tr><td class="num">{{.Line}}</td><td><code>{{.Token}}</code></td><td>{{range $i, $n := .Similar}}{{if $i}}, {{end}}{{$n}}{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+{{if .Already}}<div class="card"><div class="card-cab"><h2>Já no grupo</h2><span class="muted">{{len .Already}}</span></div><p>{{range $i, $r := .Already}}{{if $i}}, {{end}}{{$r.Name}}{{end}}.</p></div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "grupo-regra"}}{{template "topo" .}}
+<p><a href="{{.Back}}">← Regras do grupo</a></p>
+<h1>{{if eq .Kind "predio"}}Ligar o prédio{{else}}Ligar a faixa{{end}} ao grupo {{.Label}} <span class="muted">› conferência</span></h1>
+<p class="aviso atencao">{{if eq .Kind "predio"}}O prédio <strong>{{.Rule}}</strong>{{else}}A faixa <code>{{.Rule}}</code> ({{.RangeText}}){{end}} pega {{.Matched}} máquina(s). {{if .Move}}{{.Move}} vão para o grupo {{.Label}}: {{range $i, $f := .From}}{{if $i}}, {{end}}{{$f.N}} do grupo {{$f.Label}}{{end}}.{{else}}Nenhuma muda de grupo agora.{{end}}</p>
+<ul class="muted">{{if .Already}}<li>{{.Already}} já estão no grupo.</li>{{end}}{{if .PinnedStay}}<li>{{.PinnedStay}} movida(s) à mão ficam onde estão{{if not .Excecoes}} (marque "incluir as movidas à mão" para trazê-las){{end}}.</li>{{end}}{{if .OtherRule}}<li>{{.OtherRule}} ficam por outra regra mais forte (o prédio vence a faixa; a faixa menor vence a maior).</li>{{end}}{{if .Conflicts}}<li class="v-laranja">{{.Conflicts}} com regras em conflito: a página do grupo mostra quais.</li>{{end}}<li>Máquinas que chegarem depois {{if eq .Kind "predio"}}entram no primeiro inventário{{else}}entram em até 5 minutos{{end}}.</li></ul>
+<form method="post" action="{{.Action}}"><input type="hidden" name="confirmar" value="1">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+<div class="lote"><button type="submit">Gravar a regra</button><a class="btn" href="{{.Back}}">Voltar sem gravar</a></div></form>
 {{template "fim"}}{{end}}
 
 {{define "segbar"}}<div class="seg seg-{{.Size}} w{{.W}}" role="group" aria-label="{{.Label}}">{{range .Parts}}{{if .Href}}<a class="seg-p {{.Class}} w{{.W}}" href="{{.Href}}">{{else}}<span class="seg-p {{.Class}} w{{.W}}" tabindex="0">{{end}}{{if .Inline}}<span class="seg-rot">{{.Pct}}%</span>{{end}}<span class="seg-dica dica-{{.Align}}" role="tooltip">{{.Tip}}</span>{{if .Href}}</a>{{else}}</span>{{end}}{{end}}</div>{{end}}

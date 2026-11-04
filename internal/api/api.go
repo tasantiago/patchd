@@ -162,6 +162,12 @@ type Store interface {
 	RingPins(ctx context.Context) (map[string]bool, error)
 	ApplyRings(ctx context.Context, target map[string]int) (int, error)
 	UnpinRings(ctx context.Context, ids []string) (int, error)
+	// Página do grupo: faixas de IP e nomes.
+	IPRings(ctx context.Context) ([]store.IPRing, error)
+	AddIPRing(ctx context.Context, r store.IPRing) (int64, error)
+	DeleteIPRing(ctx context.Context, id int64) (store.IPRing, bool, error)
+	RingNames(ctx context.Context) ([]store.RingName, error)
+	SetRingName(ctx context.Context, n store.RingName) error
 	SetWindow(ctx context.Context, ring int, w window.Window, by string) error
 	DeleteWindow(ctx context.Context, ring int) (bool, error)
 	// Campanhas, para a tela (Aula 8.5) e para criar e controlar pelo painel (Aula 11.2).
@@ -204,6 +210,7 @@ var machineIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var hashPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 type api struct {
+	bg               context.Context // WithBackground: as tarefas que rodam sozinhas
 	discoveryKey     []byte
 	windowsInstaller descoberta.WindowsInstaller
 	store            Store
@@ -254,6 +261,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 		hashSlots: make(chan struct{}, loginConcurrent), discovery: &scanState{}}
 	for _, o := range opts {
 		o(a)
+	}
+	if a.bg != nil {
+		go a.ringRuleLoop(a.bg)
 	}
 
 	mux := http.NewServeMux()
@@ -330,6 +340,13 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/grupos-implantacao/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
 	mux.Handle("POST /painel/grupos-implantacao/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))
 	mux.Handle("POST /painel/grupos-implantacao/maquinas", a.sameOrigin(a.adminAction(a.fleetRingAction)))
+	mux.Handle("GET /painel/grupos-implantacao/{ring}", a.panelPage(a.groupPage))
+	mux.Handle("POST /painel/grupos-implantacao/mover", a.sameOrigin(a.adminAction(a.moveAction)))
+	mux.Handle("POST /painel/grupos-implantacao/devolver", a.sameOrigin(a.adminAction(a.returnAction)))
+	mux.Handle("POST /painel/grupos-implantacao/colar", a.sameOrigin(a.adminAction(a.pasteAction)))
+	mux.Handle("POST /painel/grupos-implantacao/faixa", a.sameOrigin(a.adminAction(a.addIPRingAction)))
+	mux.Handle("POST /painel/grupos-implantacao/faixa/remover", a.sameOrigin(a.adminAction(a.deleteIPRingAction)))
+	mux.Handle("POST /painel/grupos-implantacao/nome", a.sameOrigin(a.adminAction(a.ringNameAction)))
 	mux.Handle("POST /painel/grupos-implantacao/predio", a.sameOrigin(a.adminAction(a.setBuildingRingAction)))
 	mux.Handle("POST /painel/grupos-implantacao/predio/remover", a.sameOrigin(a.adminAction(a.deleteBuildingRingAction)))
 	mux.Handle("POST /painel/grupos-implantacao/predio/excecoes", a.sameOrigin(a.adminAction(a.unpinBuildingAction)))

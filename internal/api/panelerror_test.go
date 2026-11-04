@@ -23,6 +23,10 @@ func (bancoQueFalha) Machines(context.Context) ([]protocol.MachineSummary, error
 	return nil, errors.New("banco fora")
 }
 
+func (bancoQueFalha) InventoryList(context.Context) ([]store.InventoryRow, error) {
+	return nil, errors.New("banco fora")
+}
+
 // Uma falha interna numa tela do painel vira uma página, com o código do pedido que acha a
 // linha no log, e não o JSON da API; a API continua em JSON.
 func TestFalhaInternaNoPainel(t *testing.T) {

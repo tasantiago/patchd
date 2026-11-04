@@ -35,31 +35,9 @@ func WithTimezone(tz string) Option {
 	return func(a *api) { a.timezone = tz }
 }
 
-type ringRow struct {
-	Ring                      int
-	Label                     string
-	Machines                  int
-	Window, Next, By, Updated string
-	HasWindow                 bool
-}
-
 type durationOption struct {
 	Minutes int
 	Label   string
-}
-
-type ringsView struct {
-	pageBase
-	Rows      []ringRow
-	Total     int
-	Rings     []int
-	Days      []struct{ Value, Label string }
-	Durations []durationOption
-	Timezone  string
-	// Grupo de implantação por prédio (buildingrings.go).
-	HasAssets    bool
-	Buildings    []buildingRingRow
-	BuildingOpts []buildingOption
 }
 
 func ringLabel(r int) string {
@@ -90,54 +68,6 @@ func allRings() []int {
 	return out
 }
 
-// ringsPage lista os grupos de implantação em uso (máquinas e janela) e, para o admin, o formulário da janela.
-func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
-	v := ringsView{pageBase: a.base(r, "Grupos de implantação e janelas", "aneis"), Rings: allRings(), Days: dayValues, Timezone: a.tz()}
-	for _, m := range windowDurations {
-		v.Durations = append(v.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
-	}
-	ringsFlash(r.URL.Query(), &v.pageBase)
-	machines, err := a.store.Machines(r.Context())
-	if err != nil {
-		a.internalError(w, r, "listar máquinas", err)
-		return
-	}
-	windows, err := a.store.Windows(r.Context())
-	if err != nil {
-		a.internalError(w, r, "listar janelas", err)
-		return
-	}
-	count := map[int]int{}
-	for _, m := range machines {
-		count[m.Ring]++
-	}
-	v.Total = len(machines)
-	if err := a.buildingRings(r.Context(), &v, machines); err != nil {
-		a.internalError(w, r, "listar os vínculos de prédio", err)
-		return
-	}
-	now := a.now()
-	for ring := 0; ring <= store.MaxRing; ring++ {
-		rw, has := store.WindowFor(windows, ring)
-		if count[ring] == 0 && !has {
-			continue
-		}
-		row := ringRow{Ring: ring, Label: ringLabel(ring), Machines: count[ring], Window: "sem janela", Next: "—", By: "—", Updated: "—", HasWindow: has}
-		if has {
-			row.Window, row.By, row.Updated = rw.Window.String(), rw.UpdatedBy, ago(now.Sub(rw.UpdatedAt))
-			s, e := rw.Window.Next(now, window.MinDuration)
-			loc := rw.Window.Location
-			if s.After(now) {
-				row.Next = s.In(loc).Format("02/01 15:04")
-			} else {
-				row.Next = "aberta até " + e.In(loc).Format("15:04")
-			}
-		}
-		v.Rows = append(v.Rows, row)
-	}
-	a.render(w, r, http.StatusOK, "aneis", v)
-}
-
 // ringsFlash: as mensagens das ações de grupo de implantação, de uma lista fixa (o número vem da URL e é
 // convertido, nunca repetido como texto).
 func ringsFlash(q url.Values, b *pageBase) {
@@ -156,6 +86,30 @@ func ringsFlash(q url.Values, b *pageBase) {
 		b.Error = "Escolha um prédio do patrimônio atual (Configuração › Patrimônio)."
 	case q.Get("erro") == "sem-vinculo":
 		b.Error = "Esse prédio não tinha vínculo; nada mudou."
+	case q.Has("lote"):
+		b.Flash = fmt.Sprintf("%d máquina(s) foram para o grupo de implantação %d. Movidas assim, ficam no grupo mesmo que uma regra de prédio ou faixa diga outro.", moved, n)
+	case q.Has("faixa-ok"):
+		b.Flash = fmt.Sprintf("Faixa ligada ao grupo de implantação %d: %d máquina(s) mudaram de grupo. As da faixa que chegarem depois entram em até 5 minutos.", n, moved)
+	case q.Has("faixa-removida"):
+		b.Flash = "Faixa removida. As máquinas dela ficaram no grupo em que estavam."
+	case q.Has("nome"):
+		b.Flash = "Nome do grupo gravado."
+	case q.Get("erro") == "faixa":
+		b.Error = "Faixa inválida: use 10.1.2.0/24, 10.1.2.10-10.1.2.50, 10.1.2.10-50 ou 10.1.2.*."
+	case q.Get("erro") == "faixa-repetida":
+		b.Error = "Essa faixa já está ligada a um grupo; remova-a lá antes."
+	case q.Get("erro") == "sem-faixa":
+		b.Error = "Essa faixa não existe mais; nada mudou."
+	case q.Get("erro") == "nome":
+		b.Error = fmt.Sprintf("O nome tem no máximo %d caracteres.", store.MaxRingNameLen)
+	case q.Get("erro") == "lote-vazio":
+		b.Error = "Nenhuma máquina para mover: as marcadas já estavam no grupo, ou nenhuma foi marcada."
+	case q.Get("erro") == "lote-grande":
+		b.Error = fmt.Sprintf("Um lote tem no máximo %d máquinas.", maxBatch)
+	case q.Get("erro") == "colar-vazia":
+		b.Error = "Cole ao menos um nome, IP ou tombo, um por linha."
+	case q.Get("erro") == "colar-grande":
+		b.Error = fmt.Sprintf("A lista passa do limite (%d linhas, 256 KB): divida em partes.", maxPasteLines)
 	case q.Has("janela"):
 		b.Flash = fmt.Sprintf("Janela do grupo de implantação %d gravada. Vale para os jobs criados daqui em diante; os já criados mantêm a janela deles.", n)
 	case q.Has("removida"):
@@ -187,11 +141,13 @@ func formRing(r *http.Request, field string) (int, bool) {
 // setWindowAction grava a janela do grupo de implantação a partir do formulário.
 func (a *api) setWindowAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	_ = r.ParseForm()
-	back := func(q string) { http.Redirect(w, r, "/painel/grupos-implantacao?"+q, http.StatusSeeOther) }
 	ring, ok := formRing(r, "anel")
 	if !ok {
-		back("erro=anel")
+		http.Redirect(w, r, "/painel/grupos-implantacao?erro=anel", http.StatusSeeOther)
 		return
+	}
+	back := func(q string) {
+		http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao/%d?aba=regras&%s", ring, q), http.StatusSeeOther)
 	}
 	days := r.PostForm["dia"]
 	if len(days) == 0 || len(days) > 7 {
@@ -276,12 +232,12 @@ func (a *api) deleteWindowAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	if !ok {
-		http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao?erro=sem-janela&anel=%d", ring), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao/%d?aba=regras&erro=sem-janela&anel=%d", ring, ring), http.StatusSeeOther)
 		return
 	}
 	a.logger.Info("janela do grupo de implantação removida pelo painel", "ring", ring, "username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "janela.remover", fmt.Sprintf("grupo de implantação %d", ring), "")
-	http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao?removida=1&anel=%d", ring), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/painel/grupos-implantacao/%d?aba=regras&removida=1&anel=%d", ring, ring), http.StatusSeeOther)
 }
 
 // machineRingAction põe uma máquina num grupo de implantação, pelo detalhe.
