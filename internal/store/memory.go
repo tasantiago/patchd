@@ -35,6 +35,9 @@ type Memory struct {
 
 	windows       map[int]RingWindow      // janelas de manutenção por grupo de implantação (Aula 8.3)
 	buildingRings map[string]BuildingRing // grupo de implantação pelo prédio
+	ipRings       []IPRing                // pela faixa de IP
+	ipRingSeq     int64
+	ringNames     map[int]RingName
 
 	campaigns   []campaign.Campaign // campanhas (Aula 8.5)
 	campaignSeq int64

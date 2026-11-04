@@ -148,7 +148,7 @@ func TestAnelEJanelaNoDetalhe(t *testing.T) {
 	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
 	ctx := context.Background()
 	maq := "/painel/maquinas/60ef97e4-0001"
-	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); !strings.Contains(b, "<dt>Grupo de implantação</dt><dd>1</dd>") || !strings.Contains(b, "jobs com janela não podem") {
+	if b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String(); !strings.Contains(b, "<dt>Grupo de implantação</dt><dd><a href=\"/painel/grupos-implantacao/1\">1</a></dd>") || !strings.Contains(b, "jobs com janela não podem") {
 		t.Errorf("grupo de implantação padrão, sem janela:\n%s", b)
 	}
 	if ok, _ := st.SetMachineRing(ctx, "60ef97e4-0001", 0); !ok {
@@ -164,7 +164,7 @@ func TestAnelEJanelaNoDetalhe(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := pagina(h, "GET", maq, sessaoTeste, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String()
-	for _, tr := range []string{"<dt>Grupo de implantação</dt><dd>0 (piloto)</dd>", "todos 03:00-03:10 (America/Porto_Velho)", "<td>abre em 2 h 59 min</td>"} {
+	for _, tr := range []string{"<dt>Grupo de implantação</dt><dd><a href=\"/painel/grupos-implantacao/0\">0 (piloto)</a></dd>", "todos 03:00-03:10 (America/Porto_Velho)", "<td>abre em 2 h 59 min</td>"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
 		}

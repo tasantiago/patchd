@@ -43,12 +43,13 @@ func TestGrupoPeloPredio(t *testing.T) {
 		}
 		return r
 	}
+	regras := "/painel/grupos-implantacao/3?aba=regras"
 	tela := func(cookie string) string {
 		t.Helper()
-		return pagina(h, "GET", "/painel/grupos-implantacao", cookie, nil).Body.String()
+		return pagina(h, "GET", regras, cookie, nil).Body.String()
 	}
 	b := tela(sessaoAdmin)
-	for _, tr := range []string{"<h2>Grupo de implantação por prédio</h2>", "Nenhum prédio ligado", `<option value="Bloco A">Bloco A · 3 máquina(s)</option>`,
+	for _, tr := range []string{"<h2>Prédios</h2>", "Nenhum prédio ligado a este grupo", `<option value="Bloco A">Bloco A · 3 máquina(s)</option>`,
 		`action="/painel/grupos-implantacao/predio"`} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("tela: faltou %q", tr)
@@ -60,7 +61,7 @@ func TestGrupoPeloPredio(t *testing.T) {
 	liga := func(cookie string, f url.Values) *resposta {
 		t.Helper()
 		r := pagina(h, "POST", "/painel/grupos-implantacao/predio", cookie, f)
-		return &resposta{code: r.Code, loc: local(r)}
+		return &resposta{code: r.Code, loc: local(r), body: r.Body.String()}
 	}
 	if r := liga(sessaoTeste, url.Values{"predio": {"Bloco A"}, "anel": {"3"}}); r.code != http.StatusForbidden {
 		t.Fatalf("leitura liga: %d", r.code)
@@ -72,21 +73,33 @@ func TestGrupoPeloPredio(t *testing.T) {
 		t.Errorf("grupo inválido: %s", r.loc)
 	}
 
-	// Ligar: pc-1001 e pc-1002 vão para o 3; o piloto fica; o Bloco B não muda.
+	// A prévia diz o que muda, e nada muda antes de gravar.
 	r := liga(sessaoAdmin, url.Values{"predio": {"Bloco A"}, "anel": {"3"}})
-	if !strings.Contains(r.loc, "vinculo=1") || !strings.Contains(r.loc, "movidas=2") {
+	if r.code != http.StatusOK || !strings.Contains(r.body, "pega 3 máquina(s). 2 vão para o grupo 3: 2 do grupo 1 (padrão).") ||
+		!strings.Contains(r.body, "1 movida(s) à mão ficam onde estão") {
+		t.Fatalf("prévia: %d\n%s", r.code, r.body)
+	}
+	if grupo("pc-1001") != 1 {
+		t.Fatal("a prévia gravou")
+	}
+	// Gravar: pc-1001 e pc-1002 vão para o 3; o piloto fica; o Bloco B não muda.
+	r = liga(sessaoAdmin, url.Values{"predio": {"Bloco A"}, "anel": {"3"}, "confirmar": {"1"}})
+	if !strings.HasPrefix(r.loc, "/painel/grupos-implantacao/3?") || !strings.Contains(r.loc, "vinculo=1") || !strings.Contains(r.loc, "movidas=2") {
 		t.Fatalf("ligar: %s", r.loc)
 	}
 	if grupo("pc-1001") != 3 || grupo("pc-1002") != 3 || grupo("pc-1003") != 0 || grupo("pc-2001") != 1 {
 		t.Fatalf("grupos: %d %d %d %d", grupo("pc-1001"), grupo("pc-1002"), grupo("pc-1003"), grupo("pc-2001"))
 	}
-	b = pagina(h, "GET", "/painel/grupos-implantacao?vinculo=1&anel=3&movidas=2", sessaoAdmin, nil).Body.String()
+	b = pagina(h, "GET", r.loc, sessaoAdmin, nil).Body.String()
 	for _, tr := range []string{"Prédio ligado ao grupo de implantação 3: 2 máquina(s) mudaram de grupo",
-		`<td>Bloco A</td><td>3</td><td class="num">3</td><td class="num">2</td><td class="num">1</td><td>thyago · `,
-		"Devolver as 1 ao grupo 3", "hoje no grupo 3"} {
+		`<td>Bloco A</td><td class="num">3</td><td class="num">2</td><td class="num">1</td><td>thyago · `,
+		"Devolver as 1 ao grupo"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("depois de ligar: faltou %q", tr)
 		}
+	}
+	if b := pagina(h, "GET", "/painel/grupos-implantacao/0?aba=regras", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "hoje ligado ao grupo 3") {
+		t.Error("a opção do prédio em outro grupo")
 	}
 	ev, _ := st.AuditEvents(ctx, store.AuditFilter{Limit: 5})
 	if len(ev) == 0 || ev[0].Action != "predio.grupo" || ev[0].Target != "Bloco A" || !strings.Contains(ev[0].Detail, "grupo de implantação 3 · 2 máquina(s) movida(s)") {
@@ -126,13 +139,13 @@ func TestGrupoPeloPredio(t *testing.T) {
 	if _, err := st.SetMachineRing(ctx, "pc-1001", 0); err != nil {
 		t.Fatal(err)
 	}
-	if r := liga(sessaoAdmin, url.Values{"predio": {"Bloco A"}, "anel": {"4"}, "excecoes": {"1"}}); !strings.Contains(r.loc, "movidas=4") {
+	if r := liga(sessaoAdmin, url.Values{"predio": {"Bloco A"}, "anel": {"4"}, "excecoes": {"1"}, "confirmar": {"1"}}); !strings.Contains(r.loc, "movidas=4") {
 		t.Errorf("trocar com exceções: %s", r.loc)
 	}
 
 	// Remover: ninguém muda de grupo; remover de novo avisa.
 	pr = pagina(h, "POST", "/painel/grupos-implantacao/predio/remover", sessaoAdmin, url.Values{"predio": {"Bloco A"}})
-	if l := local(pr); !strings.Contains(l, "vinculo-removido=1") {
+	if l := local(pr); !strings.HasPrefix(l, "/painel/grupos-implantacao/4?") || !strings.Contains(l, "vinculo-removido=1") {
 		t.Errorf("remover: %s", l)
 	}
 	if grupo("pc-1001") != 4 {
@@ -158,7 +171,7 @@ func TestGrupoPeloPredioNaImportacao(t *testing.T) {
 		return local(r)
 	}
 	importa("TOMBO,DEPREDIO\n3001,Anexo\n9999,Sede\n")
-	if r := pagina(h, "POST", "/painel/grupos-implantacao/predio", sessaoAdmin, url.Values{"predio": {"Sede"}, "anel": {"2"}}); !strings.Contains(local(r), "movidas=0") {
+	if r := pagina(h, "POST", "/painel/grupos-implantacao/predio", sessaoAdmin, url.Values{"predio": {"Sede"}, "anel": {"2"}, "confirmar": {"1"}}); !strings.Contains(local(r), "movidas=0") {
 		t.Fatalf("ligar: %s", local(r))
 	}
 	if l := importa("TOMBO,DEPREDIO\n3001,Sede\n"); !strings.Contains(l, "grupo=1") {
@@ -170,6 +183,6 @@ func TestGrupoPeloPredioNaImportacao(t *testing.T) {
 }
 
 type resposta struct {
-	code int
-	loc  string
+	code      int
+	loc, body string
 }

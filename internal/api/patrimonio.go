@@ -162,8 +162,8 @@ func (a *api) importAssetsAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	a.assetsChanged()
-	// O prédio das máquinas pode ter mudado: os vínculos de prédio valem de novo.
-	moved, err := a.applyBuildingRings(r.Context())
+	// O prédio das máquinas pode ter mudado: as regras dos grupos valem de novo.
+	moved, err := a.applyRingRules(r.Context())
 	if err != nil {
 		a.logger.Error("grupo de implantação pelo prédio depois da importação", "error", err)
 	}

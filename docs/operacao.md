@@ -1081,34 +1081,65 @@ Excel no Windows). Até 20 MB.
   do check-in) estiver na faixa. Um IP sozinho continua a busca por texto.
 - O filtro de **prédio** vem do patrimônio (Localização do patrimônio, abaixo). Faixa, prédio,
   status, sistema e firmware se combinam.
-- Com qualquer filtro, o admin vê **Pôr as N máquinas encontradas no grupo de implantação X**:
+- Com qualquer filtro, o admin vê **Pôr as N máquinas encontradas no grupo de implantação X**
+  (o mesmo que a aba Adicionar da página do grupo, abaixo):
   move todas as do filtro (não só as da página). O servidor refaz o filtro na hora e só move
   se a contagem for a mesma que a página mostrou; sem filtro, não move nada. Vai para a
   auditoria como `maquina.anel_lote`, com o filtro em palavras.
 
-### Ligar um prédio a um grupo de implantação
+### A página do grupo de implantação
 
-Em **Automação › Grupos de implantação e janelas**, o cartão "Grupo de implantação por prédio"
-liga um prédio do patrimônio (o `DEPREDIO` do CSV, exatamente como veio) a um grupo. A partir
-daí as máquinas do prédio vão para esse grupo:
+Em **Automação › Grupos de implantação e janelas**, cada grupo em uso tem um cartão: o nome,
+quantas máquinas, quantas foram movidas à mão, quantas têm regras em conflito, a janela e as
+regras. Os grupos vazios ficam numa linha de links. O cartão abre a página do grupo, com as abas:
 
-- **ao gravar o vínculo** e **a cada importação do patrimônio**, a frota inteira (a máquina
-  que mudou de prédio no arquivo novo vai para o grupo do prédio novo, se ele tiver vínculo);
-- **no inventário** de uma máquina nova ou renomeada, só ela: a máquina nova do prédio já
-  entra no grupo certo, sem passar pelo padrão.
+- **Máquinas**: quem está no grupo, com busca (nome, IP, tombo, local, ou uma faixa como
+  `10.1.2.0/24`), o prédio e "como entrou": **à mão**, **pelo prédio**, **pela faixa** ou **sem
+  regra**. Marque e **mova para outro grupo**, ou **devolva às regras** (tira o "à mão": o
+  prédio ou a faixa valem de novo).
+- **Adicionar**: as máquinas dos outros grupos, com os mesmos filtros e o grupo atual. Marque,
+  ou leve todas as do filtro.
+- **Colar lista**: cole uma coluna da planilha (um por linha; vale a primeira célula): o nome,
+  com ou sem o domínio, o IP ou o tombo. O servidor mostra o que achou (e por onde: nome, IP,
+  tombo), o que não achou (com até três nomes parecidos), o que é ambíguo (um tombo que acha
+  duas máquinas) e o que já está no grupo. Até 5.000 linhas.
+- **Regras e janela**: o nome do grupo (só para reconhecer; campanhas e jobs usam o número), os
+  prédios e as faixas de IP ligados a ele e a janela de manutenção.
 
-**Exceções.** A máquina movida à mão (detalhe da máquina, Parque, lote do Inventário ou
-`patchd-server ring`) fica no grupo em que foi posta: o vínculo não a tira dali. A tabela
-mostra, por prédio, quantas máquinas há, quantas estão no grupo e quantas foram movidas à mão;
-**Devolver as N ao grupo** traz as exceções de volta ao vínculo. Ao ligar, a opção "Incluir as
-máquinas do prédio movidas à mão" faz o mesmo de uma vez. Na atualização para esta versão,
-toda máquina que já estava fora do grupo padrão (1) conta como movida à mão, para que o
-primeiro vínculo não tire um piloto do grupo 0.
+Mover passa sempre por uma **conferência** que diz de que grupos as máquinas saem ("12 saem do
+grupo 1, 3 do grupo 0"). O que se grava é a lista que se viu, até 2.000 por vez. A máquina
+movida assim passa a ser "à mão". Auditoria: `maquina.anel_lote`; devolver às regras vai como
+`maquina.anel_devolver`, e o nome como `grupo.nome`.
 
-**Remover o vínculo** não move ninguém: as máquinas ficam no grupo em que estavam. Um prédio
-que sumiu do patrimônio aparece como "fora do patrimônio atual" e não move nada até voltar.
-Auditoria: `predio.grupo` (com quantas mudaram), `predio.grupo_remover` e
-`predio.grupo_excecoes`; a importação do patrimônio diz quantas mudaram de grupo.
+### Regras: prédio e faixa de IP
+
+Uma regra diz para que grupo vão as máquinas de um **prédio** do patrimônio (o `DEPREDIO` do
+CSV, exato) ou de uma **faixa de IP** (`10.1.2.0/24`, `10.1.2.10-10.1.2.50`, `10.1.2.10-50` ou
+`10.1.2.*`, contra os IPs das placas e o do check-in). Antes de gravar, a tela mostra quantas
+máquinas a regra pega, quantas mudam e de onde, quantas ficam (à mão, ou por uma regra mais
+forte) e quantas entram em conflito.
+
+**Prioridade:** à mão > prédio > faixa de IP > sem regra.
+
+- Entre faixas, vale a **menor** (`10.1.2.200-250` vence `10.1.2.0/24`). Duas do mesmo tamanho
+  que dizem grupos diferentes são **conflito**: a máquina fica onde está.
+- Quando o prédio e a faixa discordam, vale o prédio, com o aviso "a faixa X diz grupo N; vale o
+  prédio" na máquina. O filtro "Com regras em conflito" lista as duas situações.
+- Sem regra, a máquina fica onde está (a nova entra no grupo 1).
+
+**Quando valem:** ao gravar a regra (a frota inteira), a cada importação do patrimônio, no
+primeiro inventário de uma máquina nova (pelo prédio) e numa passada do servidor a cada **5
+minutos** (pela faixa: o IP muda no check-in).
+
+**Exceções.** Quem foi movido à mão (detalhe da máquina, Parque, lote do Inventário, página do
+grupo ou `patchd-server ring`) fica no grupo em que foi posto. "Devolver as N ao grupo" (no
+prédio), "Devolver marcadas às regras" (nas máquinas) e a opção "Incluir as movidas à mão" (ao
+ligar uma regra) devolvem as exceções. Na atualização que trouxe as regras, toda máquina fora do
+grupo 1 passou a contar como movida à mão, para o primeiro vínculo não tirar pilotos do grupo 0.
+
+**Remover** um prédio ou uma faixa não move ninguém. Um prédio que sumiu do patrimônio aparece
+como "fora do patrimônio atual" e não move nada até voltar. Auditoria: `predio.grupo`,
+`predio.grupo_remover`, `predio.grupo_excecoes`, `faixa.grupo` e `faixa.grupo_remover`.
 
 ## Descoberta de rede (Aula 23.7)
 
