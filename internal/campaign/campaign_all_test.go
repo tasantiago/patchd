@@ -143,3 +143,20 @@ func TestCampanhaTodosOsProgramas(t *testing.T) {
 		t.Errorf("sem catálogo: %+v", c)
 	}
 }
+
+// Uma máquina que não é Windows conta uma vez nas notas, não uma vez por programa.
+func TestTodosOsProgramasMaquinaForaContaUmaVez(t *testing.T) {
+	a := novoAmbiente(t)
+	cat := &semWindows{catalogoFalso{aprovados: []campaign.AppVersion{{App: "7zip", Version: "26.04"}, {App: "chrome", Version: "142.0"}}}}
+	a.e.ThirdParty = cat
+	id := a.cria(campaign.Campaign{Name: "x", Type: campaign.TypeThirdPartyAll, Rings: []int{1}, TTL: time.Hour, CreatedBy: "t"})
+	if c := a.passo(id, 0); len(c.Notes) != 1 || c.Notes[0] != "grupo de implantação 1: 0 job(s); fora: 2 sem inventário do Windows" {
+		t.Fatalf("%q", c.Notes)
+	}
+}
+
+type semWindows struct{ catalogoFalso }
+
+func (semWindows) Job(context.Context, string, string, string) (*jobs.ThirdPartyParams, string, error) {
+	return nil, "sem inventário do Windows", nil
+}

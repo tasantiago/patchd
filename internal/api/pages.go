@@ -977,17 +977,48 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <li><div class="kpi"><span class="kpi-rot">Programas com problema</span><span class="kpi-val">{{.Programs}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Instalações desatualizadas</span><span class="kpi-val v-laranja">{{.Outdated}}</span><span class="kpi-sub">abaixo da referência ou do mínimo</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Instalações fora de suporte</span><span class="kpi-val v-vermelho">{{.EOL}}</span><span class="kpi-sub">sem correção do fabricante</span></div></li>
+<li><a class="kpi{{if eq .Inst "aguardando"}} ativo{{end}}" href="{{.WaitingHref}}"><span class="kpi-rot">Instaladores aguardando aprovação</span><span class="kpi-val v-laranja">{{.Waiting}}</span><span class="kpi-sub">versão guardada mais nova</span></a></li>
 </ul>
-<div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="/painel/patch?aba=terceiros">só os com problema</a>{{else}}<a href="/painel/patch?aba=terceiros&amp;todos=1">mostrar todos os identificados</a>{{end}}</span></div>
-<p class="muted">Os programas com regra de instalação o patchd atualiza: baixe e aprove a versão na página do programa, e crie a campanha ou o job. Os outros, a lista diz o que distribuir e onde. A referência vem do catálogo de terceiros (winget e feeds dos fabricantes).</p>
-{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>Programa</th><th>Referência</th><th>Instalações</th><th>Desatualizadas</th><th>Fora de suporte</th><th>Versões instaladas</th><th>Origem</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Reference}}</code></td><td class="num">{{.Installs}}</td>
+<div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="{{.ProblemsHref}}">só os com problema</a>{{else}}<a href="{{.AllHref}}">mostrar todos os identificados</a>{{end}}</span></div>
+<p class="muted">Os programas com regra de instalação o patchd atualiza: baixe a versão na página do programa, aprove (aqui em lote, ou lá) e crie a campanha ou o job. Os outros, a lista diz o que distribuir e onde. A referência vem do catálogo de terceiros (winget e feeds dos fabricantes).</p>
+<form class="busca" method="get" action="/painel/patch"><input type="hidden" name="aba" value="terceiros">{{if .All}}<input type="hidden" name="todos" value="1">{{end}}
+<select name="instalador" aria-label="instalador">{{range .Insts}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Programa (chrome, 7-zip…)" aria-label="buscar programa">
+<label>Por página <select name="por">{{range .Pers}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<button type="submit">Buscar</button>{{if .HasFilter}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>
+{{if .Rows}}{{if .CanBatch}}<form method="post" action="/painel/patch/terceiros/aprovar-lote">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}{{end}}
+<div class="tabela"><table>
+<thead><tr>{{if .CanBatch}}<th class="col-lote">Lote</th>{{end}}<th>Programa</th><th>Referência</th><th>Instalações</th><th>Desatualizadas</th><th>Fora de suporte</th><th>Versões instaladas</th><th>Instalador</th><th>Origem</th></tr></thead>
+<tbody>{{range .Rows}}<tr>{{if $.CanBatch}}<td class="col-lote">{{if .Sel}}<input type="checkbox" name="sel" value="{{.Sel}}" aria-label="marcar {{.Program}}">{{end}}</td>{{end}}<td><a href="{{.Href}}">{{.Program}}</a></td><td><code>{{.Reference}}</code></td><td class="num">{{.Installs}}</td>
 <td class="num">{{if .Outdated}}<span class="v-laranja">{{.Outdated}}</span>{{else}}0{{end}}</td><td class="num">{{if .EOL}}<span class="expl">{{.EOL}}</span>{{else}}0{{end}}</td>
-<td><code>{{.Versions}}</code></td><td class="muted">{{.Origin}}</td></tr>{{end}}</tbody></table></div>
+<td><code>{{.Versions}}</code></td><td>{{if .Installer}}<span class="estado {{.InstallerClass}}">{{.Installer}}</span>{{end}}{{if .InstallerNote}} <span class="muted">{{.InstallerNote}}</span>{{end}}</td><td class="muted">{{.Origin}}</td></tr>{{end}}</tbody></table></div>
+{{if .CanBatch}}<div class="lote"><button type="submit">Conferir marcados</button>
+<button class="sec" type="submit" name="filtro" value="1">Conferir todos os {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
+<span class="muted">Aprova a versão guardada mais nova de cada programa. Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} programas.{{end}}</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum programa de terceiros {{if .All}}identificado{{else}}com problema{{end}} no parque.</p>{{end}}
+{{else}}<p class="muted">Nenhum programa de terceiros {{if .HasFilter}}com esse filtro{{else if .All}}identificado{{else}}com problema{{end}} no parque.</p>{{end}}
 </div>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "patch-terceiros-lote"}}{{template "topo" .}}
+<p><a href="{{.Back}}">← Programas de terceiros</a></p>
+<h1>Aprovar instaladores em lote <span class="muted">› conferência</span></h1>
+<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}versão será aprovada{{else}}versões serão aprovadas{{end}}. A partir daí, o patchd pode instalá-las onde o plano diz atualizar, por campanha ou job.</p>
+{{if .FilterTotal}}<p class="aviso atencao">O filtro tem {{.FilterTotal}} programas aguardando; este lote leva os {{.Max}} primeiros, pela ordem da lista. Os demais ficam para o próximo lote.</p>{{end}}
+{{if .Skipped}}<p class="muted">{{.Skipped}} marcado(s) ficaram de fora: já aprovados, excluídos, ou fora do parque.</p>{{end}}
+<form method="post" action="/painel/patch/terceiros/aprovar-lote">
+<input type="hidden" name="confirmar" value="1">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+<div class="card"><div class="card-cab"><h2>Versões do lote</h2><span class="muted">instaladores guardados no servidor</span></div>
+<div class="tabela"><table>
+<thead><tr><th>Programa</th><th>Versão a aprovar</th><th>Aprovada hoje</th><th>Instalações</th><th>Com problema</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><input type="hidden" name="sel" value="{{.Sel}}">{{.Program}}</td><td><code>{{.Version}}</code></td><td><code>{{.Approved}}</code></td>
+<td class="num">{{.Installs}}</td><td class="num">{{.Problems}}</td></tr>{{end}}</tbody></table></div>
+</div>
+<div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
+<div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todas as versões (opcional), ex.: testado no grupo de implantação piloto" aria-label="observação"></div>
+<div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if eq (len .Rows) 1}}versão{{else}}versões{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
+<span class="muted">O servidor confere cada versão de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.</span></div>
+</div></form>
 {{template "fim"}}{{end}}
 
 {{define "patch-programa"}}{{template "topo" .}}
@@ -1029,12 +1060,16 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <li><a class="kpi{{if eq .Status "aguardando"}} ativo{{end}}" href="{{.KPIWait}}"><span class="kpi-rot">Aguardando aprovação</span><span class="kpi-val v-laranja">{{.Waiting}}</span></a></li>
 <li><a class="kpi{{if eq .Status "aprovados"}} ativo{{end}}" href="{{.KPIApproved}}"><span class="kpi-rot">Aprovados</span><span class="kpi-val v-verde">{{.Approved}}</span></a></li>
 </ul>
-<div class="card"><div class="card-cab"><h2>Itens pendentes</h2><span class="muted">avaliação de agora, contra o catálogo</span></div>
-<form class="busca" method="get" action="/painel/patch">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}
+<div class="card"><div class="card-cab"><h2>{{if eq .View "correcao"}}Correções pendentes{{else}}Itens pendentes{{end}}</h2><span class="muted">avaliação de agora, contra o catálogo</span></div>
+<nav class="abas" aria-label="visão da lista"><a href="{{.ViewItem}}"{{if ne .View "correcao"}} class="ativa" aria-current="page"{{end}}>Por item (pacote ou CVE)</a><a href="{{.ViewFix}}"{{if eq .View "correcao"}} class="ativa" aria-current="page"{{end}}>Por correção (KB, versão, pacote)</a></nav>
+<form class="busca" method="get" action="/painel/patch">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .View}}<input type="hidden" name="ver" value="{{.View}}">{{end}}
+<select name="sistema" aria-label="sistema">{{range .Systems}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<select name="severidade" aria-label="severidade">{{range .Sevs}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Item, correção ou aviso (curl, CVE-2026-…, KB…)" aria-label="buscar item">
-<button type="submit">Buscar</button>{{if .HasFilter}} <a href="/painel/patch">Limpar</a>{{end}}</form>
+<label>Por página <select name="por">{{range .Pers}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<button type="submit">Buscar</button>{{if .HasFilter}} <a href="{{if eq .View "correcao"}}/painel/patch?ver=correcao{{else}}/painel/patch{{end}}">Limpar</a>{{end}}</form>
 {{if .WholeFix}}<form class="aviso atencao" method="post" action="/painel/patch/correcao"><input type="hidden" name="fix" value="{{.WholeFix}}">Os {{.WholeFixN}} itens aguardando deste filtro são CVEs da mesma correção, <code>{{.WholeFix}}</code>. <button type="submit">Conferir a correção inteira</button></form>{{end}}
-{{if .Rows}}{{if .CanBatch}}<form method="post" action="/painel/patch/aprovar-lote">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}{{if gt .Page 1}}<input type="hidden" name="pagina" value="{{.Page}}">{{end}}{{end}}
+{{if eq .View "correcao"}}{{template "patch-correcoes" .}}{{else}}{{if .Rows}}{{if .CanBatch}}<form method="post" action="/painel/patch/aprovar-lote">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}{{if gt .Page 1}}<input type="hidden" name="pagina" value="{{.Page}}">{{end}}{{template "patch-filtro-oculto" .}}{{end}}
 <div class="tabela"><table>
 <thead><tr>{{if .CanBatch}}<th class="col-lote">Lote</th>{{end}}<th>Item</th><th>Tipo</th><th>Corrigido em</th><th>Severidade</th><th>Explorada</th><th>Sistemas</th><th>Catálogo</th><th>Aprovação</th></tr></thead>
 <tbody>{{range .Rows}}<tr>{{if $.CanBatch}}<td class="col-lote">{{if .Sel}}<input type="checkbox" name="sel" value="{{.Sel}}" aria-label="marcar {{.ID}}">{{end}}</td>{{end}}<td><a href="{{.Href}}"><code>{{.ID}}</code></a>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}</td>
@@ -1045,27 +1080,43 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <button class="sec" type="submit" name="filtro" value="1">Conferir todos os {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
 <span class="muted">Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} itens.{{end}}</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}
+{{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}{{end}}
 </div>{{end}}
 {{template "fim"}}{{end}}
+
+{{define "patch-filtro-oculto"}}{{if .OS}}<input type="hidden" name="sistema" value="{{.OS}}">{{end}}{{if .Sev}}<input type="hidden" name="severidade" value="{{.Sev}}">{{end}}{{if ne .Per 25}}<input type="hidden" name="por" value="{{.Per}}">{{end}}{{end}}
+
+{{define "patch-correcoes"}}{{if .FixRows}}{{if .CanBatch}}<form method="post" action="/painel/patch/aprovar-lote"><input type="hidden" name="ver" value="correcao">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}{{if gt .Page 1}}<input type="hidden" name="pagina" value="{{.Page}}">{{end}}{{template "patch-filtro-oculto" .}}{{end}}
+<div class="tabela"><table>
+<thead><tr>{{if .CanBatch}}<th class="col-lote">Lote</th>{{end}}<th>Correção</th><th>Sistema</th><th>Resolve</th><th>Severidade</th><th>Explorada</th><th>Sistemas afetados</th><th>Aprovação</th></tr></thead>
+<tbody>{{range .FixRows}}<tr>{{if $.CanBatch}}<td class="col-lote">{{if .Sel}}<input type="checkbox" name="sel" value="{{.Sel}}" aria-label="marcar {{.Label}}">{{end}}</td>{{end}}
+<td><a href="{{.Href}}"><code>{{.Label}}</code></a>{{if .Detail}}<div class="muted nota">{{.Detail}}</div>{{end}}</td><td>{{.System}}</td><td class="num">{{.Items}} {{.Unit}}</td>
+<td>{{.Severity}}</td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td class="num">{{.Machines}}</td>
+<td><span class="estado {{.ApprovalClass}}">{{.Approval}}</span></td></tr>{{end}}</tbody></table></div>
+{{if .CanBatch}}<div class="lote"><button type="submit">Conferir marcadas</button>
+<button class="sec" type="submit" name="filtro" value="1">Conferir todas as {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
+<span class="muted">Aprovar uma correção aprova todas as CVEs dela. Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} correções.{{end}}</span></div></form>{{end}}
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhuma correção{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}{{end}}
 
 {{define "patch-lote"}}{{template "topo" .}}
 <p><a href="{{.Back}}">← Patch</a></p>
 <h1>Aprovar em lote <span class="muted">› conferência</span></h1>
-<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}item será aprovado{{else}}itens serão aprovados{{end}} com a correção indicada{{if .Exploited}}, {{.Exploited}} com exploração conhecida{{end}}. A partir daí, cada um pode entrar em atualização e em campanha.</p>
-{{if .FilterTotal}}<p class="aviso atencao">O filtro tem {{.FilterTotal}} itens aguardando; este lote leva os {{.Max}} primeiros, pela ordem da lista. Os demais ficam para o próximo lote.</p>{{end}}
+{{if .FixMode}}<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}correção será aprovada{{else}}correções serão aprovadas{{end}}: {{.FixItems}} item(ns) aguardando ao todo{{if .Exploited}}, em {{.Exploited}} correção(ões) com exploração conhecida{{end}}. A partir daí, cada item pode entrar em atualização e em campanha.</p>
+{{else}}<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}item será aprovado{{else}}itens serão aprovados{{end}} com a correção indicada{{if .Exploited}}, {{.Exploited}} com exploração conhecida{{end}}. A partir daí, cada um pode entrar em atualização e em campanha.</p>{{end}}
+{{if .FilterTotal}}<p class="aviso atencao">O filtro tem {{.FilterTotal}} {{if .FixMode}}correções{{else}}itens{{end}} aguardando; este lote leva {{if .FixMode}}as{{else}}os{{end}} {{.Max}} {{if .FixMode}}primeiras{{else}}primeiros{{end}}, pela ordem da lista. Os demais ficam para o próximo lote.</p>{{end}}
 {{if .Skipped}}<p class="muted">{{.Skipped}} marcado(s) ficaram de fora: já aprovados, ou não estão mais pendentes.</p>{{end}}
 <form method="post" action="/painel/patch/aprovar-lote">
-<input type="hidden" name="confirmar" value="1">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}
-<div class="card"><div class="card-cab"><h2>Itens do lote</h2><span class="muted">avaliação de agora</span></div>
+<input type="hidden" name="confirmar" value="1">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+<div class="card"><div class="card-cab"><h2>{{if .FixMode}}Correções do lote{{else}}Itens do lote{{end}}</h2><span class="muted">avaliação de agora</span></div>
 <div class="tabela"><table>
-<thead><tr><th>Item</th><th>Tipo</th><th>Corrigido em</th><th>Severidade</th><th>Explorada</th><th>Sistemas</th></tr></thead>
+<thead><tr><th>{{if .FixMode}}Correção{{else}}Item{{end}}</th><th>Tipo</th><th>Corrigido em</th><th>Severidade</th><th>Explorada</th><th>Sistemas</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td><input type="hidden" name="sel" value="{{.Sel}}"><code>{{.ID}}</code></td><td>{{.Kind}}</td><td><code>{{.FixedIn}}</code></td>
 <td>{{.Severity}}</td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td class="num">{{.Machines}}</td></tr>{{end}}</tbody></table></div>
 </div>
 <div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
 <div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todos os itens (opcional), ex.: testado no grupo de implantação piloto em 10/10" aria-label="observação"></div>
-<div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if eq (len .Rows) 1}}item{{else}}itens{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
+<div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if .FixMode}}{{if eq (len .Rows) 1}}correção{{else}}correções{{end}}{{else}}{{if eq (len .Rows) 1}}item{{else}}itens{{end}}{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
 <span class="muted">O servidor confere cada item de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.</span></div>
 </div></form>
 {{template "fim"}}{{end}}
@@ -1482,11 +1533,18 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
 <span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
-{{range .Rings}}<section><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2>
+{{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
-{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th><th>Estado</th><th>Detalhe</th></tr></thead>
-<tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
-<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>{{end}}</section>{{end}}
+{{if .Counts}}<ul class="chips camp-estados" aria-label="jobs por estado">{{range .Counts}}<li><a class="chip{{if .Active}} ativo{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}}><span class="job {{.State}}">{{.Label}}</span> <b>{{.N}}</b></a></li>{{end}}</ul>{{end}}
+{{if .Selected}}{{if .Total}}<form class="busca" method="get" action="/painel/campanhas/{{.CampaignID}}#grupo-{{.Idx}}"><input type="hidden" name="grupo" value="{{.Idx}}">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}
+{{if .Slots}}<select name="programa" aria-label="programa"><option value="">Todos os programas</option>{{range .Slots}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Máquina: nome ou começo do ID" aria-label="buscar máquina">
+<button type="submit">Filtrar</button>{{if or .Q .Filter .Slot}} <a href="{{.Href}}">Limpar</a>{{end}}</form>{{end}}
+{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th>{{if .HasSlot}}<th>Programa</th>{{end}}<th>Estado</th><th>Detalhe</th></tr></thead>
+<tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{if $rv.HasSlot}}<td>{{.Slot}}</td>{{end}}
+<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else if .Total}}<p class="muted">Nenhum job com esse filtro.</p>{{end}}{{end}}</div>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "campanha-nao-encontrada"}}{{template "topo" .}}

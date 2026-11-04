@@ -137,21 +137,50 @@ func tpProgramPath(appID string) string {
 type tpRow struct {
 	Program, Href, Reference, Origin, Versions string
 	Installs, Problems, EOL, Outdated          int
+	Installer, InstallerClass, InstallerNote   string
+	Sel                                        string // admin e versão guardada aguardando: o valor do lote
 }
 
 type tpView struct {
 	pageBase
-	Unavailable                    string
-	Programs, Outdated, EOL, Hosts int
-	All                            bool // ?todos=1: também os programas sem problema
-	Rows                           []tpRow
-	Shown, Prev, Next              string
+	Unavailable                             string
+	Programs, Outdated, EOL, Hosts, Waiting int
+	All                                     bool // ?todos=1: também os programas sem problema
+	Rows                                    []tpRow
+	Shown, Prev, Next                       string
+	// Filtro e lote.
+	Q, Inst                string
+	Insts, Pers            []optView
+	HasFilter, CanBatch    bool
+	Found, FilterWaiting   int
+	MaxBatch               int
+	Hidden                 []optView
+	AllHref, ProblemsHref  string
+	WaitingHref, ClearHref string
 }
 
 func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	v := tpView{pageBase: a.base(r, "Patch · Terceiros", "patch"), All: q.Get("todos") == "1"}
+	q := parseTPQuery(r.URL.Query())
+	v := tpView{pageBase: a.base(r, "Patch · Terceiros", "patch"), All: q.All, Q: q.Q, Inst: q.Inst, MaxBatch: maxApproveBatch}
 	v.Sub = "terceiros"
+	v.Flash, v.Error = tpBatchFlash(r.URL.Query())
+	for _, o := range tpInstFilters {
+		v.Insts = append(v.Insts, optView{Value: o.V, Label: o.L, Selected: o.V == q.Inst})
+	}
+	for _, n := range patchPerPageOptions {
+		v.Pers = append(v.Pers, optView{Value: strconv.Itoa(n), Label: strconv.Itoa(n), Selected: n == q.Per})
+	}
+	v.HasFilter = q.Q != "" || q.Inst != ""
+	link := func(change func(*tpQuery)) string {
+		c := q
+		c.Page = 1
+		change(&c)
+		return c.href()
+	}
+	v.AllHref = link(func(c *tpQuery) { c.All = true })
+	v.ProblemsHref = link(func(c *tpQuery) { c.All = false })
+	v.WaitingHref = link(func(c *tpQuery) { c.All, c.Inst, c.Q = true, tpInstWaiting, "" })
+	v.ClearHref = tpQuery{All: q.All, Per: q.Per}.href()
 	if a.compliance == nil {
 		v.Unavailable = "Os programas de terceiros exigem o PostgreSQL com o catálogo."
 		a.render(w, r, http.StatusOK, "patch-terceiros", v)
@@ -167,9 +196,14 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 		a.internalError(w, r, "avaliar os programas de terceiros", err)
 		return
 	}
+	inst, err := a.tpInstallers(r.Context())
+	if err != nil {
+		a.internalError(w, r, "listar instaladores", err)
+		return
+	}
 	hosts := map[string]bool{}
-	var shown []tpProgram
-	for _, p := range aggregateThirdParty(list) {
+	progs := aggregateThirdParty(list)
+	for _, p := range progs {
 		if p.Problems > 0 {
 			v.Programs++
 			for _, in := range p.Installs {
@@ -180,32 +214,32 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Outdated += p.Outdated
 		v.EOL += p.EOL
-		if p.Problems > 0 || v.All {
-			shown = append(shown, p)
+		if tpInstallerOf(inst, p.AppID).State == tpInstWaiting {
+			v.Waiting++
 		}
 	}
 	v.Hosts = len(hosts)
-
-	page, pages := pageOf(q.Get("pagina"), len(shown), tpPerPage)
-	from, to := (page-1)*tpPerPage, min(page*tpPerPage, len(shown))
-	link := func(n int) string {
-		u := url.Values{"aba": {"terceiros"}}
-		if v.All {
-			u.Set("todos", "1")
+	shown := filterTP(progs, inst, q)
+	v.Found = len(shown)
+	for _, p := range shown {
+		if tpInstallerOf(inst, p.AppID).State == tpInstWaiting {
+			v.FilterWaiting++
 		}
-		if n > 1 {
-			u.Set("pagina", fmt.Sprint(n))
-		}
-		return "/painel/patch?" + u.Encode()
 	}
+	v.CanBatch = v.Admin && v.FilterWaiting > 0
+	v.Hidden = q.hidden()
+
+	page, pages := pageOf(strconv.Itoa(q.Page), len(shown), q.Per)
+	from, to := (page-1)*q.Per, min(page*q.Per, len(shown))
+	at := func(n int) string { c := q; c.Page = n; return c.href() }
 	if len(shown) > 0 {
 		v.Shown = fmt.Sprintf("%d–%d de %d", from+1, to, len(shown))
 	}
 	if page > 1 {
-		v.Prev = link(page - 1)
+		v.Prev = at(page - 1)
 	}
 	if page < pages {
-		v.Next = link(page + 1)
+		v.Next = at(page + 1)
 	}
 	for _, p := range shown[from:to] {
 		var vers []string
@@ -218,8 +252,26 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 		if len(vers) > tpMaxShownV {
 			text += fmt.Sprintf(" e mais %d", len(vers)-tpMaxShownV)
 		}
-		v.Rows = append(v.Rows, tpRow{Program: p.Program, Href: tpProgramPath(p.AppID), Reference: dash(p.Reference), Origin: p.Origin,
-			Versions: text, Installs: len(p.Installs), Problems: p.Problems, EOL: p.EOL, Outdated: p.Outdated})
+		row := tpRow{Program: p.Program, Href: tpProgramPath(p.AppID), Reference: dash(p.Reference), Origin: p.Origin,
+			Versions: text, Installs: len(p.Installs), Problems: p.Problems, EOL: p.EOL, Outdated: p.Outdated}
+		in := tpInstallerOf(inst, p.AppID)
+		switch in.State {
+		case tpInstWaiting:
+			row.Installer, row.InstallerClass = "aguardando "+in.Newest, "reboot_pendente"
+			if in.Approved != "" {
+				row.InstallerNote = "aprovada: " + in.Approved
+			}
+			if v.Admin {
+				row.Sel = tpSel(p.AppID, in.Newest)
+			}
+		case tpInstApproved:
+			row.Installer, row.InstallerClass = "aprovado "+in.Approved, "em_dia"
+		case tpInstNone:
+			row.Installer, row.InstallerClass = "nada guardado", "sem_dado_recente"
+		default:
+			row.Installer, row.InstallerNote = "", "o patchd não instala"
+		}
+		v.Rows = append(v.Rows, row)
 	}
 	a.render(w, r, http.StatusOK, "patch-terceiros", v)
 }

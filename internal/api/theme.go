@@ -167,6 +167,10 @@ form.formulario .campo input:not([type=checkbox]):not([type=radio]),form.formula
 form.formulario .campo .muted{font-size:.82rem}
 form.formulario>button{align-self:flex-start}
 form.formulario>p{margin:0}
+/* Campanha: os jobs por estado, cada um um filtro. */
+.camp-estados{list-style:none;padding:0;margin:0 0 1rem;display:flex;flex-wrap:wrap;gap:.5rem}
+.camp-estados .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .6rem;border:1px solid var(--borda);border-radius:999px;background:#fff;text-decoration:none;color:var(--texto)}
+.camp-estados .chip.ativo{border-color:var(--azul);background:#eef5fd}
 /* Ligar agora (docs/wake-on-lan.md, Aula 22.2). */
 #ligar form{margin:0 0 1rem}td.nivel-ok{color:#0a7d0a}
 `

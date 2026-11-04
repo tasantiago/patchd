@@ -740,7 +740,12 @@ func (e *Engine) issueApps(ctx context.Context, c *Campaign, id string, apps []A
 			return created, nil, err
 		}
 		if p == nil {
-			if skip != "sem o programa" && skip != "" {
+			switch skip {
+			case "", "sem o programa":
+			case "sem inventário do Windows", "arquitetura desconhecida":
+				// Da máquina, não do programa (Linux, macOS, sem inventário): conta uma vez.
+				return 0, []string{skip}, nil
+			default:
 				reasons[a.App+": "+skip] = true
 			}
 			continue
