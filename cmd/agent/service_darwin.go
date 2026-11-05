@@ -6,10 +6,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/credential"
+	"github.com/tasantiago/patchd/internal/logging"
 )
 
 const (
@@ -23,8 +25,15 @@ func serviceLog(dataDir string, asService bool, stderr io.Writer) (io.Writer, fu
 	if !asService {
 		return stderr, func() {}, nil
 	}
+	// O stderr.log (StandardErrorPath do plist) é aberto pelo launchd e nunca girava: só pega
+	// o que escapa do log (um pânico, a saída de um comando), mas cresce a cada partida.
+	// Passando de 1 MB, o atual vira stderr.log.1 e o arquivo zera.
+	_, _ = logging.Trim(filepath.Join(dataDir, "logs", "stderr.log"), stderrLogMax)
 	return rotatingLog(dataDir)
 }
+
+// stderrLogMax: o tamanho a partir do qual o stderr.log do launchd é girado.
+const stderrLogMax = 1 << 20
 
 // serviceInstall copia o agente para /usr/local/sbin, protege a pasta de dados, grava o
 // LaunchDaemon (root:wheel, 0644: o launchd recusa plist gravável por outros) e o carrega.
