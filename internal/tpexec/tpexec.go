@@ -72,6 +72,43 @@ type Executor struct {
 	// job. Sem isso, um instalador rodando como SYSTEM extrai os arquivos dele em
 	// C:\Windows\Temp, onde um usuário comum também cria arquivos. Vazio: o TEMP do serviço.
 	TempDir string
+	// InstallerBusy diz se outra instalação do Windows Installer está em execução
+	// (platform.WindowsInstallerBusy). Com uma em andamento, o job não espera o prazo
+	// inteiro na fila: volta "adiado" na hora. Nil: não confere.
+	InstallerBusy func() (bool, error)
+	// Timeout: o prazo de cada instalação; nil: TimeoutFor (pelo tamanho).
+	Timeout func(jobs.ThirdPartyParams) time.Duration
+}
+
+// Prazo da execução do instalador, pelo tamanho: os grandes (o MSI do LibreOffice tem 350 MB e
+// milhares de arquivos; a atualização remove a versão antiga e instala a nova) passam de 30
+// minutos numa máquina com HD e antivírus examinando cada arquivo. O tamanho vem no job
+// assinado; nada muda no protocolo.
+const (
+	InstallTimeout      = 60 * time.Minute
+	LargeInstallTimeout = 90 * time.Minute
+	LargeInstaller      = 200 << 20
+)
+
+// TimeoutFor: o prazo do instalador do job.
+func TimeoutFor(p jobs.ThirdPartyParams) time.Duration {
+	if p.Size >= LargeInstaller {
+		return LargeInstallTimeout
+	}
+	return InstallTimeout
+}
+
+// checkBusy: outra instalação MSI em andamento vira "adiado", sem executar nada.
+func (e *Executor) checkBusy(stage string) error {
+	if e.InstallerBusy == nil {
+		return nil
+	}
+	busy, err := e.InstallerBusy()
+	if err != nil || !busy {
+		return nil // sem saber, segue: o prazo continua valendo
+	}
+	return fmt.Errorf("%w: %w: outra instalação do Windows Installer em andamento (o MSI só roda um por vez); %s: tente de novo depois",
+		jobs.ErrNotStarted, ErrRetry, stage)
 }
 
 // envRunner: o Runner que aceita variáveis de ambiente (platform.SilentRunner).
@@ -93,6 +130,9 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	// uso (o Inno sai com 5, o MSI pede reinício), e fechar o programa perderia o trabalho
 	// de quem está nele. O job falha dizendo qual programa e onde; pedir de novo depois.
 	if err := e.checkRunning(p); err != nil {
+		return "", err
+	}
+	if err := e.checkBusy("nada foi baixado nem executado"); err != nil {
 		return "", err
 	}
 
@@ -123,12 +163,22 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	if err != nil {
 		return sigNote, fmt.Errorf("%w: pasta temporária do job: %v", jobs.ErrNotStarted, err)
 	}
+	// O download pode ter levado minutos: confere de novo, já com o instalador na mão.
+	if err := e.checkBusy("o instalador foi baixado e conferido, mas não executado"); err != nil {
+		return sigNote, err
+	}
+	timeout := TimeoutFor(p)
+	if e.Timeout != nil {
+		timeout = e.Timeout(p)
+	}
+	rctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	start := time.Now()
 	var runErr error
 	if er, ok := e.Run.(envRunner); ok && env != nil {
-		_, runErr = er.RunEnv(ctx, env, prog, args...)
+		_, runErr = er.RunEnv(rctx, env, prog, args...)
 	} else {
-		_, runErr = e.Run.Run(ctx, prog, args...)
+		_, runErr = e.Run.Run(rctx, prog, args...)
 	}
 	took := time.Since(start).Round(time.Second)
 	code := 0
@@ -139,8 +189,15 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 		code = exitErr.ExitCode()
 	default:
 		// Prazo esgotado ou o programa nem abriu: o estado da máquina é desconhecido; o
-		// servidor confere pelo inventário de qualquer forma.
-		return sigNote, fmt.Errorf("o instalador não terminou: %w", runErr)
+		// servidor confere pelo inventário de qualquer forma. O log diz onde parou.
+		detail := sigNote
+		if log := e.jobLog(p, jobID); log != "" {
+			detail += "; " + log
+		}
+		if errors.Is(rctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			return detail, fmt.Errorf("o instalador não terminou: %s: prazo de %v esgotado", prog, timeout)
+		}
+		return detail, fmt.Errorf("o instalador não terminou: %w", runErr)
 	}
 
 	inst := winget.Installer{Type: p.Installer, ReturnCodes: map[int]string{}}
@@ -151,11 +208,8 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	}
 	outcome, resp := inst.Outcome(code)
 	detail := fmt.Sprintf("código %d (%s) em %s; %s", code, cmpOr(resp, outcome), took, sigNote)
-	switch {
-	case jobs.MSIInstaller(p.Installer):
-		detail += "; log do msiexec: " + e.logPath(jobID)
-	case e.innoLog(p):
-		detail += "; log do Inno: " + e.logPath(jobID)
+	if log := e.jobLog(p, jobID); log != "" {
+		detail += "; " + log
 	}
 	switch outcome {
 	case winget.OutcomeOK:
@@ -285,6 +339,17 @@ func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
 	}
 	return fmt.Errorf("%w: %w: programa aberto (%s na sessão %s); nada foi baixado nem executado: peça de novo com o programa fechado",
 		jobs.ErrNotStarted, ErrRetry, strings.Join(parts, ", "), strings.Join(ss, ", "))
+}
+
+// jobLog: onde está o log do instalador deste job (msiexec ou Inno); vazio para os outros.
+func (e *Executor) jobLog(p jobs.ThirdPartyParams, jobID int64) string {
+	switch {
+	case jobs.MSIInstaller(p.Installer):
+		return "log do msiexec: " + e.logPath(jobID)
+	case e.innoLog(p):
+		return "log do Inno: " + e.logPath(jobID)
+	}
+	return ""
 }
 
 func (e *Executor) logPath(jobID int64) string {

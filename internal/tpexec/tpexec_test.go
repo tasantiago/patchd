@@ -26,15 +26,22 @@ func (s saida) ExitCode() int { return int(s) }
 
 // runnerFalso grava o comando e devolve o código pedido; confere que o arquivo existe na hora.
 type runnerFalso struct {
-	prog   string
-	args   []string
-	code   int
-	err    error
-	existe bool
+	prog    string
+	args    []string
+	code    int
+	err     error
+	existe  bool
+	trava   bool // fica rodando até o prazo (o msiexec que não termina)
+	rodadas int
 }
 
-func (r *runnerFalso) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+func (r *runnerFalso) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	r.prog, r.args = name, args
+	r.rodadas++
+	if r.trava {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	file := name
 	if strings.HasSuffix(name, "msiexec.exe") {
 		file = args[1]
@@ -341,5 +348,52 @@ func TestSeguroAteRodar(t *testing.T) {
 	}
 	if _, err := os.Stat(velha); !os.IsNotExist(err) {
 		t.Error("a pasta de um job de mais de 7 dias ficou")
+	}
+}
+
+// Outra instalação MSI em andamento: o job volta "adiado" (tentar depois) na hora, sem esperar
+// o prazo na fila do Windows Installer, antes do download ou já com o instalador baixado.
+func TestInstalarComWindowsInstallerOcupado(t *testing.T) {
+	inst := []byte("MZ msi do libreoffice")
+	ctx := context.Background()
+	run := &runnerFalso{}
+	e, pedido := executor(t, inst, run, google, nil)
+	e.InstallerBusy = func() (bool, error) { return true, nil }
+	_, err := e.Install(ctx, 7, params(inst, "msi"))
+	if !errors.Is(err, jobs.ErrRetry) || !errors.Is(err, jobs.ErrNotStarted) || !strings.Contains(err.Error(), "nada foi baixado nem executado") ||
+		*pedido != "" || run.rodadas != 0 {
+		t.Fatalf("ocupado antes: %v (baixou %q, rodou %d)", err, *pedido, run.rodadas)
+	}
+	// Livre no começo, ocupado depois do download: baixa e confere, mas não executa.
+	vezes := 0
+	e.InstallerBusy = func() (bool, error) { vezes++; return vezes > 1, nil }
+	d, err := e.Install(ctx, 8, params(inst, "msi"))
+	if !errors.Is(err, jobs.ErrRetry) || !strings.Contains(err.Error(), "baixado e conferido, mas não executado") || run.rodadas != 0 ||
+		!strings.Contains(d, "assinatura válida") {
+		t.Fatalf("ocupado depois: %v %q (rodou %d)", err, d, run.rodadas)
+	}
+	// Sem saber (erro ao conferir), segue.
+	e.InstallerBusy = func() (bool, error) { return false, errors.New("sem acesso") }
+	if _, err := e.Install(ctx, 9, params(inst, "msi")); err != nil || run.rodadas != 1 {
+		t.Errorf("sem saber: %v (rodou %d)", err, run.rodadas)
+	}
+}
+
+// O instalador que não termina: o agente encerra no prazo, e a falha diz o prazo e onde está o
+// log do msiexec (antes, o log só aparecia quando o instalador terminava).
+func TestInstalarPrazoEsgotadoComLog(t *testing.T) {
+	inst := []byte("MZ msi grande")
+	e, _ := executor(t, inst, &runnerFalso{trava: true}, google, nil)
+	e.Timeout = func(jobs.ThirdPartyParams) time.Duration { return 20 * time.Millisecond }
+	d, err := e.Install(context.Background(), 12, params(inst, "msi"))
+	if err == nil || !strings.Contains(err.Error(), "msiexec.exe: prazo de 20ms esgotado") {
+		t.Fatalf("prazo: %v", err)
+	}
+	if !strings.Contains(d, "assinatura válida") || !strings.Contains(d, "log do msiexec: ") || !strings.Contains(d, "instalar-job-12.log") {
+		t.Errorf("detalhe: %q", d)
+	}
+	// O prazo pelo tamanho: 60 min; 90 min a partir de 200 MB (o MSI do LibreOffice).
+	if TimeoutFor(jobs.ThirdPartyParams{Size: 150 << 20}) != time.Hour || TimeoutFor(jobs.ThirdPartyParams{Size: 350 << 20}) != 90*time.Minute {
+		t.Error("prazos")
 	}
 }
