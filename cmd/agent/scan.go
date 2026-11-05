@@ -28,6 +28,9 @@ func collectScan(ctx context.Context, s patch.Scanner, opts patch.Options, agent
 		AgentVersion:  agentVersion,
 		ScannedAt:     time.Now().UTC(),
 		Scans:         s.Scan(ctx, opts),
+		// Se este agente pode instalar direto da Microsoft (a reserva): o servidor só manda o
+		// job com essa fonte quando vê isto. Nil fora do Windows.
+		MicrosoftUpdate: patch.MicrosoftInfo(),
 	}
 
 	reboot, err := s.Reboot(ctx)

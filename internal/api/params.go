@@ -69,6 +69,14 @@ func (a *api) tz() string {
 	return a.timezone
 }
 
+// MicrosoftFallbackKey: o interruptor da fonte reserva do Windows (Microsoft Update direto).
+const MicrosoftFallbackKey = "PATCHD_WINUPDATE_MICROSOFT"
+
+// microsoftAllowed: se a fonte reserva da Microsoft está ligada (padrão: desligada).
+func (a *api) microsoftAllowed() bool {
+	return a.params != nil && a.params.Value(MicrosoftFallbackKey) == "1"
+}
+
 // repoAnnouncement: o anúncio do cache para o check-in (nil: nenhum).
 func (a *api) repoAnnouncement() *protocol.RepoCache {
 	if a.repoCacheFn != nil {

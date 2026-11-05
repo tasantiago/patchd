@@ -14,14 +14,20 @@ var ErrNotImplemented = errors.New("ainda não implementado neste SO")
 const (
 	SourceWUADefault = "wua-default" // Windows: servidor definido pela política (WSUS quando configurado)
 	SourceWUAOffline = "wua-offline" // Windows: catálogo wsusscn2.cab publicado pela Microsoft
-	SourceApt        = "apt"         // Ubuntu/Debian: simulação do apt-get
-	SourceDnf        = "dnf"         // Fedora/RHEL: advisories de segurança do dnf
+	// SourceWUAMicrosoft: Windows, direto na Microsoft (a fonte reserva), quando a busca na
+	// fonte da política falha e o servidor ligou a reserva.
+	SourceWUAMicrosoft = "wua-microsoft"
+	SourceApt          = "apt" // Ubuntu/Debian: simulação do apt-get
+	SourceDnf          = "dnf" // Fedora/RHEL: advisories de segurança do dnf
 )
 
 // Options ajusta as buscas.
 type Options struct {
 	// OfflineCatalog é o caminho do wsusscn2.cab. Vazio: sem busca offline. Só no Windows.
 	OfflineCatalog string
+	// MicrosoftFallback: a fonte reserva está ligada no servidor (anunciada no check-in). Com a
+	// busca na fonte da política falhando, busca também direto na Microsoft. Só no Windows.
+	MicrosoftFallback bool
 }
 
 // Scanner busca atualizações. Cada SO tem sua implementação, escolhida na compilação;

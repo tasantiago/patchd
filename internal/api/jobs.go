@@ -198,6 +198,9 @@ func (a *api) judgeWinUpdate(r *http.Request, job store.JobRow, res protocol.Job
 		return jobs.StateFailed, "o servidor não conseguiu ler a busca nova"
 	}
 	agent := "agente: " + res.Detail
+	if params.Source == jobs.WinSourceMicrosoft && !strings.Contains(res.Detail, "Microsoft Update") {
+		agent = "fonte " + params.SourceLabel() + "; " + agent
+	}
 	still, failed := jobs.StillMissing(params, rep)
 	switch {
 	case failed != "":

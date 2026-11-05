@@ -229,7 +229,7 @@ func (a *Agent) runWinUpdates(ctx context.Context, list []acceptedWinUpdate) []P
 	for _, j := range list {
 		a.Logger.Info("instalação de atualizações do Windows iniciada", "job_id", j.id, "updates", strings.Join(j.p.Labels(), ","))
 		start := a.now()
-		detail, err := a.WinUpdate(ctx, j.id, j.p.Updates)
+		detail, err := a.WinUpdate(ctx, j.id, j.p)
 		status := protocol.JobResultOK
 		switch {
 		case errors.Is(err, jobs.ErrNotPending):

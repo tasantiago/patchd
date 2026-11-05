@@ -18,8 +18,17 @@ const (
 	offlineCriteria = "IsInstalled=0"
 )
 
-// ssOthers: o searcher consulta o serviço indicado em ServiceID (o catálogo registrado).
-const ssOthers = 3
+// ServerSelection do searcher: ssWindowsUpdate vai à Microsoft (sem o WSUS da política);
+// ssOthers consulta o serviço indicado em ServiceID (o catálogo registrado).
+const (
+	ssWindowsUpdate = 2
+	ssOthers        = 3
+)
+
+// selectMicrosoft aponta o searcher para a Microsoft.
+func selectMicrosoft(searcher *ole.IDispatch) (func(), error) {
+	return func() {}, wincom.Put(searcher, "ServerSelection", ssWindowsUpdate)
+}
 
 // wuaScanner consulta o Windows Update Agent via COM.
 type wuaScanner struct{}
@@ -30,6 +39,16 @@ func New(run platform.Runner) Scanner { return wuaScanner{} }
 // Scan executa a busca na fonte da política e, se houver catálogo, a busca offline.
 func (wuaScanner) Scan(ctx context.Context, opts Options) []protocol.ScanResult {
 	results := []protocol.ScanResult{search(ctx, SourceWUADefault, onlineCriteria, nil)}
+	// Fonte reserva: a da política falhou (WSUS fora, erro de sincronização) e o servidor
+	// ligou a reserva. A busca direta na Microsoft vai como mais uma fonte; a GPO que proíbe
+	// a Microsoft deixa de fora, com o motivo.
+	if results[0].Error != "" && opts.MicrosoftFallback {
+		if info := MicrosoftInfo(); info != nil && !info.Available {
+			results = append(results, protocol.ScanResult{Source: SourceWUAMicrosoft, Error: "não buscada: " + info.Reason})
+		} else {
+			results = append(results, search(ctx, SourceWUAMicrosoft, onlineCriteria, selectMicrosoft))
+		}
+	}
 
 	if opts.OfflineCatalog != "" {
 		sum, mod, err := catalogInfo(opts.OfflineCatalog)

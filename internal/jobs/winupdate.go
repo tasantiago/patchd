@@ -23,21 +23,40 @@ const MaxWinUpdates = 20
 
 // WinUpdate é uma atualização do Windows a instalar.
 type WinUpdate struct {
-	ID string `json:"id"`           // UpdateID do WUA (GUID)
+	// ID: o UpdateID do WUA (GUID), o mesmo no WSUS, na Microsoft e no catálogo offline. Só
+	// com a fonte Microsoft pode vir vazio: aí o agente procura pelo KB.
+	ID string `json:"id"`
 	KB string `json:"kb,omitempty"` // só dígitos; o agente confere que a atualização encontrada é deste KB
 }
 
 // Label é o que aparece no log e no resultado: o KB, ou o começo do UpdateID.
 func (u WinUpdate) Label() string {
-	if u.KB != "" {
+	if u.KB != "" || len(u.ID) < 8 {
 		return "KB" + u.KB
 	}
 	return u.ID[:8]
 }
 
+// Fontes do job windows_update: a da política da máquina (WSUS quando configurado; o
+// padrão, como sempre foi) ou direto da Microsoft (a fonte reserva). Agentes anteriores à
+// reserva recusam o campo: o servidor só manda a Microsoft para quem a anuncia na busca.
+const (
+	WinSourcePolicy    = ""
+	WinSourceMicrosoft = "microsoft"
+)
+
 // WinUpdateParams são os parâmetros do job windows_update.
 type WinUpdateParams struct {
 	Updates []WinUpdate `json:"updates"`
+	Source  string      `json:"source,omitempty"`
+}
+
+// SourceLabel: a fonte em palavras.
+func (p WinUpdateParams) SourceLabel() string {
+	if p.Source == WinSourceMicrosoft {
+		return "Microsoft Update (fonte reserva)"
+	}
+	return "fonte da política"
 }
 
 // O UpdateID entra no critério de busca do WUA (UpdateID='...'): só o formato de GUID passa,
@@ -63,9 +82,24 @@ func (p WinUpdateParams) Validate() error {
 	if len(p.Updates) == 0 || len(p.Updates) > MaxWinUpdates {
 		return fmt.Errorf("o windows_update leva de 1 a %d atualizações (veio %d)", MaxWinUpdates, len(p.Updates))
 	}
+	if p.Source != WinSourcePolicy && p.Source != WinSourceMicrosoft {
+		return fmt.Errorf("fonte do windows_update desconhecida %q", p.Source)
+	}
 	seen := map[string]bool{}
 	for _, u := range p.Updates {
 		id := strings.ToLower(u.ID)
+		if u.ID == "" && p.Source == WinSourceMicrosoft {
+			// Na Microsoft, pelo KB: o UpdateID não estava em nenhuma busca da máquina.
+			if !kbNumber.MatchString(u.KB) {
+				return fmt.Errorf("sem UpdateID, o KB é obrigatório (veio %q)", u.KB)
+			}
+			id = "kb" + u.KB
+			if seen[id] {
+				return fmt.Errorf("KB repetido %s", u.KB)
+			}
+			seen[id] = true
+			continue
+		}
 		switch {
 		case !updateGUID.MatchString(u.ID):
 			return fmt.Errorf("UpdateID inválido %q (esperado um GUID)", u.ID)
@@ -90,8 +124,9 @@ func (p WinUpdateParams) Labels() []string {
 
 // Fontes do WUA na busca (as mesmas constantes do pacote patch, que importa este).
 const (
-	sourceWUADefault = "wua-default"
-	sourceWUAOffline = "wua-offline"
+	sourceWUADefault   = "wua-default"
+	sourceWUAOffline   = "wua-offline"
+	sourceWUAMicrosoft = "wua-microsoft" // a busca direta na Microsoft, quando a da política falhou
 )
 
 // WinUpdatesForKBs monta o job a partir da busca atual da máquina: para cada KB pedido, as
@@ -136,17 +171,24 @@ func WinUpdatesForKBs(rep protocol.PatchScanReport, kbs []string) (p WinUpdatePa
 }
 
 // StillMissing (conferência no servidor) lista as atualizações do job que a busca da fonte
-// da política ainda mostra pendentes. failed: a busca dessa fonte falhou e não prova nada.
+// do job ainda mostra pendentes. failed: a busca dessa fonte falhou e não prova nada. Job da
+// Microsoft: vale a busca direta na Microsoft, se veio; senão, a da política.
 func StillMissing(p WinUpdateParams, rep protocol.PatchScanReport) (still []string, failed string) {
+	want := sourceWUADefault
+	if p.Source == WinSourceMicrosoft && slices.ContainsFunc(rep.Scans, func(s protocol.ScanResult) bool { return s.Source == sourceWUAMicrosoft }) {
+		want = sourceWUAMicrosoft
+	}
 	for _, s := range rep.Scans {
-		if s.Source != sourceWUADefault {
+		if s.Source != want {
 			continue
 		}
 		if s.Missing == nil {
 			return nil, "a busca do Windows Update falhou (" + s.Error + ")"
 		}
 		for _, w := range p.Updates {
-			if slices.ContainsFunc(s.Missing, func(u protocol.MissingUpdate) bool { return strings.EqualFold(u.ID, w.ID) }) {
+			if slices.ContainsFunc(s.Missing, func(u protocol.MissingUpdate) bool {
+				return w.ID != "" && strings.EqualFold(u.ID, w.ID) || w.ID == "" && slices.Contains(u.KBs, w.KB)
+			}) {
 				still = append(still, w.Label())
 			}
 		}
@@ -208,7 +250,7 @@ func KBsInPending(items []protocol.PendingItem, want []string) []string {
 // atual. skip (sem job): a fonte falhou, nenhum KB está nela, ou só no catálogo offline.
 func PolicyWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdateParams, string) {
 	if PolicySourceProblem(rep) != "" {
-		return WinUpdateParams{}, "fonte da política falhando"
+		return WinUpdateParams{}, SkipPolicyFailing
 	}
 	var use []string
 	offline := false
@@ -223,11 +265,79 @@ func PolicyWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdatePara
 	}
 	if len(use) == 0 {
 		if offline {
-			return WinUpdateParams{}, "só no catálogo offline"
+			return WinUpdateParams{}, SkipOfflineOnly
 		}
-		return WinUpdateParams{}, "KB fora da busca"
+		return WinUpdateParams{}, SkipNotInScan
 	}
 	p, _, _ := WinUpdatesForKBs(rep, use)
+	return p, ""
+}
+
+// Motivos do PolicyWinUpdates que a fonte reserva (a Microsoft) resolve.
+const (
+	SkipPolicyFailing = "fonte da política falhando"
+	SkipOfflineOnly   = "só no catálogo offline"
+	SkipNotInScan     = "KB fora da busca"
+)
+
+// FallbackReason: o motivo de ficar de fora é um dos que a Microsoft resolve.
+func FallbackReason(skip string) bool {
+	return skip == SkipPolicyFailing || skip == SkipOfflineOnly || skip == SkipNotInScan
+}
+
+// MicrosoftWinUpdates monta o job com a fonte Microsoft (a reserva): os mesmos KBs, cada um
+// com o UpdateID que alguma busca da máquina mostrou (a direta na Microsoft, a do catálogo
+// offline ou a da política: o UpdateID é o mesmo nas três) ou, sem nenhum, só o KB, que o
+// agente procura na Microsoft. skip: o agente não sabe usar a Microsoft, ou a máquina não deixa.
+func MicrosoftWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdateParams, string) {
+	switch {
+	case rep.MicrosoftUpdate == nil:
+		return WinUpdateParams{}, "agente sem a fonte Microsoft (atualize o agente)"
+	case !rep.MicrosoftUpdate.Available:
+		reason := rep.MicrosoftUpdate.Reason
+		if reason == "" {
+			reason = "a máquina não permite"
+		}
+		return WinUpdateParams{}, "Microsoft bloqueada: " + reason
+	}
+	p := WinUpdateParams{Source: WinSourceMicrosoft}
+	for _, kb := range kbs {
+		kb = strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(kb)), "KB")
+		if !kbNumber.MatchString(kb) {
+			continue
+		}
+		var ids []string
+		for _, src := range []string{sourceWUAMicrosoft, sourceWUAOffline, sourceWUADefault} {
+			for _, s := range rep.Scans {
+				if s.Source != src {
+					continue
+				}
+				for _, u := range s.Missing {
+					if slices.Contains(u.KBs, kb) && updateGUID.MatchString(u.ID) && !slices.Contains(ids, strings.ToLower(u.ID)) {
+						ids = append(ids, strings.ToLower(u.ID))
+					}
+				}
+			}
+			if len(ids) > 0 {
+				break
+			}
+		}
+		if len(ids) == 0 {
+			ids = []string{""} // só o KB
+		}
+		for _, id := range ids {
+			if len(p.Updates) >= MaxWinUpdates {
+				return p, ""
+			}
+			if id != "" && slices.ContainsFunc(p.Updates, func(w WinUpdate) bool { return strings.EqualFold(w.ID, id) }) {
+				continue
+			}
+			p.Updates = append(p.Updates, WinUpdate{ID: id, KB: kb})
+		}
+	}
+	if len(p.Updates) == 0 {
+		return p, SkipNotInScan
+	}
 	return p, ""
 }
 

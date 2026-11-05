@@ -270,6 +270,35 @@ na máquina. Limpar a `SoftwareDistribution` da máquina não resolve esse caso:
 sincronização vem o `0x80244010` (idas e voltas demais) e, com o cache cheio de novo, o
 mesmo `0x80244007`.
 
+### Fonte reserva: direto da Microsoft
+
+Quando a fonte da política (WSUS) falha, ou não oferece um KB aprovado, a máquina pode
+instalar direto do Microsoft Update. Vem **desligada**; liga em Configuração › Parâmetros ›
+Agentes › **Fonte reserva do Windows**. As aprovações continuam no patchd: só sai o que foi
+aprovado em Patch; o que muda é de onde o arquivo vem (e o tráfego vai para a internet, não
+para o WSUS).
+
+- **Na busca**: com a reserva ligada (o servidor avisa no check-in), quando a busca na fonte
+  da política falha, o agente busca também direto na Microsoft e manda o resultado como mais
+  uma fonte (`wua-microsoft`). Falhando, ela é atenção no painel, como o catálogo offline: não
+  conta como "busca falhando" nem gera e-mail.
+- **Na instalação**: o job `windows_update` diz a fonte. Sem o campo, é a da política (o job
+  de sempre); com `"source": "microsoft"`, o agente procura direto no Microsoft Update (pelo
+  UpdateID, ou só pelo KB quando nenhuma busca da máquina trouxe o UpdateID). O resultado do
+  job começa com "fonte Microsoft Update".
+- **Na campanha** (Instalar atualizações do Windows, ou Todas as atualizações do sistema): a
+  opção "Se a fonte da política falhar ou não oferecer o KB, instalar direto da Microsoft". Com
+  ela, "fonte da política falhando", "KB fora da busca" e "só no catálogo offline" viram jobs
+  com a fonte Microsoft, em vez de ficar de fora. A conferência explica; com a reserva
+  desligada em Parâmetros, a opção fica sem efeito e a nota do grupo diz "(reserva da
+  Microsoft desligada em Parâmetros)".
+- **Agentes antigos**: a fonte nova só vai para quem a anuncia na busca. Os antigos continuam
+  como hoje; na campanha aparecem como "agente sem a fonte Microsoft (atualize o agente)".
+- **GPO**: com `DoNotConnectToWindowsUpdateInternetLocations` ou `DisableWindowsUpdateAccess`
+  em `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate`, a máquina não fala com a
+  Microsoft: o agente não busca lá, recusa o job dessa fonte, e a campanha a deixa de fora com
+  "Microsoft bloqueada: GPO ...".
+
 ## Formulário da campanha (Aula 16.6)
 
 O formulário de Automação › Campanhas fica em coluna: o tipo em cartões com uma linha de

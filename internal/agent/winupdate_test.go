@@ -72,7 +72,8 @@ func TestWindowsUpdatePorJob(t *testing.T) {
 
 	// 2. Instala e o KB some da busca de depois → concluído. A busca é forçada pelo job.
 	var pedidos [][]jobs.WinUpdate
-	a.WinUpdate = func(_ context.Context, _ int64, u []jobs.WinUpdate) (string, error) {
+	a.WinUpdate = func(_ context.Context, _ int64, wp jobs.WinUpdateParams) (string, error) {
+		u := wp.Updates
 		pedidos = append(pedidos, u)
 		b.muda(false, false)
 		return "instalada(s): KB5127648; sem reinício", nil
@@ -88,7 +89,7 @@ func TestWindowsUpdatePorJob(t *testing.T) {
 
 	// 3. Instalada, mas o Windows só a dá por instalada depois do boot → concluído, com o aviso.
 	b.muda(true, false)
-	a.WinUpdate = func(context.Context, int64, []jobs.WinUpdate) (string, error) {
+	a.WinUpdate = func(context.Context, int64, jobs.WinUpdateParams) (string, error) {
 		b.muda(true, true)
 		return "instalada(s): KB5127648; o Windows pede reinício para concluir (peça pelo painel: Reiniciar)", nil
 	}
@@ -100,7 +101,9 @@ func TestWindowsUpdatePorJob(t *testing.T) {
 
 	// 4. "ok" sem efeito e sem reinício pendente → falhou.
 	b.muda(true, false)
-	a.WinUpdate = func(context.Context, int64, []jobs.WinUpdate) (string, error) { return "instalada(s): KB5127648", nil }
+	a.WinUpdate = func(context.Context, int64, jobs.WinUpdateParams) (string, error) {
+		return "instalada(s): KB5127648", nil
+	}
 	j = novo()
 	a.CheckIn(ctx)
 	if e := estadoDoJob(srv, id, j); e.State != jobs.StateFailed || !strings.Contains(e.Detail, "ainda mostra pendente: KB5127648, sem reinício pendente") {
@@ -108,7 +111,7 @@ func TestWindowsUpdatePorJob(t *testing.T) {
 	}
 
 	// 5. A fonte da máquina não oferece (WSUS sem aprovação) → recusado; ocupado → adiado.
-	a.WinUpdate = func(context.Context, int64, []jobs.WinUpdate) (string, error) {
+	a.WinUpdate = func(context.Context, int64, jobs.WinUpdateParams) (string, error) {
 		return "", errors.Join(jobs.ErrNotPending, errors.New("KB5127648 não é oferecida a esta máquina"))
 	}
 	j = novo()
@@ -116,7 +119,7 @@ func TestWindowsUpdatePorJob(t *testing.T) {
 	if e := estadoDoJob(srv, id, j); e.State != jobs.StateRejected || !strings.Contains(e.Detail, "não é oferecida") {
 		t.Errorf("não oferecida: %+v", e)
 	}
-	a.WinUpdate = func(context.Context, int64, []jobs.WinUpdate) (string, error) {
+	a.WinUpdate = func(context.Context, int64, jobs.WinUpdateParams) (string, error) {
 		return "", errors.Join(jobs.ErrRetry, errors.New("outra instalação do Windows Update em andamento"))
 	}
 	j = novo()

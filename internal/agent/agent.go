@@ -35,6 +35,9 @@ type Agent struct {
 	// OfflineCatalog recebe o catálogo offline anunciado no check-in (Aula 6.6), antes da
 	// busca: uma busca devida neste ciclo já usa o arquivo novo. nil: anúncio ignorado.
 	OfflineCatalog func(ctx context.Context, adv protocol.OfflineCatalog)
+	// MicrosoftFallback recebe, a cada check-in, se a fonte reserva do Windows (a Microsoft)
+	// está ligada no servidor; a busca seguinte usa. Nil: ignora.
+	MicrosoftFallback func(enabled bool)
 	// RepoCache recebe, a cada check-in, o cache de repositórios anunciado (nil: o servidor
 	// não anuncia, e a configuração gravada antes deve sair). nil: o agente não mexe nisso.
 	RepoCache func(ctx context.Context, adv *protocol.RepoCache)
@@ -65,7 +68,7 @@ type Agent struct {
 	// WinUpdate instala atualizações do Windows pelo WUA (job windows_update, Aula 16.1).
 	// nil: o agente recusa esses jobs (só o Windows). Erro com jobs.ErrNotPending vira
 	// "rejeitado"; com jobs.ErrRetry, "adiado". Nunca reinicia.
-	WinUpdate func(ctx context.Context, jobID int64, updates []jobs.WinUpdate) (string, error)
+	WinUpdate func(ctx context.Context, jobID int64, p jobs.WinUpdateParams) (string, error)
 	// Script executa o job script (Aula 23.8): baixa o bundle (ZIP), confere o SHA-256,
 	// extrai e roda o ponto de entrada. nil: o agente recusa esses jobs. Erro com
 	// jobs.ErrRefused vira "rejeitado" (nada foi executado na máquina).
@@ -351,6 +354,9 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// 3. Catálogo offline anunciado pelo servidor (só o agente do Windows o usa). Uma falha
 	// não interrompe o ciclo: a busca segue com o catálogo anterior, e o download continua
 	// de onde parou no próximo check-in.
+	if a.MicrosoftFallback != nil {
+		a.MicrosoftFallback(resp.WinUpdateMicrosoft)
+	}
 	if resp.OfflineCatalog != nil && a.OfflineCatalog != nil {
 		a.OfflineCatalog(ctx, *resp.OfflineCatalog)
 		if ctx.Err() != nil {

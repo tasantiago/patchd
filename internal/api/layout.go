@@ -104,7 +104,7 @@ func (a *api) countNav(ctx context.Context, n *navCounts) error {
 	if l, err := a.store.SourceFailures(ctx, ""); err == nil {
 		seen := map[string]bool{}
 		for _, f := range l {
-			if f.Source != "wua-offline" {
+			if !auxSource(f.Source) {
 				seen[f.MachineID] = true
 			}
 		}

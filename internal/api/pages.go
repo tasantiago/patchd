@@ -1494,6 +1494,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <small class="muted">separados por vírgula</small></div>
 <div class="campo so-reinicio"><label for="aviso">Aviso do reinício</label><select id="aviso" name="aviso">{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Delay}}selected{{end}}>{{.}} min</option>{{end}}</select>
 <small class="muted">quanto tempo quem estiver conectado tem para salvar o trabalho</small></div>
+<fieldset class="campo so-windows"><legend>Fonte do Windows</legend><label class="opcao"><input type="checkbox" name="microsoft" value="1" {{if .Form.Microsoft}}checked{{end}}><span><b>Se a fonte da política falhar ou não oferecer o KB, instalar direto da Microsoft</b>
+<small>só o que está aprovado em Patch; muda de onde o arquivo vem{{if not .Form.MicrosoftOn}} · hoje sem efeito: a fonte reserva está desligada em Configuração › Parâmetros{{end}}</small></span></label></fieldset>
 <fieldset class="campo aneis"><legend>Grupos de implantação <small class="muted">em ordem, do menor para o maior</small></legend>
 <div class="chips">{{range .Form.Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
 {{$vazios := 0}}{{range .Form.Rings}}{{if not (or .Machines .Checked)}}{{$vazios = 1}}{{end}}{{end}}
@@ -1528,7 +1530,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}"><input type="hidden" name="hora" value="{{.Form.DailyStart}}"><input type="hidden" name="duracao" value="{{.Form.DailyDur}}">
-<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">
+<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
@@ -1542,7 +1544,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
 <dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else if eq .C.Type "reboot"}}Reinício{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
-<dt>Quando</dt><dd>{{.When}}</dd>
+<dt>Quando</dt><dd>{{.When}}</dd>{{if .Fallback}}
+<dt>Fonte do Windows</dt><dd>{{.Fallback}}</dd>{{end}}
 <dt>Observação</dt><dd>{{.Observe}}</dd>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{.C.Detail}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}

@@ -74,19 +74,23 @@ type Campaign struct {
 	UseWindow   bool
 	// Daily: horário fixo todo dia (ex.: 02:00 por 3 h, no fuso do painel), para todos os grupos
 	// de implantação, sem depender da janela de cada um. Nil: com prazo, ou na janela do grupo.
-	Daily       *window.Window
-	Observe     time.Duration
-	TTL         time.Duration // prazo dos jobs sem janela
-	State       string
-	CurrentIdx  int
-	LaunchedIdx int
-	AcceptedIdx int
-	RingDoneAt  *time.Time
-	Detail      string
-	Notes       []string // um resumo por grupo de implantação liberado: jobs criados e quem ficou fora (Aula 14.7)
-	CreatedBy   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Daily *window.Window
+	// MicrosoftFallback: windows_update e todas do sistema; se a fonte da política falhar ou
+	// não oferecer o KB, o job vai com a fonte Microsoft (precisa da reserva ligada em
+	// Parâmetros e de um agente que a entenda).
+	MicrosoftFallback bool
+	Observe           time.Duration
+	TTL               time.Duration // prazo dos jobs sem janela
+	State             string
+	CurrentIdx        int
+	LaunchedIdx       int
+	AcceptedIdx       int
+	RingDoneAt        *time.Time
+	Detail            string
+	Notes             []string // um resumo por grupo de implantação liberado: jobs criados e quem ficou fora (Aula 14.7)
+	CreatedBy         string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // Ring é o grupo de implantação atual.
@@ -138,6 +142,8 @@ func (c Campaign) Validate() error {
 		return errors.New("informe os grupos de implantação, em ordem (ex.: 0,1)")
 	case c.Observe < 0 || c.Observe > MaxObserve:
 		return fmt.Errorf("observação fora de 0 a %v", MaxObserve)
+	case c.MicrosoftFallback && c.Type != jobs.TypeWinUpdate && c.Type != TypeOSAll:
+		return errors.New("a fonte reserva da Microsoft só vale nas campanhas do Windows")
 	case c.UseWindow && c.Daily != nil:
 		return errors.New("escolha um: na janela de cada grupo ou em horário fixo")
 	case !c.UseWindow && c.Daily == nil && (c.TTL < jobs.MinTTL || c.TTL > jobs.MaxTTL):
@@ -217,7 +223,22 @@ type Engine struct {
 	Scan func(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
 	// ThirdParty decide a campanha thirdparty; nil: elas pausam no primeiro grupo de implantação.
 	ThirdParty ThirdPartyPlanner
-	Logger     *slog.Logger
+	// MicrosoftAllowed: a fonte reserva da Microsoft está ligada em Parâmetros. nil: desligada.
+	MicrosoftAllowed func() bool
+	Logger           *slog.Logger
+}
+
+// winUpdates monta o job do Windows: pela fonte da política e, se ela não serve por um motivo
+// que a Microsoft resolve e a campanha pede, pela fonte Microsoft.
+func (e *Engine) winUpdates(c *Campaign, rep protocol.PatchScanReport, kbs []string) (jobs.WinUpdateParams, string) {
+	p, skip := jobs.PolicyWinUpdates(rep, kbs)
+	if skip == "" || !jobs.FallbackReason(skip) || !c.MicrosoftFallback {
+		return p, skip
+	}
+	if e.MicrosoftAllowed == nil || !e.MicrosoftAllowed() {
+		return p, skip + " (reserva da Microsoft desligada em Parâmetros)"
+	}
+	return jobs.MicrosoftWinUpdates(rep, kbs)
 }
 
 // Step avança todas as campanhas em andamento. Um erro numa não impede as outras.
@@ -443,7 +464,7 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 		if !ok {
 			return false, "sem busca", nil
 		}
-		p, skip := jobs.PolicyWinUpdates(rep, kbs)
+		p, skip := e.winUpdates(c, rep, kbs)
 		if skip != "" {
 			return false, skip, nil
 		}
@@ -706,7 +727,7 @@ func (e *Engine) issueOSAll(ctx context.Context, c *Campaign, req jobs.Request, 
 	if len(kbs) > jobs.MaxWinUpdates {
 		kbs = kbs[:jobs.MaxWinUpdates]
 	}
-	p, skip := jobs.PolicyWinUpdates(rep, kbs)
+	p, skip := e.winUpdates(c, rep, kbs)
 	if skip != "" {
 		return false, skip, nil
 	}

@@ -123,3 +123,65 @@ func TestCampanhaDoWindowsHelpers(t *testing.T) {
 		t.Errorf("fonte: %q", skip)
 	}
 }
+
+// A fonte reserva: o campo só aparece no job da Microsoft (o agente antigo, que recusa campo
+// desconhecido, continua lendo o job de sempre); só nela vale o item só com KB.
+func TestWinUpdateFonteMicrosoft(t *testing.T) {
+	const cu = "0b9b6f0c-1d2e-4f3a-9b8c-7d6e5f4a3b2c"
+	raw, _ := json.Marshal(WinUpdateParams{Updates: []WinUpdate{{ID: cu, KB: "5127648"}}})
+	if strings.Contains(string(raw), "source") {
+		t.Errorf("o job da política mudou: %s", raw)
+	}
+	if err := (WinUpdateParams{Updates: []WinUpdate{{KB: "5127648"}}}).Validate(); err == nil {
+		t.Error("na política, o UpdateID é obrigatório")
+	}
+	if err := (WinUpdateParams{Source: "outra", Updates: []WinUpdate{{ID: cu}}}).Validate(); err == nil {
+		t.Error("fonte desconhecida")
+	}
+	ms := WinUpdateParams{Source: WinSourceMicrosoft, Updates: []WinUpdate{{KB: "5127648"}, {ID: cu, KB: "5127649"}}}
+	if err := ms.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (WinUpdateParams{Source: WinSourceMicrosoft, Updates: []WinUpdate{{KB: "5127648"}, {KB: "5127648"}}}).Validate(); err == nil {
+		t.Error("KB repetido")
+	}
+	if err := (WinUpdateParams{Source: WinSourceMicrosoft, Updates: []WinUpdate{{KB: "x'1"}}}).Validate(); err == nil {
+		t.Error("KB inválido")
+	}
+	if ms.SourceLabel() != "Microsoft Update (fonte reserva)" || (WinUpdateParams{}).SourceLabel() != "fonte da política" {
+		t.Error("rótulos")
+	}
+
+	// Agente antigo (sem MicrosoftUpdate na busca) e máquina com a GPO: sem job.
+	if _, skip := MicrosoftWinUpdates(protocol.PatchScanReport{}, []string{"5127648"}); skip != "agente sem a fonte Microsoft (atualize o agente)" {
+		t.Errorf("agente antigo: %q", skip)
+	}
+	gpo := protocol.PatchScanReport{MicrosoftUpdate: &protocol.MicrosoftUpdate{Reason: "GPO DisableWindowsUpdateAccess"}}
+	if _, skip := MicrosoftWinUpdates(gpo, []string{"5127648"}); skip != "Microsoft bloqueada: GPO DisableWindowsUpdateAccess" {
+		t.Errorf("GPO: %q", skip)
+	}
+	// O UpdateID vem da busca na Microsoft, depois do catálogo offline; sem nenhum, só o KB.
+	rep := protocol.PatchScanReport{MicrosoftUpdate: &protocol.MicrosoftUpdate{Available: true}, Scans: []protocol.ScanResult{
+		{Source: "wua-default", Error: "0x80244007"},
+		{Source: "wua-offline", Missing: []protocol.MissingUpdate{{ID: strings.ToUpper(cu), KBs: []string{"5127648"}}}},
+	}}
+	p, skip := MicrosoftWinUpdates(rep, []string{"5127648", "KB5000001", "abc"})
+	if skip != "" || p.Source != WinSourceMicrosoft || len(p.Updates) != 2 || p.Updates[0] != (WinUpdate{ID: cu, KB: "5127648"}) ||
+		p.Updates[1] != (WinUpdate{KB: "5000001"}) || p.Validate() != nil {
+		t.Errorf("job: %+v %q", p, skip)
+	}
+	for _, s := range []string{SkipPolicyFailing, SkipOfflineOnly, SkipNotInScan} {
+		if !FallbackReason(s) {
+			t.Errorf("%q deveria ir pela reserva", s)
+		}
+	}
+	if FallbackReason("sem pendência aprovada") {
+		t.Error("sem aprovação não vai pela reserva")
+	}
+
+	// Conferência: no job da Microsoft vale a busca direta, se veio; o item só com KB casa pelo KB.
+	rep.Scans = append(rep.Scans, protocol.ScanResult{Source: "wua-microsoft", Missing: []protocol.MissingUpdate{{ID: "x", KBs: []string{"5000001"}}}})
+	if still, failed := StillMissing(p, rep); failed != "" || len(still) != 1 || still[0] != "KB5000001" {
+		t.Errorf("conferência: %v %q", still, failed)
+	}
+}

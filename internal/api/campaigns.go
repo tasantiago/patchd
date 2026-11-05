@@ -80,6 +80,9 @@ type campaignForm struct {
 	DailyDur   int
 	Durations  []durationOption
 	TZ         string
+	// Microsoft: a campanha do Windows usa a fonte reserva; MicrosoftOn: a reserva está ligada em Parâmetros.
+	Microsoft   bool
+	MicrosoftOn bool
 }
 
 type campaignsView struct {
@@ -191,6 +194,7 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int, v campaignsView) {
 	v.Form.TZ = a.panelLocation().String()
+	v.Form.MicrosoftOn = a.microsoftAllowed()
 	v.Form.Durations = nil
 	for _, m := range windowDurations {
 		v.Form.Durations = append(v.Form.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
@@ -238,6 +242,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	f.Delays = rebootDelays
 	f.DailyStart = strings.TrimSpace(r.PostFormValue("hora"))
 	f.DailyDur, _ = strconv.Atoi(r.PostFormValue("duracao"))
+	f.Microsoft = r.PostFormValue("microsoft") == "1" && (f.Type == jobs.TypeWinUpdate || f.Type == campaign.TypeOSAll)
+	f.MicrosoftOn = a.microsoftAllowed()
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
@@ -249,7 +255,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
-		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela"}
+		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft}
 	if f.Type == jobs.TypeReboot {
 		c.RebootDelay = time.Duration(f.Delay) * time.Minute
 	}
@@ -465,8 +471,15 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 				v.Warnings = append(v.Warnings, "Em horário fixo, a máquina precisa estar ligada e fazer check-in dentro do horário; o job vence no fim dele, como na janela do grupo de implantação.")
 			}
 		}
+		if c.MicrosoftFallback {
+			v.Extra = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft"
+			v.Warnings = append(v.Warnings, "Fonte reserva: quando a fonte da política (WSUS) falhar, ou não oferecer o KB, o job da máquina vai com a fonte Microsoft Update. Continua saindo só o que está aprovado em Patch; muda só de onde o arquivo vem (e o tráfego vai para a internet). Ficam de fora os agentes antigos (sem a fonte) e as máquinas com a GPO que bloqueia a internet do Windows Update.")
+			if !a.microsoftAllowed() {
+				v.Warnings = append(v.Warnings, "A fonte reserva está desligada em Configuração › Parâmetros: enquanto estiver, a opção não tem efeito e essas máquinas ficam sem job, como hoje.")
+			}
+		}
 		if c.Type == jobs.TypeWinUpdate {
-			v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que o grupo de implantação for liberado, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações. O job não reinicia: o reinício é pedido à parte.")
+			v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que o grupo de implantação for liberado, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações (ou, com a fonte reserva, vai pela Microsoft). O job não reinicia: o reinício é pedido à parte.")
 			approvals, err := a.store.PatchApprovals(r.Context())
 			if err != nil {
 				a.internalError(w, r, "listar aprovações", err)
@@ -537,6 +550,7 @@ type campaignView struct {
 	pageBase
 	C                                  campaign.Campaign
 	TypeLabel, State, StateLabel, When string
+	Fallback                           string // a fonte reserva da Microsoft, quando a campanha a usa
 	Sources, Observe, Created          string
 	Rings                              []campaignRingView
 	CanPause, CanResume, CanCancel     bool
@@ -571,6 +585,9 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Daily != nil {
 		v.When = "em horário fixo, " + c.Daily.String()
+	}
+	if c.MicrosoftFallback {
+		v.Fallback = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft Update"
 	}
 	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
 	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"

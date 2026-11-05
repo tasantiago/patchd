@@ -32,11 +32,17 @@ func sourceLabel(src string) string {
 		return "Windows Update da política (WSUS ou Microsoft)"
 	case "wua-offline":
 		return "catálogo offline (wsusscn2)"
+	case "wua-microsoft":
+		return "Microsoft Update direto (fonte reserva)"
 	case "softwareupdate":
 		return "softwareupdate (Apple)"
 	}
 	return src
 }
+
+// auxSource: as fontes que só ajudam (o catálogo offline confere, a Microsoft é a reserva):
+// falhando, são atenção e não contam como "busca falhando".
+func auxSource(src string) bool { return src == "wua-offline" || src == "wua-microsoft" }
 
 // sourceAlerts monta os avisos. A fonte da política, o apt, o dnf e o softwareupdate são
 // erro (sem eles, a máquina não recebe nada); o catálogo offline é atenção (ele só confere).
@@ -44,7 +50,7 @@ func (a *api) sourceAlerts(list []store.SourceFailure, now time.Time) []sourceAl
 	out := make([]sourceAlert, 0, len(list))
 	for _, f := range list {
 		al := sourceAlert{MachineID: f.MachineID, Name: dash(f.Hostname), Level: "erro"}
-		if f.Source == "wua-offline" {
+		if auxSource(f.Source) {
 			al.Level = "atencao"
 		}
 		when := "nenhuma busca guardada com resposta dela"

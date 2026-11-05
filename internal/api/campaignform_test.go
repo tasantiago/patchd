@@ -48,7 +48,7 @@ func TestFormularioDaCampanha(t *testing.T) {
 		t.Error("?tipo=reboot")
 	}
 	// Aula 20.4: o CSS saiu da página para /painel/estilo.css.
-	if css := pagina(h, "GET", "/painel/estilo.css", "", nil).Body.String(); !strings.Contains(css, `form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio{display:none}`) {
+	if css := pagina(h, "GET", "/painel/estilo.css", "", nil).Body.String(); !strings.Contains(css, `form.campanha:has(input[name=tipo]:checked:not([value=windows_update]):not([value=sistema_todas])) .so-windows{display:none}`) {
 		t.Error("CSS do :has()")
 	}
 }
