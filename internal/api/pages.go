@@ -1350,7 +1350,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 </div>
 <div class="card"><div class="card-cab"><h2>Alertas desta máquina</h2><a href="/painel/alertas">todos os alertas</a></div>
 {{if .Alerts}}<div class="tabela"><table><thead><tr><th>Medida</th><th>Aberto em</th><th>Duração</th><th>Pico</th><th>Último</th><th>Estado</th></tr></thead>
-<tbody>{{range .Alerts}}<tr><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td><td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td></tr>{{end}}</tbody></table></div>
+<tbody>{{range .Alerts}}<tr><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td><td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Closed}}<br><span class="muted">{{.Closed}}</span>{{end}}{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum alerta nos últimos 90 dias.</p>{{end}}
 <p class="muted">Abre com: {{.Policy}}.</p></div>
 {{end}}{{end}}
@@ -1735,16 +1735,43 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Alertas de desempenho</h1>
 <div class="card"><div class="card-cab"><h2>{{if .All}}Todos{{else}}Abertos{{end}}</h2><span class="muted">{{.Open}} abertos · {{.Unacked}} sem reconhecimento</span></div>
 <nav class="abas" aria-label="filtro dos alertas"><a href="/painel/alertas"{{if and (not .All) (eq .Metric "")}} class="ativa" aria-current="page"{{end}}>Abertos</a><a href="/painel/alertas?estado=todos"{{if and .All (eq .Metric "")}} class="ativa" aria-current="page"{{end}}>Todos (90 dias)</a><a href="/painel/alertas?medida=cpu{{if .All}}&amp;estado=todos{{end}}"{{if eq .Metric "cpu"}} class="ativa" aria-current="page"{{end}}>CPU</a><a href="/painel/alertas?medida=mem{{if .All}}&amp;estado=todos{{end}}"{{if eq .Metric "mem"}} class="ativa" aria-current="page"{{end}}>Memória</a><a href="/painel/alertas?medida=disk{{if .All}}&amp;estado=todos{{end}}"{{if eq .Metric "disk"}} class="ativa" aria-current="page"{{end}}>Disco</a></nav>
+{{if .Batch}}<form id="alertas-lote" class="lote" method="post" action="/painel/alertas/lote">{{if .Metric}}<input type="hidden" name="medida" value="{{.Metric}}">{{end}}
+<strong>Em lote:</strong>
+<label><input type="radio" name="quais" value="marcados" checked> os marcados na tabela</label>
+<label><input type="radio" name="quais" value="todos"> todos os {{.InFilter}} abertos{{if .Metric}} desta medida{{end}}</label>
+<input name="nota" maxlength="{{.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do lote">
+<button type="submit" name="acao" value="fechar">Fechar</button> <button class="sec" type="submit" name="acao" value="reconhecer">Reconhecer</button>
+<span class="muted">Nada muda antes da conferência.</span></form>{{end}}
 {{if .Rows}}{{template "alertas-tabela" .}}{{else}}<p class="muted">{{if .All}}Nenhum alerta nos últimos 90 dias.{{else}}Nenhum alerta aberto.{{end}}</p>{{end}}
-<p class="muted">Abre com: {{.Policy}}. Fecha quando a medida fica dentro do limite pelo mesmo tempo. Reconhecer tira do contador do menu, sem fechar.</p>
+<p class="muted">Abre com: {{.Policy}}. Fecha quando a medida fica dentro do limite pelo mesmo tempo. Reconhecer tira do contador do menu, sem fechar. Fechar à mão (em lote) zera a contagem da medida: se o problema continuar, um alerta novo abre depois dos minutos seguidos.</p>
 </div>
 {{template "fim"}}{{end}}
 
 {{define "alertas-tabela"}}<div class="tabela"><table>
-<thead><tr><th>Máquina</th><th>Medida</th><th>Aberto em</th><th>Duração</th><th>Pico</th><th>Último</th><th>Estado</th>{{if $.Admin}}<th></th>{{end}}</tr></thead>
-<tbody>{{range .Rows}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=desempenho">{{if .Name}}{{.Name}}{{else}}<code>{{.Short}}</code>{{end}}</a></td><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td>
-<td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td>
+<thead><tr>{{if $.Batch}}<th></th>{{end}}<th>Máquina</th><th>Medida</th><th>Aberto em</th><th>Duração</th><th>Pico</th><th>Último</th><th>Estado</th>{{if $.Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr>{{if $.Batch}}<td>{{if .Open}}<input type="checkbox" name="alerta" value="{{.ID}}" form="alertas-lote" aria-label="marcar o alerta {{.ID}}">{{end}}</td>{{end}}<td><a href="/painel/maquinas/{{.MachineID}}?aba=desempenho">{{if .Name}}{{.Name}}{{else}}<code>{{.Short}}</code>{{end}}</a></td><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td>
+<td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Closed}}<br><span class="muted">{{.Closed}}</span>{{end}}{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td>
 {{if $.Admin}}<td>{{if .CanAck}}<form class="inline" method="post" action="/painel/alertas/{{.ID}}/reconhecer"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do reconhecimento do alerta {{.ID}}"> <button class="sec" type="submit">Reconhecer</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
+
+{{define "alertas-lote"}}{{template "topo" .}}
+<p><a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">← Alertas</a></p>
+<h1>Conferir: {{.ActionLabel}} {{.N}} alerta(s)</h1>
+{{if .Changed}}<p class="aviso atencao">A lista mudou desde a conferência (um alerta fechou, abriu ou foi reconhecido): confira de novo.</p>{{end}}
+<div class="card"><dl class="dados">
+<dt>Quais</dt><dd>{{if eq .Which "todos"}}todos os abertos{{else}}os marcados{{end}}{{if .MetricL}} de {{.MetricL}}{{end}}{{if eq .Action "reconhecer"}}, ainda sem reconhecimento{{end}}: {{.N}}</dd>
+<dt>Nota</dt><dd>{{if .Note}}{{.Note}}{{else}}—{{end}}</dd>
+</dl>
+{{if eq .Action "fechar"}}<p class="aviso atencao">Fechar à mão tira o alerta da lista de abertos e zera a contagem da medida. Se o problema continuar, um alerta novo abre depois dos minutos seguidos: fechar não esconde problema que continua.</p>
+{{else}}<p class="muted">Reconhecer tira do contador do menu; o alerta continua aberto até a medida voltar ao normal.</p>{{end}}
+{{template "alertas-tabela" .}}
+{{if .More}}<p class="muted">e mais {{.More}} alerta(s).</p>{{end}}
+<form class="lote" method="post" action="/painel/alertas/lote">
+<input type="hidden" name="acao" value="{{.Action}}"><input type="hidden" name="quais" value="{{.Which}}">{{if .Metric}}<input type="hidden" name="medida" value="{{.Metric}}">{{end}}
+<input type="hidden" name="nota" value="{{.Note}}"><input type="hidden" name="lista" value="{{.Digest}}">
+{{range .IDs}}<input type="hidden" name="alerta" value="{{.}}">{{end}}
+<button type="submit" name="confirmar" value="1">{{.ActionLabel}} {{.N}} alerta(s)</button> <a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">Cancelar</a>
+</form></div>
+{{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}
 <h1>Máquinas aposentadas</h1>

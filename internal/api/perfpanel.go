@@ -27,6 +27,7 @@ type perfAlertRow struct {
 	MachineID, Short, Name, Label string
 	Opened, Duration, Peak, Last  string
 	State, Level, Ack             string
+	Closed                        string // fechado à mão: por quem e a nota
 	Open, CanAck                  bool
 }
 
@@ -38,6 +39,9 @@ type alertsView struct {
 	Open, Unacked int
 	MaxNote       int
 	Policy        string
+	// Batch: o admin vê as caixas e o formulário do lote; InFilter: os abertos do filtro.
+	Batch    bool
+	InFilter int
 }
 
 // metricLabel: o nome da medida na tela.
@@ -90,6 +94,13 @@ func (a *api) alertRows(list []store.PerfAlert, names map[string]string, admin b
 			Peak: metricValue(al.Metric, al.Peak), Last: metricValue(al.Metric, al.Last), Open: al.ClosedAt == nil}
 		end := now
 		switch {
+		case al.ClosedAt != nil && al.CloseBy != "":
+			end = *al.ClosedAt
+			r.State, r.Level = "fechado à mão em "+a.stamp(*al.ClosedAt), "ok"
+			r.Closed = "por " + al.CloseBy
+			if al.CloseNote != "" {
+				r.Closed += ": " + al.CloseNote
+			}
 		case al.ClosedAt != nil:
 			end = *al.ClosedAt
 			r.State, r.Level = "fechado em "+a.stamp(*al.ClosedAt), "ok"
@@ -140,6 +151,12 @@ func (a *api) alertsPage(w http.ResponseWriter, r *http.Request) {
 		v.Error = "Esse alerta já foi reconhecido ou fechou; nada mudou."
 	case q.Get("erro") == "nota":
 		v.Error = fmt.Sprintf("A nota tem no máximo %d caracteres.", maxAckNote)
+	case q.Get("erro") == "lote-vazio":
+		v.Error = "Nenhum alerta para o lote: marque ao menos um aberto (no reconhecer, um ainda sem reconhecimento), ou escolha todos os abertos."
+	case q.Has("fechados"):
+		v.Flash = fmt.Sprintf("%s alerta(s) fechado(s) à mão. Se a medida continuar além do limite, um alerta novo abre depois dos minutos seguidos.", numOnly(q.Get("fechados")))
+	case q.Has("reconhecidos"):
+		v.Flash = fmt.Sprintf("%s alerta(s) reconhecido(s): saem do contador do menu e continuam abertos até a medida voltar ao normal.", numOnly(q.Get("reconhecidos")))
 	}
 	ctx := r.Context()
 	list, err := a.store.PerfAlerts(ctx, store.PerfAlertFilter{OpenOnly: !v.All, Limit: 500})
@@ -162,6 +179,19 @@ func (a *api) alertsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.Rows = a.alertRows(list, names, v.Admin)
+	if v.Admin {
+		open, err := a.store.PerfAlerts(ctx, store.PerfAlertFilter{OpenOnly: true, Limit: maxAlertBatch})
+		if err != nil {
+			a.internalError(w, r, "contar alertas", err)
+			return
+		}
+		for _, al := range open {
+			if v.Metric == "" || al.Metric == v.Metric {
+				v.InFilter++
+			}
+		}
+		v.Batch = v.InFilter > 0
+	}
 	if v.Open, v.Unacked, err = a.store.PerfAlertCounts(ctx); err != nil {
 		a.internalError(w, r, "contar alertas", err)
 		return

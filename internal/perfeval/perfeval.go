@@ -42,6 +42,14 @@ type State map[string]*Track
 
 func (k Key) id() string { return k.Metric + "|" + k.Target }
 
+// Reset (alerta fechado à mão): a medida volta ao estado normal e a contagem recomeça.
+// Continuando além do limite, o alerta abre de novo depois dos minutos seguidos.
+func (st State) Reset(k Key) {
+	if t := st[k.id()]; t != nil {
+		t.Open, t.Run, t.Peak = false, 0, 0
+	}
+}
+
 // KeyOf desfaz o id.
 func KeyOf(id string) Key {
 	for i := 0; i < len(id); i++ {

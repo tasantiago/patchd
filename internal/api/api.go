@@ -81,6 +81,8 @@ type Store interface {
 	PerfHourly(ctx context.Context, machineID string, since time.Time) ([]store.PerfHour, error)
 	PerfAlerts(ctx context.Context, f store.PerfAlertFilter) ([]store.PerfAlert, error)
 	AckPerfAlert(ctx context.Context, id int64, by, note string, at time.Time) (bool, error)
+	AckPerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error)   // em lote
+	ClosePerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error) // fechar à mão, em lote
 	PerfAlertCounts(ctx context.Context) (open, unacked int, err error)
 	// A senha padrão de cada fabricante (docs/bios-senha.md, seção 10).
 	BIOSFleetPasswords(ctx context.Context) ([]store.BIOSFleetPassword, error)
@@ -327,6 +329,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/maquinas/{id}/historico/{kind}/{report}", a.adminAction(a.mergedHistoryReport))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
 	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
+	mux.Handle("POST /painel/alertas/lote", a.sameOrigin(a.adminAction(a.staleAfter(a.alertBatchAction))))                                 // fechar ou reconhecer em lote
 	mux.Handle("POST /painel/alertas/{id}/reconhecer", a.sameOrigin(a.adminAction(a.staleAfter(a.ackAlertAction))))                        // docs/monitoramento.md
 	mux.Handle("GET /painel/autoatendimento", a.panelPage(a.selfServiceReportPage))                                                        // Aula 17.7
 	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/aprovar", a.sameOrigin(a.adminAction(a.staleAfter(a.approveSelfServiceAction)))) // Aula 18.3

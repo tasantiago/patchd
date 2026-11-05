@@ -35,6 +35,8 @@ type PerfAlert struct {
 	OpenValue, Peak, Last float64
 	AckBy, AckNote        string
 	AckAt                 *time.Time
+	// CloseBy: quem fechou à mão (vazio: fechou sozinho, com a medida de volta ao normal).
+	CloseBy, CloseNote string
 }
 
 // PerfAlertFilter escolhe os alertas.
@@ -193,12 +195,13 @@ func (p *Postgres) PerfHourly(ctx context.Context, machineID string, since time.
 	return out, rows.Err()
 }
 
-const perfAlertCols = `id, machine_id, metric, target, opened_at, closed_at, open_value, peak, last_value, ack_by, ack_at, ack_note`
+const perfAlertCols = `id, machine_id, metric, target, opened_at, closed_at, open_value, peak, last_value, ack_by, ack_at, ack_note,
+	closed_by, close_note`
 
 func scanPerfAlert(row pgx.Row) (PerfAlert, error) {
 	var a PerfAlert
 	var ov, pk, lv float32
-	err := row.Scan(&a.ID, &a.MachineID, &a.Metric, &a.Target, &a.OpenedAt, &a.ClosedAt, &ov, &pk, &lv, &a.AckBy, &a.AckAt, &a.AckNote)
+	err := row.Scan(&a.ID, &a.MachineID, &a.Metric, &a.Target, &a.OpenedAt, &a.ClosedAt, &ov, &pk, &lv, &a.AckBy, &a.AckAt, &a.AckNote, &a.CloseBy, &a.CloseNote)
 	a.OpenValue, a.Peak, a.Last = float64(ov), float64(pk), float64(lv)
 	return a, err
 }
@@ -231,6 +234,75 @@ func (p *Postgres) AckPerfAlert(ctx context.Context, id int64, by, note string, 
 	tag, err := p.pool.Exec(ctx, `UPDATE perf_alerts SET ack_by = $2, ack_note = $3, ack_at = $4
 		WHERE id = $1 AND closed_at IS NULL AND ack_at IS NULL`, id, by, note, at)
 	return tag.RowsAffected() > 0, err
+}
+
+// AckPerfAlerts reconhece, em lote, os alertas abertos e ainda não reconhecidos entre os ids.
+// Devolve quantos mudaram.
+func (p *Postgres) AckPerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error) {
+	tag, err := p.pool.Exec(ctx, `UPDATE perf_alerts SET ack_by = $2, ack_note = $3, ack_at = $4
+		WHERE id = ANY($1) AND closed_at IS NULL AND ack_at IS NULL`, ids, by, note, at)
+	return int(tag.RowsAffected()), err
+}
+
+// ClosePerfAlerts fecha à mão, em lote, os alertas ainda abertos entre os ids, e zera a
+// contagem da regra de cada um: se a medida continuar além do limite, um alerta novo abre
+// depois dos minutos seguidos. Devolve quantos fecharam.
+func (p *Postgres) ClosePerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	rows, err := tx.Query(ctx, `UPDATE perf_alerts SET closed_at = $2, closed_by = $3, close_note = $4
+		WHERE id = ANY($1) AND closed_at IS NULL RETURNING machine_id, metric, target`, ids, at, by, note)
+	if err != nil {
+		return 0, err
+	}
+	byMachine := map[string][]perfeval.Key{}
+	n := 0
+	for rows.Next() {
+		var m string
+		var k perfeval.Key
+		if err := rows.Scan(&m, &k.Metric, &k.Target); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		byMachine[m] = append(byMachine[m], k)
+		n++
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	machines := make([]string, 0, len(byMachine))
+	for m := range byMachine {
+		machines = append(machines, m)
+	}
+	sort.Strings(machines) // a mesma ordem de trava que outra transação usaria
+	for _, m := range machines {
+		var raw []byte
+		switch err := tx.QueryRow(ctx, `SELECT state FROM perf_eval WHERE machine_id = $1 FOR UPDATE`, m).Scan(&raw); {
+		case errors.Is(err, pgx.ErrNoRows):
+			continue
+		case err != nil:
+			return 0, err
+		}
+		st := perfeval.State{}
+		if err := json.Unmarshal(raw, &st); err != nil {
+			continue // ilegível: o SavePerf recomeça a contagem de qualquer jeito
+		}
+		for _, k := range byMachine[m] {
+			st.Reset(k)
+		}
+		b, err := json.Marshal(st)
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE perf_eval SET state = $2 WHERE machine_id = $1`, m, b); err != nil {
+			return 0, err
+		}
+	}
+	return n, tx.Commit(ctx)
 }
 
 // PerfAlertCounts: os alertas abertos e, entre eles, os ainda não reconhecidos.
@@ -413,12 +485,43 @@ func (m *Memory) AckPerfAlert(ctx context.Context, id int64, by, note string, at
 	return true, nil
 }
 
+// AckPerfAlerts na memória.
+func (m *Memory) AckPerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, n := m.perf(), 0
+	for i := range d.alerts {
+		if a := &d.alerts[i]; a.MachineID != "" && slices.Contains(ids, a.ID) && a.ClosedAt == nil && a.AckAt == nil {
+			a.AckBy, a.AckNote, a.AckAt = by, note, &at
+			n++
+		}
+	}
+	return n, nil
+}
+
+// ClosePerfAlerts na memória.
+func (m *Memory) ClosePerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, n := m.perf(), 0
+	for i := range d.alerts {
+		if a := &d.alerts[i]; a.MachineID != "" && slices.Contains(ids, a.ID) && a.ClosedAt == nil {
+			a.ClosedAt, a.CloseBy, a.CloseNote = &at, by, note
+			if st := d.eval[a.MachineID]; st != nil {
+				st.Reset(perfeval.Key{Metric: a.Metric, Target: a.Target})
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
 // PerfAlertCounts na memória.
 func (m *Memory) PerfAlertCounts(ctx context.Context) (open, unacked int, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, a := range m.perf().alerts {
-		if a.ClosedAt == nil {
+		if a.ClosedAt == nil && a.MachineID != "" { // MachineID vazio: apagado pela retenção
 			open++
 			if a.AckAt == nil {
 				unacked++
