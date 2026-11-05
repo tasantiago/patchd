@@ -1074,6 +1074,23 @@ excluída ou de programa que saiu do parque fica de fora, com a contagem na mens
 versão aprovada vai para a auditoria como `terceiros.aprovar`, como a aprovação na página do
 programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tudo de uma vez.
 
+### Prazo da instalação e a fila do Windows Installer
+
+- **Prazo:** o agente dá 60 minutos a cada instalador, e 90 aos de 200 MB ou mais (o MSI do
+  LibreOffice tem uns 350 MB; a atualização remove a versão antiga e instala a nova, e numa
+  máquina com HD e antivírus passa de 30 min). Passado o prazo, o agente encerra o instalador e o
+  job falha com "prazo de … esgotado"; o estado da máquina fica por conferir no próximo
+  inventário (o serviço do Windows Installer pode ter terminado ou desfeito depois).
+- **Log:** a falha por prazo também diz onde está o log do instalador na máquina
+  (`C:\ProgramData\patchd\logs\instalar-job-N.log`, do msiexec e do Inno); o fim dele mostra onde
+  parou.
+- **Outra instalação MSI em andamento** (o Windows Installer roda uma por vez: outro job, o
+  Windows Update, alguém na máquina): o agente confere antes de baixar e de novo antes de
+  executar. Ocupado, o job volta **adiado** na hora ("tente de novo depois"), como com o programa
+  aberto, e a campanha tenta de novo mais tarde; antes, ele esperava o prazo inteiro na fila.
+- Vale para os agentes desta versão em diante (é o agente quem decide); os mais antigos seguem
+  com 30 minutos e sem a conferência até serem atualizados.
+
 ### Acrobat Reader e Python 3.14
 
 Os dois programas "feed" do Windows que o patchd só apontava passam a ter regra de instalação:
