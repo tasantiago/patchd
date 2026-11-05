@@ -396,7 +396,10 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		default:
 			tp = c
 		}
-		go campaignLoop(ctx, logger, pg, newCampaignEngine(pg, jobKey, tp, logger))
+		eng := newCampaignEngine(pg, jobKey, tp, logger)
+		// A fonte reserva do Windows: lida a cada máquina, a mudança na tela vale na hora.
+		eng.MicrosoftAllowed = func() bool { return params.Value(api.MicrosoftFallbackKey) == "1" }
+		go campaignLoop(ctx, logger, pg, eng)
 		logger.Info("campanhas ligadas: o servidor libera os grupos de implantação a cada minuto")
 	}
 

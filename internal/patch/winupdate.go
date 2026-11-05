@@ -19,7 +19,8 @@ import (
 // WinUpdater instala as atualizações de um job windows_update. O erro que satisfaz
 // errors.Is(err, jobs.ErrNotPending) é recusa (a fonte da máquina não oferece o pedido);
 // jobs.ErrRetry é "agora não" (outra instalação em andamento); qualquer outro é falha.
-type WinUpdater func(ctx context.Context, jobID int64, updates []jobs.WinUpdate) (detail string, err error)
+// O job diz a fonte: a da política (o padrão) ou a Microsoft (a reserva).
+type WinUpdater func(ctx context.Context, jobID int64, p jobs.WinUpdateParams) (detail string, err error)
 
 // wuaTarget é uma atualização devolvida pela busca do instalador.
 type wuaTarget struct {
@@ -64,6 +65,9 @@ func planWinUpdate(req []jobs.WinUpdate, found []wuaTarget) (todo, already []int
 	var problems []string
 	for _, r := range req {
 		i := slices.IndexFunc(found, func(t wuaTarget) bool { return strings.EqualFold(t.UpdateID, r.ID) })
+		if r.ID == "" { // fonte Microsoft, pelo KB: o primeiro pendente desse KB
+			i = slices.IndexFunc(found, func(t wuaTarget) bool { return slices.Contains(t.KBs, r.KB) })
+		}
 		switch {
 		case i < 0:
 			problems = append(problems, r.Label()+" não está pendente na fonte do Windows Update desta máquina (já instalada, substituída por uma mais nova ou WSUS sem aprovação?)")

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/alerts"
+	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/notify"
 	"github.com/tasantiago/patchd/internal/panel"
@@ -149,6 +150,15 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v
 			}},
+		{Key: api.MicrosoftFallbackKey, Group: "Agentes", Label: "Fonte reserva do Windows", Kind: settings.Select, Options: microsoftChoices,
+			Default: "0", Help: "Ligada: quando a fonte da política (WSUS) falha, o agente busca também direto no Microsoft Update, e a campanha com a opção marcada instala de lá o que a política não oferece. Só sai o que foi aprovado no patchd; muda só de onde o arquivo vem. Máquinas com a GPO que bloqueia a internet do Windows Update ficam de fora.",
+			Effect: "a partir do próximo check-in de cada máquina (a busca seguinte já usa a reserva)", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v != "0" && v != "1" {
+					return "", errors.New("use 0 (desligada) ou 1 (ligada)")
+				}
+				return v, nil
+			}, Show: showChoice(microsoftChoices)},
 		{Key: "PATCHD_CATALOG_INTERVAL", Group: "Catálogo", Label: "Sincronização automática", Kind: settings.Select, Options: catalogChoices,
 			Default: "6h", Help: "De quanto em quanto tempo o servidor busca as fontes do catálogo (Microsoft, Ubuntu, Fedora, Apple, KEV, terceiros).",
 			Effect: "na hora: a próxima sincronização é recalculada", Check: func(v string) (string, error) {
@@ -281,6 +291,8 @@ func settingDefs(look config.Lookup) []settings.Def {
 
 // notifyEffect: quando a mudança nas notificações vale.
 const notifyEffect = "na hora: o próximo e-mail já sai com a configuração nova"
+
+var microsoftChoices = []settings.Option{{Value: "0", Label: "desligada"}, {Value: "1", Label: "ligada: Microsoft Update quando a fonte da política falhar"}}
 
 var smtpTLSChoices = []settings.Option{
 	{Value: notify.TLSStart, Label: "STARTTLS (porta 587)"}, {Value: notify.TLSWrap, Label: "TLS direto (porta 465)"},

@@ -22,9 +22,20 @@ func NewWinUpdater() WinUpdater { return installWindowsUpdates }
 // installWindowsUpdates faz, numa sessão COM identificada como patchd-agent (é o nome que o
 // histórico do Windows Update mostra): busca as pendentes na fonte da política, separa os
 // UpdateIDs pedidos, confere, aceita a licença, baixa e instala. Nunca reinicia.
-func installWindowsUpdates(ctx context.Context, jobID int64, req []jobs.WinUpdate) (string, error) {
+func installWindowsUpdates(ctx context.Context, jobID int64, p jobs.WinUpdateParams) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, winUpdateTimeout)
 	defer cancel()
+	req := p.Updates
+	// Fonte reserva: direto da Microsoft. A máquina que bloqueia (GPO) recusa antes de tentar.
+	if p.Source == jobs.WinSourceMicrosoft {
+		if info := MicrosoftInfo(); info == nil || !info.Available {
+			reason := "indisponível"
+			if info != nil {
+				reason = info.Reason
+			}
+			return "", fmt.Errorf("%w: a fonte Microsoft não serve nesta máquina: %s", jobs.ErrNotPending, reason)
+		}
+	}
 
 	var detail string
 	err := wincom.Do(ctx, func() error {
@@ -44,6 +55,13 @@ func installWindowsUpdates(ctx context.Context, jobID int64, req []jobs.WinUpdat
 			return err
 		}
 		defer searcher.Release()
+		if p.Source == jobs.WinSourceMicrosoft {
+			// ssWindowsUpdate: a busca (e o download do que ela trouxer) vai à Microsoft, não
+			// ao WSUS da política.
+			if err := wincom.Put(searcher, "ServerSelection", ssWindowsUpdate); err != nil {
+				return err
+			}
+		}
 		result, err := wincom.CallObject(searcher, "Search", onlineCriteria)
 		if err != nil {
 			return comFailure("busca", err)
@@ -170,6 +188,13 @@ func installWindowsUpdates(ctx context.Context, jobID int64, req []jobs.WinUpdat
 	}
 	if err != nil && ctx.Err() != nil {
 		return "", err
+	}
+	if p.Source == jobs.WinSourceMicrosoft {
+		if err != nil {
+			err = fmt.Errorf("fonte Microsoft Update: %w", err)
+		} else {
+			detail = "fonte Microsoft Update: " + detail
+		}
 	}
 	return detail, err
 }

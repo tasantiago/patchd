@@ -19,7 +19,7 @@ import (
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
 	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
-	daily_start_min, daily_duration_min, daily_tz`
+	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
@@ -30,7 +30,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var dTZ *string
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
 		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
-		&dStart, &dDur, &dTZ)
+		&dStart, &dDur, &dTZ, &c.MicrosoftFallback)
 	if err != nil {
 		return c, err
 	}
@@ -71,10 +71,10 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 	var id int64
 	err := p.pool.QueryRow(ctx, `
 		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec,
-			daily_start_min, daily_duration_min, daily_tz)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
 		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
-		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ).Scan(&id)
+		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback).Scan(&id)
 	return id, err
 }
 

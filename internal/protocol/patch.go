@@ -99,4 +99,14 @@ type PatchScanReport struct {
 	History []UpdateHistoryEntry `json:"history"`
 	// Errors lista as falhas fora das buscas (reinício, histórico), uma por entrada.
 	Errors []string `json:"errors,omitempty"`
+	// MicrosoftUpdate: se este agente sabe buscar e instalar direto da Microsoft (a fonte
+	// reserva do Windows) e se a máquina permite. Ausente: agente anterior ou fora do Windows;
+	// o servidor não manda job com a fonte Microsoft para ele.
+	MicrosoftUpdate *MicrosoftUpdate `json:"microsoft_update,omitempty"`
+}
+
+// MicrosoftUpdate diz se a fonte Microsoft serve nesta máquina.
+type MicrosoftUpdate struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"` // por que não (a GPO que bloqueia, por exemplo)
 }

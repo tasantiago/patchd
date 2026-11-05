@@ -142,7 +142,8 @@ form.campanha .anel:has(input:checked){border-color:var(--azul);background:#eef5
 form.campanha details.vazios{margin-top:.5rem}form.campanha details.vazios summary{cursor:pointer;color:var(--muted);font-size:.84rem;margin-bottom:.4rem}
 form.campanha:has(input[name=tipo]:checked:not([value=thirdparty])) .so-terceiros,
 form.campanha:has(input[name=tipo]:checked:not([value=update]):not([value=windows_update])) .so-fontes,
-form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio{display:none}
+form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio,
+form.campanha:has(input[name=tipo]:checked:not([value=windows_update]):not([value=sistema_todas])) .so-windows{display:none}
 form.campanha:has(input[value=janela]:checked) select[name=prazo]{opacity:.45}
 form.campanha .acoes{display:flex;align-items:center;gap:.75rem}
 /* Saúde do servidor (docs/saude-servidor.md): o veredito, as recomendações e os medidores. */

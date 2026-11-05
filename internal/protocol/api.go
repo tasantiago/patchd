@@ -77,6 +77,10 @@ type CheckinResponse struct {
 	// Parâmetros › Agentes), de MinCheckinMinutes a MaxCheckinMinutes. Ausente (0): vale o do
 	// próprio agente (-checkin-interval). Agente anterior: ignora o campo.
 	CheckinMinutes int `json:"checkin_minutes,omitempty"`
+	// WinUpdateMicrosoft: a fonte reserva do Windows está ligada no servidor (Configuração ›
+	// Parâmetros): quando a busca na fonte da política falhar, o agente busca também direto na
+	// Microsoft. Agente anterior: ignora o campo.
+	WinUpdateMicrosoft bool `json:"winupdate_microsoft,omitempty"`
 }
 
 // Limites do intervalo de check-in definido no servidor.

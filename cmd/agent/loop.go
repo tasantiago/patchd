@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/agent"
@@ -122,6 +123,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		logger.Info("CA do servidor: só a do arquivo", "ca_file", opts.CAFile, "certificados", certs)
 	}
 	cab := newOfflineCab(logger, client, opts)
+	// A fonte reserva do Windows (a Microsoft), como o servidor anunciou no último check-in.
+	var msFallback atomic.Bool
 	// As chaves aceitas (Aula 20.7): a de jobs e a seguinte; as impressões delas e as das de
 	// release vão no estado de cada check-in, para o painel contar a frota antes de uma troca.
 	jobPub, jobNext := jobKey(logger), jobKeyNext(logger)
@@ -144,6 +147,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		},
 		Scan: func(ctx context.Context) protocol.PatchScanReport {
 			o := scanOpts
+			o.MicrosoftFallback = msFallback.Load()
 			if o.OfflineCatalog == "" && cab != nil {
 				o.OfflineCatalog = cab.Path() // o último baixado e conferido; "" se ainda não há
 			}
@@ -233,6 +237,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Download: client.Download,
 		Dir:      filepath.Join(opts.DataDir, "bundles"),
 	}).Execute
+	ag.MicrosoftFallback = msFallback.Store
 	// Job windows_update (Aula 16.1): só no Windows, pelo WUA.
 	if wu := patch.NewWinUpdater(); wu != nil {
 		ag.WinUpdate = wu

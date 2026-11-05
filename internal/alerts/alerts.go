@@ -254,7 +254,7 @@ func (w *Watcher) sources(ctx context.Context) ([]message, error) {
 	var list []store.SourceFailure
 	var keys []string
 	for _, f := range all {
-		if f.Source == "wua-offline" {
+		if f.Source == "wua-offline" || f.Source == "wua-microsoft" { // só conferem / reserva: não avisam
 			continue
 		}
 		var ok int64

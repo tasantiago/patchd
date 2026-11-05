@@ -146,7 +146,7 @@ func (a *api) dashboardPage(w http.ResponseWriter, r *http.Request) {
 		} else {
 			seen := map[string]bool{}
 			for _, f := range failures {
-				if f.Source != "wua-offline" {
+				if !auxSource(f.Source) {
 					seen[f.MachineID] = true
 				}
 			}
