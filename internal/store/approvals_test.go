@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -63,6 +64,21 @@ func testarAprovacao(t *testing.T, st contratoAprovacao) {
 	}
 	if len(l) != 3 || quem["curl"] != "bruno" || quem["bluez"] != "carla" {
 		t.Errorf("depois do lote: %+v", l)
+	}
+
+	// Lote grande (o parque de 2.000 máquinas tem 10.000 pendências): uma instrução só, com
+	// um repetido e um já aprovado no meio.
+	grande := []PatchApproval{{Item: "bluez", FixedIn: "5.80-1ubuntu0.2", ApprovedBy: "dani"}}
+	for i := range 10000 {
+		grande = append(grande, PatchApproval{Item: fmt.Sprintf("CVE-2026-%05d", i+10), FixedIn: "26200.8000 (KB5080000)", ApprovedBy: "dani"})
+	}
+	grande = append(grande, grande[5])
+	novas, err = st.ApprovePatches(ctx, grande)
+	if err != nil || len(novas) != 10000 || novas[0].Item != "CVE-2026-00010" {
+		t.Fatalf("lote grande: %d %v", len(novas), err)
+	}
+	if l, _ := st.PatchApprovals(ctx); len(l) != 10003 {
+		t.Errorf("depois do lote grande: %d", len(l))
 	}
 }
 

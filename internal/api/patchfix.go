@@ -219,41 +219,52 @@ func (a *api) approveFixBatch(w http.ResponseWriter, r *http.Request, s panel.Se
 		redirectPatch(w, r, withParams(back, "erro", "lote-vazio"))
 		return
 	}
-	note := strings.TrimSpace(r.PostFormValue("nota"))
-	if r.PostFormValue("confirmar") != "1" || byFilter || utf8.RuneCountInString(note) > maxNoteLen {
-		v := batchView{pageBase: a.baseFor(r.Context(), s, "Aprovar em lote", "patch"), Max: maxApproveBatch, MaxNote: maxNoteLen,
-			Note: note, Status: pq.Status, Q: pq.Q, Back: back, Skipped: skipped, FixMode: true, Hidden: hiddenQuery(pq)}
-		if utf8.RuneCountInString(note) > maxNoteLen && r.PostFormValue("confirmar") == "1" {
-			v.Error = fmt.Sprintf("A observação tem no máximo %d caracteres.", maxNoteLen)
-		}
-		if len(chosen) > maxApproveBatch {
-			v.FilterTotal = len(chosen)
-			chosen = chosen[:maxApproveBatch]
-		}
-		for _, f := range chosen {
-			if f.Exploited {
-				v.Exploited++
-			}
-			v.FixItems += f.Pending
-			fr := f.row()
-			v.Rows = append(v.Rows, batchRow{ID: f.Label, FixedIn: dash(f.Detail), Kind: fmt.Sprintf("%s · %d %s", fr.System, f.Pending, fr.Unit),
-				Severity: dash(f.Severity), Sel: fixSel(f.Key), Exploited: f.Exploited, Machines: len(f.Machines)})
-		}
-		a.render(w, r, http.StatusOK, "patch-lote", v)
-		return
-	}
-	if len(chosen) > maxApproveBatch {
-		chosen = chosen[:maxApproveBatch]
-	}
+	// A lista que se aprova: todos os itens aguardando das correções escolhidas.
 	var list []store.PatchApproval
-	var labels []string
+	var keys, labels []string
+	note := strings.TrimSpace(r.PostFormValue("nota"))
 	for _, f := range chosen {
 		labels = append(labels, f.Label)
 		for _, p := range f.Items {
 			if p.Approval == nil {
 				list = append(list, store.PatchApproval{Item: p.ID, FixedIn: p.FixedIn, ApprovedBy: s.Username, Note: note})
+				keys = append(keys, store.ApprovalKey(p.ID, p.FixedIn))
 			}
 		}
+	}
+	confirm := r.PostFormValue("confirmar") == "1"
+	digest, errMsg := "", ""
+	if byFilter {
+		digest = batchDigest(keys)
+		if confirm && r.PostFormValue("resumo") != digest {
+			if r.PostFormValue("resumo") != "" {
+				errMsg = "A lista do filtro mudou desde a conferência (chegou avaliação nova, ou alguém aprovou parte dela). Confira de novo."
+			}
+			confirm = false
+		}
+	}
+	if confirm && utf8.RuneCountInString(note) > maxNoteLen {
+		errMsg, confirm = fmt.Sprintf("A observação tem no máximo %d caracteres.", maxNoteLen), false
+	}
+	if !confirm {
+		v := batchView{pageBase: a.baseFor(r.Context(), s, "Aprovar em lote", "patch"), MaxNote: maxNoteLen,
+			Note: note, Status: pq.Status, Q: pq.Q, Back: back, Skipped: skipped, FixMode: true, Hidden: hiddenQuery(pq),
+			Total: len(chosen), Digest: digest, FixItems: len(list)}
+		v.Error = errMsg
+		for i, f := range chosen {
+			if f.Exploited {
+				v.Exploited++
+			}
+			if i >= batchShown {
+				continue
+			}
+			fr := f.row()
+			v.Rows = append(v.Rows, batchRow{ID: f.Label, FixedIn: dash(f.Detail), Kind: fmt.Sprintf("%s · %d %s", fr.System, f.Pending, fr.Unit),
+				Severity: dash(f.Severity), Sel: fixSel(f.Key), Exploited: f.Exploited, Machines: len(f.Machines)})
+		}
+		v.More = len(chosen) - len(v.Rows)
+		a.render(w, r, http.StatusOK, "patch-lote", v)
+		return
 	}
 	created, err := a.store.ApprovePatches(r.Context(), list)
 	if err != nil {

@@ -1039,8 +1039,13 @@ Linux, macOS), severidade mínima, busca e itens por página (25, 50, 100 ou 200
 
 Marque as linhas e **Conferir marcadas**, ou **Conferir todas as N aguardando** do filtro. A
 conferência mostra o que será aprovado e nada é gravado antes do segundo clique; na visão por
-correção, aprovar a correção aprova todas as CVEs aguardando dela. Até 200 itens (ou
-correções) por lote; o resto do filtro fica para o próximo. Auditoria: `patch.aprovar_lote`.
+correção, aprovar a correção aprova todas as CVEs aguardando dela. **Todos do filtro não tem
+limite** (um parque de 2.000 máquinas com 10.000 pendências aprova tudo num lote): a
+conferência mostra o resumo e as primeiras 200 linhas, e leva a impressão digital (SHA-256) da
+lista, não a lista. No clique, o servidor refaz o filtro e só aprova se a lista for a mesma;
+se mudou (chegou uma avaliação nova, ou alguém aprovou parte), mostra a conferência de novo.
+As marcadas à mão vão até 200 por vez (o tamanho da página). O banco grava o lote numa
+instrução só. Auditoria: `patch.aprovar_lote`.
 
 **Terceiros.** A lista ganha a coluna **Instalador** (aguardando a versão guardada mais nova,
 aprovado, nada guardado, ou "o patchd não instala" para programa sem regra de instalação), o

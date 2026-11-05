@@ -3,9 +3,9 @@ package api_test
 import (
 	"context"
 	"fmt"
-	"html"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -168,30 +168,48 @@ func TestAprovacaoEmLote(t *testing.T) {
 
 // O filtro com mais itens que o limite: a conferência leva os primeiros, pela ordem da
 // lista (a CVE explorada e crítica primeiro), e diz quantos o filtro tinha.
-func TestLoteDoFiltroAcimaDoLimite(t *testing.T) {
-	h, st, _ := ambienteLote(t, 230)
+// "Todos do filtro" não tem limite (2.000 máquinas, 10.000 pendências): a conferência mostra o
+// resumo e as primeiras 200 linhas e leva a impressão digital da lista, não a lista; no clique,
+// o servidor refaz o filtro e só aprova se a lista for a mesma.
+func TestLoteDoFiltroSemLimite(t *testing.T) {
+	h, st, _ := ambienteLote(t, 2500)
 	b := pagina(h, "GET", "/painel/patch?q=CVE", sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, "Conferir todos os 232 aguardando deste filtro") || !strings.Contains(b, "Um lote leva até 200 itens.") {
-		t.Errorf("lista:\n%s", b)
+	if !strings.Contains(b, "Conferir todos os 2502 aguardando deste filtro") || !strings.Contains(b, "sem limite") {
+		t.Errorf("lista:\n%.3000s", b)
 	}
 	r := pagina(h, "POST", "/painel/patch/aprovar-lote", sessaoAdmin, url.Values{"filtro": {"1"}, "q": {"CVE"}})
 	b = r.Body.String()
-	if !strings.Contains(b, "O filtro tem 232 itens aguardando; este lote leva os 200 primeiros") || !strings.Contains(b, "Aprovar 200 itens") ||
-		strings.Count(b, `name="sel"`) != 200 || !strings.Contains(b, `<code>CVE-2026-1001</code>`) {
-		t.Fatalf("conferência acima do limite: %d", r.Code)
+	if !strings.Contains(b, "2502 itens serão aprovados") || !strings.Contains(b, "Aprovar 2502 itens") || !strings.Contains(b, "os outros 2302 entram no mesmo lote") ||
+		strings.Count(b, `name="sel"`) != 0 || strings.Count(b, "<tr><td>") != 200 || !strings.Contains(b, `<input type="hidden" name="filtro" value="1">`) {
+		t.Fatalf("conferência: %d\n%.4000s", r.Code, b)
 	}
-	// A conferência reenvia os 200; aprovar grava os 200, e sobram 32 para o próximo lote.
-	form, _ := url.ParseQuery("confirmar=1")
-	for _, part := range strings.Split(b, `<input type="hidden" name="sel" value="`)[1:] {
-		form.Add("sel", html.UnescapeString(part[:strings.Index(part, `"`)]))
+	resumo := b[strings.Index(b, `name="resumo" value="`)+len(`name="resumo" value="`):]
+	resumo = resumo[:strings.Index(resumo, `"`)]
+	confirma := func(res string) *httptest.ResponseRecorder {
+		f := url.Values{"filtro": {"1"}, "q": {"CVE"}, "confirmar": {"1"}, "nota": {"lote de novembro"}}
+		if res != "" {
+			f.Set("resumo", res)
+		}
+		return pagina(h, "POST", "/painel/patch/aprovar-lote", sessaoAdmin, f)
 	}
-	if l := local(pagina(h, "POST", "/painel/patch/aprovar-lote", sessaoAdmin, form)); l != "/painel/patch?fora=0&ja=0&lote=200" {
-		t.Errorf("aprovar 200: %s", l)
+	// confirmar=1 sem a impressão (forjado) volta para a conferência; com outra, avisa que mudou.
+	if r := confirma(""); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "Aprovar 2502 itens") {
+		t.Errorf("sem resumo: %d", r.Code)
 	}
-	if l, _ := st.PatchApprovals(t.Context()); len(l) != 200 {
+	if r := confirma("0123456789abcdef0123456789abcdef"); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "A lista do filtro mudou desde a conferência") {
+		t.Errorf("resumo errado: %d", r.Code)
+	}
+	if l, _ := st.PatchApprovals(t.Context()); len(l) != 0 {
+		t.Fatalf("gravou antes da hora: %d", len(l))
+	}
+	if l := local(confirma(resumo)); l != "/painel/patch?fora=0&ja=0&lote=2502&q=CVE" {
+		t.Errorf("aprovar todos: %s", l)
+	}
+	l, _ := st.PatchApprovals(t.Context())
+	if len(l) != 2502 || l[0].Note != "lote de novembro" {
 		t.Errorf("gravados: %d", len(l))
 	}
-	if b := pagina(h, "GET", "/painel/patch?q=CVE", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Conferir todos os 32 aguardando deste filtro") {
-		t.Errorf("o que sobrou:\n%s", b)
+	if b := pagina(h, "GET", "/painel/patch?q=CVE&status=aguardando", sessaoAdmin, nil).Body.String(); strings.Contains(b, "Conferir todos os") {
+		t.Errorf("ainda sobrou:\n%.2000s", b)
 	}
 }
