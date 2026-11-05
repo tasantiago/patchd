@@ -41,6 +41,9 @@ type tpKindOption struct{ Value, Label string }
 // fetchKinds: os tipos de instalação cuja família não tem o tipo da regra.
 func fetchKinds(rule thirdparty.App) []tpKindOption {
 	var out []tpKindOption
+	if slices.Contains(tpinstall.Family(tpinstall.KindBundle), rule.Install.Type) {
+		return nil // um bundle (WiX Burn) só se atualiza com outro bundle: não há tipo a escolher
+	}
 	for _, k := range []string{tpinstall.KindMSI, tpinstall.KindExe} {
 		fam := tpinstall.Family(k)
 		if !slices.Contains(fam, rule.Install.Type) {

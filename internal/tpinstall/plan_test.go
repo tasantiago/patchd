@@ -42,7 +42,7 @@ func TestPlanoDaMaquinaDoLab(t *testing.T) {
 		maquina("Notepad++ (64-bit x64)", "8.9.7", "Notepad++ Team"),
 		maquina("PowerShell 7-x64", "7.6.6.0", "Microsoft Corporation", msi, oculto),
 		maquina("PowerShell 7.6.6.0-x64", "7.6.6.0", "Microsoft Corporation", bundle),
-		maquina("Adobe Acrobat (64-bit)", "25.001.20000", "Adobe"), // regra sem install: não aparece
+		maquina("Adobe Acrobat (64-bit)", "25.001.20000", "Adobe"),
 	}
 	pkgs := []store.ThirdPartyPackage{
 		pacote("7zip", "26.04", "exe", "x64"),
@@ -67,6 +67,7 @@ func TestPlanoDaMaquinaDoLab(t *testing.T) {
 		"7zip":          {StateDuplicate, "2 instalações visíveis (msi 26.02.00.0, exe 26.02): limpar antes"},
 		"powershell-7":  {StateBundle, "bundle (WiX Burn)"},
 		"google-chrome": {StateCurrent, "155.0.8059.40 instalado"},
+		"adobe-acrobat": {StateNoPackage, "nenhum instalador exe guardado para x64"},
 	}
 	if len(got) != len(casos) {
 		t.Errorf("decisões: %d, esperava %d (%v)", len(got), len(casos), got)
@@ -83,6 +84,34 @@ func TestPlanoDaMaquinaDoLab(t *testing.T) {
 	// O PowerShell conta uma instalação (o bundle); o MSI escondido não entra.
 	if len(got["powershell-7"].Entries) != 1 || got["powershell-7"].Entries[0].Kind != KindBundle {
 		t.Errorf("powershell: %+v", got["powershell-7"].Entries)
+	}
+}
+
+// O Python do Windows é um bundle (WiX Burn): a regra pede burn, e o bundle novo atualiza o da
+// mesma arquitetura, pelo nome. O de 32 bits não recebe o instalador de 64 (seriam dois Pythons).
+func TestPlanoDoBundle(t *testing.T) {
+	m, _ := thirdparty.Default()
+	pkgs := []store.ThirdPartyPackage{pacote("python-3.14", "3.14.10", "burn", "x64")}
+	plano := func(nome string, escopo ...func(*protocol.Software)) Decision {
+		t.Helper()
+		ds := Plan([]protocol.Software{maquina(nome, "3.14.4150.0", "Python Software Foundation", append([]func(*protocol.Software){bundle}, escopo...)...)}, m, pkgs, "x64")
+		if len(ds) != 1 {
+			t.Fatalf("%s: %+v", nome, ds)
+		}
+		return ds[0]
+	}
+	if d := plano("Python 3.14.4 (64-bit)"); d.State != StateUpdate || !strings.Contains(d.Reason, "3.14.4 → 3.14.10 · burn · x64") {
+		t.Errorf("64 bits: %s %q", d.State, d.Reason)
+	}
+	if d := plano("Python 3.14.4 (32-bit)"); d.State != StateNoPackage || !strings.Contains(d.Reason, "nenhum instalador bundle guardado para x86") {
+		t.Errorf("32 bits: %s %q", d.State, d.Reason)
+	}
+	pkgs = append(pkgs, pacote("python-3.14", "3.14.10", "burn", "x86"))
+	if d := plano("Python 3.14.4 (32-bit)"); d.State != StateUpdate || d.Package.Architecture != "x86" {
+		t.Errorf("32 bits com o x86: %s %q", d.State, d.Reason)
+	}
+	if d := plano("Python 3.14.4 (64-bit)", func(s *protocol.Software) { s.Scope = "user" }); d.State != StateUserOnly {
+		t.Errorf("por usuário: %s %q", d.State, d.Reason)
 	}
 }
 

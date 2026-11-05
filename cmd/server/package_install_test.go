@@ -76,7 +76,7 @@ func TestPackageInstall(t *testing.T) {
 		msg  string
 	}{
 		{[]string{"-app", "notepad-plus-plus", "-version", "9.0"}, exitRuntime, "nenhum instalador de notepad-plus-plus 9.0 guardado"},
-		{[]string{"-app", "adobe-acrobat", "-version", "1"}, exitConfig, `a regra "adobe-acrobat" do Windows não existe ou não tem "install"`},
+		{[]string{"-app", "vcredist-2008", "-version", "1"}, exitConfig, `a regra "vcredist-2008" do Windows não existe ou não tem "install"`},
 		{[]string{"-app", "notepad-plus-plus"}, exitConfig, "informe -app e -version"},
 		{[]string{"-app", "notepad-plus-plus", "-version", "8.9.8.1", "-note", "testado no piloto"}, exitOK,
 			"notepad-plus-plus 8.9.8.1 aprovado (linha de comando): vale para os instaladores guardados dessa versão: nullsoft x64"},

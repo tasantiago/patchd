@@ -39,13 +39,13 @@ func TestAbaAutoatendimento(t *testing.T) {
 	}
 	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, `>Autoatendimento</a>`) || !strings.Contains(b, `7-Zip <span class="muted"><code>7zip</code></span></td><td><code>26.04</code></td>`) ||
-		!strings.Contains(b, "fora da loja") || strings.Contains(b, "adobe-acrobat") {
+		!strings.Contains(b, "fora da loja") || strings.Contains(b, "vcredist-2008") {
 		t.Errorf("aba:\n%s", b)
 	}
 	salvar := func(f url.Values) string {
 		return local(pagina(h, "POST", "/painel/configuracao/autoatendimento", sessaoAdmin, f))
 	}
-	if loc := salvar(url.Values{"app": {"adobe-acrobat"}, "atualizar": {"1"}}); !strings.HasSuffix(loc, "erro=programa") {
+	if loc := salvar(url.Values{"app": {"vcredist-2008"}, "atualizar": {"1"}}); !strings.HasSuffix(loc, "erro=programa") {
 		t.Errorf("sem install: %s", loc)
 	}
 	if loc := salvar(url.Values{"app": {"7zip"}, "atualizar": {"1"}, "grupos": {"GG-TI, grupo*)(cn=*"}}); !strings.Contains(loc, "erro=grupos") {

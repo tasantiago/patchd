@@ -146,7 +146,7 @@ func TestOfertaEmLote(t *testing.T) {
 		!strings.Contains(w.Body.String(), "marque ao menos um programa") {
 		t.Errorf("lote sem marcados: %d", w.Code)
 	}
-	if r := envia(tela(map[string]url.Values{"adobe-acrobat": {"atualizar": {"1"}}}, url.Values{"modo": {"salvar"}})); !strings.HasSuffix(r.Header.Get("Location"), "erro=programa") {
+	if r := envia(tela(map[string]url.Values{"vcredist-2008": {"atualizar": {"1"}}}, url.Values{"modo": {"salvar"}})); !strings.HasSuffix(r.Header.Get("Location"), "erro=programa") {
 		t.Errorf("programa sem install: %s", r.Header.Get("Location"))
 	}
 	if w := pagina(h, "POST", "/painel/configuracao/autoatendimento", sessaoTeste, tela(linhas, url.Values{"modo": {"salvar"}})); w.Code != http.StatusForbidden {

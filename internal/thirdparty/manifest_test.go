@@ -96,6 +96,7 @@ func TestInstall(t *testing.T) {
 		"google-chrome": "Google.Chrome ", "mozilla-firefox": "Mozilla.Firefox.pt-BR ", "mozilla-firefox-esr": "Mozilla.Firefox.ESR.pt-BR ",
 		"7zip": "7zip.7zip exe", "notepad-plus-plus": "Notepad++.Notepad++ nullsoft", "vscode": "Microsoft.VisualStudioCode ",
 		"powershell-7": "Microsoft.PowerShell wix", "libreoffice": "TheDocumentFoundation.LibreOffice ",
+		"adobe-acrobat": "Adobe.Acrobat.Reader.64-bit exe", "python-3.14": "Python.Python.3.14 burn",
 	}
 	if len(com) != len(want) {
 		t.Errorf("regras com install: %v", com)
@@ -117,6 +118,7 @@ func TestInstall(t *testing.T) {
 	wantSigners := map[string]string{
 		"google-chrome": "Google LLC", "notepad-plus-plus": "NOTEPAD++", "mozilla-firefox": "Mozilla Corporation", "mozilla-firefox-esr": "Mozilla Corporation",
 		"vscode": "Microsoft Corporation", "powershell-7": "Microsoft Corporation", "libreoffice": "The Document Foundation",
+		"adobe-acrobat": "Adobe Inc.", "python-3.14": "Python Software Foundation",
 	}
 	if !maps.Equal(signers, wantSigners) {
 		t.Errorf("assinantes padrão: %v", signers)
@@ -130,7 +132,8 @@ func TestInstall(t *testing.T) {
 		}
 	}
 	if !maps.Equal(procs, map[string]string{"vscode": "Code.exe", "mozilla-firefox": "firefox.exe", "mozilla-firefox-esr": "firefox.exe",
-		"7zip": "7zFM.exe,7zG.exe", "notepad-plus-plus": "notepad++.exe", "libreoffice": "soffice.exe"}) {
+		"7zip": "7zFM.exe,7zG.exe", "notepad-plus-plus": "notepad++.exe", "libreoffice": "soffice.exe",
+		"adobe-acrobat": "Acrobat.exe,AcroRd32.exe", "python-3.14": "python.exe,pythonw.exe"}) {
 		t.Errorf("processos padrão: %v", procs)
 	}
 	regra := func(extra string) string {

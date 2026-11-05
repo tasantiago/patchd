@@ -58,8 +58,24 @@ func Kind(s protocol.Software) string {
 
 // families: os tipos de instalador do winget que atualizam cada tipo de instalação.
 var families = map[string][]string{
-	KindMSI: {"msi", "wix"},
-	KindExe: {"nullsoft", "inno", "exe"},
+	KindMSI:    {"msi", "wix"},
+	KindExe:    {"nullsoft", "inno", "exe"},
+	KindBundle: {"burn"}, // só quando a regra pede burn: o bundle novo atualiza o antigo
+}
+
+// bundleArch: a arquitetura de um bundle pelo nome ("Python 3.14.4 (64-bit)"). Um bundle de
+// 32 bits e um de 64 são produtos diferentes (outro UpgradeCode): o de 64 instalado por cima
+// de um de 32 deixaria os dois. exact: o nome diz qual, e só ela serve.
+func bundleArch(name, machine string) (arch string, exact bool) {
+	switch {
+	case strings.Contains(name, "(32-bit)"):
+		return "x86", true
+	case strings.Contains(name, "(64-bit)"):
+		return "x64", true
+	case strings.Contains(name, "(ARM64)"):
+		return "arm64", true
+	}
+	return machine, false
 }
 
 // Family (Aula 23.5): os tipos de instalador do winget que atualizam o tipo de instalação
@@ -177,17 +193,21 @@ func decide(d *Decision, pkgs []store.ThirdPartyPackage, arch string) {
 	}
 	e := d.Entries[0]
 	d.Installed = e.Installed
+	exact := false
 	if e.Kind == KindBundle {
-		d.State = StateBundle
-		d.Reason = "instalado por um bundle (WiX Burn): o MSI direto deixaria a entrada do bundle para trás"
-		return
+		if !slices.Contains(families[KindBundle], d.App.Install.Type) {
+			d.State = StateBundle
+			d.Reason = "instalado por um bundle (WiX Burn): o MSI direto deixaria a entrada do bundle para trás"
+			return
+		}
+		arch, exact = bundleArch(e.Software.Name, arch)
 	}
 	if e.Installed == "" {
 		d.State = StateBadVersion
 		d.Reason = fmt.Sprintf("versão instalada %q não se compara", e.Software.Version)
 		return
 	}
-	best := newest(pkgs, d.App.ID, families[e.Kind], arch)
+	best := newest(pkgs, d.App.ID, families[e.Kind], arch, exact)
 	if best == nil {
 		// Sem -type, o fetch leva o primeiro que serve no manifesto, que pode ser do outro
 		// tipo: a dica só dispensa o -type quando o da regra já é da família da máquina.
@@ -217,11 +237,12 @@ func decide(d *Decision, pkgs []store.ThirdPartyPackage, arch string) {
 
 // newest: o instalador guardado mais novo do programa, de um dos tipos e de uma arquitetura
 // que roda na máquina; no empate de versão, a arquitetura preferida.
-func newest(pkgs []store.ThirdPartyPackage, app string, types []string, arch string) *store.ThirdPartyPackage {
+// exact: só a arquitetura arch (o bundle de 32 bits só com o instalador de 32).
+func newest(pkgs []store.ThirdPartyPackage, app string, types []string, arch string, exact bool) *store.ThirdPartyPackage {
 	var best *store.ThirdPartyPackage
 	for i := range pkgs {
 		p := &pkgs[i]
-		if p.AppID != app || !slices.Contains(types, p.Type) || winget.ArchRank(arch, p.Architecture) < 0 {
+		if p.AppID != app || !slices.Contains(types, p.Type) || winget.ArchRank(arch, p.Architecture) < 0 || exact && p.Architecture != arch {
 			continue
 		}
 		v, ok := thirdparty.Normalize(p.Version)
@@ -258,5 +279,5 @@ func ForNewInstall(app thirdparty.App, pkgs []store.ThirdPartyPackage, arch stri
 	if app.Install != nil && app.Install.Type != "" {
 		types = []string{app.Install.Type}
 	}
-	return newest(pkgs, app.ID, types, arch)
+	return newest(pkgs, app.ID, types, arch, false)
 }
