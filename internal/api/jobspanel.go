@@ -148,7 +148,7 @@ func (a *api) machineJobs(r *http.Request, id string, admin bool) ([]jobRowView,
 }
 
 // jobFlash traduz o resultado de uma ação (na URL do redirecionamento) numa mensagem fixa.
-func jobFlash(q map[string][]string, b *pageBase) {
+func jobFlash(q map[string][]string, b *pageBase, loc *time.Location) {
 	get := func(k string) string {
 		if v := q[k]; len(v) > 0 {
 			return v[0]
@@ -202,6 +202,20 @@ func jobFlash(q map[string][]string, b *pageBase) {
 		b.Error = "Escolha o aviso (5, 15, 30 ou 60 minutos) e quando."
 	case get("erro") == "cancelar" && n > 0:
 		b.Error = fmt.Sprintf("O job %d não está mais pendente; nada mudou. Um job entregue não se cancela: o agente pode estar executando.", n)
+	case get("reinicio") == "agendado" && n > 0:
+		em, _ := strconv.ParseInt(get("em"), 10, 64)
+		b.Flash = fmt.Sprintf("Reinício agendado (job %d): o servidor guarda o pedido e entrega no primeiro check-in a partir de %s.",
+			n, time.Unix(em, 0).In(loc).Format("02/01 às 15:04"))
+		switch w := get("wol"); {
+		case w == "ok":
+			k, _ := strconv.Atoi(get("wn"))
+			b.Flash += fmt.Sprintf(" O pacote para ligar sai 10 minutos antes, por %d %s da mesma sub-rede (que precisam estar ligados nessa hora).",
+				max(k, 1), plural(max(k, 1), "repetidor", "repetidores"))
+		case w != "":
+			b.Error = "O reinício foi agendado, mas o ligar pela rede não: " + wakeProblem(w) + " A máquina precisa estar ligada no horário."
+		}
+	case get("erro") == "reinicio-horario":
+		b.Error = "Horário inválido: escolha um início no futuro (até 14 dias à frente) e por quanto tempo o pedido vale."
 	case get("criado") != "" && n > 0:
 		b.Flash = fmt.Sprintf("Job %d criado: a máquina recebe no próximo check-in (até %s; reiniciar o agente antecipa).", n, b.CheckinWait)
 	case get("cancelado") != "" && n > 0:
@@ -226,7 +240,7 @@ type jobsView struct {
 // jobsPage lista os jobs mais recentes da frota.
 func (a *api) jobsPage(w http.ResponseWriter, r *http.Request) {
 	v := jobsView{pageBase: a.base(r, "Jobs", "jobs"), N: fleetJobsShown}
-	jobFlash(r.URL.Query(), &v.pageBase)
+	jobFlash(r.URL.Query(), &v.pageBase, a.panelLocation())
 	a.expireJobs(r)
 	list, err := a.store.Jobs(r.Context(), "", fleetJobsShown)
 	if err != nil {

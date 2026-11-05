@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 type ambiente struct {
@@ -164,6 +165,34 @@ func TestCampanhaNaJanelaSemJanelaPausa(t *testing.T) {
 	id := a.cria(campaign.Campaign{Name: "x", Type: jobs.TypeRescan, Rings: []int{0}, UseWindow: true, CreatedBy: "t"})
 	if c := a.passo(id, 0); c.State != campaign.StatePaused || !strings.Contains(c.Detail, "sem janela") {
 		t.Fatalf("%+v", c)
+	}
+}
+
+// Em horário fixo (ex.: 02:00 por 3 h, de madrugada), sem janela no grupo: o job espera o
+// próximo horário e vale até o fim dele.
+func TestCampanhaEmHorarioFixo(t *testing.T) {
+	a := novoAmbiente(t)
+	pvh, _ := time.LoadLocation("America/Porto_Velho")
+	daily := &window.Window{Days: window.AllDays, Start: 2 * time.Hour, Duration: 3 * time.Hour, Location: pvh}
+	id := a.cria(campaign.Campaign{Name: "reinício de madrugada", Type: jobs.TypeRescan, Rings: []int{0}, Daily: daily, CreatedBy: "t"})
+	if c := a.passo(id, 0); c.State != campaign.StateRunning {
+		t.Fatalf("%+v", c)
+	}
+	l, _ := a.st.Jobs(context.Background(), "p1", 5)
+	if len(l) != 1 || l[0].NotBefore == nil {
+		t.Fatalf("jobs: %+v", l)
+	}
+	// a.agora é 09/10 14:00 UTC (10:00 em Porto Velho): o próximo 02:00 é 10/10 02:00 -04.
+	quer := time.Date(2026, 10, 10, 2, 0, 0, 0, pvh)
+	if !l[0].NotBefore.Equal(quer) || !l[0].NotAfter.Equal(quer.Add(3*time.Hour)) {
+		t.Errorf("de %v até %v; quer %v por 3 h", l[0].NotBefore, l[0].NotAfter, quer)
+	}
+	// Horário fixo e janela do grupo juntos não: um ou outro.
+	if err := (campaign.Campaign{Name: "x", Type: jobs.TypeRescan, Rings: []int{0}, Daily: daily, UseWindow: true}).Validate(); err == nil {
+		t.Error("janela e horário fixo juntos")
+	}
+	if err := (campaign.Campaign{Name: "x", Type: jobs.TypeRescan, Rings: []int{0}, Daily: &window.Window{Days: window.AllDays, Start: time.Hour, Location: pvh}}).Validate(); err == nil {
+		t.Error("horário fixo sem duração")
 	}
 }
 

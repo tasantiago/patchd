@@ -249,6 +249,9 @@ type machineView struct {
 	TPUpdate                             *tpUpdateCard // o plano de terceiros e o botão Atualizar (Aula 14.6)
 	CanReboot                            bool          // admin, chave, Linux com reinício pendente (Aula 8.6)
 	Delays                               []int
+	RebootAt                             string           // sugestão do horário marcado (a próxima 02:00), como o datetime-local
+	RebootValid                          []durationOption // por quanto tempo o reinício marcado vale
+	PanelTZ                              string
 	Window, NextWindow                   string
 	Channel                              string // canal do último check-in (Aula 9.2)
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
@@ -366,7 +369,7 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	case biosConfigFlash(q, &v):
 	case wakeFlash(q, &v.pageBase):
 	default:
-		jobFlash(q, &v.pageBase)
+		jobFlash(q, &v.pageBase, a.panelLocation())
 	}
 	v.JobsOn = a.jobKey != nil
 	if err := a.ringView(r, id, &v); err != nil {
@@ -381,6 +384,11 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		v.Delays = rebootDelays
+		loc := a.panelLocation()
+		v.RebootAt, v.PanelTZ = nextNight(a.now(), loc).Format(scheduleInput), loc.String()
+		for _, m := range rebootValidities {
+			v.RebootValid = append(v.RebootValid, durationOption{Minutes: m, Label: durationLabel(m)})
+		}
 	}
 	if err := a.channelView(r, id, &v); err != nil {
 		a.internalError(w, r, "ler canal do check-in", err)
@@ -1420,7 +1428,12 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <label>Aviso <select name="aviso">{{range .Delays}}<option value="{{.}}" {{if eq . 15}}selected{{end}}>{{.}} min</option>{{end}}</select></label>
 <label><input type="radio" name="quando" value="agora" checked> agora</label>
 {{if .Window}}<label><input type="radio" name="quando" value="janela"> na próxima janela do grupo de implantação</label>{{end}}
-<button type="submit">Reiniciar com aviso</button></form></section>{{end}}
+<label><input type="radio" name="quando" value="horario"> em horário marcado:</label>
+<label>a partir de <input type="datetime-local" name="inicio" value="{{.RebootAt}}" aria-label="início do reinício"></label>
+<label>vale por <select name="validade" aria-label="por quanto tempo o pedido vale">{{range .RebootValid}}<option value="{{.Minutes}}" {{if eq .Minutes 180}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<label><input type="checkbox" name="ligar" value="1"> ligar pela rede 10 min antes</label>
+<button type="submit">Reiniciar com aviso</button>
+<span class="muted">Horário no fuso {{.PanelTZ}}. A máquina reinicia no primeiro check-in dentro desse intervalo; se ficar desligada o tempo todo, o pedido vence sem reiniciar. Em horário marcado não se pede a confirmação de sessões ativas: o horário é o combinado.</span></form></section>{{end}}
 {{end}}
 
 {{if eq .Tab "tarefas"}}
@@ -1492,6 +1505,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <label class="opcao"><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}><span><b>Já, com prazo de</b>
 <select name="prazo" aria-label="prazo">{{range .Form.TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
 <label class="opcao"><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}><span><b>Na janela de cada grupo de implantação</b><small>o job de cada máquina espera a janela do grupo dela</small></span></label>
+<label class="opcao"><input type="radio" name="quando" value="horario" {{if eq .Form.When "horario"}}checked{{end}}><span><b>Em horário fixo, todo dia</b>
+<small class="linha">às <input type="time" name="hora" value="{{.Form.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Form.Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Form.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
+<small>ex.: de madrugada; vale para todos os grupos, sem mexer na janela deles (fuso {{.Form.TZ}})</small></span></label>
 </fieldset>
 <div class="acoes"><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></div>
 </form></section>{{end}}
@@ -1511,7 +1527,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p>Ao criar, o servidor libera o primeiro grupo de implantação no próximo minuto: os jobs vão para máquinas de verdade.</p>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
-<input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}">
+<input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}"><input type="hidden" name="hora" value="{{.Form.DailyStart}}"><input type="hidden" name="duracao" value="{{.Form.DailyDur}}">
 <input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}

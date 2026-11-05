@@ -378,6 +378,9 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 	if c.UseWindow {
 		when = "na janela de cada grupo de implantação"
 	}
+	if c.Daily != nil {
+		when = "em horário fixo, " + c.Daily.String()
+	}
 	fmt.Fprintf(stdout, "\njobs: %s; observação: %v\nestado: %s\ndetalhe: %s\n", when, c.Observe, c.State, orDash(c.Detail))
 	for _, n := range c.Notes {
 		fmt.Fprintf(stdout, "liberação: %s\n", n)

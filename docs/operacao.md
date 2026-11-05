@@ -296,6 +296,23 @@ com o reinício escolhido.
 - As duas seguem os grupos de implantação em ordem, com observação, prazo ou janela, como as
   outras. Linha de comando: `campaign create -type sistema_todas` ou `-type terceiros_todos`.
 
+### Reinício (e qualquer campanha) de madrugada
+
+- **Na máquina** (aba Pendências, com reinício pendente): além de "agora" e "na próxima janela
+  do grupo", **em horário marcado**: o dia e a hora (sugestão: a próxima 02:00, no fuso do
+  painel, `PATCHD_TIMEZONE`) e por quanto tempo o pedido vale (1 a 6 h). O servidor guarda o
+  job e só o entrega no primeiro check-in a partir do horário; se a máquina ficar desligada o
+  intervalo todo, o job vence sem reiniciar. Até 14 dias à frente. Não pede a confirmação de
+  sessões ativas: o horário é o combinado.
+- **Ligar pela rede 10 min antes** (opcional, na mesma tela): agenda o pacote mágico pelos
+  repetidores da sub-rede, como o botão "Ligar pela rede", só que para 10 minutos antes do
+  horário. Os repetidores precisam estar ligados nessa hora. Sem repetidor, sem MAC ou sem
+  rede conhecida, o reinício é agendado do mesmo jeito e a tela diz por que o ligar não foi.
+- **Na campanha** (qualquer tipo), em "Quando": **em horário fixo, todo dia às HH:MM por N h**.
+  Vale para todos os grupos de implantação, sem mexer na janela de cada um (que continua
+  valendo para os outros jobs "na janela"). Cada grupo, quando é liberado, recebe os jobs com
+  início no próximo horário; o job vence no fim dele. `campaign show` mostra o horário.
+
 ### Acompanhar uma campanha grande
 
 A página da campanha mostra os jobs de um grupo de implantação por vez (o atual, ou o
@@ -1056,6 +1073,29 @@ para todas. O servidor confere de novo no clique: versão já aprovada por outra
 excluída ou de programa que saiu do parque fica de fora, com a contagem na mensagem. Cada
 versão aprovada vai para a auditoria como `terceiros.aprovar`, como a aprovação na página do
 programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tudo de uma vez.
+
+### Acrobat Reader e Python 3.14
+
+Os dois programas "feed" do Windows que o patchd só apontava passam a ter regra de instalação:
+
+- **Adobe Acrobat Reader (64-bit)**, pelo `Adobe.Acrobat.Reader.64-bit` do winget (exe,
+  silencioso `-sfx_nu /sAll /rs /msi`, assinatura exigida: Adobe Inc.). O 64-bit é o aplicativo
+  unificado da Adobe: Reader e Acrobat Pro aparecem com o mesmo nome e o mesmo produto MSI. **Antes
+  de aprovar para o parque, confira no grupo piloto com uma máquina que tenha o Pro** (licença e
+  versão depois da atualização).
+- **Python 3.14**, pelo `Python.Python.3.14` (burn, para a máquina: `InstallAllUsers=1`,
+  assinatura: Python Software Foundation). O Python do Windows é um bundle (WiX Burn): o plano
+  atualiza o bundle com o bundle novo da mesma arquitetura, que sai do nome ("(64-bit)",
+  "(32-bit)"). Um de 32 bits precisa do instalador x86 (`package fetch -app python-3.14 -arch
+  x86`); instalação por usuário fica com o usuário.
+
+Os nomes de processo que impedem a instalação (Acrobat.exe e AcroRd32.exe; python.exe e
+pythonw.exe) não foram medidos em laboratório, como os dos outros programas: confirme no piloto.
+
+**Fora de suporte** (Visual C++ 2008 a 2013, Access Database Engine 2010, SQL Server 2012
+Native Client): não existe versão mais nova em fonte nenhuma; o fabricante encerrou o produto.
+As versões instaladas já são, em geral, as últimas publicadas. O que resolve é tirar onde nenhum
+programa depende deles (o patchd não desinstala) ou aceitar o risco onde um sistema legado precisa.
 
 ## Localização do patrimônio (Aula 23.6)
 

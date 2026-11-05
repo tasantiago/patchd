@@ -130,7 +130,7 @@ form.campanha .campo>label:not(.opcao):not(.anel),form.campanha legend{font-weig
 form.campanha legend small{font-weight:400}
 form.campanha small{font-size:.8rem}
 form.campanha .opcao{display:flex;align-items:flex-start;gap:.6rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer;background:#fff;margin-bottom:.35rem}
-form.campanha .opcao span{display:flex;flex-direction:column;gap:.1rem}
+form.campanha .opcao span{display:flex;flex-direction:column;gap:.1rem}form.campanha .opcao small.linha{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;font-size:.88rem;color:var(--texto)}form.campanha .opcao small.linha input,form.campanha .opcao small.linha select{width:auto}
 form.campanha .opcao small{color:var(--muted)}
 form.campanha .opcao input{margin-top:.25rem}
 form.campanha .opcao:has(input:checked){border-color:var(--azul);background:#eef5fd}
