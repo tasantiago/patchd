@@ -1081,7 +1081,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <td>{{if .ApprovedBy}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{else}}<span class="estado reboot_pendente">aguardando</span>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{if .CanBatch}}<div class="lote"><button type="submit">Conferir marcados</button>
 <button class="sec" type="submit" name="filtro" value="1">Conferir todos os {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
-<span class="muted">Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} itens.{{end}}</span></div></form>{{end}}
+<span class="muted">Nada é aprovado antes da conferência. Todos do filtro vão num lote só, sem limite.</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}{{end}}
 </div>{{end}}
@@ -1098,29 +1098,30 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <td><span class="estado {{.ApprovalClass}}">{{.Approval}}</span></td></tr>{{end}}</tbody></table></div>
 {{if .CanBatch}}<div class="lote"><button type="submit">Conferir marcadas</button>
 <button class="sec" type="submit" name="filtro" value="1">Conferir todas as {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
-<span class="muted">Aprovar uma correção aprova todas as CVEs dela. Nada é aprovado antes da conferência.{{if gt .FilterWaiting .MaxBatch}} Um lote leva até {{.MaxBatch}} correções.{{end}}</span></div></form>{{end}}
+<span class="muted">Aprovar uma correção aprova todas as CVEs dela. Nada é aprovado antes da conferência. Todas do filtro vão num lote só, sem limite.</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhuma correção{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}{{end}}
 
 {{define "patch-lote"}}{{template "topo" .}}
 <p><a href="{{.Back}}">← Patch</a></p>
 <h1>Aprovar em lote <span class="muted">› conferência</span></h1>
-{{if .FixMode}}<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}correção será aprovada{{else}}correções serão aprovadas{{end}}: {{.FixItems}} item(ns) aguardando ao todo{{if .Exploited}}, em {{.Exploited}} correção(ões) com exploração conhecida{{end}}. A partir daí, cada item pode entrar em atualização e em campanha.</p>
-{{else}}<p class="aviso atencao">{{len .Rows}} {{if eq (len .Rows) 1}}item será aprovado{{else}}itens serão aprovados{{end}} com a correção indicada{{if .Exploited}}, {{.Exploited}} com exploração conhecida{{end}}. A partir daí, cada um pode entrar em atualização e em campanha.</p>{{end}}
-{{if .FilterTotal}}<p class="aviso atencao">O filtro tem {{.FilterTotal}} {{if .FixMode}}correções{{else}}itens{{end}} aguardando; este lote leva {{if .FixMode}}as{{else}}os{{end}} {{.Max}} {{if .FixMode}}primeiras{{else}}primeiros{{end}}, pela ordem da lista. Os demais ficam para o próximo lote.</p>{{end}}
+{{if .FixMode}}<p class="aviso atencao">{{.Total}} {{if eq .Total 1}}correção será aprovada{{else}}correções serão aprovadas{{end}}: {{.FixItems}} item(ns) aguardando ao todo{{if .Exploited}}, em {{.Exploited}} correção(ões) com exploração conhecida{{end}}. A partir daí, cada item pode entrar em atualização e em campanha.</p>
+{{else}}<p class="aviso atencao">{{.Total}} {{if eq .Total 1}}item será aprovado{{else}}itens serão aprovados{{end}} com a correção indicada{{if .Exploited}}, {{.Exploited}} com exploração conhecida{{end}}. A partir daí, cada um pode entrar em atualização e em campanha.</p>{{end}}
+{{if .More}}<p class="muted">A tabela mostra {{if .FixMode}}as{{else}}os{{end}} {{len .Rows}} {{if .FixMode}}primeiras{{else}}primeiros{{end}}, pela ordem da lista (exploradas e mais graves primeiro); {{if .FixMode}}as outras{{else}}os outros{{end}} {{.More}} entram no mesmo lote.</p>{{end}}
 {{if .Skipped}}<p class="muted">{{.Skipped}} marcado(s) ficaram de fora: já aprovados, ou não estão mais pendentes.</p>{{end}}
 <form method="post" action="/painel/patch/aprovar-lote">
 <input type="hidden" name="confirmar" value="1">{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Q}}<input type="hidden" name="q" value="{{.Q}}">{{end}}{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+{{if .Digest}}<input type="hidden" name="filtro" value="1"><input type="hidden" name="resumo" value="{{.Digest}}">{{end}}
 <div class="card"><div class="card-cab"><h2>{{if .FixMode}}Correções do lote{{else}}Itens do lote{{end}}</h2><span class="muted">avaliação de agora</span></div>
 <div class="tabela"><table>
 <thead><tr><th>{{if .FixMode}}Correção{{else}}Item{{end}}</th><th>Tipo</th><th>Corrigido em</th><th>Severidade</th><th>Explorada</th><th>Sistemas</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td><input type="hidden" name="sel" value="{{.Sel}}"><code>{{.ID}}</code></td><td>{{.Kind}}</td><td><code>{{.FixedIn}}</code></td>
+<tbody>{{range .Rows}}<tr><td>{{if not $.Digest}}<input type="hidden" name="sel" value="{{.Sel}}">{{end}}<code>{{.ID}}</code></td><td>{{.Kind}}</td><td><code>{{.FixedIn}}</code></td>
 <td>{{.Severity}}</td><td>{{if .Exploited}}<span class="expl">sim</span>{{end}}</td><td class="num">{{.Machines}}</td></tr>{{end}}</tbody></table></div>
 </div>
 <div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
 <div class="acao"><input name="nota" value="{{.Note}}" maxlength="{{.MaxNote}}" placeholder="Observação para todos os itens (opcional), ex.: testado no grupo de implantação piloto em 10/10" aria-label="observação"></div>
-<div class="lote"><button type="submit">Aprovar {{len .Rows}} {{if .FixMode}}{{if eq (len .Rows) 1}}correção{{else}}correções{{end}}{{else}}{{if eq (len .Rows) 1}}item{{else}}itens{{end}}{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
-<span class="muted">O servidor confere cada item de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.</span></div>
+<div class="lote"><button type="submit">Aprovar {{.Total}} {{if .FixMode}}{{if eq .Total 1}}correção{{else}}correções{{end}}{{else}}{{if eq .Total 1}}item{{else}}itens{{end}}{{end}}</button><a class="btn" href="{{.Back}}">Voltar sem aprovar</a>
+<span class="muted">{{if .Digest}}No clique, o servidor refaz o filtro e só aprova se a lista for a mesma desta conferência; o que outra pessoa aprovou antes fica com a aprovação dela.{{else}}O servidor confere cada item de novo no clique: o que outra pessoa aprovou antes fica com a aprovação dela.{{end}}</span></div>
 </div></form>
 {{template "fim"}}{{end}}
 

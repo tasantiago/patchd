@@ -1,9 +1,12 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -24,9 +27,36 @@ import (
 // que se viu, mesmo que uma nova avaliação traga itens novos entre um clique e outro.
 
 const (
-	maxApproveBatch = 200       // itens por lote: a página de conferência ainda é legível
-	maxBatchBytes   = 256 << 10 // 200 itens com nomes longos cabem com folga
+	// maxApproveBatch: itens marcados à mão por lote (o máximo de uma página). "Todos do
+	// filtro" não tem limite: a conferência leva a impressão digital da lista (batchDigest),
+	// não a lista inteira.
+	maxApproveBatch = 200
+	maxBatchBytes   = 256 << 10 // 200 itens marcados com nomes longos cabem com folga
+	batchShown      = 200       // linhas que a conferência mostra; o resto vai no resumo
 )
+
+// batchDigest: a impressão digital de uma lista fechada de aprovações (a ordem não importa).
+// A conferência do "todos do filtro" a leva no formulário; no clique, o servidor refaz o filtro
+// e só aprova se a lista der a mesma impressão: o que se aprova é o que se viu, sem mandar
+// 10.000 campos de volta.
+func batchDigest(keys []string) string {
+	keys = slices.Clone(keys)
+	slices.Sort(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:32]
+}
+
+func itemKeys(list []patchItem) []string {
+	out := make([]string, 0, len(list))
+	for _, p := range list {
+		out = append(out, store.ApprovalKey(p.ID, p.FixedIn))
+	}
+	return out
+}
 
 // batchSel é o valor de um item no formulário: id e correção juntos, como numa URL.
 func batchSel(id, fixed string) string { return url.Values{"id": {id}, "fix": {fixed}}.Encode() }
@@ -51,7 +81,9 @@ type batchView struct {
 	pageBase
 	Rows            []batchRow
 	Exploited       int
-	FilterTotal     int // o filtro tinha mais que maxApproveBatch: quantos
+	Total           int    // itens (ou correções) do lote
+	More            int    // além das linhas mostradas
+	Digest          string // "todos do filtro": a impressão digital da lista conferida
 	Max, MaxNote    int
 	Note            string
 	Status, Q, Back string
@@ -127,16 +159,29 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 		skipped += len(want) // não estão mais pendentes em máquina nenhuma
 	}
 
-	// Só se aprova uma lista fechada, que passou pela conferência: o filtro sempre volta
-	// para ela, mesmo com confirmar=1 forjado.
-	if r.PostFormValue("confirmar") != "1" || byFilter {
-		a.batchConfirm(w, r, s, chosen, skipped, pq, "", "")
+	// Só se aprova uma lista fechada, que passou pela conferência: as marcadas (sel) vêm
+	// uma a uma; o filtro, pela impressão digital da lista que a conferência mostrou.
+	confirm := r.PostFormValue("confirmar") == "1"
+	digest := ""
+	if byFilter {
+		digest = batchDigest(itemKeys(chosen))
+		if confirm && r.PostFormValue("resumo") != digest {
+			msg := ""
+			if r.PostFormValue("resumo") != "" {
+				msg = "A lista do filtro mudou desde a conferência (chegou avaliação nova, ou alguém aprovou parte dela). Confira de novo."
+			}
+			a.batchConfirm(w, r, s, chosen, skipped, pq, r.PostFormValue("nota"), msg, digest)
+			return
+		}
+	}
+	if !confirm {
+		a.batchConfirm(w, r, s, chosen, skipped, pq, "", "", digest)
 		return
 	}
 
 	note := strings.TrimSpace(r.PostFormValue("nota"))
 	if utf8.RuneCountInString(note) > maxNoteLen {
-		a.batchConfirm(w, r, s, chosen, skipped, pq, note, fmt.Sprintf("A observação tem no máximo %d caracteres.", maxNoteLen))
+		a.batchConfirm(w, r, s, chosen, skipped, pq, note, fmt.Sprintf("A observação tem no máximo %d caracteres.", maxNoteLen), digest)
 		return
 	}
 	if len(chosen) == 0 {
@@ -153,8 +198,10 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 		return
 	}
 	rid := RequestID(r.Context())
-	for _, ap := range created {
-		a.logger.Info("patch aprovado", "item", ap.Item, "fixed_in", ap.FixedIn, "username", s.Username, "lote", true, "request_id", rid)
+	if len(created) <= batchShown { // acima disso, o resumo basta: cada aprovação está no banco, com quem aprovou
+		for _, ap := range created {
+			a.logger.Info("patch aprovado", "item", ap.Item, "fixed_in", ap.FixedIn, "username", s.Username, "lote", true, "request_id", rid)
+		}
 	}
 	already := len(list) - len(created)
 	a.logger.Info("lote de aprovação", "aprovados", len(created), "ja_aprovados", already, "fora", skipped,
@@ -164,28 +211,28 @@ func (a *api) approveBatchAction(w http.ResponseWriter, r *http.Request, s panel
 		"fora", strconv.Itoa(skipped)))
 }
 
-// batchConfirm mostra a conferência. Mais que maxApproveBatch: leva os primeiros, pela ordem da
-// lista, e diz quantos o filtro tinha.
+// batchConfirm mostra a conferência: o resumo do lote inteiro e as primeiras batchShown linhas.
+// digest: "todos do filtro" (a confirmação leva o filtro e a impressão, não a lista).
 func (a *api) batchConfirm(w http.ResponseWriter, r *http.Request, s panel.Session, chosen []patchItem, skipped int,
-	pq patchQuery, note, errMsg string) {
+	pq patchQuery, note, errMsg, digest string) {
 	if len(chosen) == 0 {
 		redirectPatch(w, r, withParams(pq.href(), "erro", "lote-vazio"))
 		return
 	}
-	v := batchView{pageBase: a.baseFor(r.Context(), s, "Aprovar em lote", "patch"), Max: maxApproveBatch, MaxNote: maxNoteLen,
-		Note: note, Status: pq.Status, Q: pq.Q, Back: pq.href(), Skipped: skipped}
+	v := batchView{pageBase: a.baseFor(r.Context(), s, "Aprovar em lote", "patch"), MaxNote: maxNoteLen,
+		Note: note, Status: pq.Status, Q: pq.Q, Back: pq.href(), Skipped: skipped, Total: len(chosen), Digest: digest, Hidden: hiddenQuery(pq)}
 	v.Error = errMsg
-	if len(chosen) > maxApproveBatch {
-		v.FilterTotal = len(chosen)
-		chosen = chosen[:maxApproveBatch]
-	}
-	for _, p := range chosen {
+	for i, p := range chosen {
 		if p.Exploited {
 			v.Exploited++
+		}
+		if i >= batchShown {
+			continue
 		}
 		v.Rows = append(v.Rows, batchRow{ID: p.ID, FixedIn: dash(p.FixedIn), Kind: dash(p.Kind), Severity: dash(p.Severity),
 			Sel: batchSel(p.ID, p.FixedIn), Exploited: p.Exploited, Machines: len(p.Machines)})
 	}
+	v.More = len(chosen) - len(v.Rows)
 	a.render(w, r, http.StatusOK, "patch-lote", v)
 }
 
@@ -219,7 +266,7 @@ func batchFlash(q url.Values) (flash, errMsg string) {
 	case "lote-vazio":
 		return "", "Nenhum item aguardando aprovação foi marcado."
 	case "lote-grande":
-		return "", fmt.Sprintf("Um lote tem no máximo %d itens.", maxApproveBatch)
+		return "", fmt.Sprintf("Marque no máximo %d itens por vez; para mais, use \"Conferir todos do filtro\".", maxApproveBatch)
 	case "correcao":
 		return "", "Correção ausente ou fora do formato."
 	case "correcao-grande":

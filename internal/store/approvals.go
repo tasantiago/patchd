@@ -55,25 +55,42 @@ func (p *Postgres) ApprovePatch(ctx context.Context, a PatchApproval) (bool, err
 // gravado, ou nada. Devolve as aprovações criadas; as que já existiam (aprovadas por
 // outra pessoa entre a conferência e o clique) ficam como estavam e não voltam.
 func (p *Postgres) ApprovePatches(ctx context.Context, list []PatchApproval) ([]PatchApproval, error) {
-	tx, err := p.pool.Begin(ctx)
+	created := []PatchApproval{}
+	if len(list) == 0 {
+		return created, nil
+	}
+	// Uma instrução só, com os quatro campos em arrays: um lote de 10.000 itens é um ida e
+	// volta ao banco, não 10.000. Item repetido no lote, ou já aprovado, fica de fora (DO
+	// NOTHING), e o RETURNING diz quais entraram.
+	items, fixes, by, notes := make([]string, len(list)), make([]string, len(list)), make([]string, len(list)), make([]string, len(list))
+	for i, a := range list {
+		items[i], fixes[i], by[i], notes[i] = a.Item, a.FixedIn, a.ApprovedBy, a.Note
+	}
+	rows, err := p.pool.Query(ctx, `
+		INSERT INTO patch_approvals (item, fixed_in, approved_by, note)
+		SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
+		ON CONFLICT (item, fixed_in) DO NOTHING
+		RETURNING item, fixed_in`, items, fixes, by, notes)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx) // sem efeito depois do Commit
-	created := []PatchApproval{}
-	for _, a := range list {
-		tag, err := tx.Exec(ctx, `
-			INSERT INTO patch_approvals (item, fixed_in, approved_by, note) VALUES ($1, $2, $3, $4)
-			ON CONFLICT (item, fixed_in) DO NOTHING`, a.Item, a.FixedIn, a.ApprovedBy, a.Note)
-		if err != nil {
+	defer rows.Close()
+	in := map[string]bool{}
+	for rows.Next() {
+		var item, fixed string
+		if err := rows.Scan(&item, &fixed); err != nil {
 			return nil, err
 		}
-		if tag.RowsAffected() == 1 {
+		in[ApprovalKey(item, fixed)] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, a := range list {
+		if k := ApprovalKey(a.Item, a.FixedIn); in[k] {
+			delete(in, k) // o primeiro de um repetido
 			created = append(created, a)
 		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
 	}
 	return created, nil
 }
