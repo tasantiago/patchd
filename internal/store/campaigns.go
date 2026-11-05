@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -11,22 +12,35 @@ import (
 
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 // Campanhas (Aula 8.5).
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
-	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec`
+	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
+	daily_start_min, daily_duration_min, daily_tz`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
 	var rings []int16
 	var observe, ttl, delay int
 	var cur, launched, accepted int16
+	var dStart, dDur *int
+	var dTZ *string
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
-		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay)
+		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
+		&dStart, &dDur, &dTZ)
 	if err != nil {
 		return c, err
+	}
+	if dStart != nil && dDur != nil && dTZ != nil {
+		loc, err := time.LoadLocation(*dTZ)
+		if err != nil {
+			return c, fmt.Errorf("campanha %d: fuso do horário fixo %q: %w", c.ID, *dTZ, err)
+		}
+		c.Daily = &window.Window{Days: window.AllDays, Start: time.Duration(*dStart) * time.Minute,
+			Duration: time.Duration(*dDur) * time.Minute, Location: loc}
 	}
 	for _, r := range rings {
 		c.Rings = append(c.Rings, int(r))
@@ -48,12 +62,19 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 	if c.Sources == nil {
 		c.Sources = []string{}
 	}
+	var dStart, dDur *int
+	var dTZ *string
+	if c.Daily != nil {
+		st, du, tz := int(c.Daily.Start/time.Minute), int(c.Daily.Duration/time.Minute), c.Daily.Location.String()
+		dStart, dDur, dTZ = &st, &du, &tz
+	}
 	var id int64
 	err := p.pool.QueryRow(ctx, `
-		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11) RETURNING id`,
+		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec,
+			daily_start_min, daily_duration_min, daily_tz)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
 		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
-		c.App, c.Version, int(c.RebootDelay/time.Second)).Scan(&id)
+		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ).Scan(&id)
 	return id, err
 }
 

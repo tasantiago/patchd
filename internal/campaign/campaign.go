@@ -18,6 +18,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 // Estados.
@@ -71,6 +72,9 @@ type Campaign struct {
 	RebootDelay time.Duration // reboot (Aula 16.5): o aviso aos usuários antes do reinício
 	Rings       []int
 	UseWindow   bool
+	// Daily: horário fixo todo dia (ex.: 02:00 por 3 h, no fuso do painel), para todos os grupos
+	// de implantação, sem depender da janela de cada um. Nil: com prazo, ou na janela do grupo.
+	Daily       *window.Window
 	Observe     time.Duration
 	TTL         time.Duration // prazo dos jobs sem janela
 	State       string
@@ -134,8 +138,15 @@ func (c Campaign) Validate() error {
 		return errors.New("informe os grupos de implantação, em ordem (ex.: 0,1)")
 	case c.Observe < 0 || c.Observe > MaxObserve:
 		return fmt.Errorf("observação fora de 0 a %v", MaxObserve)
-	case !c.UseWindow && (c.TTL < jobs.MinTTL || c.TTL > jobs.MaxTTL):
+	case c.UseWindow && c.Daily != nil:
+		return errors.New("escolha um: na janela de cada grupo ou em horário fixo")
+	case !c.UseWindow && c.Daily == nil && (c.TTL < jobs.MinTTL || c.TTL > jobs.MaxTTL):
 		return fmt.Errorf("prazo dos jobs fora de %v a %v", jobs.MinTTL, jobs.MaxTTL)
+	}
+	if c.Daily != nil {
+		if err := c.Daily.Validate(); err != nil {
+			return fmt.Errorf("horário fixo: %w", err)
+		}
 	}
 	if c.Type == jobs.TypeWinUpdate {
 		for _, kb := range c.Sources {
@@ -485,6 +496,11 @@ func (e *Engine) send(ctx context.Context, c *Campaign, req jobs.Request, id str
 			e.log(c, "campanha pausada", "anel", c.Ring(), "motivo", "sem janela")
 			return false, "", nil
 		}
+		req.NotBefore = start
+		req.TTL = end.Sub(later(now, start))
+	}
+	if c.Daily != nil {
+		start, end := c.Daily.Next(now, jobs.MinTTL)
 		req.NotBefore = start
 		req.TTL = end.Sub(later(now, start))
 	}

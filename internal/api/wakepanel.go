@@ -78,6 +78,10 @@ func wakeView(hw protocol.Hardware) *wakeCard {
 // hora; depois disso a decisão de ligar já é outra).
 const panelWakeTTL = 2 * time.Hour
 
+// scheduledWakeTTL: o pacote agendado (reinício em horário marcado) vale meia hora a partir
+// do horário: depois disso, o reinício já passou da hora de ligar.
+const scheduledWakeTTL = 30 * time.Minute
+
 // wakeRetry: um pedido com o pacote mandado e sem resposta pode ser repetido depois disso.
 const wakeRetry = 10 * time.Minute
 
@@ -184,41 +188,61 @@ func (a *api) wakeOnLANAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		http.NotFound(w, r)
 		return
 	}
-	ctx := r.Context()
 	if a.jobKey == nil {
 		http.Redirect(w, r, wakeBack(id, "ligar-erro=sem-chave"), http.StatusSeeOther)
 		return
 	}
+	res, err := a.requestWake(r, s, id, time.Time{})
+	switch {
+	case errors.Is(err, errWakeNotFound):
+		http.NotFound(w, r)
+	case err != nil:
+		a.internalError(w, r, "montar o pedido de ligar", err)
+	case res.problem != "":
+		http.Redirect(w, r, wakeBack(id, res.problem), http.StatusSeeOther)
+	default:
+		http.Redirect(w, r, wakeBack(id, fmt.Sprintf("ligar=pedido&n=%d", res.jobs)), http.StatusSeeOther)
+	}
+}
+
+var errWakeNotFound = errors.New("máquina sem estado")
+
+// wakeResult: o pedido de ligar criado (jobs: quantos repetidores) ou o motivo de não criar
+// (problem: o parâmetro da volta, ex.: "ligar-erro=mac").
+type wakeResult struct {
+	jobs    int
+	problem string
+}
+
+// requestWake monta e grava o pedido de ligar: um job wake_on_lan para cada repetidor da
+// sub-rede. at: o horário do pacote (zero: agora), para o reinício em horário marcado ligar a
+// máquina antes; os jobs só são entregues a partir dele.
+func (a *api) requestWake(r *http.Request, s panel.Session, id string, at time.Time) (wakeResult, error) {
+	ctx := r.Context()
 	now := a.now()
 	list, err := a.store.WakeRequests(ctx, id, 1)
 	if err != nil {
-		a.internalError(w, r, "ler pedidos de ligar", err)
-		return
+		return wakeResult{}, err
 	}
 	if wakePending(list, now) != nil {
-		http.Redirect(w, r, wakeBack(id, "ligar-erro=andamento"), http.StatusSeeOther)
-		return
+		return wakeResult{problem: "ligar-erro=andamento"}, nil
 	}
 	h, found, err := a.store.HostState(ctx, id)
 	if err != nil {
-		a.internalError(w, r, "ler estado da máquina", err)
-		return
+		return wakeResult{}, err
 	}
 	if !found {
-		http.NotFound(w, r)
-		return
+		return wakeResult{}, errWakeNotFound
 	}
 	var hw *protocol.Wake
 	if inv, ok, err := a.store.LatestInventory(ctx, id); err != nil {
-		a.internalError(w, r, "ler inventário", err)
-		return
+		return wakeResult{}, err
 	} else if ok && inv.Hardware != nil {
 		hw = inv.Hardware.Wake
 	}
 	cands, err := a.store.WakeRelayHosts(ctx, id, now.Add(-wake.RelayFresh))
 	if err != nil {
-		a.internalError(w, r, "listar repetidores", err)
-		return
+		return wakeResult{}, err
 	}
 	hosts := make([]wake.Host, 0, len(cands))
 	for _, c := range cands {
@@ -228,50 +252,54 @@ func (a *api) wakeOnLANAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	var noRelay wake.NoRelayError
 	switch {
 	case errors.Is(err, wake.ErrNoMAC):
-		http.Redirect(w, r, wakeBack(id, "ligar-erro=mac"), http.StatusSeeOther)
-		return
+		return wakeResult{problem: "ligar-erro=mac"}, nil
 	case errors.Is(err, wake.ErrNoNetwork):
-		http.Redirect(w, r, wakeBack(id, "ligar-erro=rede"), http.StatusSeeOther)
-		return
+		return wakeResult{problem: "ligar-erro=rede"}, nil
 	case errors.As(err, &noRelay):
-		http.Redirect(w, r, wakeBack(id, "ligar-erro=repetidor&rede="+url.QueryEscape(fmt.Sprint(noRelay.Networks))), http.StatusSeeOther)
-		return
+		return wakeResult{problem: "ligar-erro=repetidor&rede=" + url.QueryEscape(fmt.Sprint(noRelay.Networks))}, nil
 	case err != nil:
-		a.internalError(w, r, "montar o pedido de ligar", err)
-		return
+		return wakeResult{}, err
 	}
 	params, err := jobs.WakeOnLANParamsJSON(jobs.WakeOnLANParams{Target: id, MACs: plan.MACs, Network: plan.Network.String()})
 	if err != nil {
-		a.internalError(w, r, "montar o job de ligar", err)
-		return
+		return wakeResult{}, err
 	}
-	req := store.WakeRequest{MachineID: id, RequestedAt: now, RequestedBy: s.Username, Network: plan.Network.String(), MACs: plan.MACs}
+	requested := now
+	if at.After(now) {
+		requested = at
+	}
+	req := store.WakeRequest{MachineID: id, RequestedAt: requested, RequestedBy: s.Username, Network: plan.Network.String(), MACs: plan.MACs}
 	var relayNames []string
 	for _, relay := range plan.Relays {
-		rec, err := jobs.Issue(ctx, a.store, a.jobKey, jobs.Request{MachineID: relay.ID, Type: jobs.TypeWakeOnLAN, TTL: panelWakeTTL, By: s.Username, Params: params}, now)
+		jr := jobs.Request{MachineID: relay.ID, Type: jobs.TypeWakeOnLAN, TTL: panelWakeTTL, By: s.Username, Params: params}
+		if at.After(now) {
+			jr.NotBefore, jr.TTL = at, scheduledWakeTTL
+		}
+		rec, err := jobs.Issue(ctx, a.store, a.jobKey, jr, now)
 		if errors.Is(err, jobs.ErrMachineUnavailable) {
 			continue // aposentada entre a lista e agora
 		}
 		if err != nil {
-			a.internalError(w, r, "criar job de ligar", err)
-			return
+			return wakeResult{}, err
 		}
 		req.Relays = append(req.Relays, relay.ID)
 		req.JobIDs = append(req.JobIDs, rec.ID)
 		relayNames = append(relayNames, dash(relay.Name))
 	}
 	if len(req.JobIDs) == 0 {
-		http.Redirect(w, r, wakeBack(id, "ligar-erro=repetidor"), http.StatusSeeOther)
-		return
+		return wakeResult{problem: "ligar-erro=repetidor"}, nil
 	}
 	if _, err := a.store.CreateWakeRequest(ctx, req); err != nil {
-		a.internalError(w, r, "gravar pedido de ligar", err)
-		return
+		return wakeResult{}, err
+	}
+	when := "agora"
+	if at.After(now) {
+		when = at.UTC().Format(time.RFC3339)
 	}
 	a.logger.Info("ligar pela rede pedido", "machine_id", id, "rede", req.Network, "macs", strings.Join(req.MACs, ","),
-		"repetidores", strings.Join(req.Relays, ","), "jobs", fmt.Sprint(req.JobIDs), "username", s.Username, "request_id", RequestID(ctx))
-	a.audit(r, s, "maquina.ligar", id, fmt.Sprintf("rede %s · %d repetidor(es): %s · jobs %v", req.Network, len(req.JobIDs), strings.Join(relayNames, ", "), req.JobIDs))
-	http.Redirect(w, r, wakeBack(id, fmt.Sprintf("ligar=pedido&n=%d", len(req.JobIDs))), http.StatusSeeOther)
+		"repetidores", strings.Join(req.Relays, ","), "jobs", fmt.Sprint(req.JobIDs), "quando", when, "username", s.Username, "request_id", RequestID(ctx))
+	a.audit(r, s, "maquina.ligar", id, fmt.Sprintf("rede %s · %d repetidor(es): %s · jobs %v · %s", req.Network, len(req.JobIDs), strings.Join(relayNames, ", "), req.JobIDs, when))
+	return wakeResult{jobs: len(req.JobIDs)}, nil
 }
 
 // wakeFlash: o aviso da volta do pedido de ligar.
@@ -282,6 +310,17 @@ func wakeFlash(q url.Values, b *pageBase) bool {
 			max(n, 1), plural(max(n, 1), "repetidor", "repetidores"), b.CheckinWait)
 		return true
 	}
+	if code := q.Get("ligar-erro"); code != "" {
+		b.Error = wakeProblem(q.Encode())
+		return true
+	}
+	return false
+}
+
+// wakeProblem: a mensagem de um pedido de ligar que não saiu, pelo parâmetro da volta
+// ("ligar-erro=repetidor&rede=10.1.2.0/24").
+func wakeProblem(raw string) string {
+	q, _ := url.ParseQuery(raw)
 	msg, ok := map[string]string{
 		"sem-chave": "O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE); nada foi pedido.",
 		"andamento": "Já há um pedido de ligar em andamento para esta máquina; espere o resultado.",
@@ -289,10 +328,10 @@ func wakeFlash(q url.Values, b *pageBase) bool {
 		"rede":      wake.ErrNoNetwork.Error() + ". Nada foi pedido.",
 		"repetidor": "Nenhuma máquina ligada, com agente atualizado, fez check-in nas últimas 2 horas na mesma sub-rede " + q.Get("rede") + ". O pacote mágico não passa pelo roteador: ligue uma máquina dessa sub-rede (ou atualize o agente dela) e tente de novo.",
 	}[q.Get("ligar-erro")]
-	if ok {
-		b.Error = msg
+	if !ok {
+		return "o pedido de ligar não foi criado."
 	}
-	return ok
+	return msg
 }
 
 // wakeJobFinished anota, no pedido, o primeiro repetidor que mandou o pacote.

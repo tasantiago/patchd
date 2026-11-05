@@ -7,6 +7,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 type contratoCampanhas interface {
@@ -151,4 +152,34 @@ func TestCampanhasPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testarCampanhas(t, NewPostgres(pool))
+}
+
+// Campanha em horário fixo (de madrugada): o horário volta do banco como foi gravado.
+func testarCampanhaHorarioFixo(t *testing.T, st contratoCampanhas) {
+	ctx := context.Background()
+	// Em horário fixo: a hora, a duração e o fuso voltam como foram.
+	pvh, _ := time.LoadLocation("America/Porto_Velho")
+	hid, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "madrugada", Type: "reboot", Rings: []int{0}, TTL: 24 * time.Hour, CreatedBy: "thyago",
+		Daily: &window.Window{Days: window.AllDays, Start: 2*time.Hour + 30*time.Minute, Duration: 3 * time.Hour, Location: pvh}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch, _, _ := st.Campaign(ctx, hid); ch.Daily == nil || ch.Daily.Start != 150*time.Minute || ch.Daily.Duration != 3*time.Hour ||
+		ch.Daily.Location.String() != "America/Porto_Velho" || ch.Daily.Days != window.AllDays {
+		t.Errorf("horário fixo: %+v", ch.Daily)
+	}
+	nid, _ := st.CreateCampaign(ctx, campaign.Campaign{Name: "com prazo", Type: "rescan", Rings: []int{0}, TTL: time.Hour, CreatedBy: "t"})
+	if c2, _, _ := st.Campaign(ctx, nid); c2.Daily != nil {
+		t.Errorf("com prazo, sem horário fixo: %+v", c2.Daily)
+	}
+}
+
+func TestCampanhaHorarioFixoMemoria(t *testing.T) { testarCampanhaHorarioFixo(t, NewMemory()) }
+
+func TestCampanhaHorarioFixoPostgres(t *testing.T) {
+	pool := bancoDeTeste(t)
+	if err := Migrate(context.Background(), pool, silencioso()); err != nil {
+		t.Fatal(err)
+	}
+	testarCampanhaHorarioFixo(t, NewPostgres(pool))
 }

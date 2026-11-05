@@ -18,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 // As campanhas no painel. Aula 8.5: a lista, só leitura. Aula 11.2: o admin cria (com uma
@@ -74,6 +75,11 @@ type campaignForm struct {
 	Chosen                    []int // grupos de implantação marcados, em ordem
 	Delay                     int   // reboot (Aula 16.5): aviso em minutos
 	Delays                    []int
+	// Em horário fixo todo dia: a hora (HH:MM), a duração (minutos) e o fuso do painel.
+	DailyStart string
+	DailyDur   int
+	Durations  []durationOption
+	TZ         string
 }
 
 type campaignsView struct {
@@ -151,7 +157,8 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v := campaignsView{pageBase: a.base(r, "Campanhas", "campanhas")}
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
 	if v.CanNew {
-		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays}
+		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays,
+			DailyStart: "02:00", DailyDur: 180}
 		// Vindo de "Campanha por grupo de implantação" na página do programa (Aula 14.8): já preenchido.
 		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeThirdParty {
 			f.Type, f.Program = jobs.TypeThirdParty, q.Get("programa")
@@ -183,6 +190,11 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int, v campaignsView) {
+	v.Form.TZ = a.panelLocation().String()
+	v.Form.Durations = nil
+	for _, m := range windowDurations {
+		v.Form.Durations = append(v.Form.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
+	}
 	list, err := a.store.Campaigns(r.Context(), campaignsShown)
 	if err != nil {
 		a.internalError(w, r, "listar campanhas", err)
@@ -192,6 +204,9 @@ func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int
 		typ := typeLabel(c.Type)
 		if c.UseWindow {
 			typ += ", na janela"
+		}
+		if c.Daily != nil {
+			typ += ", às " + fmt.Sprintf("%02d:%02d", int(c.Daily.Start.Hours()), int(c.Daily.Start.Minutes())%60)
 		}
 		v.Rows = append(v.Rows, campaignRow{ID: c.ID, Name: c.Name, Type: typ, Sources: dash(c.Target()),
 			Rings: ringsProgress(c), State: c.State, Label: campaignLabel(c.State), Detail: dash(c.Detail),
@@ -221,6 +236,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	f.TTLH, _ = strconv.Atoi(r.PostFormValue("prazo"))
 	f.Delay, _ = strconv.Atoi(r.PostFormValue("aviso"))
 	f.Delays = rebootDelays
+	f.DailyStart = strings.TrimSpace(r.PostFormValue("hora"))
+	f.DailyDur, _ = strconv.Atoi(r.PostFormValue("duracao"))
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
@@ -254,10 +271,17 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		return c, f, "Marque ao menos um grupo de implantação."
 	case !containsInt(observeHours, f.ObserveH):
 		return c, f, "Escolha a observação da lista."
-	case f.When != "prazo" && f.When != "janela":
-		return c, f, "Escolha quando: com prazo ou na janela de cada grupo de implantação."
+	case f.When != "prazo" && f.When != "janela" && f.When != "horario":
+		return c, f, "Escolha quando: com prazo, na janela de cada grupo de implantação ou em horário fixo."
 	case f.When == "prazo" && !containsInt(ttlHours, f.TTLH):
 		return c, f, "Escolha o prazo da lista."
+	}
+	if f.When == "horario" {
+		start, err := window.ParseStart(f.DailyStart)
+		if err != nil || !validDuration(f.DailyDur) {
+			return c, f, "Horário fixo: a hora em HH:MM e a duração da lista."
+		}
+		c.Daily = &window.Window{Days: window.AllDays, Start: start, Duration: time.Duration(f.DailyDur) * time.Minute, Location: a.panelLocation()}
 	}
 	if f.Type == jobs.TypeUpdate {
 		for _, s := range strings.FieldsFunc(f.Sources, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\r' || r == '\t' }) {
@@ -396,6 +420,9 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		if c.UseWindow {
 			v.When = "na próxima janela de manutenção de cada grupo de implantação"
 		}
+		if c.Daily != nil {
+			v.When = "em horário fixo, " + c.Daily.String() + ": os jobs de cada grupo, quando ele for liberado, esperam o próximo horário"
+		}
 		chosen := make([]string, len(f.Chosen))
 		for i, x := range f.Chosen {
 			chosen[i] = strconv.Itoa(x)
@@ -431,8 +458,11 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		if c.Type == jobs.TypeReboot {
 			v.Extra = c.Target()
 			v.Warnings = append(v.Warnings, "No reinício, só recebe job quem a busca atual mostra com reinício pendente; o agente confere de novo na hora (sem pendência, o job vira dispensado). Quem estiver conectado vê o aviso na tela pelo prazo escolhido e pode salvar o trabalho; um administrador na máquina pode cancelar.")
-			if !c.UseWindow {
-				v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada grupo de implantação\".")
+			if !c.UseWindow && c.Daily == nil {
+				v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada grupo de implantação\" ou \"em horário fixo\".")
+			}
+			if c.Daily != nil {
+				v.Warnings = append(v.Warnings, "Em horário fixo, a máquina precisa estar ligada e fazer check-in dentro do horário; o job vence no fim dele, como na janela do grupo de implantação.")
 			}
 		}
 		if c.Type == jobs.TypeWinUpdate {
@@ -538,6 +568,9 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	v.When = "prazo de " + hoursLabel(int(c.TTL.Hours())) + " por job"
 	if c.UseWindow {
 		v.When = "na janela de cada grupo de implantação"
+	}
+	if c.Daily != nil {
+		v.When = "em horário fixo, " + c.Daily.String()
 	}
 	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
 	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"
