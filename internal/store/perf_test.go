@@ -17,6 +17,8 @@ type contratoDesempenho interface {
 	PerfAlerts(ctx context.Context, f PerfAlertFilter) ([]PerfAlert, error)
 	AckPerfAlert(ctx context.Context, id int64, by, note string, at time.Time) (bool, error)
 	PerfAlertCounts(ctx context.Context) (int, int, error)
+	AckPerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error)
+	ClosePerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error)
 	RollupPerf(ctx context.Context, from, to time.Time) (int64, error)
 	PrunePerf(ctx context.Context, samplesBefore, hoursBefore, alertsBefore time.Time) (int64, error)
 }
@@ -91,6 +93,39 @@ func testarDesempenho(t *testing.T, st contratoDesempenho) {
 	}
 	if l, _ := st.PerfAlerts(ctx, PerfAlertFilter{}); len(l) != 0 {
 		t.Errorf("alertas fechados depois da retenção: %+v", l)
+	}
+
+	// Em lote: reconhecer só os abertos sem reconhecimento; fechar à mão zera a contagem, e a
+	// CPU que continua alta abre um alerta novo depois dos minutos seguidos.
+	if ch, _ := st.SavePerf(ctx, id, lote(10, 95, 95, 95), p, t0); len(ch) != 1 || !ch[0].Opened {
+		t.Fatalf("abrir de novo: %+v", ch)
+	}
+	l, _ = st.PerfAlerts(ctx, PerfAlertFilter{OpenOnly: true})
+	if n, err := st.AckPerfAlerts(ctx, []int64{l[0].ID, 999999}, "ana", "lote", t0); err != nil || n != 1 {
+		t.Fatalf("reconhecer em lote: %d %v", n, err)
+	}
+	if n, _ := st.AckPerfAlerts(ctx, []int64{l[0].ID}, "ana", "lote", t0); n != 0 {
+		t.Error("reconheceu duas vezes")
+	}
+	at := t0.Add(13 * time.Minute)
+	if n, err := st.ClosePerfAlerts(ctx, []int64{l[0].ID}, "thyago", "máquina em manutenção", at); err != nil || n != 1 {
+		t.Fatalf("fechar em lote: %d %v", n, err)
+	}
+	if n, _ := st.ClosePerfAlerts(ctx, []int64{l[0].ID}, "thyago", "", at); n != 0 {
+		t.Error("fechou duas vezes")
+	}
+	f, _ := st.PerfAlerts(ctx, PerfAlertFilter{MachineID: id})
+	if len(f) != 1 || f[0].ClosedAt == nil || f[0].CloseBy != "thyago" || f[0].CloseNote != "máquina em manutenção" || f[0].AckBy != "ana" {
+		t.Fatalf("fechado à mão: %+v", f)
+	}
+	if ch, _ := st.SavePerf(ctx, id, lote(13, 95, 95), p, t0); len(ch) != 0 {
+		t.Fatalf("antes dos minutos seguidos: %+v", ch)
+	}
+	if ch, _ := st.SavePerf(ctx, id, lote(15, 95), p, t0); len(ch) != 1 || !ch[0].Opened {
+		t.Fatalf("o problema continua, alerta novo: %+v", ch)
+	}
+	if o, _, _ := st.PerfAlertCounts(ctx); o != 1 {
+		t.Errorf("abertos: %d", o)
 	}
 }
 

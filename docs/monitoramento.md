@@ -62,6 +62,19 @@ próximo. O servidor confere cada lote: N amostras seguidas acima do limite **ab
 guarda o pico e o último valor. O admin pode **reconhecer** um alerta (com nota), o que o tira
 do contador sem fechá-lo; ele só fecha quando a medida volta.
 
+**Em lote** (tela Alertas, só admin): marque os alertas na tabela, ou escolha "todos os
+abertos" (do filtro de medida em uso), e clique **Fechar** ou **Reconhecer**. Nada muda antes
+da conferência, que mostra quantos e quais (até 50, e a contagem do resto); se a lista mudar
+entre a conferência e a confirmação (um alerta fechou sozinho, abriu ou foi reconhecido), a
+tela volta para conferir de novo. Cada lote vai para a auditoria (`alerta.fechar-lote` ou
+`alerta.reconhecer-lote`), com a nota e os IDs.
+
+Fechar à mão serve para o que não vai voltar sozinho: a máquina desligada ou aposentada com
+alerta aberto, o volume que saiu (um disco removido), a manutenção já resolvida. O alerta fica
+"fechado à mão", com quem fechou e a nota, e a contagem da medida recomeça: **se o problema
+continuar, um alerta novo abre** depois dos minutos seguidos. Fechar não esconde problema que
+continua.
+
 ## 5. Guardar e mostrar
 
 - **Banco:** `perf_samples` (máquina, minuto, CPU, memória, disco livre por volume) por 7 dias;
