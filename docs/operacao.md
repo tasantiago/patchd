@@ -1084,6 +1084,10 @@ programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tu
 - **Log:** a falha por prazo também diz onde está o log do instalador na máquina
   (`C:\ProgramData\patchd\logs\instalar-job-N.log`, do msiexec e do Inno); o fim dele mostra onde
   parou.
+- **Limpeza dos logs do agente:** os `instalar-job-N.log` ficam 30 dias e no máximo os 50 mais
+  novos (a limpeza roda no começo de cada job de instalação); o `agent.log` gira em 10 MB e
+  guarda 3 anteriores; o `update.log` (troca de versão) e, no macOS, o `stderr.log` do launchd
+  viram `.1` ao passar de 1 MB. As pastas temporárias dos instaladores saem depois de 7 dias.
 - **Outra instalação MSI em andamento** (o Windows Installer roda uma por vez: outro job, o
   Windows Update, alguém na máquina): o agente confere antes de baixar e de novo antes de
   executar. Ocupado, o job volta **adiado** na hora ("tente de novo depois"), como com o programa

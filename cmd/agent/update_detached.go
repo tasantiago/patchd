@@ -8,7 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/logging"
 )
+
+// updateLogMax: o tamanho a partir do qual o update.log é girado.
+const updateLogMax = 1 << 20
 
 // startInstaller roda o install da versão nova num processo separado deste serviço, com a
 // saída em logs/update.log. Ele para este serviço, troca o executável e inicia o novo;
@@ -18,6 +23,9 @@ func startInstaller(bin string, args []string, dataDir string) error {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		return err
 	}
+	// Uma troca de versão escreve poucas linhas, mas o arquivo nunca era girado: passando de
+	// 1 MB, o atual vira update.log.1.
+	_, _ = logging.Trim(logPath, updateLogMax)
 	logf, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return err

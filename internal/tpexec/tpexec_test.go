@@ -397,3 +397,40 @@ func TestInstalarPrazoEsgotadoComLog(t *testing.T) {
 		t.Error("prazos")
 	}
 }
+
+// Os logs dos instaladores ficam 30 dias e no máximo 50; o agent.log e outros arquivos da
+// pasta não são tocados. A limpeza roda no começo do job.
+func TestLimpezaDosLogsDeInstalacao(t *testing.T) {
+	inst := []byte("MZ instalador nsis")
+	e, _ := executor(t, inst, &runnerFalso{}, google, nil)
+	if err := os.MkdirAll(e.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	agora := time.Now()
+	escreve := func(nome string, idade time.Duration) {
+		t.Helper()
+		p := filepath.Join(e.LogDir, nome)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, agora.Add(-idade), agora.Add(-idade)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escreve("instalar-job-1.log", 40*24*time.Hour) // vencido
+	escreve("agent.log", 90*24*time.Hour)          // não é log de instalação
+	escreve("instalar-job-x.log", 90*24*time.Hour) // fora do padrão
+	for i := range 55 {
+		escreve(fmt.Sprintf("instalar-job-%d.log", 100+i), time.Duration(i)*time.Hour) // 100 é o mais novo
+	}
+	if _, err := e.Install(context.Background(), 200, params(inst, "nullsoft", "/S")); err != nil {
+		t.Fatal(err)
+	}
+	existe := func(nome string) bool { _, err := os.Stat(filepath.Join(e.LogDir, nome)); return err == nil }
+	if existe("instalar-job-1.log") || !existe("agent.log") || !existe("instalar-job-x.log") {
+		t.Error("vencido, ou arquivo de fora tocado")
+	}
+	if !existe("instalar-job-100.log") || !existe("instalar-job-149.log") || existe("instalar-job-150.log") || existe("instalar-job-154.log") {
+		t.Error("os 50 mais novos ficam, os outros saem")
+	}
+}

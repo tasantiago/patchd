@@ -18,6 +18,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -116,6 +117,48 @@ type envRunner interface {
 	RunEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
 }
 
+// Logs dos instaladores (instalar-job-N.log, do msiexec e do Inno): um por job, e o do
+// msiexec de um LibreOffice passa de 10 MB. Ficam 30 dias, e no máximo os 50 mais novos;
+// a limpeza roda no começo de cada job de instalação.
+const (
+	logKeep      = 30 * 24 * time.Hour
+	logKeepCount = 50
+)
+
+var jobLogName = regexp.MustCompile(`^instalar-job-[0-9]+\.log$`)
+
+// pruneLogs apaga os logs de instalação vencidos e os que passam da quantidade.
+func (e *Executor) pruneLogs(now time.Time) {
+	if e.LogDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(e.LogDir)
+	if err != nil {
+		return
+	}
+	type logFile struct {
+		name string
+		mod  time.Time
+	}
+	var logs []logFile
+	for _, d := range entries {
+		if !d.Type().IsRegular() || !jobLogName.MatchString(d.Name()) {
+			continue
+		}
+		info, err := d.Info()
+		if err != nil {
+			continue
+		}
+		logs = append(logs, logFile{d.Name(), info.ModTime()})
+	}
+	slices.SortFunc(logs, func(a, b logFile) int { return b.mod.Compare(a.mod) }) // o mais novo primeiro
+	for i, l := range logs {
+		if i >= logKeepCount || now.Sub(l.mod) > logKeep {
+			_ = os.Remove(filepath.Join(e.LogDir, l.name))
+		}
+	}
+}
+
 // tempKeep: as pastas temporárias dos jobs ficam uma semana (um instalador que pede
 // reinício pode depender delas até lá) e saem no job seguinte.
 const tempKeep = 7 * 24 * time.Hour
@@ -126,6 +169,7 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	if err := os.MkdirAll(e.Dir, 0o700); err != nil {
 		return "", fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
 	}
+	e.pruneLogs(time.Now())
 	// Programa aberto (Aula 14.6b): nem baixa. O instalador não substituiria os arquivos em
 	// uso (o Inno sai com 5, o MSI pede reinício), e fechar o programa perderia o trabalho
 	// de quem está nele. O job falha dizendo qual programa e onde; pedir de novo depois.
