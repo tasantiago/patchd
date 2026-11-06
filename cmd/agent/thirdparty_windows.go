@@ -40,6 +40,9 @@ func newThirdParty(client *agent.Client, dataDir string, allowed []string) func(
 		TempDir: filepath.Join(dataDir, "tmp"),
 		// Outra instalação MSI em andamento: o job volta "adiado" na hora, sem esperar.
 		InstallerBusy: platform.WindowsInstallerBusy,
+		// Fechar o programa com aviso (opção da campanha, no horário dela).
+		Closer: &tpexec.AppCloser{Sessions: platform.Sessions, Notify: platform.NotifySession,
+			Ask: platform.AskClose, Kill: platform.KillProcess},
 	}
 	return e.Install
 }

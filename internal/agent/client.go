@@ -147,10 +147,16 @@ func (c *Client) CheckIn(ctx context.Context, inventoryHash string, state *proto
 // (docs/monitoramento.md).
 func (c *Client) CheckInWith(ctx context.Context, inventoryHash string, state *protocol.MachineState, perf []protocol.PerfSample,
 	reason string) (protocol.CheckinResponse, error) {
+	return c.CheckInFull(ctx, inventoryHash, state, perf, reason, nil)
+}
+
+// CheckInFull é o check-in com os jobs adiados cujo programa fechou ("tentar assim que fechar").
+func (c *Client) CheckInFull(ctx context.Context, inventoryHash string, state *protocol.MachineState, perf []protocol.PerfSample,
+	reason string, unblocked []int64) (protocol.CheckinResponse, error) {
 	var out protocol.CheckinResponse
 	_, err := c.post(ctx, "/api/v1/agent/checkin", protocol.CheckinRequest{
 		AgentVersion: c.AgentVersion, InventoryHash: inventoryHash, SentAt: time.Now().UTC(), Capabilities: c.Capabilities,
-		State: state, Perf: perf, Reason: reason,
+		State: state, Perf: perf, Reason: reason, Unblocked: unblocked,
 	}, &out)
 	return out, err
 }

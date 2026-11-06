@@ -28,6 +28,17 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	a.checkClock(r, id, req.SentAt)
 	a.saveHostState(r, id, req.State)
+	if err := a.store.SetMachineCapabilities(r.Context(), id, agentCaps(req.Capabilities)); err != nil {
+		a.logger.Error("guardar as capacidades do agente", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
+	}
+	// Tentar assim que fechar: o programa que adiou estes jobs fechou.
+	if n := len(req.Unblocked); n > 0 && n <= protocol.MaxUnblocked {
+		if k, err := a.store.MarkJobsUnblocked(r.Context(), id, req.Unblocked, a.now()); err != nil {
+			a.logger.Error("jobs liberados pelo agente", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
+		} else if k > 0 {
+			a.logger.Info("programa fechado: jobs adiados liberados", "machine_id", id, "jobs", k, "request_id", RequestID(r.Context()))
+		}
+	}
 	// Ligar pela rede (Aula 22.2): o check-in depois do pacote é a resposta da máquina.
 	if err := a.store.MarkWakeAnswered(r.Context(), id, a.now()); err != nil {
 		a.logger.Error("ligar pela rede: anotar a resposta", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
@@ -85,4 +96,21 @@ func (a *api) saveHostState(r *http.Request, id string, st *protocol.MachineStat
 	if err := a.store.SaveHostState(r.Context(), id, st, remoteIP(r)); err != nil {
 		a.logger.Error("gravar estado da máquina", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
 	}
+}
+
+// agentCaps: as capacidades anunciadas, como vão para o banco: no máximo 16, cada uma com
+// até 64 letras minúsculas, dígitos e hífens, sem repetir, em ordem (para comparar).
+func agentCaps(list []string) []string {
+	out := []string{}
+	for _, c := range list {
+		ok := c != "" && len(c) <= 64
+		for _, r := range c {
+			ok = ok && (r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-')
+		}
+		if ok && !slices.Contains(out, c) && len(out) < 16 {
+			out = append(out, c)
+		}
+	}
+	slices.Sort(out)
+	return out
 }

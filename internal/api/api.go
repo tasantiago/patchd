@@ -102,6 +102,8 @@ type Store interface {
 	// CheckIn registra o contato periódico (e o canal: TLS ou não, Aula 9.2) e diz se o
 	// inventário atual tem o hash informado.
 	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string, viaTLS bool) (inventoryKnown bool, err error)
+	SetMachineCapabilities(ctx context.Context, id string, caps []string) error                      // fechar o programa com aviso
+	MarkJobsUnblocked(ctx context.Context, machineID string, ids []int64, at time.Time) (int, error) // tentar assim que fechar
 	// CheckinTLS diz por qual canal chegou o último check-in (nil: nenhum desde a Aula 9.2).
 	CheckinTLS(ctx context.Context, machineID string) (*bool, error)
 	// Rede e discos do último check-in, e o endereço de onde ele veio (Aula 12.1).

@@ -45,7 +45,23 @@ type ThirdPartyParams struct {
 	// termina em Abort (o código 5 do Inno no job 33), e fechar o programa do usuário
 	// perderia o trabalho dele. Vazio: não confere (agentes até a v0.14.1 recusam o campo).
 	Processes []string `json:"processes,omitempty"`
+	// Close (fechar o programa com aviso, opção da campanha): com o programa aberto, o agente
+	// avisa quem estiver na sessão, espera o prazo, pede para o programa fechar e só força se
+	// ele não fechar. nil: não fecha (adia, como sempre). Só vai a agentes que anunciam
+	// protocol.CapabilityCloseApps: os anteriores recusam o campo.
+	Close *CloseApps `json:"close,omitempty"`
 }
+
+// CloseApps: o aviso antes de fechar o programa aberto.
+type CloseApps struct {
+	NoticeMinutes int `json:"notice_minutes"`
+}
+
+// Limites do aviso (os mesmos do reinício).
+const (
+	MinCloseNotice = 2
+	MaxCloseNotice = 60
+)
 
 const (
 	maxArgs          = 32
@@ -110,6 +126,10 @@ func (p ThirdPartyParams) Validate() error {
 		return errors.New("assinante inválido")
 	case len(p.Processes) > MaxProcesses:
 		return fmt.Errorf("mais de %d processos", MaxProcesses)
+	case p.Close != nil && (p.Close.NoticeMinutes < MinCloseNotice || p.Close.NoticeMinutes > MaxCloseNotice):
+		return fmt.Errorf("aviso antes de fechar o programa fora de %d a %d minutos", MinCloseNotice, MaxCloseNotice)
+	case p.Close != nil && len(p.Processes) == 0:
+		return errors.New("fechar o programa precisa da lista de processos da regra")
 	}
 	for _, n := range p.Processes {
 		if !ValidProcess(n) {

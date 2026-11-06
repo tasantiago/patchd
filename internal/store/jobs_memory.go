@@ -16,6 +16,7 @@ type memJob struct {
 	signed      protocol.SignedJob
 	campaignID  int64
 	campaignIdx int
+	unblockedAt *time.Time // o agente avisou que o programa que adiou o job fechou
 }
 
 // NextJobID reserva o próximo ID.

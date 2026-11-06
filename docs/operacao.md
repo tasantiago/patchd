@@ -342,6 +342,40 @@ com o reinício escolhido.
   valendo para os outros jobs "na janela"). Cada grupo, quando é liberado, recebe os jobs com
   início no próximo horário; o job vence no fim dele. `campaign show` mostra o horário.
 
+### Programa aberto na instalação de terceiros
+
+Com o programa aberto em qualquer sessão (o `soffice.exe` do Iniciador rápido do LibreOffice,
+o Firefox numa sessão desconectada), o agente não instala: o job volta **adiado**, e nada foi
+baixado nem executado. Duas ajudas:
+
+- **Tentar assim que fechar** (automático, agentes novos): o agente vigia, a cada minuto, o
+  programa que adiou o job. Quando nenhum executável dele está rodando, faz um check-in
+  antecipado (motivo `programa-fechado`) com o job em `unblocked`; o servidor marca o job, e a
+  campanha pede de novo no passo seguinte, sem esperar a hora. Dois minutos depois, outro
+  check-in busca o job novo. Na campanha em horário fixo ou na janela, o job novo espera o
+  horário, como os outros. A vigia dura 24 h e não sobrevive ao reinício do serviço (aí vale a
+  nova tentativa de hora em hora, até 24). Agentes antigos: de hora em hora, como antes.
+- **Fechar o programa com aviso** (opção da campanha de terceiros, desligada por padrão): em
+  "Programa aberto na hora", **fechar com aviso de 5, 15, 30 ou 60 min**. Só com horário
+  (**em horário fixo**, de madrugada, ou **na janela** do grupo): com prazo, o programa seria
+  fechado em pleno expediente, e o painel recusa. No horário da campanha, com o programa aberto:
+  1. o agente baixa e confere o instalador primeiro (nada fecha à toa);
+  2. em cada sessão **ativa** com o programa, o usuário vê o aviso ("o programa será fechado às
+     HH:MM para instalar a atualização de segurança; salve seu trabalho"), e o agente espera o
+     prazo; se a pessoa fechar antes, segue;
+  3. pede para o programa fechar, de dentro da sessão, como o X da janela (um `taskkill` sem
+     `/F`, com o token do próprio usuário);
+  4. se em 2 minutos ele não fechou (uma pergunta "salvar?" sem resposta), fecha à força: **o
+     que não foi salvo se perde** (Firefox e LibreOffice recuperam as abas e documentos na
+     próxima abertura, mas não garanta isso a ninguém);
+  5. instala. O resultado do job diz o que aconteceu ("aviso de 15 min em 1 sessão(ões);
+     fechado à força...").
+
+  Em **sessão desconectada** ninguém vê o aviso: o agente pede e força sem esperar. Se nem à
+  força fechar, o job volta adiado. Só vai para agentes que anunciam a capacidade
+  `fechar-programa-v1` no check-in (o servidor guarda as capacidades da máquina); para os
+  outros, e para programas cuja regra não lista os executáveis, o job segue como hoje (adia).
+
 ### Acompanhar uma campanha grande
 
 A página da campanha mostra os jobs de um grupo de implantação por vez (o atual, ou o

@@ -96,6 +96,13 @@ type Agent struct {
 	// serverEvery: o intervalo de check-in mandado pelo servidor, em minutos; 0: Interval.
 	serverEvery atomic.Int64
 
+	// ProgramOpen diz se algum dos executáveis está rodando, em qualquer sessão ("tentar
+	// assim que fechar"). nil: o job adiado por programa aberto espera a nova tentativa da
+	// campanha, de hora em hora.
+	ProgramOpen func(names []string) (bool, error)
+	blockedOnce sync.Once
+	bs          *blockedState
+
 	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
 	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
 	wakeOnce sync.Once
@@ -201,6 +208,9 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	if a.Watch != nil {
 		go a.watchLoop(ctx)
+	}
+	if a.ProgramOpen != nil {
+		go a.blockedLoop(ctx)
 	}
 	failures := 0
 	var last time.Time
@@ -324,11 +334,13 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	}
 	perf := a.perfBatch()
 	reason, _ := a.wakeReason.Load().(string)
-	resp, err := a.Client.CheckInWith(ctx, inv.Hash, host, perf, reason)
+	unblocked := a.takeUnblocked()
+	resp, err := a.Client.CheckInFull(ctx, inv.Hash, host, perf, reason, unblocked)
 	if out := a.classify(err, "check-in"); out != outcomeOK {
 		return out
 	}
 	a.wakeReason.Store("")
+	a.unblockedSent(unblocked)
 	a.perfSent(len(perf), resp.Monitor)
 	if a.applyServerInterval(resp.CheckinMinutes, &state) {
 		a.saveStateOrLog(state)
