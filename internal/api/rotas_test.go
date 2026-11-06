@@ -71,6 +71,7 @@ var constantes = map[string]string{
 	"SelfServiceCatalogPath": protocol.SelfServiceCatalogPath,
 	"SelfServiceRequestPath": protocol.SelfServiceRequestPath,
 	"SelfServiceLogoPath":    protocol.SelfServiceLogoPath,
+	"ChannelPath":            protocol.ChannelPath,
 }
 
 func avaliaCaminho(t *testing.T, e ast.Expr) string {

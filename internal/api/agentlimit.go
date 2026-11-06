@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/metrics"
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // Limite de requisições por máquina (Aula 20.5, S6). A credencial de uma máquina
@@ -34,6 +35,9 @@ type limitClass struct {
 var (
 	limitReports = limitClass{"relatorio", 10, 3 * time.Minute}
 	limitGeneral = limitClass{"geral", 60, 5 * time.Second}
+	// O canal em tempo real: uma espera a cada ~45 s (80 por hora), mais as que voltam na hora
+	// com aviso. Classe à parte, para não gastar as fichas do check-in e dos downloads.
+	limitChannel = limitClass{"canal", 20, 10 * time.Second}
 )
 
 // agentLimiter: um balde de fichas por máquina e classe.
@@ -86,8 +90,11 @@ func (l *agentLimiter) sweep(now time.Time) {
 	l.swept = now
 	for k, b := range l.buckets {
 		c := limitGeneral
-		if strings.HasPrefix(k, limitReports.name+"|") {
+		switch {
+		case strings.HasPrefix(k, limitReports.name+"|"):
 			c = limitReports
+		case strings.HasPrefix(k, limitChannel.name+"|"):
+			c = limitChannel
 		}
 		if b.refill(c, now); b.tokens >= c.burst {
 			delete(l.buckets, k)
@@ -114,6 +121,9 @@ func (l *agentLimiter) warn(machine string, now time.Time) bool {
 
 // limitFor: a classe da requisição.
 func limitFor(r *http.Request) limitClass {
+	if r.URL.Path == protocol.ChannelPath {
+		return limitChannel
+	}
 	if r.Method == http.MethodPost && (r.URL.Path == "/api/v1/agent/inventory" || r.URL.Path == "/api/v1/agent/scan") {
 		return limitReports
 	}

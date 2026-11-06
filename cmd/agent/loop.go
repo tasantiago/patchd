@@ -26,6 +26,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/scriptexec"
+	"github.com/tasantiago/patchd/internal/sensor"
 	"github.com/tasantiago/patchd/internal/wol"
 )
 
@@ -183,6 +184,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	if runtime.GOOS != "darwin" {
 		ag.Watch.Software = collector.Software
 	}
+	// Perguntas ao parque: o catálogo fechado de leituras (internal/sensor), em todo sistema.
+	ag.Query = sensor.For(collector.Software).Answer
 	if cab != nil {
 		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {
 			if err := cab.Sync(ctx, adv); err != nil && ctx.Err() == nil {

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,6 +27,13 @@ type acceptedJobs struct {
 	biosSettings []acceptedBIOSSettings
 	// docs/wake-on-lan.md, Aula 22.2
 	wakes []acceptedWake
+	// Perguntas ao parque: respondidas na hora, o resultado sai antes da busca.
+	queries []acceptedQuery
+}
+
+type acceptedQuery struct {
+	id int64
+	p  jobs.QueryParams
 }
 
 type acceptedWake struct {
@@ -172,6 +180,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: ligar outra máquina pela rede", "job_id", j.ID, "maquina", p.Target, "rede", p.Network, "macs", len(p.MACs))
 			acc.wakes = append(acc.wakes, acceptedWake{id: j.ID, p: p})
+		case jobs.TypeQuery:
+			p, _ := jobs.ParseQueryParams(j.Params) // o Verify já conferiu
+			if a.Query == nil {
+				why := "este agente não responde perguntas ao parque"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: pergunta ao parque", "job_id", j.ID, "sensor", p.Sensor)
+			acc.queries = append(acc.queries, acceptedQuery{id: j.ID, p: p})
 		case jobs.TypeServerURL:
 			p, _ := jobs.ParseServerURLParams(j.Params) // o Verify já conferiu
 			reject := func(why string) {
@@ -558,4 +576,20 @@ func (a *Agent) moveServer(ctx context.Context, state *State) {
 	a.clientMu.Lock() // o canal do autoatendimento (Aula 17.3) lê o endereço de outra goroutine
 	a.Client.BaseURL = m.URL
 	a.clientMu.Unlock()
+}
+
+// runQueries responde as perguntas ao parque (só leitura, rápidas).
+func (a *Agent) runQueries(ctx context.Context, list []acceptedQuery) []PendingJobResult {
+	var out []PendingJobResult
+	for _, q := range list {
+		ans := a.Query(ctx, q.p).Clip()
+		raw, err := json.Marshal(ans)
+		status := protocol.JobResultOK
+		if err != nil {
+			status, raw = protocol.JobResultFailed, []byte(err.Error())
+		}
+		a.Logger.Info("pergunta respondida", "job_id", q.id, "sensor", q.p.Sensor, "resposta", ans.Value)
+		out = append(out, PendingJobResult{ID: q.id, Result: protocol.JobResult{Status: status, Detail: string(raw), FinishedAt: a.now().UTC()}})
+	}
+	return out
 }

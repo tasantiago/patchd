@@ -46,6 +46,8 @@ func TestParametrosConferidosComoNaPartida(t *testing.T) {
 		{"PATCHD_CATALOG_INTERVAL", "6h", "6h", true},
 		{"PATCHD_CATALOG_INTERVAL", "5m", "", false},
 		{"PATCHD_WINUPDATE_MICROSOFT", "1", "1", true},
+		{"PATCHD_CANAL", "0", "0", true},
+		{"PATCHD_CANAL", "talvez", "", false},
 		{"PATCHD_WINUPDATE_MICROSOFT", "sim", "", false},
 		{"PATCHD_REPO_CACHE_URL", "http://cache.exemplo:8080", "http://cache.exemplo:8080", true},
 		{"PATCHD_REPO_CACHE_URL", "ftp://x", "", false},

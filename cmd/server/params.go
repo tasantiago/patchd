@@ -150,6 +150,15 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v
 			}},
+		{Key: api.ChannelKey, Group: "Agentes", Label: "Canal em tempo real", Kind: settings.Select, Options: channelChoices,
+			Default: "1", Help: "Ligado: cada agente novo mantém uma espera aberta com o servidor, na mesma porta do check-in (só de saída, nada de porta nova), e o servidor o chama assim que há um job: os jobs e as perguntas ao parque saem em segundos, não no próximo check-in. Desligado: só o check-in.",
+			Effect: "na hora para as esperas novas; os agentes param ou voltam a esperar no próximo check-in", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v != "0" && v != "1" {
+					return "", errors.New("use 1 (ligado) ou 0 (desligado)")
+				}
+				return v, nil
+			}, Show: showChoice(channelChoices)},
 		{Key: api.MicrosoftFallbackKey, Group: "Agentes", Label: "Fonte reserva do Windows", Kind: settings.Select, Options: microsoftChoices,
 			Default: "0", Help: "Ligada: quando a fonte da política (WSUS) falha, o agente busca também direto no Microsoft Update, e a campanha com a opção marcada instala de lá o que a política não oferece. Só sai o que foi aprovado no patchd; muda só de onde o arquivo vem. Máquinas com a GPO que bloqueia a internet do Windows Update ficam de fora.",
 			Effect: "a partir do próximo check-in de cada máquina (a busca seguinte já usa a reserva)", Check: func(v string) (string, error) {
@@ -291,6 +300,8 @@ func settingDefs(look config.Lookup) []settings.Def {
 
 // notifyEffect: quando a mudança nas notificações vale.
 const notifyEffect = "na hora: o próximo e-mail já sai com a configuração nova"
+
+var channelChoices = []settings.Option{{Value: "1", Label: "ligado: jobs em segundos"}, {Value: "0", Label: "desligado: só o check-in"}}
 
 var microsoftChoices = []settings.Option{{Value: "0", Label: "desligada"}, {Value: "1", Label: "ligada: Microsoft Update quando a fonte da política falhar"}}
 

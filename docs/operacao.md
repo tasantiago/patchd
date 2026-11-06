@@ -710,6 +710,47 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
 - Ficam sempre no ambiente: banco, portas, TLS, chaves e segredos, pastas, a URL pública e os
   endereços do AD e do RHBK. Grupos de acesso: Aula 19.4.
 
+### Canal em tempo real e perguntas ao parque
+
+**Canal em tempo real.** Cada agente novo mantém uma espera aberta com o servidor
+(`POST /api/v1/agent/canal`), de dentro para fora, **na mesma porta do check-in**: nenhuma porta
+nova, nenhuma conexão de entrada nas estações, passa pelos mesmos proxies e firewalls. O servidor
+segura a espera até 45 s; quando surge um job para a máquina, responde "venha" e o agente faz o
+check-in na hora. Sem novidade, a espera volta e o agente abre outra.
+
+- **O aviso vem do banco:** um gatilho na tabela de jobs (migração 0062) dá `NOTIFY patchd_canal`
+  em todo job criado, venha de onde vier (painel, campanha, autoatendimento, linha de comando). Cada
+  servidor escuta (`LISTEN`) e acorda os agentes conectados a ele. A cada 30 s, o servidor procura
+  também os jobs agendados (janela, horário fixo) cujo início acabou de chegar.
+- **Ligado por padrão:** Configuração › Parâmetros › Agentes › **Canal em tempo real**. Desligado,
+  os agentes param de esperar no check-in seguinte e tudo volta a sair só pelo check-in.
+- **Na máquina**, o Resumo mostra "Tempo real: conectado" ou "não conectado agora".
+- **Limites:** a espera tem a classe própria no limite de requisições por máquina (20 de uma
+  vez, depois 1 a cada 10 s). 2.000 esperas abertas não ocupam conexão do PostgreSQL. Se a escuta
+  do banco cair, o servidor tenta de novo (5 s até 2 min) e os agentes seguem pelo check-in.
+- **Agentes antigos:** não abrem a espera; continuam pelo check-in, como antes.
+
+**Perguntas ao parque** (Automação › Perguntas ao parque, só admin). Uma pergunta de um catálogo
+fechado, **só de leitura**, a todas as máquinas ou a um grupo de implantação:
+
+| Pergunta | Sobre o quê | Resposta |
+|---|---|---|
+| Arquivo | `C:\...`, `/...`, `%ProgramFiles%\...`, `%SystemRoot%\...` | a versão (Windows) ou "existe", com tamanho, data e SHA-256 (até 100 MB); "não existe" |
+| Processo | `firefox.exe` (Linux: `sshd`) | "rodando" (quantos, em que sessões) ou "não está rodando" |
+| Serviço | `Spooler` (Linux: a unidade do systemd) | rodando, parado..., com o tipo de início; "não existe" |
+| Registro (Windows) | `HKLM\...` e o nome do valor | o valor; "chave não existe", "valor não existe" |
+| Programa | um pedaço do nome | as versões instaladas, ou "não instalado" |
+
+- Cada máquina recebe um job `pergunta` assinado, que vale 1 h. As conectadas ao canal respondem
+  em segundos; as outras, no próximo check-in. A página agrupa as respostas ("2.1.3: 412
+  máquinas", "não existe: 1.500"), se atualiza sozinha enquanto chegam respostas, e baixa o CSV.
+- **Segurança:** nada é executado além da leitura; o argumento é conferido no servidor e no
+  agente. Sem caminho de rede (UNC), curingas, `..`, nem `HKLM\SAM` e `HKLM\SECURITY`. O valor de
+  registro cujo nome parece de senha (`password`, `senha`, `secret`, `token`...) volta como
+  "existe (conteúdo oculto)". Só o perfil admin pergunta e vê as respostas; cada pergunta vai para
+  a auditoria (`pergunta.criar`).
+- Agente antigo responde "agente sem as perguntas (atualize o agente)".
+
 ### Intervalo de check-in pela tela
 
 - Configuração › Parâmetros › **Agentes › Intervalo de check-in** (`PATCHD_CHECKIN_MINUTES`):

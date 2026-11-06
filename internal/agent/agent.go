@@ -85,6 +85,8 @@ type Agent struct {
 	// wake_on_lan, docs/wake-on-lan.md, Aula 22.2). nil: o agente recusa esses jobs. Erro
 	// com jobs.ErrRefused vira "rejeitado" (nada saiu pela rede).
 	WakeOnLAN func(ctx context.Context, p jobs.WakeOnLANParams) (string, error)
+	// Query responde as perguntas ao parque (internal/sensor). nil: o agente recusa.
+	Query func(ctx context.Context, p jobs.QueryParams) jobs.QueryAnswer
 
 	// Watch: a sentinela de desempenho e de mudanças (docs/monitoramento.md). nil: sem
 	// amostras de desempenho e sem check-in antecipado por mudança.
@@ -102,6 +104,10 @@ type Agent struct {
 	ProgramOpen func(names []string) (bool, error)
 	blockedOnce sync.Once
 	bs          *blockedState
+	// Canal em tempo real: ligado pelo check-in (CheckinResponse.Channel).
+	channelOn   atomic.Bool
+	channelOnce sync.Once
+	channelKick chan struct{}
 
 	// wake antecipa o próximo check-in (Aula 17.3): um pedido do autoatendimento aceito
 	// não espera a próxima hora. Capacidade 1: vários pedidos juntos dão um check-in só.
@@ -212,6 +218,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	if a.ProgramOpen != nil {
 		go a.blockedLoop(ctx)
 	}
+	go a.channelLoop(ctx) // espera até o check-in dizer que o servidor tem o canal
 	failures := 0
 	var last time.Time
 	for {
@@ -341,6 +348,7 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	}
 	a.wakeReason.Store("")
 	a.unblockedSent(unblocked)
+	a.setChannel(resp.Channel)
 	a.perfSent(len(perf), resp.Monitor)
 	if a.applyServerInterval(resp.CheckinMinutes, &state) {
 		a.saveStateOrLog(state)
@@ -395,6 +403,18 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	}
 	if len(resp.Jobs) > 0 {
 		a.saveStateOrLog(state)
+	}
+	// Perguntas ao parque: a resposta vai já, sem esperar a busca e as instalações.
+	if len(accepted.queries) > 0 {
+		state.PendingJobResults = append(state.PendingJobResults, a.runQueries(ctx, accepted.queries)...)
+		a.saveStateOrLog(state)
+		if !state.InventoryFirst {
+			out := a.flushJobResults(ctx, &state)
+			a.saveStateOrLog(state)
+			if out != outcomeOK {
+				return out
+			}
+		}
 	}
 	// Instalações (Aula 8.4) antes da busca: a busca seguinte mostra o efeito. O job já foi
 	// gravado como visto: se o agente cair no meio, ele não roda de novo (no máximo uma vez).
