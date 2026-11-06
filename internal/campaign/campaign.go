@@ -79,18 +79,22 @@ type Campaign struct {
 	// não oferecer o KB, o job vai com a fonte Microsoft (precisa da reserva ligada em
 	// Parâmetros e de um agente que a entenda).
 	MicrosoftFallback bool
-	Observe           time.Duration
-	TTL               time.Duration // prazo dos jobs sem janela
-	State             string
-	CurrentIdx        int
-	LaunchedIdx       int
-	AcceptedIdx       int
-	RingDoneAt        *time.Time
-	Detail            string
-	Notes             []string // um resumo por grupo de implantação liberado: jobs criados e quem ficou fora (Aula 14.7)
-	CreatedBy         string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// CloseDelay (terceiros, só com horário fixo ou janela): com o programa aberto, o agente
+	// avisa quem estiver na sessão, espera isso e fecha o programa (normal, e à força se ele
+	// não fechar). 0: não fecha, adia como sempre. Só para agentes que anunciam a capacidade.
+	CloseDelay  time.Duration
+	Observe     time.Duration
+	TTL         time.Duration // prazo dos jobs sem janela
+	State       string
+	CurrentIdx  int
+	LaunchedIdx int
+	AcceptedIdx int
+	RingDoneAt  *time.Time
+	Detail      string
+	Notes       []string // um resumo por grupo de implantação liberado: jobs criados e quem ficou fora (Aula 14.7)
+	CreatedBy   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Ring é o grupo de implantação atual.
@@ -142,6 +146,12 @@ func (c Campaign) Validate() error {
 		return errors.New("informe os grupos de implantação, em ordem (ex.: 0,1)")
 	case c.Observe < 0 || c.Observe > MaxObserve:
 		return fmt.Errorf("observação fora de 0 a %v", MaxObserve)
+	case c.CloseDelay != 0 && c.Type != jobs.TypeThirdParty && c.Type != TypeThirdPartyAll:
+		return errors.New("fechar o programa aberto só vale nas campanhas de terceiros")
+	case c.CloseDelay != 0 && !c.UseWindow && c.Daily == nil:
+		return errors.New("fechar o programa aberto precisa de horário: em horário fixo (de madrugada) ou na janela do grupo")
+	case c.CloseDelay != 0 && (c.CloseDelay < jobs.MinCloseNotice*time.Minute || c.CloseDelay > jobs.MaxCloseNotice*time.Minute):
+		return fmt.Errorf("o aviso antes de fechar o programa fica entre %d e %d minutos", jobs.MinCloseNotice, jobs.MaxCloseNotice)
 	case c.MicrosoftFallback && c.Type != jobs.TypeWinUpdate && c.Type != TypeOSAll:
 		return errors.New("a fonte reserva da Microsoft só vale nas campanhas do Windows")
 	case c.UseWindow && c.Daily != nil:
@@ -176,6 +186,9 @@ type JobState struct {
 	State      string
 	Detail     string
 	FinishedAt *time.Time // quando encerrou (Aula 14.9: o adiado conta o intervalo daqui)
+	// Unblocked: o agente avisou que o programa que adiou o job fechou; a nova tentativa sai
+	// na hora, sem esperar o RetryAfter.
+	Unblocked *time.Time
 	// Slot: o que o job leva, quando uma máquina recebe mais de um na mesma campanha (na de
 	// todos os programas de terceiros, o programa). Vazio: um job por máquina.
 	Slot string
@@ -225,7 +238,23 @@ type Engine struct {
 	ThirdParty ThirdPartyPlanner
 	// MicrosoftAllowed: a fonte reserva da Microsoft está ligada em Parâmetros. nil: desligada.
 	MicrosoftAllowed func() bool
-	Logger           *slog.Logger
+	// CanCloseApps: o agente da máquina anunciou que fecha o programa com aviso. nil: ninguém.
+	CanCloseApps func(ctx context.Context, machineID string) (bool, error)
+	Logger       *slog.Logger
+}
+
+// closeApps põe o "fechar o programa com aviso" no job de terceiros, quando a campanha pede,
+// a regra lista os processos e o agente sabe fazer. Senão, o job vai como sempre (adia).
+func (e *Engine) closeApps(ctx context.Context, c *Campaign, id string, p *jobs.ThirdPartyParams) error {
+	if c.CloseDelay == 0 || len(p.Processes) == 0 || e.CanCloseApps == nil {
+		return nil
+	}
+	ok, err := e.CanCloseApps(ctx, id)
+	if err != nil || !ok {
+		return err
+	}
+	p.Close = &jobs.CloseApps{NoticeMinutes: int(c.CloseDelay / time.Minute)}
+	return nil
 }
 
 // winUpdates monta o job do Windows: pela fonte da política e, se ela não serve por um motivo
@@ -497,6 +526,9 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 		if err != nil || p == nil {
 			return false, skip, err
 		}
+		if err := e.closeApps(ctx, c, id, p); err != nil {
+			return false, "", err
+		}
 		if req.Params, err = json.Marshal(p); err != nil {
 			return false, "", err
 		}
@@ -563,6 +595,9 @@ func ringStatus(list []JobState, now time.Time) ringState {
 			at := now
 			if j.FinishedAt != nil {
 				at = j.FinishedAt.Add(RetryAfter)
+			}
+			if j.Unblocked != nil && j.Unblocked.Before(at) { // tentar assim que fechar
+				at = *j.Unblocked
 			}
 			if now.Before(at) {
 				st.waiting++
@@ -789,6 +824,9 @@ func (e *Engine) issueApps(ctx context.Context, c *Campaign, id string, apps []A
 		}
 		req := jobs.Request{MachineID: id, Type: jobs.TypeThirdParty, TTL: c.TTL, By: "campanha " + fmt.Sprint(c.ID),
 			CampaignID: c.ID, CampaignIdx: c.CurrentIdx}
+		if err := e.closeApps(ctx, c, id, p); err != nil {
+			return created, nil, err
+		}
 		if req.Params, err = json.Marshal(p); err != nil {
 			return created, nil, err
 		}

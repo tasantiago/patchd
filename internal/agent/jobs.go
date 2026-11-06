@@ -269,6 +269,9 @@ func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) (o
 			// Aula 14.9: programa aberto, outro instalador rodando: não é falha, é "agora não".
 			status, detail = protocol.JobResultPostponed, joinDetail(err.Error(), detail)
 			a.Logger.Warn("instalação de terceiros adiada", "job_id", j.id, "app", j.p.App, "reason", detail)
+			if errors.Is(err, jobs.ErrProgramOpen) {
+				a.watchBlocked(j.id, j.p.Processes) // tentar assim que fechar
+			}
 		case err != nil:
 			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
 			a.Logger.Error("instalação de terceiros falhou", "job_id", j.id, "app", j.p.App, "error", detail)

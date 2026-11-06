@@ -53,7 +53,17 @@ type CheckinRequest struct {
 	// Reason: por que o check-in veio antes da hora ("usuario", "rede", "software",
 	// "desempenho", "autoatendimento"); vazio: o de hora em hora. Só para o log.
 	Reason string `json:"reason,omitempty"`
+	// Unblocked ("tentar assim que fechar"): jobs adiados por programa aberto cujo programa o
+	// agente viu fechar. A campanha pede de novo na hora. No máximo MaxUnblocked.
+	Unblocked []int64 `json:"unblocked,omitempty"`
 }
+
+// MaxUnblocked: quantos jobs liberados um check-in leva.
+const MaxUnblocked = 50
+
+// CapabilityCloseApps: o agente entende o "fechar o programa com aviso" do job de terceiros
+// (o campo close). Os anteriores recusam o job com o campo: o servidor só o manda a quem anuncia.
+const CapabilityCloseApps = "fechar-programa-v1"
 
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"

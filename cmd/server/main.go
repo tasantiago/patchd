@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/tasantiago/patchd/internal/machinebox"
 	"github.com/tasantiago/patchd/internal/metrics"
 	"github.com/tasantiago/patchd/internal/oidc"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/settings"
@@ -399,6 +401,11 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		eng := newCampaignEngine(pg, jobKey, tp, logger)
 		// A fonte reserva do Windows: lida a cada máquina, a mudança na tela vale na hora.
 		eng.MicrosoftAllowed = func() bool { return params.Value(api.MicrosoftFallbackKey) == "1" }
+		// Fechar o programa com aviso: só para o agente que anunciou que sabe.
+		eng.CanCloseApps = func(ctx context.Context, id string) (bool, error) {
+			caps, err := pg.MachineCapabilities(ctx, id)
+			return slices.Contains(caps, protocol.CapabilityCloseApps), err
+		}
 		go campaignLoop(ctx, logger, pg, eng)
 		logger.Info("campanhas ligadas: o servidor libera os grupos de implantação a cada minuto")
 	}

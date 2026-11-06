@@ -143,7 +143,8 @@ form.campanha details.vazios{margin-top:.5rem}form.campanha details.vazios summa
 form.campanha:has(input[name=tipo]:checked:not([value=thirdparty])) .so-terceiros,
 form.campanha:has(input[name=tipo]:checked:not([value=update]):not([value=windows_update])) .so-fontes,
 form.campanha:has(input[name=tipo]:checked:not([value=reboot])) .so-reinicio,
-form.campanha:has(input[name=tipo]:checked:not([value=windows_update]):not([value=sistema_todas])) .so-windows{display:none}
+form.campanha:has(input[name=tipo]:checked:not([value=windows_update]):not([value=sistema_todas])) .so-windows,
+form.campanha:has(input[name=tipo]:checked:not([value=thirdparty]):not([value=terceiros_todos])) .so-fechar{display:none}
 form.campanha:has(input[value=janela]:checked) select[name=prazo]{opacity:.45}
 form.campanha .acoes{display:flex;align-items:center;gap:.75rem}
 /* Saúde do servidor (docs/saude-servidor.md): o veredito, as recomendações e os medidores. */

@@ -79,6 +79,11 @@ type Executor struct {
 	InstallerBusy func() (bool, error)
 	// Timeout: o prazo de cada instalação; nil: TimeoutFor (pelo tamanho).
 	Timeout func(jobs.ThirdPartyParams) time.Duration
+	// Closer fecha o programa aberto, com aviso, quando o job traz close (opção da
+	// campanha). nil: o job com o programa aberto volta adiado, como sempre.
+	Closer *AppCloser
+	// Sleep: a espera do aviso (nos testes, sem esperar). nil: o relógio.
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
 // Prazo da execução do instalador, pelo tamanho: os grandes (o MSI do LibreOffice tem 350 MB e
@@ -173,8 +178,14 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	// Programa aberto (Aula 14.6b): nem baixa. O instalador não substituiria os arquivos em
 	// uso (o Inno sai com 5, o MSI pede reinício), e fechar o programa perderia o trabalho
 	// de quem está nele. O job falha dizendo qual programa e onde; pedir de novo depois.
+	// Com close (a campanha pede, no horário dela), o programa aberto não adia: o instalador
+	// é baixado e conferido primeiro, e o programa só fecha (com aviso) quando tudo está pronto.
+	closing := false
 	if err := e.checkRunning(p); err != nil {
-		return "", err
+		if !errors.Is(err, jobs.ErrProgramOpen) || p.Close == nil || e.Closer == nil {
+			return "", err
+		}
+		closing = true
 	}
 	if err := e.checkBusy("nada foi baixado nem executado"); err != nil {
 		return "", err
@@ -200,6 +211,17 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	sigNote, err := e.checkSignature(file, p.Signer)
 	if err != nil {
 		return sigNote, err
+	}
+
+	if closing {
+		note, err := e.closeRunning(ctx, p)
+		if err != nil {
+			return sigNote, err
+		}
+		if err := e.checkRunning(p); err != nil { // aberto de novo enquanto fechava
+			return sigNote, err
+		}
+		sigNote = joinNote(note, sigNote)
 	}
 
 	prog, args := e.command(jobID, file, p)
@@ -381,8 +403,8 @@ func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
 	for _, s := range sessions {
 		ss = append(ss, strconv.FormatUint(uint64(s), 10))
 	}
-	return fmt.Errorf("%w: %w: programa aberto (%s na sessão %s); nada foi baixado nem executado: peça de novo com o programa fechado",
-		jobs.ErrNotStarted, ErrRetry, strings.Join(parts, ", "), strings.Join(ss, ", "))
+	return fmt.Errorf("%w: %w: %w (%s na sessão %s); nada foi baixado nem executado: peça de novo com o programa fechado",
+		jobs.ErrNotStarted, ErrRetry, jobs.ErrProgramOpen, strings.Join(parts, ", "), strings.Join(ss, ", "))
 }
 
 // jobLog: onde está o log do instalador deste job (msiexec ou Inno); vazio para os outros.
@@ -444,4 +466,14 @@ func (e *Executor) jobTemp(jobID int64) ([]string, error) {
 		return nil, err
 	}
 	return []string{"TEMP=" + dir, "TMP=" + dir}, nil
+}
+
+func joinNote(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	}
+	return a + "; " + b
 }

@@ -80,6 +80,8 @@ type campaignForm struct {
 	DailyDur   int
 	Durations  []durationOption
 	TZ         string
+	// Close: terceiros com o programa aberto: 0 adia; N fecha com aviso de N minutos (só com horário).
+	Close int
 	// Microsoft: a campanha do Windows usa a fonte reserva; MicrosoftOn: a reserva está ligada em Parâmetros.
 	Microsoft   bool
 	MicrosoftOn bool
@@ -243,6 +245,9 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	f.DailyStart = strings.TrimSpace(r.PostFormValue("hora"))
 	f.DailyDur, _ = strconv.Atoi(r.PostFormValue("duracao"))
 	f.Microsoft = r.PostFormValue("microsoft") == "1" && (f.Type == jobs.TypeWinUpdate || f.Type == campaign.TypeOSAll)
+	if f.Type == jobs.TypeThirdParty || f.Type == campaign.TypeThirdPartyAll {
+		f.Close, _ = strconv.Atoi(r.PostFormValue("fechar"))
+	}
 	f.MicrosoftOn = a.microsoftAllowed()
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
@@ -255,7 +260,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
-		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft}
+		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft,
+		CloseDelay: time.Duration(f.Close) * time.Minute}
 	if f.Type == jobs.TypeReboot {
 		c.RebootDelay = time.Duration(f.Delay) * time.Minute
 	}
@@ -273,6 +279,10 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		return c, f, "Escolha o tipo: todas as atualizações do sistema, todos os programas aprovados, buscar atualizações, atualizar pacotes, instalar atualizações do Windows, reiniciar ou instalar programa de terceiros."
 	case f.Type == jobs.TypeReboot && !containsInt(rebootDelays, f.Delay):
 		return c, f, "Escolha o aviso do reinício da lista."
+	case f.Close != 0 && !containsInt(rebootDelays, f.Close):
+		return c, f, "Escolha o aviso antes de fechar o programa da lista."
+	case f.Close != 0 && f.When == "prazo":
+		return c, f, "Fechar o programa aberto só em horário fixo (de madrugada) ou na janela de cada grupo: com prazo, o programa seria fechado em pleno expediente."
 	case len(f.Chosen) == 0:
 		return c, f, "Marque ao menos um grupo de implantação."
 	case !containsInt(observeHours, f.ObserveH):
@@ -471,6 +481,13 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 				v.Warnings = append(v.Warnings, "Em horário fixo, a máquina precisa estar ligada e fazer check-in dentro do horário; o job vence no fim dele, como na janela do grupo de implantação.")
 			}
 		}
+		if c.CloseDelay > 0 {
+			v.Extra = fmt.Sprintf("programa aberto: fecha com aviso de %d min", int(c.CloseDelay/time.Minute))
+			v.Warnings = append(v.Warnings, fmt.Sprintf("Programa aberto: no horário da campanha, quem estiver na sessão vê o aviso \"o programa será fechado em %d minutos para atualizar; salve seu trabalho\". Depois o agente pede para o programa fechar e, se ele não fechar em 2 minutos (uma pergunta de salvar sem resposta, por exemplo), fecha à força: o que não foi salvo se perde. Em sessão desconectada (ninguém vê o aviso), fecha sem esperar. Agentes antigos (sem a capacidade) e programas sem a lista de processos na regra continuam adiando, como hoje.", int(c.CloseDelay/time.Minute)))
+		}
+		if c.Type == jobs.TypeThirdParty || c.Type == campaign.TypeThirdPartyAll {
+			v.Warnings = append(v.Warnings, "Programa aberto e o job adiado: assim que o programa fechar, o agente avisa e a nova tentativa sai em minutos (agentes novos); senão, de hora em hora, até 24.")
+		}
 		if c.MicrosoftFallback {
 			v.Extra = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft"
 			v.Warnings = append(v.Warnings, "Fonte reserva: quando a fonte da política (WSUS) falhar, ou não oferecer o KB, o job da máquina vai com a fonte Microsoft Update. Continua saindo só o que está aprovado em Patch; muda só de onde o arquivo vem (e o tráfego vai para a internet). Ficam de fora os agentes antigos (sem a fonte) e as máquinas com a GPO que bloqueia a internet do Windows Update.")
@@ -551,6 +568,7 @@ type campaignView struct {
 	C                                  campaign.Campaign
 	TypeLabel, State, StateLabel, When string
 	Fallback                           string // a fonte reserva da Microsoft, quando a campanha a usa
+	CloseL                             string // terceiros: fechar o programa aberto com aviso
 	Sources, Observe, Created          string
 	Rings                              []campaignRingView
 	CanPause, CanResume, CanCancel     bool
@@ -585,6 +603,9 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Daily != nil {
 		v.When = "em horário fixo, " + c.Daily.String()
+	}
+	if c.CloseDelay > 0 {
+		v.CloseL = fmt.Sprintf("fecha com aviso de %d min (no horário da campanha)", int(c.CloseDelay/time.Minute))
 	}
 	if c.MicrosoftFallback {
 		v.Fallback = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft Update"

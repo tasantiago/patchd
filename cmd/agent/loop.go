@@ -229,6 +229,16 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	// Job thirdparty (Aula 14.4): só no Windows.
 	if tp := newThirdParty(client, opts.DataDir, opts.AllowedSigners); tp != nil {
 		ag.ThirdParty = tp
+		// Tentar assim que fechar: o job adiado por programa aberto é vigiado.
+		ag.ProgramOpen = func(names []string) (bool, error) {
+			list, err := platform.Processes()
+			if err != nil {
+				return false, err
+			}
+			return len(platform.Running(list, names)) > 0, nil
+		}
+		// O job de terceiros com close (fechar o programa com aviso) só vem a quem anuncia.
+		client.Capabilities = append(client.Capabilities, protocol.CapabilityCloseApps)
 	}
 	client.Capabilities = append(client.Capabilities, protocol.CapabilityStandardization)
 	// Job script (Aula 23.8): em todos os sistemas. O bundle é baixado e extraído na pasta

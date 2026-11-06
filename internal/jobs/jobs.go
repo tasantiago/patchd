@@ -66,6 +66,10 @@ const (
 // agente responder "adiado" em vez de "falhou").
 var ErrRetry = errors.New("tentar depois")
 
+// ErrProgramOpen: o adiado foi por programa aberto (não por outro instalador rodando). O
+// agente vigia o programa e avisa o servidor quando ele fechar ("tentar assim que fechar").
+var ErrProgramOpen = errors.New("programa aberto")
+
 // Final diz se o estado não muda mais.
 func Final(s string) bool {
 	return s != StatePending && s != StateDelivered
