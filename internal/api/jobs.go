@@ -129,6 +129,10 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	if job.Type == jobs.TypeBIOSSettings { // docs/bios-config.md
 		return a.judgeBIOSSettings(r, job, res)
 	}
+	if job.Type == jobs.TypeQuery {
+		// Perguntas ao parque: a resposta é o efeito (só leitura); o detalhe guarda o JSON.
+		return jobs.StateDone, res.Detail
+	}
 	if job.Type == jobs.TypeWakeOnLAN {
 		// docs/wake-on-lan.md, Aula 22.2: o job é do repetidor, e o efeito dele é o pacote na
 		// rede, que só o repetidor vê. Se a máquina acordou, conta o pedido (o check-in dela).

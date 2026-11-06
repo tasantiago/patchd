@@ -39,6 +39,12 @@ func (a *api) channelView(r *http.Request, id string, v *machineView) error {
 	default:
 		v.Channel = "HTTP (porta de transição)"
 	}
+	if a.channelOn() {
+		v.RealTime = "não conectado agora: os jobs saem no próximo check-in"
+		if a.channel.IsConnected(id) {
+			v.RealTime = "conectado: os jobs saem em segundos"
+		}
+	}
 	v.PublicURL = a.publicURL
 	v.CanHTTPS = v.Admin && v.JobsOn && a.publicURL != "" && (tls == nil || !*tls)
 	return nil

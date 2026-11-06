@@ -44,3 +44,7 @@
 /lab-*.ps1
 /maquinas*.txt
 /coleta/
+
+# binários de build local (go build ./cmd/agent na raiz)
+/agent
+/agent.exe

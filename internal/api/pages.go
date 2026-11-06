@@ -254,6 +254,7 @@ type machineView struct {
 	PanelTZ                              string
 	Window, NextWindow                   string
 	Channel                              string // canal do último check-in (Aula 9.2)
+	RealTime                             string // o canal em tempo real (vazio: desligado)
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
 	PublicURL                            string
 	Host                                 hostView       // rede e discos (Aula 12.1)
@@ -718,7 +719,7 @@ var pages = template.Must(template.New("").Parse(`
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
 
 {{/* Automação (Aula 15.11): campanhas, jobs e grupos de implantação numa entrada só do menu, em abas. */}}
-{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Grupos de implantação e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a></nav>{{end}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Grupos de implantação e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a><a href="/painel/perguntas"{{if eq . "perguntas"}} class="ativa" aria-current="page"{{end}}>Perguntas ao parque</a></nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
@@ -1214,7 +1215,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
 {{if .Host.SignersKnown}}<dt>Instaladores aceitos</dt>{{if .Host.Signers}}<dd>só os assinados por {{.Host.Signers}}</dd>{{else}}<dd class="nivel-atencao">qualquer assinatura (sem <code>-allowed-signers</code> nesta máquina)</dd>{{end}}{{end}}
 {{if .Host.Has}}<dt>Chave de cifragem</dt>{{if .Host.BoxKeyID}}<dd><code>{{.Host.BoxKeyID}}</code> <span class="muted">(segredos para esta máquina são fechados com ela)</span></dd>{{else}}<dd class="muted">não informada (agente anterior à v0.18.2)</dd>{{end}}{{end}}
-<dt>Canal</dt><dd>{{.Channel}}</dd>
+<dt>Canal</dt><dd>{{.Channel}}</dd>{{if .RealTime}}
+<dt>Tempo real</dt><dd>{{.RealTime}}</dd>{{end}}
 {{if .Ring}}<dt>Grupo de implantação</dt><dd><a href="/painel/grupos-implantacao/{{.RingN}}">{{.Ring}}</a>{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="grupo de implantação novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de grupo de implantação</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este grupo de implantação){{end}}</dd>{{end}}
 </dl></div>
@@ -1774,6 +1776,38 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{range .IDs}}<input type="hidden" name="alerta" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">{{.ActionLabel}} {{.N}} alerta(s)</button> <a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">Cancelar</a>
 </form></div>
+{{template "fim"}}{{end}}
+
+{{define "perguntas"}}{{template "topo" .}}
+<h1>Automação <span class="muted">› Perguntas ao parque</span></h1>
+{{template "automacao-abas" "perguntas"}}
+<p class="muted">Uma pergunta de um catálogo fechado (só leitura) a todas as máquinas, ou a um grupo de implantação; as respostas chegam agrupadas. {{if .ChannelOn}}<strong>{{.Connected}}</strong> máquina(s) no canal em tempo real agora: essas respondem em segundos; as outras, no próximo check-in (a pergunta vale 1 h).{{else}}O canal em tempo real está desligado (Configuração › Parâmetros › Agentes): as máquinas respondem no próximo check-in (a pergunta vale 1 h).{{end}}</p>
+{{if .CanAsk}}<section class="card"><div class="card-cab"><h2>Nova pergunta</h2></div>
+<form class="grade" method="post" action="/painel/perguntas">
+<div class="campo"><label for="sensor">Pergunta</label><select id="sensor" name="sensor">{{range .Sensors}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<div class="campo"><label for="arg">Sobre o quê</label><input id="arg" name="arg" type="text" required maxlength="300" value="{{.Arg}}" placeholder="caminho, processo, serviço, chave ou programa">
+<small class="muted">{{range .Sensors}}<b>{{.Label}}</b> {{.Hint}}. {{end}}</small></div>
+<div class="campo"><label for="nome">Nome do valor <span class="muted">(só registro)</span></label><input id="nome" name="nome" type="text" maxlength="128" value="{{.Name}}" placeholder="vazio: o valor padrão"></div>
+<div class="campo"><label for="alvo">Para</label><select id="alvo" name="alvo"><option value="todas">todas as máquinas</option>{{range .Rings}}{{if .Machines}}<option value="{{.Ring}}">{{.Label}} · {{.Machines}} máq.</option>{{end}}{{end}}</select></div>
+<div class="acoes"><button type="submit">Perguntar</button> <span class="muted">Só leitura: nada muda nas máquinas. Valores de registro com nome de senha voltam ocultos.</span></div>
+</form></section>{{else}}<p class="aviso atencao">O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE): as perguntas vão assinadas, como os jobs.</p>{{end}}
+<div class="card"><div class="card-cab"><h2>Perguntas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
+<thead><tr><th>ID</th><th>Sensor</th><th>Pergunta</th><th>Para</th><th>Respostas</th><th>Por</th><th>Quando</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/perguntas/{{.ID}}">{{.ID}}</a></td><td>{{.Sensor}}</td><td><a href="/painel/perguntas/{{.ID}}"><code>{{.Question}}</code></a></td><td>{{.Target}}</td><td class="num">{{.Answered}} de {{.Machines}}</td><td>{{.By}}</td><td>{{.When}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhuma pergunta ainda.</p>{{end}}</div>
+{{template "fim"}}{{end}}
+
+{{define "pergunta"}}{{template "topo" .}}
+<p><a href="/painel/perguntas">← Perguntas ao parque</a></p>
+<h1>{{.Title}}: {{.Sensor}} <code>{{.Question}}</code></h1>
+<div class="card"><dl class="dados">
+<dt>Para</dt><dd>{{.Q.Target}} · {{.Q.Machines}} máquina(s)</dd>
+<dt>Respostas</dt><dd>{{.Answered}} de {{.Q.Machines}}{{if .Waiting}} · {{.Waiting}} aguardando{{if .Live}} <span class="muted">(a página se atualiza sozinha)</span>{{end}}{{end}}</dd>
+<dt>Por</dt><dd>{{.Q.CreatedBy}} · {{.When}}</dd>
+</dl><p><a href="/painel/perguntas/{{.Q.ID}}/csv">Baixar CSV</a> (uma linha por máquina)</p></div>
+{{range .Groups}}<div class="card"><div class="card-cab"><h2><span class="nivel-{{.Level}}">{{.Value}}</span></h2><span class="muted"><span class="barra" title="{{.Pct}}%"><span class="w{{.Pct}}"></span></span> {{.Count}} máquina(s) · {{.Pct}}%</span></div>
+<details><summary>Ver as máquinas</summary><div class="tabela"><table><thead><tr><th>Máquina</th><th>Detalhe</th></tr></thead>
+<tbody>{{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td class="muted">{{.Extra}}</td></tr>{{end}}</tbody></table></div>{{if .More}}<p class="muted">e mais {{.More}} (no CSV).</p>{{end}}</details></div>{{else}}<p class="muted">Nenhuma máquina no alvo.</p>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}

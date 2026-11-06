@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/canal"
 	"github.com/tasantiago/patchd/internal/descoberta"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/oidc"
@@ -102,6 +103,13 @@ type Store interface {
 	// CheckIn registra o contato periódico (e o canal: TLS ou não, Aula 9.2) e diz se o
 	// inventário atual tem o hash informado.
 	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string, viaTLS bool) (inventoryKnown bool, err error)
+	// Perguntas ao parque (jobs.TypeQuery).
+	CreateQuestion(ctx context.Context, q store.Question) (int64, error)
+	SetQuestionMachines(ctx context.Context, id int64, n int) error
+	Questions(ctx context.Context, limit int) ([]store.Question, error)
+	Question(ctx context.Context, id int64) (store.Question, bool, error)
+	QuestionJobs(ctx context.Context, id int64) ([]store.QuestionJob, error)
+	RingMachines(ctx context.Context, ring int) ([]string, error)
 	SetMachineCapabilities(ctx context.Context, id string, caps []string) error                      // fechar o programa com aviso
 	MarkJobsUnblocked(ctx context.Context, machineID string, ids []int64, at time.Time) (int, error) // tentar assim que fechar
 	// CheckinTLS diz por qual canal chegou o último check-in (nil: nenhum desde a Aula 9.2).
@@ -248,6 +256,7 @@ type api struct {
 	metrics     *Metrics                             // contadores da Aula 10.2; nil: desligados
 	health      *srvhealth.Monitor                   // a aba Saúde (docs/saude-servidor.md); nil: desligada
 	limiter     loginLimiter                         // falhas de login por usuário+IP e por IP
+	channel     *canal.Hub                           // canal em tempo real (internal/canal); nil: só o check-in
 	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
 	hashSlots   chan struct{}                        // conferências de senha simultâneas
 	system      *SystemInfo                          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
@@ -274,6 +283,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	// Agente.
 	mux.HandleFunc("POST /api/v1/enroll", a.enroll)
 	mux.Handle("POST /api/v1/agent/checkin", a.machineAuth(a.checkin))
+	mux.Handle("POST "+protocol.ChannelPath, a.machineAuth(a.channelWait)) // canal em tempo real
 	mux.Handle("POST /api/v1/agent/standardization", a.machineAuth(a.standardizationUser))
 	mux.Handle("POST /api/v1/agent/standardization/report", a.machineAuth(a.standardizationReport))
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
@@ -330,6 +340,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/maquinas/{id}/historico", a.adminAction(a.mergedHistoryPage))
 	mux.Handle("GET /painel/maquinas/{id}/historico/{kind}/{report}", a.adminAction(a.mergedHistoryReport))
 	mux.Handle("GET /painel/jobs", a.panelPage(a.jobsPage))
+	mux.Handle("GET /painel/perguntas", a.adminAction(a.questionsPage))                                                                    // perguntas ao parque: só admin (lê registro e arquivos)
+	mux.Handle("POST /painel/perguntas", a.sameOrigin(a.adminAction(a.askAction)))                                                         // perguntas ao parque
+	mux.Handle("GET /painel/perguntas/{id}", a.adminAction(a.questionPage))                                                                // perguntas ao parque
+	mux.Handle("GET /painel/perguntas/{id}/csv", a.adminAction(a.questionCSV))                                                             // perguntas ao parque
 	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
 	mux.Handle("POST /painel/alertas/lote", a.sameOrigin(a.adminAction(a.staleAfter(a.alertBatchAction))))                                 // fechar ou reconhecer em lote
 	mux.Handle("POST /painel/alertas/{id}/reconhecer", a.sameOrigin(a.adminAction(a.staleAfter(a.ackAlertAction))))                        // docs/monitoramento.md

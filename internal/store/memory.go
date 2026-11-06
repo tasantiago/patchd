@@ -30,8 +30,12 @@ type Memory struct {
 	links             []protocol.IdentityLink
 	now               func() time.Time
 
-	jobs   []*memJob // fila de jobs (Aula 8.1)
-	jobSeq int64
+	jobs []*memJob // fila de jobs (Aula 8.1)
+	// jobHook: o aviso de job novo (o gatilho do canal no PostgreSQL); chamado fora da trava.
+	jobHook func(machineID string)
+	// questions: as perguntas ao parque (ID = posição + 1).
+	questions []Question
+	jobSeq    int64
 
 	windows       map[int]RingWindow      // janelas de manutenção por grupo de implantação (Aula 8.3)
 	buildingRings map[string]BuildingRing // grupo de implantação pelo prédio

@@ -68,11 +68,28 @@ const CapabilityCloseApps = "fechar-programa-v1"
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
 
+// ChannelPath: o canal em tempo real (long-poll). O agente faz POST e o servidor segura a
+// resposta até ~45 s, ou responde antes com Wake quando há algo para a máquina.
+const ChannelPath = "/api/v1/agent/canal"
+
+// ChannelResponse é a resposta do canal.
+type ChannelResponse struct {
+	// Enabled: false, o canal está desligado no servidor; o agente para até o check-in dizer
+	// que voltou (CheckinResponse.Channel).
+	Enabled bool `json:"enabled"`
+	// Wake: há algo para a máquina; o agente faz o check-in agora.
+	Wake   bool   `json:"wake"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // CheckinResponse diz ao agente se ele precisa enviar o inventário e, quando há uma
 // versão do agente publicada diferente da dele, qual é (Aula 5.4). Quando o servidor
 // distribui o catálogo offline do Windows, diz qual é o atual (Aula 6.6).
 type CheckinResponse struct {
-	InventoryKnown bool            `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
+	InventoryKnown bool `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
+	// Channel: o servidor tem o canal em tempo real ligado; o agente mantém a espera aberta
+	// (ChannelPath). Ausente (servidor antigo, ou desligado): só o check-in.
+	Channel        bool            `json:"channel,omitempty"`
 	ServerTime     time.Time       `json:"server_time"`
 	AgentUpdate    *AgentUpdate    `json:"agent_update,omitempty"`
 	OfflineCatalog *OfflineCatalog `json:"offline_catalog,omitempty"`

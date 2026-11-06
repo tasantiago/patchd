@@ -22,6 +22,7 @@ import (
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/canal"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
@@ -486,6 +487,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		}
 		logger.Info("cache de repositórios ligado (apt: proxy HTTP nesta porta; Fedora: /repo/fedora/; contagens: /repo/stats)",
 			"dir", cfg.RepoCacheDir, "hosts", cfg.RepoCacheHosts)
+	}
+	// Canal em tempo real (internal/canal): só com o PostgreSQL (o aviso vem do gatilho dos jobs).
+	if pg, ok := st.(*store.Postgres); ok {
+		hub := canal.New()
+		startChannel(ctx, logger, pg, hub)
+		apiOpts = append(apiOpts, api.WithChannel(hub))
 	}
 	handler := newHandler(api.New(st, logger, apiOpts...), repo)
 	ls := []listener{{name: "API", addr: cfg.ListenAddr, handler: handler}}
