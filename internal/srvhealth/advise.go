@@ -373,14 +373,25 @@ func Advise(in Input) Report {
 		g.Value = pctText(worst.FreePct) + " livre"
 		g.Pct = pctInt(100 - worst.FreePct)
 		sub := []string{Bytes(worst.Free) + " em " + worst.Name}
+		// O banco enche o disco dele: o do armazenamento do banco, se a pasta é conhecida (os
+		// volumes dos containers); senão, por cautela, o mais cheio.
+		dbDisk, onDB := worst, false
+		if d := dbDiskOf(in.Disks); d != nil {
+			dbDisk, onDB = d, true
+		}
 		if growth > 0 {
-			days := float64(worst.Free) / growth
+			days := float64(dbDisk.Free) / growth
 			lvl := levelFor(days, daysWarn, daysCrit, true)
-			sub = append(sub, "cheio em ~"+daysText(days)+" no ritmo do banco")
+			sub = append(sub, "o do banco cheio em ~"+daysText(days)+" no ritmo dele")
+			why := fmt.Sprintf("O banco cresce %s por dia e restam %s em %s, o volume onde ele fica (junto com os volumes dos containers).",
+				Bytes(uint64(growth)), Bytes(dbDisk.Free), dbDisk.Name)
+			if !onDB {
+				why = fmt.Sprintf("O banco cresce %s por dia e restam %s em %s. A conta vale se o PostgreSQL grava no mesmo disco (o volume pgdata do compose fica na mesma máquina).",
+					Bytes(uint64(growth)), Bytes(dbDisk.Free), dbDisk.Name)
+			}
 			if lvl != LevelOK {
 				add(Advice{Resource: ResDisk, Level: lvl, Title: "O disco enche em " + daysText(days),
-					Why: fmt.Sprintf("O banco cresce %s por dia e restam %s em %s. A conta vale se o PostgreSQL grava no mesmo disco (o volume pgdata do compose fica na mesma máquina).",
-						Bytes(uint64(growth)), Bytes(worst.Free), worst.Name),
+					Why:    why,
 					Action: "Aumente o disco antes disso, ou encurte a retenção (Configuração › Parâmetros › Retenção) para o banco crescer menos."})
 				g.Level = worse(g.Level, lvl)
 			}
@@ -638,3 +649,23 @@ func (a Advice) LevelText() string { return levelText(a.Level) }
 
 // LevelText é o nível em palavra.
 func (g Gauge) LevelText() string { return levelText(g.Level) }
+
+// dbDiskOf: o disco medido do armazenamento do banco (Path.DB); a pasta repetida aponta para a
+// primeira do mesmo volume. nil: nenhuma pasta marcada.
+func dbDiskOf(disks []Disk) *Disk {
+	for i := range disks {
+		d := &disks[i]
+		if !d.DB {
+			continue
+		}
+		if d.Measured() {
+			return d
+		}
+		for j := range disks {
+			if d.SameAs != "" && disks[j].Name == d.SameAs && disks[j].Measured() {
+				return &disks[j]
+			}
+		}
+	}
+	return nil
+}

@@ -69,7 +69,12 @@ type PoolStat struct {
 }
 
 // Path é uma pasta de dados cujo disco interessa.
-type Path struct{ Name, Dir string }
+type Path struct {
+	Name, Dir string
+	// DB: a pasta fica no mesmo armazenamento do banco (nos containers, os volumes nomeados:
+	// o do PostgreSQL mora junto). A previsão "o disco enche em" usa este, não o mais cheio.
+	DB bool
+}
 
 // Disk é o espaço de uma pasta agora.
 type Disk struct {
@@ -78,6 +83,7 @@ type Disk struct {
 	FreePct     float64
 	Err         string
 	SameAs      string // outra pasta do mesmo volume (contada uma vez só)
+	DB          bool   // no armazenamento do banco (Path.DB)
 	device      uint64
 	deviceKnown bool
 	statOK      bool
@@ -521,6 +527,7 @@ func (m *Monitor) Disks() []Disk {
 			continue
 		}
 		d := statDisk(p)
+		d.DB = p.DB
 		if d.statOK && d.deviceKnown {
 			if other, ok := seen[d.device]; ok {
 				d.SameAs = other

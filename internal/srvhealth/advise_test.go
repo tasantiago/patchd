@@ -178,3 +178,26 @@ func TestGrowth(t *testing.T) {
 		t.Fatal("encolheu: zero")
 	}
 }
+
+// O banco fica no armazenamento dos volumes (Path.DB): a previsão usa esse disco, não o mais
+// cheio. As versões do agente num /home de 10 GB não fazem o banco "encher o disco".
+func TestAdviseDiskDoBanco(t *testing.T) {
+	in := baseInput(day(nil))
+	in.Disks = []Disk{
+		{Name: "Conteúdo", DB: true, Total: 160 << 30, Free: 139 << 30, FreePct: 87, statOK: true},
+		{Name: "Cache de repositórios", DB: true, SameAs: "Conteúdo"},
+		{Name: "Versões do agente", Total: 10 << 30, Free: 6900 << 20, FreePct: 67, statOK: true},
+	}
+	// 517 MiB por dia: o /home (6,9 GB) acabaria em 14 dias; o volume do banco, em 275.
+	in.Hours = []Hour{{Hour: now.Add(-96 * time.Hour), DBBytes: 1 << 30}}
+	in.DB = &DBStats{Bytes: 1<<30 + 4*517<<20}
+	if r := Advise(in); resources(r) != "" {
+		t.Fatalf("aviso falso: %s %+v", resources(r), r.Advice)
+	}
+	// Sem saber onde o banco fica (fora de container): por cautela, o disco mais cheio.
+	in.Disks[0].DB, in.Disks[1].DB = false, false
+	r := Advise(in)
+	if resources(r) != "Disco:critico" || !strings.Contains(r.Advice[0].Title, "13 dias") {
+		t.Fatalf("%s %+v", resources(r), r.Advice)
+	}
+}
