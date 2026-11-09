@@ -19,18 +19,18 @@ import (
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
 	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
-	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec`
+	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
 	var rings []int16
 	var observe, ttl, delay, closeDelay int
-	var cur, launched, accepted int16
+	var cur, launched, accepted, autoResend int16
 	var dStart, dDur *int
 	var dTZ *string
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
 		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
-		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay)
+		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend)
 	if err != nil {
 		return c, err
 	}
@@ -48,6 +48,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	c.Observe, c.TTL = time.Duration(observe)*time.Second, time.Duration(ttl)*time.Second
 	c.RebootDelay = time.Duration(delay) * time.Second
 	c.CloseDelay = time.Duration(closeDelay) * time.Second
+	c.AutoResend = int(autoResend)
 	c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx = int(cur), int(launched), int(accepted)
 	c.RingDoneAt = utc(c.RingDoneAt)
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
@@ -72,10 +73,10 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 	var id int64
 	err := p.pool.QueryRow(ctx, `
 		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec,
-			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
+			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
 		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
-		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second)).Scan(&id)
+		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second), c.AutoResend).Scan(&id)
 	return id, err
 }
 
@@ -126,6 +127,28 @@ func (p *Postgres) SaveCampaign(ctx context.Context, c campaign.Campaign, from s
 	return tag.RowsAffected() == 1, err
 }
 
+// RequestResend grava o pedido de reenvio do admin (os motivos) e põe a campanha em andamento,
+// só se ela ainda estiver no estado from. O motor pega o pedido no próximo minuto (TakeResend).
+func (p *Postgres) RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error) {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE campaigns SET resend = $2, state = 'em_andamento', detail = $3, updated_at = now()
+		WHERE id = $1 AND state = $4`, id, reasons, detail, from)
+	return tag.RowsAffected() == 1, err
+}
+
+// TakeResend devolve e esvazia o pedido de reenvio (nil: nenhum), numa operação só: o pedido
+// feito enquanto o motor trabalha fica para o minuto seguinte, não se perde.
+func (p *Postgres) TakeResend(ctx context.Context, id int64) ([]string, error) {
+	var out []string
+	err := p.pool.QueryRow(ctx, `
+		UPDATE campaigns c SET resend = '{}' FROM (SELECT id, resend FROM campaigns WHERE id = $1 AND resend <> '{}' FOR UPDATE) o
+		WHERE c.id = o.id RETURNING o.resend`, id).Scan(&out)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return out, err
+}
+
 // notes: o text[] não aceita NULL.
 func notes(n []string) []string {
 	if n == nil {
@@ -151,11 +174,13 @@ func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campa
 	})
 }
 
-// DismissJob encerra um job adiado cuja nova tentativa não faz mais sentido (Aula 14.9):
-// adiado → dispensado, com o motivo acrescentado ao detalhe. Só sai de "adiado".
+// DismissJob encerra um job adiado (ou falho, expirado, recusado, no reenvio) cuja nova
+// tentativa não faz mais sentido (Aula 14.9): a máquina já não precisa. Vira "dispensado",
+// com o motivo acrescentado ao detalhe.
 func (p *Postgres) DismissJob(ctx context.Context, id int64, why string) (bool, error) {
 	tag, err := p.pool.Exec(ctx, `
-		UPDATE jobs SET state = 'dispensado', detail = detail || '; ' || $2 WHERE id = $1 AND state = 'adiado'`, id, why)
+		UPDATE jobs SET state = 'dispensado', detail = detail || '; ' || $2
+		WHERE id = $1 AND state IN ('adiado', 'falhou', 'expirado', 'rejeitado')`, id, why)
 	return tag.RowsAffected() == 1, err
 }
 
@@ -254,6 +279,32 @@ func (m *Memory) SaveCampaign(ctx context.Context, c campaign.Campaign, from str
 	return false, nil
 }
 
+// RequestResend grava o pedido de reenvio.
+func (m *Memory) RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.campaigns {
+		if c := &m.campaigns[i]; c.ID == id && c.State == from {
+			c.State, c.Detail, c.UpdatedAt = campaign.StateRunning, detail, m.now()
+			if m.campaignResend == nil {
+				m.campaignResend = map[int64][]string{}
+			}
+			m.campaignResend[id] = slices.Clone(reasons)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// TakeResend devolve e esvazia o pedido de reenvio.
+func (m *Memory) TakeResend(ctx context.Context, id int64) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.campaignResend[id]
+	delete(m.campaignResend, id)
+	return r, nil
+}
+
 // CampaignJobs lista os jobs da campanha num grupo de implantação.
 func (m *Memory) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	m.mu.RLock()
@@ -308,7 +359,7 @@ func (m *Memory) DismissJob(ctx context.Context, id int64, why string) (bool, er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, j := range m.jobs {
-		if j.ID == id && j.State == "adiado" {
+		if j.ID == id && slices.Contains([]string{"adiado", "falhou", "expirado", "rejeitado"}, j.State) {
 			j.State, j.Detail = "dispensado", j.Detail+"; "+why
 			return true, nil
 		}

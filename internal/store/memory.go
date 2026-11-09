@@ -45,6 +45,8 @@ type Memory struct {
 
 	campaigns   []campaign.Campaign // campanhas (Aula 8.5)
 	campaignSeq int64
+	// campaignResend: os pedidos de reenvio das campanhas (RequestResend).
+	campaignResend map[int64][]string
 
 	approvals map[string]PatchApproval // aprovação de patches (Aula 13.1), por ApprovalKey
 

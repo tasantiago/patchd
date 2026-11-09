@@ -55,6 +55,7 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		"fonte estranha":                {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
 		"observação fora":               {formCampanha("observacao", "5"), "observação da lista"},
 		"prazo fora":                    {formCampanha("prazo", "2"), "prazo da lista"},
+		"reenvios fora":                 {formCampanha("reenvios", "9"), "reenvios automáticos da lista"},
 		"sem nome":                      {formCampanha("nome", "   "), "dê um nome"},
 		"janela sem janela":             {formCampanha("quando", "janela"), "Grupo de implantação sem janela de manutenção: 0, 1"},
 	} {
@@ -353,5 +354,57 @@ func TestCampanhaFiltroEPaginas(t *testing.T) {
 	b = pagina(h, "GET", base+"?grupo=0", sessaoTeste, nil).Body.String()
 	if strings.Contains(b, "1–100 de 180") || !strings.Contains(b, "ver os jobs") {
 		t.Error("o grupo 0 escolhido não mostra os jobs do 1")
+	}
+}
+
+// Reenviar o que não deu certo: o cartão aparece na campanha pausada com falhas no grupo atual,
+// com a contagem por motivo; o pedido volta a campanha a andar e fica na auditoria.
+func TestReenviarFalhasPeloPainel(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	ctx := context.Background()
+	id, _ := st.CreateCampaign(ctx, campaign.Campaign{Name: "reiniciar", Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Hour, CreatedBy: "t", AutoResend: 2})
+	c, _, _ := st.Campaign(ctx, id)
+	c.LaunchedIdx, c.State = 0, campaign.StatePaused
+	_, _ = st.SaveCampaign(ctx, c, campaign.StateRunning)
+	agora := time.Now()
+	for _, maq := range []string{"60ef97e4-0001", "7aa604f7-0002"} {
+		jid, _ := st.NextJobID(ctx)
+		if err := st.CreateJob(ctx, store.NewJob{ID: jid, MachineID: maq, Type: jobs.TypeRescan, Signed: protocol.SignedJob{Payload: "{}", Signature: "s"},
+			CreatedBy: "t", NotAfter: agora.Add(time.Hour), CampaignID: id, CampaignIdx: 0}); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = st.FinishJob(ctx, jid, jobs.StateRejected, "x", agora)
+	}
+	det := fmt.Sprintf("/painel/campanhas/%d", id)
+	b := pagina(h, "GET", det, sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"Reenviar o que não deu certo", `name="motivo" value="rejeitado" checked`, "2 job(s) recusados pelo agente",
+		"até 2 vez(es) por máquina"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("página: falta %q", quer)
+		}
+	}
+	if b := pagina(h, "GET", det, sessaoTeste, nil).Body.String(); strings.Contains(b, "Reenviar o que não deu certo") {
+		t.Error("leitura vê o reenvio")
+	}
+	if r := pagina(h, "POST", det+"/reenviar", sessaoTeste, url.Values{"motivo": {"rejeitado"}}); r.Code != http.StatusForbidden {
+		t.Errorf("leitura reenvia: %d", r.Code)
+	}
+	if l := local(pagina(h, "POST", det+"/reenviar", sessaoAdmin, url.Values{})); l != det+"?erro=reenvio-vazio" {
+		t.Errorf("vazio: %s", l)
+	}
+	if r := pagina(h, "POST", det+"/reenviar", sessaoAdmin, url.Values{"motivo": {"cancelado"}}); r.Code != http.StatusBadRequest {
+		t.Errorf("motivo fora da lista: %d", r.Code)
+	}
+	if l := local(pagina(h, "POST", det+"/reenviar", sessaoAdmin, url.Values{"motivo": {"rejeitado"}})); l != det+"?feito=reenviar" {
+		t.Fatalf("reenviar: %s", l)
+	}
+	if c, _, _ := st.Campaign(ctx, id); c.State != campaign.StateRunning || !strings.Contains(c.Detail, "reenvio pedido por thyago (rejeitado)") {
+		t.Errorf("campanha: %+v", c)
+	}
+	if r, _ := st.TakeResend(ctx, id); len(r) != 1 || r[0] != "rejeitado" {
+		t.Errorf("pedido guardado: %v", r)
+	}
+	if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "campanha.reenviar"}); len(ev) != 1 || ev[0].Detail != "motivos: rejeitado" {
+		t.Errorf("trilha: %+v", ev)
 	}
 }

@@ -19,10 +19,13 @@ type contratoCampanhas interface {
 	SaveCampaign(ctx context.Context, c campaign.Campaign, from string) (bool, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
 	DismissJob(ctx context.Context, id int64, why string) (bool, error)
+	RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error)
+	TakeResend(ctx context.Context, id int64) ([]string, error)
 }
 
 func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	ctx := context.Background()
+	defer testarReenvio(t, st) // no fim: a campanha dele não entra nas contagens daqui
 	if _, err := st.SaveInventory(ctx, "camp-a", protocol.InventoryReport{SchemaVersion: 1, Hash: "camp-a"}); err != nil {
 		t.Fatal(err)
 	}
@@ -182,4 +185,36 @@ func TestCampanhaHorarioFixoPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testarCampanhaHorarioFixo(t, NewPostgres(pool))
+}
+
+// Reenvio: os reenvios automáticos gravados; o pedido do admin só no estado lido, e o motor o
+// pega uma vez só.
+func testarReenvio(t *testing.T, st contratoCampanhas) {
+	ctx := context.Background()
+	id, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "reenvio", Type: "rescan", Rings: []int{0}, TTL: time.Hour, CreatedBy: "t", AutoResend: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _, _ := st.Campaign(ctx, id)
+	if c.AutoResend != 3 {
+		t.Errorf("reenvios automáticos: %d", c.AutoResend)
+	}
+	if r, err := st.TakeResend(ctx, id); err != nil || r != nil {
+		t.Fatalf("sem pedido: %v %v", r, err)
+	}
+	if ok, _ := st.RequestResend(ctx, id, []string{"expirado"}, "x", campaign.StatePaused); ok {
+		t.Error("gravou com o estado errado")
+	}
+	if ok, err := st.RequestResend(ctx, id, []string{"expirado", "rejeitado"}, "reenvio pedido", campaign.StateRunning); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if c, _, _ := st.Campaign(ctx, id); c.Detail != "reenvio pedido" || c.State != campaign.StateRunning {
+		t.Errorf("campanha: %+v", c)
+	}
+	if r, err := st.TakeResend(ctx, id); err != nil || len(r) != 2 || r[0] != "expirado" || r[1] != "rejeitado" {
+		t.Fatalf("pegar: %v %v", r, err)
+	}
+	if r, _ := st.TakeResend(ctx, id); r != nil {
+		t.Errorf("pegou duas vezes: %v", r)
+	}
 }

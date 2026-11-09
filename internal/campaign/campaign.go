@@ -82,7 +82,11 @@ type Campaign struct {
 	// CloseDelay (terceiros, só com horário fixo ou janela): com o programa aberto, o agente
 	// avisa quem estiver na sessão, espera isso e fecha o programa (normal, e à força se ele
 	// não fechar). 0: não fecha, adia como sempre. Só para agentes que anunciam a capacidade.
-	CloseDelay  time.Duration
+	CloseDelay time.Duration
+	// AutoResend: quantas vezes, por máquina, o motor reenvia sozinho o job que falhou ou
+	// expirou (máquina desligada, rede) antes de contar como falha e pausar; 0: nenhuma. O
+	// recusado não volta sozinho (assinatura, sistema: tende a recusar de novo).
+	AutoResend  int
 	Observe     time.Duration
 	TTL         time.Duration // prazo dos jobs sem janela
 	State       string
@@ -128,6 +132,8 @@ func (c Campaign) Validate() error {
 		return fmt.Errorf("o aviso do reinício fica entre %v e %v", jobs.MinRebootDelay, jobs.MaxRebootDelay)
 	case c.Type != jobs.TypeReboot && c.RebootDelay != 0:
 		return errors.New("só a campanha de reinício leva aviso")
+	case c.AutoResend < 0 || c.AutoResend > MaxAutoResend:
+		return fmt.Errorf("os reenvios automáticos vão de 0 a %d", MaxAutoResend)
 	case c.Type == jobs.TypeServerURL:
 		return errors.New("campanha de troca de endereço ainda não existe: use job create -type server_url -ring N ou o painel")
 	case c.Type == jobs.TypeBIOSPassword:
@@ -203,6 +209,8 @@ type Store interface {
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]JobState, error)
 	RingMachines(ctx context.Context, ring int) ([]string, error)
 	DismissJob(ctx context.Context, id int64, why string) (bool, error)
+	// TakeResend: o pedido de reenvio do admin (os motivos), esvaziado ao ler.
+	TakeResend(ctx context.Context, id int64) ([]string, error)
 }
 
 // Novas tentativas dos jobs adiados (Aula 14.9): o agente responde "adiado" quando não deu
@@ -212,6 +220,19 @@ const (
 	RetryAfter  = time.Hour
 	MaxAttempts = 24
 )
+
+// Reenvio das falhas: os motivos (o estado do job, ou o adiado que esgotou as tentativas).
+const (
+	ReasonFailed    = jobs.StateFailed
+	ReasonExpired   = jobs.StateExpired
+	ReasonRejected  = jobs.StateRejected
+	ReasonPostponed = "adiado no limite de tentativas"
+	// MaxAutoResend: o maior AutoResend.
+	MaxAutoResend = 5
+)
+
+// ResendReasons: os motivos que o admin pode reenviar, na ordem da tela.
+var ResendReasons = []string{ReasonExpired, ReasonFailed, ReasonRejected, ReasonPostponed}
 
 // ThirdPartyPlanner decide a campanha de terceiros (Aula 14.7). Ready confere, a cada grupo de implantação
 // liberado, que a versão continua aprovada e que o instalador confere no cache: reason não
@@ -317,7 +338,34 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 		if err != nil {
 			return err
 		}
-		st := ringStatus(list, now)
+		st := ringStatus(list, now, c.AutoResend)
+		// O reenvio pedido pelo admin: os sem sucesso dos motivos escolhidos vão de novo.
+		reasons, err := e.Store.TakeResend(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		if len(reasons) > 0 {
+			var pick []JobState
+			for _, f := range st.failedJobs {
+				if slices.Contains(reasons, f.reason) {
+					pick = append(pick, f.job)
+				}
+			}
+			n, err := e.retry(ctx, c, pick, now)
+			if err != nil {
+				return err
+			}
+			c.Notes = append(slices.Clone(c.Notes), fmt.Sprintf("grupo de implantação %d: reenvio pedido (%s): %d job(s) novo(s), %d dispensado(s) (a máquina já não precisa)",
+				c.Ring(), strings.Join(reasons, ", "), n, len(pick)-n))
+			e.log(c, "reenvio das falhas", "anel", c.Ring(), "motivos", reasons, "jobs", n)
+			if c.State != StateRunning {
+				return e.save(ctx, c)
+			}
+			if list, err = e.Store.CampaignJobs(ctx, c.ID, c.CurrentIdx); err != nil {
+				return err
+			}
+			st = ringStatus(list, now, c.AutoResend)
+		}
 		if len(st.retry) > 0 {
 			reissued, err := e.retry(ctx, c, st.retry, now)
 			if err != nil {
@@ -573,15 +621,24 @@ type ringState struct {
 	machines, open, waiting int
 	failed                  []string
 	reasons                 map[string]int // sem sucesso por motivo: expirado, rejeitado, falhou...
+	failedJobs              []failedJob    // os sem sucesso, para o reenvio pedido pelo admin
 	retry                   []JobState     // adiados cujo intervalo passou
 	next                    time.Time      // a próxima nova tentativa entre os que esperam
 }
 
-func ringStatus(list []JobState, now time.Time) ringState {
-	latest, attempts := map[string]JobState{}, map[string]int{}
+type failedJob struct {
+	job    JobState
+	reason string
+}
+
+func ringStatus(list []JobState, now time.Time, autoResend int) ringState {
+	latest, attempts, fails := map[string]JobState{}, map[string]int{}, map[string]int{}
 	for _, j := range list {
 		k := j.MachineID + "\x00" + j.Slot // uma máquina com vários programas: cada um conta
 		attempts[k]++
+		if j.State == jobs.StateFailed || j.State == jobs.StateExpired {
+			fails[k]++
+		}
 		if cur, ok := latest[k]; !ok || j.ID > cur.ID {
 			latest[k] = j
 		}
@@ -594,7 +651,22 @@ func ringStatus(list []JobState, now time.Time) ringState {
 			st.open++
 		case j.State == jobs.StatePostponed && attempts[m] >= MaxAttempts:
 			st.failed = append(st.failed, fmt.Sprintf("job %d adiado na tentativa %d de %d", j.ID, attempts[m], MaxAttempts))
-			st.count("adiado no limite de tentativas")
+			st.fail(j, ReasonPostponed)
+		case (j.State == jobs.StateFailed || j.State == jobs.StateExpired) && fails[m] <= autoResend:
+			// Reenvio automático: o expirado (máquina desligada) vai de novo já; o que falhou,
+			// depois do intervalo.
+			at := now
+			if j.State == jobs.StateFailed && j.FinishedAt != nil {
+				at = j.FinishedAt.Add(RetryAfter)
+			}
+			if now.Before(at) {
+				st.waiting++
+				if st.next.IsZero() || at.Before(st.next) {
+					st.next = at
+				}
+				continue
+			}
+			st.retry = append(st.retry, j)
 		case j.State == jobs.StatePostponed:
 			at := now
 			if j.FinishedAt != nil {
@@ -614,17 +686,25 @@ func ringStatus(list []JobState, now time.Time) ringState {
 		case j.State == jobs.StateDone, j.State == jobs.StateDismissed:
 		default:
 			st.failed = append(st.failed, fmt.Sprintf("job %d %s", j.ID, j.State))
-			st.count(j.State)
+			st.fail(j, j.State)
 		}
 	}
 	return st
 }
 
-func (st *ringState) count(reason string) {
+func (st *ringState) fail(j JobState, reason string) {
 	if st.reasons == nil {
 		st.reasons = map[string]int{}
 	}
 	st.reasons[reason]++
+	st.failedJobs = append(st.failedJobs, failedJob{job: j, reason: reason})
+}
+
+// FailedByReason: os jobs sem sucesso do grupo de implantação (a lista de CampaignJobs), por
+// motivo, como o motor conta (o último job de cada máquina; os que ainda vão ter reenvio
+// automático não contam).
+func FailedByReason(list []JobState, now time.Time, autoResend int) map[string]int {
+	return ringStatus(list, now, autoResend).reasons
 }
 
 // failedSummary: "231 expirado, 14 rejeitado, 2 falhou", do motivo mais comum ao menos.

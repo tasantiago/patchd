@@ -385,6 +385,31 @@ terceiros dá para filtrar por programa. Cem jobs por página, com anterior/pró
 que fica fora por inteiro (sem inventário do Windows, arquitetura desconhecida) aparece uma
 vez nas notas, não uma vez por programa.
 
+O detalhe da campanha pausada começa pelo resumo por motivo ("247 job(s) sem sucesso (231
+expirado, 14 rejeitado, 2 falhou)") e o que fazer; a lista dos jobs fica no fim, atrás do
+"leia mais" (no painel) e fora do e-mail de campanha pausada.
+
+### Reenviar o que não deu certo
+
+Duas formas, que se somam:
+
+- **Reenvios automáticos** (formulário da campanha, ou `campaign create -resend N`): de 0 a 5
+  vezes por máquina, o motor manda de novo o job que **expirou** (máquina desligada ou fora da
+  rede no prazo: vai de novo na hora, com o mesmo prazo, janela ou horário da campanha) ou que
+  **falhou** (depois de 1 hora). Só esgotados os reenvios a falha conta e pausa a campanha. O
+  **recusado** não volta sozinho: o agente recusa por assinatura, sistema ou versão, e tende a
+  recusar de novo. Padrão 0: a primeira falha pausa, como antes.
+- **Botão "Reenviar"** (página da campanha, só admin, na pausada ou em andamento): o cartão
+  "Reenviar o que não deu certo" conta os jobs sem sucesso do grupo de implantação atual por
+  motivo (expirados, que falharam, recusados, adiados até o limite de tentativas), todos
+  marcados; desmarque o que não quer. No minuto seguinte o servidor refaz o plano de cada
+  máquina e manda o job de novo; a que já não precisa (em dia, sem o programa, sem reinício
+  pendente) sai como "dispensado". A campanha volta a andar **sem aceitar as falhas**: o que
+  falhar de novo pausa de novo (diferente de "Retomar", que aceita as falhas e segue para o
+  próximo grupo). O pedido fica na auditoria (`campanha.reenviar`) e nas notas da campanha.
+
+O adiado até o limite (24 tentativas) ganha uma tentativa a mais por pedido.
+
 ## Autoatendimento: o canal local no Windows (Aula 17.3)
 
 O agente do Windows atende o app do usuário por um named pipe, `\\.\pipe\patchd-autoatendimento`,

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/tasantiago/patchd/internal/jobs"
 )
@@ -79,4 +81,39 @@ func Change(ctx context.Context, st ChangeStore, c Campaign, op, by string) (can
 		}
 	}
 	return canceledJobs, nil
+}
+
+// ResendStore é o que o pedido de reenvio usa do banco.
+type ResendStore interface {
+	RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error)
+}
+
+// RequestResend pede ao motor que reenvie, no grupo de implantação atual, os jobs sem sucesso
+// dos motivos escolhidos (ResendReasons). Vale na campanha pausada ou em andamento; a pausada
+// volta a andar, sem aceitar as falhas: o que falhar de novo pausa de novo. O motor faz o
+// reenvio no próximo minuto, refazendo o plano de cada máquina (a que já não precisa sai
+// como "dispensado").
+func RequestResend(ctx context.Context, st ResendStore, c Campaign, reasons []string, by string) error {
+	if c.State != StatePaused && c.State != StateRunning {
+		return fmt.Errorf("%w: a campanha está %s; o reenvio vale na pausada ou em andamento", ErrState, c.State)
+	}
+	if c.LaunchedIdx != c.CurrentIdx {
+		return fmt.Errorf("%w: o grupo de implantação atual ainda não foi liberado", ErrState)
+	}
+	if len(reasons) == 0 {
+		return errors.New("escolha o que reenviar")
+	}
+	for _, r := range reasons {
+		if !slices.Contains(ResendReasons, r) {
+			return fmt.Errorf("motivo de reenvio desconhecido %q", r)
+		}
+	}
+	ok, err := st.RequestResend(ctx, c.ID, reasons, fmt.Sprintf("reenvio pedido por %s (%s): sai no próximo minuto", by, strings.Join(reasons, ", ")), c.State)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrChanged
+	}
+	return nil
 }

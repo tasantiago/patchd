@@ -1508,6 +1508,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{$vazios := 0}}{{range .Form.Rings}}{{if not (or .Machines .Checked)}}{{$vazios = 1}}{{end}}{{end}}
 {{if $vazios}}<details class="vazios"><summary>Grupos de implantação sem máquinas</summary><div class="chips">{{range .Form.Rings}}{{if not (or .Machines .Checked)}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}"> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div></details>{{end}}
 </fieldset>
+<div class="campo"><label for="reenvios">Reenvios automáticos das falhas</label><select id="reenvios" name="reenvios">{{range $n := .Form.Resends}}<option value="{{$n}}" {{if eq $n $.Form.Resend}}selected{{end}}>{{if eq $n 0}}nenhum: a primeira falha pausa a campanha{{else}}até {{$n}} vez(es) por máquina{{end}}</option>{{end}}</select>
+<small class="muted">o job que expirou (máquina desligada, fora da rede) vai de novo na hora; o que falhou, depois de 1 h. Recusado não volta sozinho. Só depois disso a falha conta e pausa</small></div>
 <div class="campo"><label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <small class="muted">depois de um grupo de implantação terminar sem falha, quanto esperar antes do próximo</small></div>
 <fieldset class="campo quando"><legend>Quando</legend>
@@ -1529,6 +1531,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}{{if .Extra}} · {{.Extra}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada grupo de implantação concluído</dd>
+<dt>Reenvios automáticos</dt><dd>{{if .Form.Resend}}até {{.Form.Resend}} vez(es) por máquina, nas falhas e nos expirados{{else}}nenhum: a primeira falha pausa a campanha{{end}}</dd>
 </dl></div>
 <div class="card"><div class="card-cab"><h2>Grupos de implantação, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Grupo de implantação</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
 <tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td>{{if $.ProgramL}}<td>{{$r.Preview}}</td>{{end}}<td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table></div></div>
@@ -1537,7 +1540,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}"><input type="hidden" name="hora" value="{{.Form.DailyStart}}"><input type="hidden" name="duracao" value="{{.Form.DailyDur}}">
-<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}
+<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
@@ -1555,6 +1558,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Programa aberto</dt><dd>{{.CloseL}}</dd>{{end}}{{if .Fallback}}
 <dt>Fonte do Windows</dt><dd>{{.Fallback}}</dd>{{end}}
 <dt>Observação</dt><dd>{{.Observe}}</dd>
+<dt>Reenvios automáticos</dt><dd>{{.ResendL}}</dd>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{template "leia-mais" (leia .C.Detail)}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
@@ -1564,6 +1568,14 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
 <span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
+{{if .Resend}}<div class="card"><div class="card-cab"><h2>Reenviar o que não deu certo</h2><span class="muted">grupo de implantação atual</span></div>
+<form class="limpeza" method="post" action="/painel/campanhas/{{.C.ID}}/reenviar">
+<fieldset class="escolhas"><legend>O que reenviar</legend>
+{{range .Resend}}<label class="opcao"><input type="checkbox" name="motivo" value="{{.Value}}" checked><span><b>{{.N}} job(s) {{.Label}}</b></span></label>{{end}}
+</fieldset>
+<p class="muted nota-limpeza">No próximo minuto o servidor refaz o plano de cada máquina e manda o job de novo; a que já não precisa (já em dia, sem o programa) sai como dispensada. A campanha volta a andar sem aceitar as falhas: o que falhar de novo pausa de novo.</p>
+<div class="acoes"><button type="submit">Reenviar</button></div>
+</form></div>{{end}}
 {{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
 {{if .Counts}}<ul class="chips camp-estados" aria-label="jobs por estado">{{range .Counts}}<li><a class="chip{{if .Active}} ativo{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}}><span class="job {{.State}}">{{.Label}}</span> <b>{{.N}}</b></a></li>{{end}}</ul>{{end}}
