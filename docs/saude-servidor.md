@@ -53,6 +53,27 @@ O veredito no alto junta os recursos: **Aumente agora** (algum crítico), **Fiqu
 (alguma atenção) ou **Nada a aumentar agora**, com a folga da CPU ("aguenta cerca de 3× a
 carga de hoje antes de chegar a 70%") e o crescimento do banco por dia, para planejar.
 
+### O que o próprio servidor faz para não pesar no pool
+
+Antes de aumentar, confira se a versão já traz estes cuidados (desde 09/11/2026):
+
+- **O que fica preso a uma sessão não usa o pool.** O `LISTEN` do canal em tempo real e as
+  travas de sessão (o motor de campanhas, os e-mails, a sincronização do catálogo) usam uma
+  conexão própria. Antes, o `LISTEN` tirava uma das 4 vagas para sempre, e cada trava prendia
+  uma vaga enquanto o trabalho usava outra. Essas conexões contam no `max_connections` do
+  PostgreSQL (até 4 a mais), não no `pool_max_conns`.
+- **A avaliação do parque usa um quarto do pool** (1 conexão no pool padrão de 4; no máximo
+  4), em vez de 4 em paralelo, que ocupavam o pool inteiro por quase um minuto a cada 5.
+- **A avaliação guardada vale 1 hora** sem mudança (era 15 minutos). Inventário, busca ou
+  catálogo novos refazem a máquina na hora, como antes.
+- **As amostras de minuto do desempenho ficam 48 horas** (eram 7 dias, ~3,6 GB num parque de
+  2.000 máquinas): só a curva de 24 horas e a montagem das horas as leem. O espaço apagado é
+  reaproveitado pelo PostgreSQL (não volta para o disco), então o banco **para de crescer**
+  em vez de encolher; o "cresce X por dia" da tela, que olha os últimos 7 dias, cai sozinho
+  nos dias seguintes.
+- **O motor de campanhas não traz o payload dos jobs** a cada minuto: o programa de cada job
+  sai do payload no próprio banco.
+
 ## 4. A tela
 
 - O veredito e as recomendações (o porquê, com os números, e o que fazer).

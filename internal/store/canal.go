@@ -16,11 +16,13 @@ const ChannelName = "patchd_canal"
 // ListenJobs escuta os avisos de job novo e chama notify com o ID da máquina, até o contexto
 // acabar ou a conexão cair (o chamador reconecta). ready é chamado depois do LISTEN.
 func (p *Postgres) ListenJobs(ctx context.Context, ready func(), notify func(machineID string)) error {
-	conn, err := p.pool.Acquire(ctx)
+	// Conexão própria, fora do pool: o LISTEN a prende o tempo todo, e com o pool pequeno (4)
+	// seria uma vaga a menos para os check-ins.
+	conn, err := p.sideConn(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Release()
+	defer func() { _ = conn.Close(context.Background()) }()
 	if _, err := conn.Exec(ctx, "LISTEN "+ChannelName); err != nil {
 		return err
 	}
@@ -28,10 +30,8 @@ func (p *Postgres) ListenJobs(ctx context.Context, ready func(), notify func(mac
 		ready()
 	}
 	for {
-		n, err := conn.Conn().WaitForNotification(ctx)
+		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
-			// A conexão fica no meio de um LISTEN: descartada, não volta ao pool.
-			_ = conn.Conn().Close(context.Background())
 			return err
 		}
 		if n.Channel == ChannelName && len(n.Payload) <= 64 {

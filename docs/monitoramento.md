@@ -12,7 +12,7 @@ limite, e ver a curva de cada uma.
 | M1 | **Check-in antecipado por mudança**, senão a cada 1 hora | O agente mede a cada minuto e manda tudo no check-in; adianta o check-in quando algo relevante muda (seção 3). Sem tráfego novo nas horas calmas; um alerta chega em minutos |
 | M2 | **CPU, memória e disco** nesta versão | Disponibilidade, serviços e saúde do disco ficam para depois |
 | M3 | **Só no painel** | Tela Alertas, contador no menu e a aba Desempenho do equipamento. Nada de e-mail, Teams ou webhook por enquanto |
-| M4 | **7 dias por minuto + 90 dias por hora** | Pontos de minuto por 7 dias (curva detalhada) e média e pico por hora por 90 dias (tendência) |
+| M4 | **48 horas por minuto + 90 dias por hora** | Pontos de minuto por 48 horas (a curva de 24 horas e a montagem das horas; eram 7 dias, ~3,6 GB num parque de 2.000 máquinas sem uso) e média e pico por hora por 90 dias (as curvas de 7 e 90 dias) |
 
 ## 2. O que o agente mede
 
@@ -112,7 +112,7 @@ Agente anterior: rejeita o job (tipo desconhecido) e o job aparece como falho co
 
 ## 5. Guardar e mostrar
 
-- **Banco:** `perf_samples` (máquina, minuto, CPU, memória, disco livre por volume) por 7 dias;
+- **Banco:** `perf_samples` (máquina, minuto, CPU, memória, disco livre por volume) por 48 horas;
   `perf_hourly` (média e pico por hora) por 90 dias, montada pela passada da retenção;
   `perf_alerts` (abertos e os fechados dos últimos 90 dias).
 - **Painel:** a tela **Alertas** (abertos primeiro, depois os fechados, com o filtro por medida)
