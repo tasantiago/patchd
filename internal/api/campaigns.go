@@ -82,6 +82,9 @@ type campaignForm struct {
 	TZ         string
 	// Close: terceiros com o programa aberto: 0 adia; N fecha com aviso de N minutos (só com horário).
 	Close int
+	// Resend: reenvios automáticos das falhas (expirado e falhou), por máquina; 0..5.
+	Resend  int
+	Resends []int
 	// Microsoft: a campanha do Windows usa a fonte reserva; MicrosoftOn: a reserva está ligada em Parâmetros.
 	Microsoft   bool
 	MicrosoftOn bool
@@ -162,7 +165,7 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v := campaignsView{pageBase: a.base(r, "Campanhas", "campanhas")}
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
 	if v.CanNew {
-		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays,
+		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays, Resends: resendChoices,
 			DailyStart: "02:00", DailyDur: 180}
 		// Vindo de "Campanha por grupo de implantação" na página do programa (Aula 14.8): já preenchido.
 		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeThirdParty {
@@ -241,7 +244,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	f.ObserveH, _ = strconv.Atoi(r.PostFormValue("observacao"))
 	f.TTLH, _ = strconv.Atoi(r.PostFormValue("prazo"))
 	f.Delay, _ = strconv.Atoi(r.PostFormValue("aviso"))
-	f.Delays = rebootDelays
+	f.Delays, f.Resends = rebootDelays, resendChoices
 	f.DailyStart = strings.TrimSpace(r.PostFormValue("hora"))
 	f.DailyDur, _ = strconv.Atoi(r.PostFormValue("duracao"))
 	f.Microsoft = r.PostFormValue("microsoft") == "1" && (f.Type == jobs.TypeWinUpdate || f.Type == campaign.TypeOSAll)
@@ -249,6 +252,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		f.Close, _ = strconv.Atoi(r.PostFormValue("fechar"))
 	}
 	f.MicrosoftOn = a.microsoftAllowed()
+	f.Resend, _ = strconv.Atoi(r.PostFormValue("reenvios"))
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
@@ -261,7 +265,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
 		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft,
-		CloseDelay: time.Duration(f.Close) * time.Minute}
+		CloseDelay: time.Duration(f.Close) * time.Minute, AutoResend: f.Resend}
 	if f.Type == jobs.TypeReboot {
 		c.RebootDelay = time.Duration(f.Delay) * time.Minute
 	}
@@ -283,6 +287,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		return c, f, "Escolha o aviso antes de fechar o programa da lista."
 	case f.Close != 0 && f.When == "prazo":
 		return c, f, "Fechar o programa aberto só em horário fixo (de madrugada) ou na janela de cada grupo: com prazo, o programa seria fechado em pleno expediente."
+	case f.Resend < 0 || f.Resend > campaign.MaxAutoResend:
+		return c, f, "Escolha os reenvios automáticos da lista."
 	case len(f.Chosen) == 0:
 		return c, f, "Marque ao menos um grupo de implantação."
 	case !containsInt(observeHours, f.ObserveH):
@@ -572,6 +578,8 @@ type campaignView struct {
 	Sources, Observe, Created          string
 	Rings                              []campaignRingView
 	CanPause, CanResume, CanCancel     bool
+	ResendL                            string         // os reenvios automáticos
+	Resend                             []resendOption // o que dá para reenviar no grupo atual (admin)
 }
 
 func campaignID(r *http.Request) (int64, bool) {
@@ -607,6 +615,10 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	if c.CloseDelay > 0 {
 		v.CloseL = fmt.Sprintf("fecha com aviso de %d min (no horário da campanha)", int(c.CloseDelay/time.Minute))
 	}
+	v.ResendL = "nenhum: a primeira falha conta"
+	if c.AutoResend > 0 {
+		v.ResendL = fmt.Sprintf("até %d vez(es) por máquina: o expirado vai de novo na hora; o que falhou, depois de 1 h", c.AutoResend)
+	}
 	if c.MicrosoftFallback {
 		v.Fallback = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft Update"
 	}
@@ -616,6 +628,19 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		v.CanPause = c.State == campaign.StateRunning
 		v.CanResume = c.State == campaign.StatePaused
 		v.CanCancel = c.State == campaign.StateRunning || c.State == campaign.StatePaused
+		if v.CanCancel && c.LaunchedIdx == c.CurrentIdx {
+			list, err := a.store.CampaignJobs(r.Context(), c.ID, c.CurrentIdx)
+			if err != nil {
+				a.internalError(w, r, "listar jobs da campanha", err)
+				return
+			}
+			by := campaign.FailedByReason(list, a.now(), c.AutoResend)
+			for _, reason := range campaign.ResendReasons {
+				if n := by[reason]; n > 0 {
+					v.Resend = append(v.Resend, resendOption{Value: reason, Label: resendLabel(reason), N: n})
+				}
+			}
+		}
 	}
 	campaignFlash(r, &v.pageBase)
 
@@ -733,6 +758,10 @@ func campaignFlash(r *http.Request, b *pageBase) {
 		b.Flash = "Campanha pausada: nenhum grupo de implantação novo é liberado; os jobs já criados seguem."
 	case q.Get("feito") == "retomar":
 		b.Flash = "Campanha retomada: as falhas do grupo de implantação atual ficam aceitas, e ela segue."
+	case q.Get("feito") == "reenviar":
+		b.Flash = "Reenvio pedido: no próximo minuto o servidor refaz o plano de cada máquina e manda os jobs de novo (a que já não precisa sai como dispensada). O que falhar de novo pausa a campanha de novo."
+	case q.Get("erro") == "reenvio-vazio":
+		b.Error = "Marque o que reenviar."
 	case q.Get("feito") == "cancelar":
 		n, _ := strconv.Atoi(q.Get("jobs"))
 		b.Flash = fmt.Sprintf("Campanha cancelada; %d job(s) pendente(s) cancelado(s). Os já entregues seguem: o agente pode estar executando.", n)
@@ -746,7 +775,7 @@ func campaignFlash(r *http.Request, b *pageBase) {
 // campaignChangeAction: pausar, retomar ou cancelar, pelas regras de campaign.Change.
 func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	id, ok := campaignID(r)
-	ops := map[string]string{"pausar": campaign.OpPause, "retomar": campaign.OpResume, "cancelar": campaign.OpCancel}
+	ops := map[string]string{"pausar": campaign.OpPause, "retomar": campaign.OpResume, "cancelar": campaign.OpCancel, "reenviar": "reenviar"}
 	op, known := ops[r.PathValue("op")]
 	if !ok || !known {
 		http.NotFound(w, r)
@@ -759,6 +788,10 @@ func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s pan
 	}
 	if !found {
 		http.NotFound(w, r)
+		return
+	}
+	if op == "reenviar" {
+		a.campaignResendAction(w, r, s, c)
 		return
 	}
 	back := fmt.Sprintf("/painel/campanhas/%d", id)
@@ -778,4 +811,50 @@ func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s pan
 		"username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "campanha.alterar", fmt.Sprintf("campanha %d", id), fmt.Sprintf("%s · %d job(s) cancelado(s)", r.PathValue("op"), n))
 	http.Redirect(w, r, fmt.Sprintf("%s?feito=%s&jobs=%d", back, r.PathValue("op"), n), http.StatusSeeOther)
+}
+
+var resendChoices = []int{0, 1, 2, 3, 4, 5}
+
+type resendOption struct {
+	Value, Label string
+	N            int
+}
+
+func resendLabel(reason string) string {
+	switch reason {
+	case campaign.ReasonExpired:
+		return "expirados (a máquina não pegou o job no prazo: desligada, fora da rede)"
+	case campaign.ReasonFailed:
+		return "que falharam (o download ou o instalador deu erro)"
+	case campaign.ReasonRejected:
+		return "recusados pelo agente (assinatura, sistema, versão do agente): tendem a recusar de novo"
+	case campaign.ReasonPostponed:
+		return "adiados até o limite de tentativas (programa sempre aberto): mais uma tentativa"
+	}
+	return reason
+}
+
+// campaignResendAction: POST /painel/campanhas/{id}/reenviar. O motor reenvia no próximo minuto.
+func (a *api) campaignResendAction(w http.ResponseWriter, r *http.Request, s panel.Session, c campaign.Campaign) {
+	_ = r.ParseForm()
+	back := fmt.Sprintf("/painel/campanhas/%d", c.ID)
+	reasons := r.PostForm["motivo"]
+	if len(reasons) == 0 {
+		http.Redirect(w, r, back+"?erro=reenvio-vazio", http.StatusSeeOther)
+		return
+	}
+	err := campaign.RequestResend(r.Context(), a.store, c, reasons, s.Username)
+	switch {
+	case errors.Is(err, campaign.ErrState):
+		http.Redirect(w, r, back+"?erro=estado", http.StatusSeeOther)
+		return
+	case errors.Is(err, campaign.ErrChanged):
+		http.Redirect(w, r, back+"?erro=mudou", http.StatusSeeOther)
+		return
+	case err != nil:
+		http.Error(w, "pedido inválido", http.StatusBadRequest)
+		return
+	}
+	a.audit(r, s, "campanha.reenviar", fmt.Sprintf("campanha %d", c.ID), "motivos: "+strings.Join(reasons, ", "))
+	http.Redirect(w, r, back+"?feito=reenviar", http.StatusSeeOther)
 }

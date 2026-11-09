@@ -120,6 +120,19 @@ td form{margin:0}form.inline{display:inline;margin-left:.6rem}details.excluir{ma
 details.host summary{cursor:pointer;color:var(--azul);font-size:.84rem}details.host .metodo{margin-top:.7rem}p.rot-metodo{margin:.2rem 0 .25rem;font-weight:600;font-size:.84rem}form.linha-faixa{display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0}form.linha-faixa input[type=text]{flex:1;min-width:11rem}.mt{margin-top:.8rem}
 .lote{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:center}
 th.col-lote,td.col-lote{width:1%;text-align:center}div.acao{display:flex}div.acao input{flex:1 1 20rem}
+/* Lista de escolhas fora do formulário de campanha (a limpeza): uma opção por linha, com a explicação embaixo. */
+fieldset.escolhas{display:flex;flex-direction:column;gap:.35rem;margin:0 0 1rem;padding:0;border:0;max-width:52rem}
+fieldset.escolhas legend{font-weight:600;font-size:.88rem;padding:0;margin-bottom:.45rem}fieldset.escolhas legend small{font-weight:400;color:var(--muted);margin-left:.4rem}
+fieldset.escolhas .opcao{display:flex;align-items:flex-start;gap:.6rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer;background:#fff}
+fieldset.escolhas .opcao span{display:flex;flex-direction:column;gap:.15rem}fieldset.escolhas .opcao small{color:var(--muted);font-size:.8rem}
+fieldset.escolhas .opcao input{margin-top:.25rem}fieldset.escolhas .opcao:has(input:checked){border-color:var(--azul);background:#eef5fd}
+form.limpeza .nota-limpeza{max-width:52rem;margin:.2rem 0 1rem}form.limpeza .tabela{margin-bottom:1rem;max-width:52rem}
+/* Leia mais: o começo do texto; aberto, o texto todo. */
+td.detalhe{min-width:16rem;max-width:42rem}
+details.leia-mais summary{cursor:pointer;list-style:none}details.leia-mais summary::-webkit-details-marker{display:none}
+details.leia-mais .mais,details.leia-mais .menos{color:var(--azul);font-size:.84rem;white-space:nowrap}
+details.leia-mais .menos,details.leia-mais[open] .curto,details.leia-mais[open] .mais{display:none}details.leia-mais[open] .menos{display:inline}
+details.leia-mais .todo{margin-top:.3rem;max-height:20rem;overflow-y:auto;overflow-wrap:anywhere}
 form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}form.grade>*{min-width:0}@media (max-width:600px){form.grade{grid-template-columns:minmax(0,1fr);gap:.3rem}}
 form.grade input[type=text]{width:100%}
 /* Formulário da campanha (Aula 16.6): campos em coluna; o que não vale para o tipo

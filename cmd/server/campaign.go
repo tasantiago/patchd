@@ -213,6 +213,7 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 		observe := fs.Duration("observe", 24*time.Hour, "tempo de observação depois de cada grupo de implantação concluído")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo dos jobs sem janela")
 		win := fs.Bool("window", false, "jobs na próxima janela de cada grupo de implantação")
+		resend := fs.Int("resend", 0, "reenvios automáticos, por máquina, do job que falhou ou expirou (0 a 5)")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
@@ -222,7 +223,7 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 			return exitConfig
 		}
 		c := campaign.Campaign{Name: strings.TrimSpace(*name), Type: *typ, Rings: r, Observe: *observe, TTL: *ttl,
-			UseWindow: *win, CreatedBy: "linha de comando", App: strings.TrimSpace(*app), Version: strings.TrimSpace(*ver)}
+			UseWindow: *win, CreatedBy: "linha de comando", App: strings.TrimSpace(*app), Version: strings.TrimSpace(*ver), AutoResend: *resend}
 		if c.Type == jobs.TypeThirdParty && c.Name == "" && c.App != "" {
 			c.Name = c.App + " " + c.Version
 		}

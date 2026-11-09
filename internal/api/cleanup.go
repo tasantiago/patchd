@@ -25,7 +25,7 @@ const cleanupTTL = 2 * time.Hour
 
 type cleanupItemOption struct {
 	Value, Label, Hint string
-	Checked            bool
+	Checked, Optional  bool
 }
 
 var cleanupHints = map[string]string{
@@ -86,7 +86,7 @@ func (a *api) cleanupFromAlerts(w http.ResponseWriter, r *http.Request, s panel.
 		}
 		for _, it := range jobs.CleanupItems {
 			v.Items = append(v.Items, cleanupItemOption{Value: it, Label: jobs.CleanupLabel(it), Hint: cleanupHints[it],
-				Checked: slices.Contains(chosen, it)})
+				Checked: slices.Contains(chosen, it), Optional: !slices.Contains(jobs.CleanupDefault, it)})
 		}
 		for _, id := range order {
 			slices.Sort(vols[id])
