@@ -87,6 +87,7 @@ func runEnroll(args []string, look config.Lookup, stdout, stderr io.Writer, agen
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return exitConfig
 	}
+	setEnrollRelay(cfg.Relay)
 	c, err := enrollMachine(cfg.ServerURL, cfg.DataDir, token, agentVersion, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
@@ -136,6 +137,12 @@ func enrollMachineContext(parent context.Context, serverURL, dataDir, token, age
 		// O servidor já registrou a máquina; sem a credencial, ela vira um registro órfão.
 		return c, fmt.Errorf("o servidor registrou a máquina %s, mas a credencial não foi gravada: %w", resp.MachineID, err)
 	}
+	if enrollRelay != "" {
+		// O serviço sobe já sabendo do relé: fora da rede, o primeiro check-in passa por ele.
+		if err := agent.SeedRelay(dataDir, enrollRelay); err != nil {
+			fmt.Fprintf(stderr, "patchd-agent: aviso: guardar o relé no estado: %v (o serviço tenta o servidor direto até um check-in)\n", err)
+		}
+	}
 	return c, nil
 }
 
@@ -166,6 +173,13 @@ func enrollToken(file string, look config.Lookup) (string, error) {
 // (Aula 9.2), definido pelo enroll e pelo install antes de registrar.
 var enrollTransport http.RoundTripper
 
+// enrollRelay: o -relay do install e do enroll (docs/rele.md): sem resposta direta do
+// servidor, o registro disca o relé; o TLS continua conferindo o nome do servidor.
+var enrollRelay string
+
+// setEnrollRelay aplica o -relay ao registro.
+func setEnrollRelay(relay string) { enrollRelay = relay }
+
 // setEnrollCA aplica o -ca-file ao registro.
 func setEnrollCA(caFile string) error {
 	rt, _, err := agentTransport(caFile)
@@ -194,7 +208,17 @@ func postEnroll(ctx context.Context, serverURL, token string, req protocol.Enrol
 	hr.Header.Set("X-Request-ID", requestID)
 	hr.Header.Set("User-Agent", "patchd-agent/"+req.AgentVersion)
 
-	resp, err := (&http.Client{Timeout: enrollHTTPTimeout, Transport: enrollTransport}).Do(hr)
+	rt := enrollTransport
+	if enrollRelay != "" {
+		route := agent.NewRoute(nil)
+		route.SetRelay(enrollRelay)
+		rt = route.Wrap(rt)
+		route.Choose(ctx, serverURL)
+		if route.ViaRelay() {
+			fmt.Fprintln(os.Stderr, "patchd-agent: o servidor não responde direto; registrando pelo relé", enrollRelay)
+		}
+	}
+	resp, err := (&http.Client{Timeout: enrollHTTPTimeout, Transport: rt}).Do(hr)
 	if agent.ClosedWithoutResponse(err) {
 		return out, fmt.Errorf("%w: a conexão abriu, mas foi fechada sem resposta "+
 			"(em geral, nada escutando atrás de uma porta publicada do Docker ou de um proxy)", err)
@@ -219,7 +243,7 @@ func postEnroll(ctx context.Context, serverURL, token string, req protocol.Enrol
 		return out, nil
 	case http.StatusUnauthorized:
 		return out, fmt.Errorf("o servidor recusou o token de enrollment (desconhecido, vencido, esgotado ou revogado; "+
-			"o motivo está no log do servidor, request_id %s)", requestID)
+			"o token pelo relé só vale fora da rede, e o comum só dentro; o motivo está no log do servidor, request_id %s)", requestID)
 	default:
 		var e protocol.ErrorResponse
 		_ = json.Unmarshal(data, &e)

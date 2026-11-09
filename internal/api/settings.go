@@ -73,6 +73,7 @@ type tokenRow struct {
 	Note, Created, Expires, Status string
 	Uses, MaxUses                  int
 	CanRevoke                      bool
+	Relay                          bool // pelo relé: uso único, só pela porta do relé
 }
 
 type settingsView struct {
@@ -329,7 +330,7 @@ func (a *api) agentView(r *http.Request, v *settingsView) error {
 	for _, t := range list {
 		st := t.Status(now)
 		v.Tokens = append(v.Tokens, tokenRow{ID: t.ID, Note: dash(t.Note), Created: a.stamp(t.CreatedAt),
-			Expires: tokenExpiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido"})
+			Expires: tokenExpiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido", Relay: t.Relay})
 	}
 	slices.SortFunc(v.Tokens, func(x, y tokenRow) int { return int(y.ID - x.ID) })
 	return nil
@@ -387,7 +388,12 @@ type tokenCreatedView struct {
 	CA                     bool
 	WinCommand, LinCommand string
 	Version                string
+	Relay                  string // token pelo relé: o endereço do relé (-relay)
 }
+
+// relayTokenMaxHours: a validade máxima do token pelo relé (ele é aceito pela porta que a
+// internet alcança: vida curta).
+const relayTokenMaxHours = 168
 
 // createTokenAction: POST /painel/configuracao/agente/token. O token aparece uma única vez,
 // na resposta (sem redirecionamento: ele não vai para URL, histórico nem log).
@@ -400,8 +406,20 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	note := strings.TrimSpace(r.PostFormValue("nota"))
 	hours, _ := strconv.Atoi(r.PostFormValue("validade"))
 	uses, err := strconv.Atoi(r.PostFormValue("usos"))
+	relay := r.PostFormValue("rele") == "1"
+	relayAddr := ""
+	if relay {
+		uses, err = 1, nil // pelo relé: sempre uso único
+		if ri := a.relayInfo(); ri != nil {
+			relayAddr = ri.Addr
+		}
+	}
 	problem := ""
 	switch {
+	case relay && relayAddr == "":
+		problem = "Token pelo relé: configure antes o endereço do relé (PATCHD_RELAY_ADDR, em Configuração › Parâmetros)."
+	case relay && (hours <= 0 || hours > relayTokenMaxHours):
+		problem = "Token pelo relé: validade de 1 hora a 7 dias (ele é aceito pela porta que a internet alcança)."
 	case !slices.Contains(tokenTTLs, hours):
 		problem = "Escolha a validade da lista."
 	case err != nil || uses < 0 || uses > panelTokenMaxUses:
@@ -425,22 +443,31 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	if hours > 0 {
 		expires = a.now().Add(time.Duration(hours) * time.Hour).UTC()
 	}
-	id, err := a.store.CreateEnrollmentToken(r.Context(), hash, note, expires, uses)
+	var id int64
+	if relay {
+		id, err = a.store.CreateRelayEnrollmentToken(r.Context(), hash, note, expires)
+	} else {
+		id, err = a.store.CreateEnrollmentToken(r.Context(), hash, note, expires, uses)
+	}
 	if err != nil {
 		a.internalError(w, r, "criar token", err)
 		return
 	}
-	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "expires_at", expires.Format(time.RFC3339),
+	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "pelo_rele", relay, "expires_at", expires.Format(time.RFC3339),
 		"username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), fmt.Sprintf("%d uso(s) (0 = ilimitado), validade: %s", uses, tokenExpiry(expires)))
+	detail := fmt.Sprintf("%d uso(s) (0 = ilimitado), validade: %s", uses, tokenExpiry(expires))
+	if relay {
+		detail = "pelo relé (uso único, só pela porta do relé), validade: " + tokenExpiry(expires)
+	}
+	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), detail)
 	v := tokenCreatedView{pageBase: a.baseFor(r.Context(), s, "Token de registro", "configuracao"), ID: id, Token: plain,
-		Expires: tokenExpiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0}
+		Expires: tokenExpiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0, Relay: relayAddr}
 	v.Server = a.publicURL
 	if v.Server == "" {
 		v.Server = "https://<endereço-do-servidor>"
 	}
 	v.Version, _ = a.publishedVersion()
-	v.WinCommand, v.LinCommand = installCommands(v.Server, plain, v.CA)
+	v.WinCommand, v.LinCommand = installCommands(v.Server, plain, v.CA, relayAddr)
 	w.Header().Set("Cache-Control", "no-store")
 	a.render(w, r, http.StatusOK, "token-criado", v)
 }
@@ -448,7 +475,7 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 // installCommands: o passo a passo de instalação, com o token num arquivo temporário (o
 // agente lê o token de arquivo; na linha de comando ele ficaria no histórico e na lista
 // de processos) apagado logo depois.
-func installCommands(server, token string, ca bool) (win, lin string) {
+func installCommands(server, token string, ca bool, relay string) (win, lin string) {
 	var wb, lb strings.Builder
 	withCA := ""
 	if ca {
@@ -462,7 +489,11 @@ func installCommands(server, token string, ca bool) (win, lin string) {
 		caWin = " -ca-file C:\\ProgramData\\patchd\\ca.crt"
 	}
 	wb.WriteString("$t = Join-Path $env:TEMP 'patchd-token.txt'; Set-Content -Path $t -Value '" + token + "' -NoNewline\n")
-	wb.WriteString(".\\patchd-agent-windows-amd64.exe install -server " + server + " -enroll-token-file $t" + caWin + "\n")
+	relayArg := ""
+	if relay != "" {
+		relayArg = " -relay " + relay
+	}
+	wb.WriteString(".\\patchd-agent-windows-amd64.exe install -server " + server + " -enroll-token-file $t" + caWin + relayArg + "\n")
 	wb.WriteString("Remove-Item $t")
 	lb.WriteString("# na pasta com o patchd-agent-linux-amd64" + withCA + "\n")
 	caLin := ""
@@ -471,7 +502,7 @@ func installCommands(server, token string, ca bool) (win, lin string) {
 		caLin = " -ca-file /etc/patchd/ca.crt"
 	}
 	lb.WriteString("t=$(mktemp) && printf '%s' '" + token + "' > \"$t\"\n")
-	lb.WriteString("chmod +x patchd-agent-linux-amd64 && sudo ./patchd-agent-linux-amd64 install -server " + server + " -enroll-token-file \"$t\"" + caLin + "\n")
+	lb.WriteString("chmod +x patchd-agent-linux-amd64 && sudo ./patchd-agent-linux-amd64 install -server " + server + " -enroll-token-file \"$t\"" + caLin + relayArg + "\n")
 	lb.WriteString("rm -f \"$t\"")
 	return wb.String(), lb.String()
 }

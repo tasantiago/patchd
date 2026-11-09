@@ -279,6 +279,15 @@ func (m *Memory) CreateEnrollmentToken(ctx context.Context, hash []byte, note st
 	return t.ID, nil
 }
 
+// CreateRelayEnrollmentToken guarda um token de registro pelo relé (uso único).
+func (m *Memory) CreateRelayEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time) (int64, error) {
+	id, err := m.CreateEnrollmentToken(ctx, hash, note, expiresAt, 1)
+	m.mu.Lock()
+	m.tokens[id-1].Relay = true
+	m.mu.Unlock()
+	return id, err
+}
+
 // EnrollmentTokens lista os tokens, do mais novo para o mais antigo.
 func (m *Memory) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error) {
 	m.mu.RLock()
@@ -322,6 +331,9 @@ func (m *Memory) Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMa
 	}
 	if st := tok.Status(m.now()); st != "válido" {
 		return nil, fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
+	}
+	if why := tok.RelayMismatch(nm.ViaRelay); why != "" {
+		return nil, fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, why)
 	}
 	if _, exists := m.machines[nm.ID]; exists {
 		return nil, fmt.Errorf("ID de máquina repetido: %s", nm.ID)

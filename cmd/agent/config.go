@@ -31,10 +31,13 @@ type agentConfig struct {
 	OfflineCatalog  string // caminho do wsusscn2.cab (Windows); vazio = sem busca offline
 	EnrollTokenFile string // arquivo com o token de enrollment (enroll e install)
 	CAFile          string // CA do servidor (Aula 9.2); vazio = as CAs do sistema
-	ShowVersion     bool
-	Inventory       bool // coleta o inventário, imprime em JSON e sai
-	Scan            bool // busca atualizações e histórico, imprime em JSON e sai
-	State           bool // coleta rede e discos (Aula 12.1), imprime em JSON e sai
+	// Relay (docs/rele.md): o relé na nuvem (host:porta) para registrar fora da rede, com o
+	// token "pelo relé". Fica gravado no estado; depois, o servidor manda o dele no check-in.
+	Relay       string
+	ShowVersion bool
+	Inventory   bool // coleta o inventário, imprime em JSON e sai
+	Scan        bool // busca atualizações e histórico, imprime em JSON e sai
+	State       bool // coleta rede e discos (Aula 12.1), imprime em JSON e sai
 	// UserApp: o serviço põe o aplicativo da sessão para abrir no logon de
 	// todos. false: tira (servidores, máquinas sem usuário).
 	UserApp bool
@@ -75,6 +78,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		"arquivo com o token de enrollment, usado por enroll e install (env PATCHD_ENROLL_TOKEN_FILE)")
 	fs.StringVar(&cfg.CAFile, "ca-file", config.String(look, "PATCHD_CA_FILE", ""),
 		"certificado da CA do servidor, em PEM; com ele, o agente confia só nessa CA (env PATCHD_CA_FILE)")
+	fs.StringVar(&cfg.Relay, "relay", config.String(look, "PATCHD_RELAY", ""),
+		"install e enroll fora da rede: o relé na nuvem, host:porta, ex.: 203.0.113.10:8443 (env PATCHD_RELAY); vai com o token pelo relé")
 	fs.BoolVar(&cfg.UserApp, "user-app", envUserApp,
 		"abre o aplicativo da sessão no logon (Central no Windows, padronização nos três sistemas); -user-app=false tira (env PATCHD_USER_APP)")
 	var signers string
@@ -115,6 +120,14 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	}
 	if cfg.OfflineCatalog != "" && !filepath.IsAbs(cfg.OfflineCatalog) {
 		problems = append(problems, fmt.Errorf("-offline-cab/PATCHD_OFFLINE_CAB: o caminho precisa ser absoluto (recebido %q)", cfg.OfflineCatalog))
+	}
+	if cfg.Relay != "" {
+		if err := protocol.CheckRelayAddr(cfg.Relay); err != nil {
+			problems = append(problems, fmt.Errorf("-relay/PATCHD_RELAY: %w", err))
+		}
+		if cfg.OfflineInstall {
+			problems = append(problems, errors.New("-relay não vai com -offline: o registro pelo relé é na hora, com o token pelo relé"))
+		}
 	}
 	if cfg.CAFile != "" && !filepath.IsAbs(cfg.CAFile) {
 		problems = append(problems, fmt.Errorf("-ca-file/PATCHD_CA_FILE: o caminho precisa ser absoluto (recebido %q)", cfg.CAFile))

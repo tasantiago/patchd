@@ -18,6 +18,8 @@ func TestServiceArgsTiraServidorEToken(t *testing.T) {
 		{[]string{"-server", "https://s", "-enroll-token-file", "t.txt", "-checkin-interval", "30m"}, []string{"-checkin-interval", "30m"}},
 		{[]string{"-server=https://s", "--enroll-token-file=t.txt", "-log-level", "debug"}, []string{"-log-level", "debug"}},
 		{[]string{"--server", "https://s", "-data-dir", `C:\dados`}, []string{"-data-dir", `C:\dados`}},
+		{[]string{"-server", "https://s", "-relay", "203.0.113.10:8443", "-ca-file", "/c"}, []string{"-ca-file", "/c"}},
+		{[]string{"-relay=203.0.113.10:8443"}, []string{}},
 		{nil, []string{}},
 	}
 	for _, c := range casos {

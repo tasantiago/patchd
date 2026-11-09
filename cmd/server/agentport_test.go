@@ -29,8 +29,14 @@ func TestPortaSoDeAgentes(t *testing.T) {
 			t.Errorf("%s: %d", p, r.Code)
 		}
 	}
-	if len(marcadas) != 4 {
+	if len(marcadas) != 4 { // antes do registro
 		t.Fatalf("passaram: %v", marcadas)
+	}
+	// O registro passa (só com o token pelo relé, que o Enroll confere), mas só o POST.
+	r := httptest.NewRecorder()
+	h.ServeHTTP(r, httptest.NewRequest("POST", "/api/v1/enroll", nil))
+	if r.Code != http.StatusNoContent || len(marcadas) != 5 {
+		t.Errorf("registro pelo relé: %d %v", r.Code, marcadas)
 	}
 	for _, p := range []string{"/painel/entrar", "/api/v1/enroll", "/api/v1/machines", "/", "/api/v1/agentx", "/repo/ubuntu"} {
 		r := httptest.NewRecorder()

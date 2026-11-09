@@ -148,3 +148,21 @@ func writeJSONAtomic(path string, v any) error {
 	}
 	return nil
 }
+
+// SeedRelay grava o relé no estado (o -relay do install, docs/rele.md), se ainda não houver
+// um: o serviço sobe já sabendo por onde falar fora da rede. Depois, o check-in manda o do
+// servidor, que vale mais.
+func SeedRelay(dir, addr string) error {
+	if protocol.CheckRelayAddr(addr) != nil {
+		return fmt.Errorf("relé inválido %q", addr)
+	}
+	s, err := loadState(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if s.Relay != "" {
+		return nil
+	}
+	s.Relay = addr
+	return saveState(dir, s)
+}

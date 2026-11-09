@@ -135,6 +135,7 @@ details.leia-mais .menos,details.leia-mais[open] .curto,details.leia-mais[open] 
 details.leia-mais .todo{margin-top:.3rem;max-height:20rem;overflow-y:auto;overflow-wrap:anywhere}
 form.grade{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.65rem 1rem;align-items:center;max-width:46rem}form.grade>*{min-width:0}@media (max-width:600px){form.grade{grid-template-columns:minmax(0,1fr);gap:.3rem}}
 form.grade input[type=text]{width:100%}
+form.grade .opcao-linha{display:flex;gap:.5rem;align-items:flex-start;font-weight:400}form.grade .opcao-linha input{margin-top:.25rem}
 /* Formulário da campanha (Aula 16.6): campos em coluna; o que não vale para o tipo
 escolhido some, por :has(), sem JavaScript. Navegador sem :has() mostra tudo, como antes. */
 form.campanha{display:flex;flex-direction:column;gap:1.1rem;max-width:46rem}

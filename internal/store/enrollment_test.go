@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 type contratoEnrollment interface {
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
+	CreateRelayEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time) (int64, error)
 	EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error)
 	RevokeEnrollmentToken(ctx context.Context, id int64) (bool, error)
 	Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) ([]protocol.IdentityLink, error)
@@ -33,6 +35,7 @@ func novaMaquina() (identity.NewMachine, string) {
 
 func testarEnrollment(t *testing.T, st contratoEnrollment) {
 	ctx := context.Background()
+	defer testarTokenPeloRele(t, st) // no fim: os tokens dele não entram na lista conferida aqui
 	_, tokHash := identity.NewSecret(identity.EnrollmentPrefix)
 	tokID, err := st.CreateEnrollmentToken(ctx, tokHash, "piloto", time.Now().Add(time.Hour), 2)
 	if err != nil {
@@ -253,5 +256,38 @@ func TestClonesSimultaneosSeEnxergam(t *testing.T) {
 	links, _ := st.IdentityLinks(ctx)
 	if len(links) != n*(n-1)/2 {
 		t.Errorf("esperados %d alertas de clone, vieram %d", n*(n-1)/2, len(links))
+	}
+}
+
+// Token pelo relé (docs/rele.md): uso único, só pela porta do relé; o comum, só pela de dentro.
+func testarTokenPeloRele(t *testing.T, st contratoEnrollment) {
+	ctx := context.Background()
+	_, rele := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateRelayEnrollmentToken(ctx, rele, "notebook fora", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := novaMaquina()
+	if _, err := st.Enroll(ctx, rele, m); !errors.Is(err, identity.ErrEnrollmentRejected) || !strings.Contains(err.Error(), "só vale pela porta do relé") {
+		t.Errorf("token pelo relé na rede interna: %v", err)
+	}
+	m.ViaRelay = true
+	if _, err := st.Enroll(ctx, rele, m); err != nil {
+		t.Fatalf("token pelo relé, pelo relé: %v", err)
+	}
+	m2, _ := novaMaquina()
+	m2.ViaRelay = true
+	if _, err := st.Enroll(ctx, rele, m2); !errors.Is(err, identity.ErrEnrollmentRejected) || !strings.Contains(err.Error(), "esgotado") {
+		t.Errorf("segundo uso do token pelo relé: %v", err)
+	}
+	_, comum := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateEnrollmentToken(ctx, comum, "comum", time.Now().Add(time.Hour), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Enroll(ctx, comum, m2); !errors.Is(err, identity.ErrEnrollmentRejected) || !strings.Contains(err.Error(), "não vale pelo relé") {
+		t.Errorf("token comum pelo relé: %v", err)
+	}
+	l, _ := st.EnrollmentTokens(ctx)
+	if len(l) < 2 || l[0].Relay || !l[1].Relay || l[1].MaxUses != 1 || l[1].Uses != 1 {
+		t.Errorf("lista: %+v", l[:min(2, len(l))])
 	}
 }

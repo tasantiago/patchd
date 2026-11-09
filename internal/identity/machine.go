@@ -13,6 +13,9 @@ type NewMachine struct {
 	AgentVersion   string
 	Evidence       protocol.IdentityEvidence // como a máquina declarou (guardado cru)
 	Keys           Keys                      // normalizadas (as que são comparadas)
+	// ViaRelay: o pedido chegou pela porta só de agentes (o relé na nuvem). Só o token
+	// "pelo relé" vale por ela, e ele não vale por outra (docs/rele.md).
+	ViaRelay bool
 }
 
 // EnrollmentToken descreve um token de enrollment (nunca o segredo, que não é guardado).
@@ -24,6 +27,19 @@ type EnrollmentToken struct {
 	MaxUses   int
 	Uses      int
 	RevokedAt *time.Time
+	// Relay: token de registro pelo relé, de uso único, que só vale pela porta do relé.
+	Relay bool
+}
+
+// RelayMismatch: o motivo da recusa quando o token e a porta não combinam ("" se combinam).
+func (t EnrollmentToken) RelayMismatch(viaRelay bool) string {
+	switch {
+	case t.Relay && !viaRelay:
+		return "é de registro pelo relé e só vale pela porta do relé"
+	case !t.Relay && viaRelay:
+		return "é da rede interna e não vale pelo relé"
+	}
+	return ""
 }
 
 // Status resume o token para exibição.

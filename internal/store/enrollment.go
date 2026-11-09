@@ -27,10 +27,20 @@ func (p *Postgres) CreateEnrollmentToken(ctx context.Context, hash []byte, note 
 	return id, err
 }
 
+// CreateRelayEnrollmentToken guarda um token de registro pelo relé: uso único, e só vale pela
+// porta do relé (Enroll confere).
+func (p *Postgres) CreateRelayEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time) (int64, error) {
+	var id int64
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO enrollment_tokens (token_hash, note, expires_at, max_uses, relay)
+		VALUES ($1, $2, $3, 1, true) RETURNING id`, hash, note, expiresAt).Scan(&id)
+	return id, err
+}
+
 // EnrollmentTokens lista os tokens, do mais novo para o mais antigo.
 func (p *Postgres) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, note, created_at, expires_at, max_uses, uses, revoked_at
+		SELECT id, note, created_at, expires_at, max_uses, uses, revoked_at, relay
 		FROM enrollment_tokens ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -39,7 +49,7 @@ func (p *Postgres) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentT
 	list := []identity.EnrollmentToken{}
 	for rows.Next() {
 		var t identity.EnrollmentToken
-		if err := rows.Scan(&t.ID, &t.Note, &t.CreatedAt, &t.ExpiresAt, &t.MaxUses, &t.Uses, &t.RevokedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Note, &t.CreatedAt, &t.ExpiresAt, &t.MaxUses, &t.Uses, &t.RevokedAt, &t.Relay); err != nil {
 			return nil, err
 		}
 		t.CreatedAt, t.ExpiresAt, t.RevokedAt = t.CreatedAt.UTC(), t.ExpiresAt.UTC(), utc(t.RevokedAt)
@@ -84,9 +94,9 @@ func (p *Postgres) Enroll(ctx context.Context, tokenHash []byte, nm identity.New
 	var tok identity.EnrollmentToken
 	var now time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT id, expires_at, max_uses, uses, revoked_at, now()
+		SELECT id, expires_at, max_uses, uses, revoked_at, relay, now()
 		FROM enrollment_tokens WHERE token_hash = $1 FOR UPDATE`, tokenHash).
-		Scan(&tok.ID, &tok.ExpiresAt, &tok.MaxUses, &tok.Uses, &tok.RevokedAt, &now)
+		Scan(&tok.ID, &tok.ExpiresAt, &tok.MaxUses, &tok.Uses, &tok.RevokedAt, &tok.Relay, &now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
 	}
@@ -95,6 +105,9 @@ func (p *Postgres) Enroll(ctx context.Context, tokenHash []byte, nm identity.New
 	}
 	if st := tok.Status(now); st != "válido" {
 		return nil, fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, st)
+	}
+	if why := tok.RelayMismatch(nm.ViaRelay); why != "" {
+		return nil, fmt.Errorf("%w: token %d %s", identity.ErrEnrollmentRejected, tok.ID, why)
 	}
 
 	// Candidatas: qualquer máquina com alguma chave igual. A relação é decidida em Go,
