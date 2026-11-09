@@ -166,3 +166,12 @@ func TestPaginaNaoPagaOParqueInteiro(t *testing.T) {
 		t.Errorf("prazo: %v", err)
 	}
 }
+
+// A avaliação do parque usa um quarto do pool: com o padrão (4), uma conexão só.
+func TestAvaliacoesPeloTamanhoDoPool(t *testing.T) {
+	for pool, quer := range map[int]int{0: 1, 4: 1, 7: 1, 8: 2, 16: 4, 100: 4} {
+		if n := evalWorkersFor(pool); n != quer {
+			t.Errorf("pool %d: %d, esperado %d", pool, n, quer)
+		}
+	}
+}

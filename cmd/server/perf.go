@@ -9,7 +9,10 @@ import (
 // Desempenho (docs/monitoramento.md, seção 5): de hora em hora, as amostras viram médias e
 // picos por hora, e o que passou do prazo sai.
 const (
-	perfSamplesKeep = 7 * 24 * time.Hour
+	// perfSamplesKeep: as amostras de minuto só servem à curva de 24 horas e à montagem das
+	// horas (as últimas perfRollupBack); 7 dias delas eram ~3,6 GB num parque de 2.000
+	// máquinas sem uso nenhum (as curvas de 7 e 90 dias leem as horas).
+	perfSamplesKeep = perfRollupBack
 	perfHoursKeep   = 90 * 24 * time.Hour
 	perfAlertsKeep  = 90 * 24 * time.Hour
 	// perfRollupBack: as horas refeitas a cada passada (uma amostra pode chegar até 24 horas

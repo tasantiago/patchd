@@ -14,6 +14,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/compliance"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/srvhealth"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
@@ -70,9 +71,12 @@ var errEvaluating = errors.New("em avaliação")
 // Cache das avaliações.
 const (
 	// evalTTL: uma avaliação guardada vale no máximo isso, mesmo sem mudança (os avisos de
-	// catálogo atrasado e o suporte do macOS dependem do relógio).
-	evalTTL = 15 * time.Minute
-	// evalWorkers: avaliações em paralelo quando faltam muitas (o pool do banco tem folga).
+	// catálogo atrasado e o suporte do macOS dependem do relógio, numa escala de dias). Com
+	// inventário, busca ou catálogo novos, a chave muda e a máquina é refeita na hora. Era 15
+	// min: o parque inteiro refeito a cada 15 min, sem mudança nenhuma, pesava no banco.
+	evalTTL = time.Hour
+	// evalWorkers: o máximo de avaliações em paralelo; o de fato é um quarto do pool do banco
+	// (evalWorkersFor), para os check-ins não esperarem conexão enquanto o parque é avaliado.
 	evalWorkers = 4
 	// warmEvery: o laço que mantém o cache quente (a primeira página do dia não paga o parque).
 	warmEvery = 5 * time.Minute
@@ -280,7 +284,7 @@ func (s *complianceService) evaluateMissing(ctx context.Context, missing []proto
 	work := make(chan protocol.MachineSummary)
 	results := make(chan done)
 	var wg sync.WaitGroup
-	for range min(evalWorkers, len(missing)) {
+	for range min(s.workers(), len(missing)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -649,4 +653,19 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// workers: avaliações em paralelo, um quarto do pool do banco (no mínimo 1, no máximo
+// evalWorkers). Com o pool padrão de 4, uma só: as outras conexões ficam para os check-ins e o
+// painel. O store sem pool (memória, testes) usa o máximo.
+func (s *complianceService) workers() int {
+	ps, ok := s.st.(interface{ PoolStat() srvhealth.PoolStat })
+	if !ok {
+		return evalWorkers
+	}
+	return evalWorkersFor(int(ps.PoolStat().Max))
+}
+
+func evalWorkersFor(poolMax int) int {
+	return min(evalWorkers, max(1, poolMax/4))
 }

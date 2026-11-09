@@ -160,16 +160,19 @@ func notes(n []string) []string {
 // CampaignJobs lista os jobs da campanha num grupo de implantação (posição idx).
 func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, machine_id, state, detail, finished_at, type, payload, unblocked_at FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
+		SELECT id, machine_id, state, detail, finished_at, type,
+			CASE WHEN type = 'thirdparty' THEN coalesce(payload::jsonb #>> '{params,app}', '') ELSE '' END, unblocked_at
+		FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (campaign.JobState, error) {
 		var j campaign.JobState
-		var typ, payload string
-		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt, &typ, &payload, &j.Unblocked)
+		var typ string
+		// O slot (o programa) sai do payload no banco: a campanha roda a cada minuto, e trazer
+		// o payload assinado de milhares de jobs para ler um campo pesava.
+		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt, &typ, &j.Slot, &j.Unblocked)
 		j.FinishedAt, j.Unblocked = utc(j.FinishedAt), utc(j.Unblocked)
-		j.Slot = jobSlot(typ, payload)
 		return j, err
 	})
 }

@@ -15,23 +15,21 @@ const catalogLockKey int64 = 0x7061746368640001
 // sozinho se o processo morrer (a conexão cai). Devolve ok=false quando outro processo
 // está sincronizando.
 func (p *Postgres) TryCatalogLock(ctx context.Context) (unlock func(), ok bool, err error) {
-	conn, err := p.pool.Acquire(ctx)
+	// Conexão própria, fora do pool (a sincronização leva minutos e trabalha pelo pool).
+	conn, err := p.sideConn(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, catalogLockKey).Scan(&ok); err != nil || !ok {
-		conn.Release()
+		_ = conn.Close(context.Background())
 		return nil, false, err
 	}
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if _, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, catalogLockKey); err != nil {
-			// Sem o unlock, a conexão não pode voltar ao pool com a trava: fecha.
-			_ = conn.Hijack().Close(ctx)
-			return
-		}
-		conn.Release()
+		// Fechar a conexão solta a trava de sessão de qualquer jeito; o unlock é cortesia.
+		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, catalogLockKey)
+		_ = conn.Close(ctx)
 	}, true, nil
 }
 
