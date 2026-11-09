@@ -73,6 +73,7 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	// a fonte da política falha (o agente antigo ignora o campo).
 	resp.WinUpdateMicrosoft = a.microsoftAllowed()
 	resp.Channel = a.channelOn() // o agente novo abre a espera do canal em tempo real
+	resp.Relay = a.relayInfo()   // docs/rele.md: o relé, para quando estiver fora da rede
 	if slices.Contains(req.Capabilities, protocol.CapabilityJobs) {
 		// Uma falha aqui não derruba o check-in: os jobs ficam pendentes para o próximo.
 		delivered, err := a.store.DeliverJobs(r.Context(), id, a.now())

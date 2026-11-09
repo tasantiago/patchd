@@ -123,6 +123,10 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		client.HTTP.Transport = rt
 		logger.Info("CA do servidor: só a do arquivo", "ca_file", opts.CAFile, "certificados", certs)
 	}
+	// docs/rele.md: o relé para fora da rede, que o servidor manda no check-in. O transporte
+	// disca o relé quando o servidor não responde direto; o TLS confere o nome do servidor.
+	route := agent.NewRoute(logger)
+	client.HTTP.Transport = route.Wrap(client.HTTP.Transport)
 	cab := newOfflineCab(logger, client, opts)
 	// A fonte reserva do Windows (a Microsoft), como o servidor anunciou no último check-in.
 	var msFallback atomic.Bool
@@ -251,6 +255,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		Dir:      filepath.Join(opts.DataDir, "bundles"),
 	}).Execute
 	ag.MicrosoftFallback = msFallback.Store
+	ag.Route = route
 	// Job windows_update (Aula 16.1): só no Windows, pelo WUA.
 	if wu := patch.NewWinUpdater(); wu != nil {
 		ag.WinUpdate = wu

@@ -44,3 +44,28 @@ func TestCheckinPeloRele(t *testing.T) {
 		t.Errorf("máquina fora da rede:\n%s", b)
 	}
 }
+
+// O relé (Parâmetros › Agentes) vai no check-in; vazio, vai vazio (o agente esquece o que
+// tinha); sem o serviço de parâmetros, nem vai (o agente mantém).
+func TestReleNoCheckin(t *testing.T) {
+	for valor, quer := range map[string]string{"203.0.113.10:8443": "203.0.113.10:8443", "": "", "lixo": ""} {
+		h, st, _ := ambientePaginas(t, api.WithSettings(parametrosFixos{api.RelayKey: valor}))
+		tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+		st.CreateEnrollmentToken(context.Background(), hash, "t", time.Now().Add(time.Hour), 1)
+		m := registra(t, h, tok)
+		corpo, _ := json.Marshal(protocol.CheckinRequest{AgentVersion: "v", SentAt: time.Now().UTC()})
+		var resp protocol.CheckinResponse
+		_ = json.Unmarshal(envia(h, "POST", "/api/v1/agent/checkin", m.Credential, corpo).Body.Bytes(), &resp)
+		if resp.Relay == nil || resp.Relay.Addr != quer {
+			t.Errorf("%q: %+v", valor, resp.Relay)
+		}
+	}
+	h, st, _ := ambientePaginas(t)
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	st.CreateEnrollmentToken(context.Background(), hash, "t", time.Now().Add(time.Hour), 1)
+	m := registra(t, h, tok)
+	corpo, _ := json.Marshal(protocol.CheckinRequest{AgentVersion: "v", SentAt: time.Now().UTC()})
+	if r := envia(h, "POST", "/api/v1/agent/checkin", m.Credential, corpo); strings.Contains(r.Body.String(), `"relay"`) {
+		t.Error("sem parâmetros, o relé não vai")
+	}
+}

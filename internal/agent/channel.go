@@ -68,6 +68,8 @@ func (a *Agent) channelLoop(ctx context.Context) {
 			continue
 		case err != nil:
 			a.Logger.Debug("canal em tempo real: espera falhou; nova tentativa", "error", err, "em", retry.String())
+			a.Route.Invalidate() // saiu da rede (ou voltou): o caminho é testado de novo
+			a.Route.Choose(ctx, a.baseURL())
 			if a.sleep(ctx, retry) != nil {
 				return
 			}

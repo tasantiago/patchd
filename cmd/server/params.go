@@ -159,6 +159,23 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v, nil
 			}, Show: showChoice(channelChoices)},
+		{Key: api.RelayKey, Group: "Agentes", Label: "Relé para fora da rede",
+			Help:   "host:porta do relé na nuvem (docs/rele.md), ex.: 203.0.113.10:8443. O agente que não alcança este servidor direto (notebook fora da rede) passa a falar pelo relé, e volta sozinho quando alcança de novo; o TLS continua conferindo o nome deste servidor. Vazio: sem relé.",
+			Effect: "no próximo check-in de cada máquina (ela aprende o relé enquanto ainda está dentro da rede)", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v == "" {
+					return "", nil
+				}
+				if err := protocol.CheckRelayAddr(v); err != nil {
+					return "", err
+				}
+				return v, nil
+			}, Show: func(v string) string {
+				if v == "" {
+					return "(vazio: sem relé)"
+				}
+				return v
+			}},
 		{Key: api.MicrosoftFallbackKey, Group: "Agentes", Label: "Fonte reserva do Windows", Kind: settings.Select, Options: microsoftChoices,
 			Default: "0", Help: "Ligada: quando a fonte da política (WSUS) falha, o agente busca também direto no Microsoft Update, e a campanha com a opção marcada instala de lá o que a política não oferece. Só sai o que foi aprovado no patchd; muda só de onde o arquivo vem. Máquinas com a GPO que bloqueia a internet do Windows Update ficam de fora.",
 			Effect: "a partir do próximo check-in de cada máquina (a busca seguinte já usa a reserva)", Check: func(v string) (string, error) {

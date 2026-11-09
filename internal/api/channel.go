@@ -54,3 +54,18 @@ func ViaRelay(ctx context.Context) context.Context {
 }
 
 func viaRelay(ctx context.Context) bool { v, _ := ctx.Value(viaRelayKey{}).(bool); return v }
+
+// RelayKey (docs/rele.md): o relé para fora da rede, mandado no check-in. Vazio: sem relé.
+const RelayKey = "PATCHD_RELAY_ADDR"
+
+// relayInfo: o que vai no check-in. nil sem o serviço de parâmetros (servidor de teste).
+func (a *api) relayInfo() *protocol.RelayInfo {
+	if a.params == nil {
+		return nil
+	}
+	addr := a.params.Value(RelayKey)
+	if addr != "" && protocol.CheckRelayAddr(addr) != nil {
+		addr = ""
+	}
+	return &protocol.RelayInfo{Addr: addr}
+}

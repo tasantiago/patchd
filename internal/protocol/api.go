@@ -1,6 +1,13 @@
 package protocol
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // SubmitResponse é a resposta do servidor ao receber um relatório.
 type SubmitResponse struct {
@@ -68,6 +75,30 @@ const CapabilityCloseApps = "fechar-programa-v1"
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
 
+// RelayInfo: o endereço do relé (host:porta). O agente que não alcança o servidor direto
+// (fora da rede) conecta nele; o TLS continua conferindo o nome do servidor.
+type RelayInfo struct {
+	Addr string `json:"addr"`
+}
+
+// CheckRelayAddr confere o endereço do relé: host (IP ou nome) e porta, sem esquema nem caminho.
+func CheckRelayAddr(addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("use host:porta (ex.: 203.0.113.10:8443): %w", err)
+	}
+	n, err := strconv.Atoi(port)
+	switch {
+	case err != nil || n < 1 || n > 65535:
+		return errors.New("porta de 1 a 65535")
+	case host == "" || len(host) > 253:
+		return errors.New("falta o host")
+	case strings.ContainsAny(host, "/@?#% "):
+		return errors.New("só o host e a porta, sem https:// nem caminho")
+	}
+	return nil
+}
+
 // ChannelPath: o canal em tempo real (long-poll). O agente faz POST e o servidor segura a
 // resposta até ~45 s, ou responde antes com Wake quando há algo para a máquina.
 const ChannelPath = "/api/v1/agent/canal"
@@ -87,6 +118,9 @@ type ChannelResponse struct {
 // distribui o catálogo offline do Windows, diz qual é o atual (Aula 6.6).
 type CheckinResponse struct {
 	InventoryKnown bool `json:"inventory_known"` // true: o servidor já tem esse inventário; não reenviar
+	// Relay (docs/rele.md): o relé para fora da rede. Ausente (servidor antigo): o agente
+	// mantém o que tinha; presente com Addr vazio: o relé foi tirado.
+	Relay *RelayInfo `json:"relay,omitempty"`
 	// Channel: o servidor tem o canal em tempo real ligado; o agente mantém a espera aberta
 	// (ChannelPath). Ausente (servidor antigo, ou desligado): só o check-in.
 	Channel        bool            `json:"channel,omitempty"`
