@@ -29,6 +29,7 @@ type perfAlertRow struct {
 	State, Level, Ack             string
 	Closed                        string // fechado à mão: por quem e a nota
 	Open, CanAck                  bool
+	CanClean                      bool // alerta de disco aberto: o botão "Limpar temporários"
 }
 
 type alertsView struct {
@@ -117,6 +118,7 @@ func (a *api) alertRows(list []store.PerfAlert, names map[string]string, admin b
 		}
 		r.Duration = span(end.Sub(al.OpenedAt))
 		r.CanAck = admin && r.Open && al.AckAt == nil
+		r.CanClean = admin && r.Open && al.Metric == perfeval.MetricDisk
 		out = append(out, r)
 	}
 	return out
@@ -155,6 +157,8 @@ func (a *api) alertsPage(w http.ResponseWriter, r *http.Request) {
 		v.Error = "Nenhum alerta para o lote: marque ao menos um aberto (no reconhecer, um ainda sem reconhecimento), ou escolha todos os abertos."
 	case q.Has("fechados"):
 		v.Flash = fmt.Sprintf("%s alerta(s) fechado(s) à mão. Se a medida continuar além do limite, um alerta novo abre depois dos minutos seguidos.", numOnly(q.Get("fechados")))
+	case q.Has("limpezas"):
+		v.Flash = fmt.Sprintf("%s job(s) de limpeza criados. O espaço liberado aparece no resultado de cada job (Automação › Jobs); com o disco de volta abaixo do limite, o alerta fecha sozinho.", numOnly(q.Get("limpezas")))
 	case q.Has("reconhecidos"):
 		v.Flash = fmt.Sprintf("%s alerta(s) reconhecido(s): saem do contador do menu e continuam abertos até a medida voltar ao normal.", numOnly(q.Get("reconhecidos")))
 	}

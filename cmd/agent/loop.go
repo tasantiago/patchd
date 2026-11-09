@@ -15,6 +15,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/agent"
 	"github.com/tasantiago/patchd/internal/buildinfo"
+	"github.com/tasantiago/patchd/internal/cleanup"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/credential"
 	"github.com/tasantiago/patchd/internal/hoststate"
@@ -190,6 +191,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}
 	// Perguntas ao parque: o catálogo fechado de leituras (internal/sensor), em todo sistema.
 	ag.Query = sensor.For(collector.Software).Answer
+	// Limpeza de temporários (internal/cleanup): a lista fechada de cada sistema.
+	ag.Cleanup = cleanup.New(opts.DataDir, platform.SilentRunner{Timeout: 3 * time.Hour}).Clean
 	if cab != nil {
 		ag.OfflineCatalog = func(ctx context.Context, adv protocol.OfflineCatalog) {
 			if err := cab.Sync(ctx, adv); err != nil && ctx.Err() == nil {

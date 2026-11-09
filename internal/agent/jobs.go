@@ -29,6 +29,13 @@ type acceptedJobs struct {
 	wakes []acceptedWake
 	// Perguntas ao parque: respondidas na hora, o resultado sai antes da busca.
 	queries []acceptedQuery
+	// Limpeza de temporários.
+	cleanups []acceptedCleanup
+}
+
+type acceptedCleanup struct {
+	id int64
+	p  jobs.CleanupParams
 }
 
 type acceptedQuery struct {
@@ -180,6 +187,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: ligar outra máquina pela rede", "job_id", j.ID, "maquina", p.Target, "rede", p.Network, "macs", len(p.MACs))
 			acc.wakes = append(acc.wakes, acceptedWake{id: j.ID, p: p})
+		case jobs.TypeCleanup:
+			p, _ := jobs.ParseCleanupParams(j.Params) // o Verify já conferiu
+			if a.Cleanup == nil {
+				why := "este agente não faz limpeza de temporários"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: limpeza de temporários", "job_id", j.ID, "itens", strings.Join(p.Items, ","))
+			acc.cleanups = append(acc.cleanups, acceptedCleanup{id: j.ID, p: p})
 		case jobs.TypeQuery:
 			p, _ := jobs.ParseQueryParams(j.Params) // o Verify já conferiu
 			if a.Query == nil {
@@ -590,6 +607,23 @@ func (a *Agent) runQueries(ctx context.Context, list []acceptedQuery) []PendingJ
 		}
 		a.Logger.Info("pergunta respondida", "job_id", q.id, "sensor", q.p.Sensor, "resposta", ans.Value)
 		out = append(out, PendingJobResult{ID: q.id, Result: protocol.JobResult{Status: status, Detail: string(raw), FinishedAt: a.now().UTC()}})
+	}
+	return out
+}
+
+// runCleanups faz as limpezas de temporários, uma por vez.
+func (a *Agent) runCleanups(ctx context.Context, list []acceptedCleanup) []PendingJobResult {
+	var out []PendingJobResult
+	for _, j := range list {
+		start := a.now()
+		detail, err := a.Cleanup(ctx, j.p)
+		status := protocol.JobResultOK
+		if err != nil {
+			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
+		}
+		a.Logger.Info("limpeza de temporários", "job_id", j.id, "status", status, "detail", detail,
+			"duration", a.now().Sub(start).Round(time.Second).String())
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
 	}
 	return out
 }

@@ -85,6 +85,8 @@ type Agent struct {
 	// wake_on_lan, docs/wake-on-lan.md, Aula 22.2). nil: o agente recusa esses jobs. Erro
 	// com jobs.ErrRefused vira "rejeitado" (nada saiu pela rede).
 	WakeOnLAN func(ctx context.Context, p jobs.WakeOnLANParams) (string, error)
+	// Cleanup faz a limpeza de temporários (internal/cleanup). nil: o agente recusa.
+	Cleanup func(ctx context.Context, p jobs.CleanupParams) (string, error)
 	// Query responde as perguntas ao parque (internal/sensor). nil: o agente recusa.
 	Query func(ctx context.Context, p jobs.QueryParams) jobs.QueryAnswer
 
@@ -486,6 +488,15 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			}
 		}
 		a.saveStateOrLog(state)
+	}
+
+	// Limpeza de temporários: depois das instalações (os instaladores dos jobs já saíram).
+	if len(accepted.cleanups) > 0 {
+		state.PendingJobResults = append(state.PendingJobResults, a.runCleanups(ctx, accepted.cleanups)...)
+		a.saveStateOrLog(state)
+		if ctx.Err() != nil {
+			return outcomeTransient
+		}
 	}
 
 	// Senha da BIOS (Aula 21.5): depois das instalações; o inventário de depois (o firmware

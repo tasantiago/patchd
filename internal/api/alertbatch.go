@@ -50,6 +50,7 @@ func (a *api) alertBatchTargets(r *http.Request, action, which, metric string, m
 	for _, al := range list {
 		switch {
 		case al.ClosedAt != nil, metric != "" && al.Metric != metric, action == "reconhecer" && al.AckAt != nil,
+			action == "limpar" && al.Metric != perfeval.MetricDisk,
 			which == "marcados" && !marked[al.ID]:
 			continue
 		}
@@ -81,7 +82,7 @@ func (a *api) alertBatchAction(w http.ResponseWriter, r *http.Request, s panel.S
 		http.Error(w, "medida inválida", http.StatusBadRequest)
 		return
 	}
-	if (action != "fechar" && action != "reconhecer") || (which != "marcados" && which != "todos") {
+	if (action != "fechar" && action != "reconhecer" && action != "limpar") || (which != "marcados" && which != "todos") {
 		http.Error(w, "pedido inválido", http.StatusBadRequest)
 		return
 	}
@@ -113,6 +114,10 @@ func (a *api) alertBatchAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	if len(list) == 0 {
 		redirect("erro", "lote-vazio")
+		return
+	}
+	if action == "limpar" {
+		a.cleanupFromAlerts(w, r, s, list, which, metric, back)
 		return
 	}
 	ids, keys := alertIDs(list)

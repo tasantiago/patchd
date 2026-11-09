@@ -75,6 +75,41 @@ alerta aberto, o volume que saiu (um disco removido), a manutenção já resolvi
 continuar, um alerta novo abre** depois dos minutos seguidos. Fechar não esconde problema que
 continua.
 
+### Limpar temporários (alertas de disco)
+
+Num alerta de disco aberto, o botão **Limpar temporários** da linha (ou o mesmo botão do lote,
+que pega só os alertas de disco entre os marcados ou os do filtro) abre a conferência: as
+máquinas, uma vez cada, com os volumes em alerta, e os itens da limpeza, de uma lista fechada:
+
+| Item | Windows | Linux | Padrão |
+|---|---|---|---|
+| temporários do sistema | `%SystemRoot%\Temp` | `systemd-tmpfiles --clean` | marcado |
+| temporários dos usuários | `AppData\Local\Temp` de cada perfil | não se aplica | marcado |
+| restos do patchd | `pacotes`, `tmp` e `bundles` da pasta de dados do agente | idem | marcado |
+| cache de download de atualizações | `SoftwareDistribution\Download` (o serviço Windows Update é parado e religado se estava rodando) | `apt-get clean` ou `dnf clean packages` | desmarcado |
+| limpeza de componentes | `DISM /Online /Cleanup-Image /StartComponentCleanup` (até 2 horas; usa disco e CPU) | `journalctl --vacuum-size=200M` | desmarcado |
+
+Confirmada (com a mesma lista da conferência), cada máquina recebe um job assinado `limpeza`
+(validade de 2 horas), e a auditoria guarda `limpeza.criar` com os itens e os IDs dos jobs. O
+resultado do job diz o espaço livre no disco do sistema antes e depois e quanto cada item
+liberou; com o disco de volta abaixo do limite, o alerta fecha sozinho pela regra de sempre.
+
+O agente roda como SYSTEM (root) e as pastas de temporários dos usuários são graváveis por
+eles, então a varredura é defensiva:
+
+- só sai **arquivo comum sem mudança há mais de 48 horas**; arquivo em uso fica e conta como
+  pulado; as pastas velhas que esvaziaram saem depois, da mais funda para a mais rasa;
+- **não segue link**: link simbólico, junção ou qualquer ponto de nova análise não é aberto
+  nem apagado (no Windows o arquivo é aberto pelo próprio handle, sem seguir o ponto de nova
+  análise, o caminho final é conferido dentro da pasta e a exclusão é pelo handle, o que fecha
+  a troca da pasta por uma junção entre a conferência e a exclusão);
+- a pasta raiz também é conferida: se `C:\Windows\Temp` ou o `Temp` de um perfil for uma
+  junção, o item é pulado; perfis que são junção também;
+- nada de Downloads, Documentos, Lixeira ou caminhos vindos do painel: o job leva só os nomes
+  dos itens, e o agente conhece as pastas.
+
+Agente anterior: rejeita o job (tipo desconhecido) e o job aparece como falho com o motivo.
+
 ## 5. Guardar e mostrar
 
 - **Banco:** `perf_samples` (máquina, minuto, CPU, memória, disco livre por volume) por 7 dias;
