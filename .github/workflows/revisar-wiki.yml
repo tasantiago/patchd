@@ -4,7 +4,7 @@ on:
     branches: [docs/revisao-operacional-20261109]
     paths: [.github/workflows/revisar-wiki.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   ler:
     runs-on: ubuntu-24.04
@@ -26,3 +26,18 @@ jobs:
                   print('\nPAGINA:', name)
                   print(p.read_text()[:18000])
           PY
+      - name: Conferir autorização de escrita sem alterar a wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          cat > "$RUNNER_TEMP/wiki-askpass" <<'SH'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *) printf '%s\n' "$GH_TOKEN" ;;
+          esac
+          SH
+          chmod 700 "$RUNNER_TEMP/wiki-askpass"
+          cd "$RUNNER_TEMP/wiki"
+          GIT_ASKPASS="$RUNNER_TEMP/wiki-askpass" git push --dry-run origin HEAD
