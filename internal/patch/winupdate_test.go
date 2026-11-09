@@ -2,6 +2,7 @@ package patch
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,5 +70,25 @@ func TestResultadoDaInstalacao(t *testing.T) {
 	if err := comFailure("busca", &wincom.Error{Op: "Search", HResult: 0x80244007}); errors.Is(err, jobs.ErrRetry) ||
 		err.Error() != "busca: 0x80244007 WU_E_PT_SOAPCLIENT_SOAPFAULT" {
 		t.Errorf("SOAP fault: %v", err)
+	}
+}
+
+// Só a falha da fonte (busca, download, pedido fora dela) leva à Microsoft; "agora não"
+// (outra instalação em andamento) não.
+func TestPolicyDidNotDeliver(t *testing.T) {
+	for err, quer := range map[error]bool{
+		nil: false,
+		fmt.Errorf("%w: KB fora", jobs.ErrNotPending):                   true,
+		sourceError{errors.New("busca: 0x8024401c")}:                    true,
+		sourceError{fmt.Errorf("%w: download: ocupado", jobs.ErrRetry)}: false,
+		fmt.Errorf("%w: outra instalação em andamento", jobs.ErrRetry):  false,
+		errors.New("instalação: 0x80070643"):                            false,
+	} {
+		if policyDidNotDeliver(err) != quer {
+			t.Errorf("%v: %v", err, !quer)
+		}
+	}
+	if e := (sourceError{errors.New("x")}); e.Error() != "x" {
+		t.Error("a marca mudou a mensagem")
 	}
 }

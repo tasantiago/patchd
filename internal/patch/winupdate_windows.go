@@ -25,6 +25,25 @@ func NewWinUpdater() WinUpdater { return installWindowsUpdates }
 func installWindowsUpdates(ctx context.Context, jobID int64, p jobs.WinUpdateParams) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, winUpdateTimeout)
 	defer cancel()
+	detail, err := installOnce(ctx, p)
+	if !p.Fallback || p.Source != jobs.WinSourcePolicy || !policyDidNotDeliver(err) || ctx.Err() != nil {
+		return detail, err
+	}
+	// A reserva no job: a política não entregou; o mesmo pedido, direto da Microsoft.
+	if info := MicrosoftInfo(); info == nil || !info.Available {
+		return detail, err
+	}
+	why := err.Error()
+	mp := p
+	mp.Source, mp.Fallback = jobs.WinSourceMicrosoft, false
+	d2, err2 := installOnce(ctx, mp)
+	if err2 != nil {
+		return "", fmt.Errorf("a fonte da política não entregou (%s); %w", why, err2)
+	}
+	return "a fonte da política não entregou (" + why + "); " + d2, nil
+}
+
+func installOnce(ctx context.Context, p jobs.WinUpdateParams) (string, error) {
 	req := p.Updates
 	// Fonte reserva: direto da Microsoft. A máquina que bloqueia (GPO) recusa antes de tentar.
 	if p.Source == jobs.WinSourceMicrosoft {
@@ -64,7 +83,7 @@ func installWindowsUpdates(ctx context.Context, jobID int64, p jobs.WinUpdatePar
 		}
 		result, err := wincom.CallObject(searcher, "Search", onlineCriteria)
 		if err != nil {
-			return comFailure("busca", err)
+			return sourceError{comFailure("busca", err)}
 		}
 		defer result.Release()
 		updates, err := wincom.GetObject(result, "Updates")
@@ -151,7 +170,7 @@ func installWindowsUpdates(ctx context.Context, jobID int64, p jobs.WinUpdatePar
 		}
 		dres, err := wincom.CallObject(downloader, "Download")
 		if err != nil {
-			return comFailure("download", err)
+			return sourceError{comFailure("download", err)}
 		}
 		dops, err := readOps(dres, len(targets))
 		dres.Release()
@@ -159,7 +178,7 @@ func installWindowsUpdates(ctx context.Context, jobID int64, p jobs.WinUpdatePar
 			return err
 		}
 		if err := downloadResult(targets, dops); err != nil {
-			return err
+			return sourceError{err}
 		}
 
 		// 4. Instalação, sem interface (o serviço roda como SYSTEM, sem ninguém para responder).

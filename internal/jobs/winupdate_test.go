@@ -185,3 +185,27 @@ func TestWinUpdateFonteMicrosoft(t *testing.T) {
 		t.Errorf("conferência: %v %q", still, failed)
 	}
 }
+
+// A reserva no job só vai com a fonte da política; na conferência, com a política falhando,
+// vale a busca direta na Microsoft.
+func TestReservaNoJob(t *testing.T) {
+	const cu = "0b9b6f0c-1d2e-4f3a-9b8c-7d6e5f4a3b2c"
+	p, err := ParseWinUpdateParams([]byte(`{"updates":[{"id":"` + cu + `","kb":"5127648"}],"fallback":true}`))
+	if err != nil || !p.Fallback || p.SourceLabel() != "fonte da política, com a Microsoft de reserva" {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err := ParseWinUpdateParams([]byte(`{"updates":[{"id":"` + cu + `"}],"source":"microsoft","fallback":true}`)); err == nil {
+		t.Error("fallback com a fonte Microsoft aceito")
+	}
+	rep := protocol.PatchScanReport{Scans: []protocol.ScanResult{
+		{Source: "wua-default", Error: "0x80244007"},
+		{Source: "wua-microsoft", Missing: []protocol.MissingUpdate{}},
+	}}
+	if still, failed := StillMissing(p, rep); failed != "" || len(still) != 0 {
+		t.Errorf("com a reserva: %v %q", still, failed)
+	}
+	p.Fallback = false
+	if _, failed := StillMissing(p, rep); failed == "" {
+		t.Error("sem a reserva, a política falhando não prova nada")
+	}
+}

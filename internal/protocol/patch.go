@@ -109,4 +109,7 @@ type PatchScanReport struct {
 type MicrosoftUpdate struct {
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"` // por que não (a GPO que bloqueia, por exemplo)
+	// InJob: o agente sabe, no job da fonte da política, refazer pela Microsoft quando a
+	// política não entrega (WinUpdateParams.Fallback). Ausente: agente anterior.
+	InJob bool `json:"in_job,omitempty"`
 }

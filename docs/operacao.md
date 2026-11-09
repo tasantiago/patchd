@@ -292,6 +292,15 @@ para o WSUS).
   com a fonte Microsoft, em vez de ficar de fora. A conferência explica; com a reserva
   desligada em Parâmetros, a opção fica sem efeito e a nota do grupo diz "(reserva da
   Microsoft desligada em Parâmetros)".
+- **No mesmo job** (desde a v0.18.33): quando a política **oferece** o KB na busca, o job vai
+  por ela, como sempre, mas com a reserva marcada (`"fallback": true`) se a campanha tem a
+  opção, a reserva está ligada, a máquina permite e o agente anuncia que sabe
+  (`microsoft_update.in_job` na busca). Na hora, se a política não entregar (a busca falha, o
+  KB sumiu do WSUS, o download falha), o agente refaz o mesmo pedido direto na Microsoft, sem
+  esperar outra busca nem outra campanha. O resultado diz "a fonte da política não entregou
+  (motivo); fonte Microsoft Update: ...". "Agora não" (outra instalação em andamento) volta
+  como adiado, sem ir à Microsoft; a falha da instalação em si (o instalador do KB falhou)
+  também não muda de fonte. Agente anterior: o job vai sem a marca, como antes.
 - **Agentes antigos**: a fonte nova só vai para quem a anuncia na busca. Os antigos continuam
   como hoje; na campanha aparecem como "agente sem a fonte Microsoft (atualize o agente)".
 - **GPO**: com `DoNotConnectToWindowsUpdateInternetLocations` ou `DisableWindowsUpdateAccess`
