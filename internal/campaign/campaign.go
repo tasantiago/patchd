@@ -337,7 +337,9 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 			return e.save(ctx, c)
 		case len(st.failed) > 0 && c.AcceptedIdx != c.CurrentIdx:
 			c.State = StatePaused
-			c.Detail = fmt.Sprintf("grupo de implantação %d: %d job(s) sem sucesso (%s); retome (campaign resume) para aceitar e seguir", c.Ring(), len(st.failed), strings.Join(st.failed, ", "))
+			// O resumo e o que fazer primeiro; a lista dos jobs (centenas, num parque grande) no fim.
+			c.Detail = fmt.Sprintf("grupo de implantação %d: %d job(s) sem sucesso (%s); retome (campaign resume) para aceitar e seguir. Jobs: %s",
+				c.Ring(), len(st.failed), st.failedSummary(), strings.Join(st.failed, ", "))
 			e.log(c, "campanha pausada", "anel", c.Ring(), "sem_sucesso", len(st.failed))
 			return e.save(ctx, c)
 		}
@@ -570,8 +572,9 @@ func (e *Engine) send(ctx context.Context, c *Campaign, req jobs.Request, id str
 type ringState struct {
 	machines, open, waiting int
 	failed                  []string
-	retry                   []JobState // adiados cujo intervalo passou
-	next                    time.Time  // a próxima nova tentativa entre os que esperam
+	reasons                 map[string]int // sem sucesso por motivo: expirado, rejeitado, falhou...
+	retry                   []JobState     // adiados cujo intervalo passou
+	next                    time.Time      // a próxima nova tentativa entre os que esperam
 }
 
 func ringStatus(list []JobState, now time.Time) ringState {
@@ -591,6 +594,7 @@ func ringStatus(list []JobState, now time.Time) ringState {
 			st.open++
 		case j.State == jobs.StatePostponed && attempts[m] >= MaxAttempts:
 			st.failed = append(st.failed, fmt.Sprintf("job %d adiado na tentativa %d de %d", j.ID, attempts[m], MaxAttempts))
+			st.count("adiado no limite de tentativas")
 		case j.State == jobs.StatePostponed:
 			at := now
 			if j.FinishedAt != nil {
@@ -610,9 +614,33 @@ func ringStatus(list []JobState, now time.Time) ringState {
 		case j.State == jobs.StateDone, j.State == jobs.StateDismissed:
 		default:
 			st.failed = append(st.failed, fmt.Sprintf("job %d %s", j.ID, j.State))
+			st.count(j.State)
 		}
 	}
 	return st
+}
+
+func (st *ringState) count(reason string) {
+	if st.reasons == nil {
+		st.reasons = map[string]int{}
+	}
+	st.reasons[reason]++
+}
+
+// failedSummary: "231 expirado, 14 rejeitado, 2 falhou", do motivo mais comum ao menos.
+func (st ringState) failedSummary() string {
+	keys := slices.Collect(maps.Keys(st.reasons))
+	slices.SortFunc(keys, func(a, b string) int {
+		if d := st.reasons[b] - st.reasons[a]; d != 0 {
+			return d
+		}
+		return strings.Compare(a, b)
+	})
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("%d %s", st.reasons[k], k)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // retry pede de novo às máquinas adiadas cujo intervalo passou. O plano é refeito: se a

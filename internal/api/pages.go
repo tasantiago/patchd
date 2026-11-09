@@ -583,7 +583,8 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 
 // --- Modelos -----------------------------------------------------------------------
 
-var pages = template.Must(template.New("").Parse(`
+var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMais}).Parse(`
+{{define "leia-mais"}}{{if .Long}}<details class="leia-mais"><summary><span class="curto">{{.Short}}</span> <span class="mais">leia mais</span><span class="menos">mostrar menos</span></summary><div class="todo">{{.Full}}</div></details>{{else}}{{.Full}}{{end}}{{end}}
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}} · {{.Brand}}</title>{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}` + faviconLink + `
@@ -1459,7 +1460,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td>
 {{if not $.MachineID}}<td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{end}}
 <td>{{.Type}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Window}}</td><td>{{.Created}}</td><td>{{.By}}</td>
-<td>{{.Delivered}}</td><td>{{.Finished}}</td><td>{{.Detail}}</td>
+<td>{{.Delivered}}</td><td>{{.Finished}}</td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td>
 {{if $.Admin}}<td>{{if .CanCancel}}<form method="post" action="/painel/jobs/{{.ID}}/cancelar">{{if $.MachineID}}<input type="hidden" name="maquina" value="{{$.MachineID}}">{{end}}<button class="perigo" type="submit">Cancelar</button></form>{{end}}</td>{{end}}
 </tr>{{end}}</tbody></table></div>{{end}}
 
@@ -1477,7 +1478,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Grupos de implantação</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
-<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td><td>{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
+<td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td><td class="nowrap">{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
@@ -1554,7 +1555,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Programa aberto</dt><dd>{{.CloseL}}</dd>{{end}}{{if .Fallback}}
 <dt>Fonte do Windows</dt><dd>{{.Fallback}}</dd>{{end}}
 <dt>Observação</dt><dd>{{.Observe}}</dd>
-<dt>Detalhe</dt><dd>{{if .C.Detail}}{{.C.Detail}}{{else}}—{{end}}</dd>
+<dt>Detalhe</dt><dd>{{if .C.Detail}}{{template "leia-mais" (leia .C.Detail)}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
 </dl>
@@ -1572,7 +1573,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <button type="submit">Filtrar</button>{{if or .Q .Filter .Slot}} <a href="{{.Href}}">Limpar</a>{{end}}</form>{{end}}
 {{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th>{{if .HasSlot}}<th>Programa</th>{{end}}<th>Estado</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{if $rv.HasSlot}}<td>{{.Slot}}</td>{{end}}
-<td><span class="job {{.State}}">{{.Label}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
+<td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td></tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
 {{else if .Total}}<p class="muted">Nenhum job com esse filtro.</p>{{end}}{{end}}</div>{{end}}
 {{template "fim"}}{{end}}
@@ -1817,13 +1818,16 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Limpar temporários: {{len .Machines}} máquina(s)</h1>
 {{if .Changed}}<p class="aviso atencao">A lista de alertas mudou desde a conferência (um alerta fechou ou abriu): confira de novo.</p>{{end}}
 {{if .NoKey}}<p class="aviso atencao">O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE): a limpeza vai como job assinado.</p>{{end}}
-<form class="card" method="post" action="/painel/alertas/lote">
+<form class="card limpeza" method="post" action="/painel/alertas/lote">
 <input type="hidden" name="acao" value="limpar"><input type="hidden" name="quais" value="{{.Which}}">{{if .Metric}}<input type="hidden" name="medida" value="{{.Metric}}">{{end}}
 <input type="hidden" name="lista" value="{{.Digest}}">{{range .IDs}}<input type="hidden" name="alerta" value="{{.}}">{{end}}
-<fieldset class="campo"><legend>O que limpar</legend>
-{{range .Items}}<label class="opcao"><input type="checkbox" name="item" value="{{.Value}}" {{if .Checked}}checked{{end}}><span><b>{{.Label}}</b><small>{{.Hint}}</small></span></label>{{end}}
+<fieldset class="escolhas"><legend>O que limpar</legend>
+{{range .Items}}{{if not .Optional}}<label class="opcao"><input type="checkbox" name="item" value="{{.Value}}" {{if .Checked}}checked{{end}}><span><b>{{.Label}}</b><small>{{.Hint}}</small></span></label>{{end}}{{end}}
 </fieldset>
-<p class="muted">Sai só arquivo sem mudança há mais de 2 dias, e só das pastas acima: nada de Downloads, Documentos ou Lixeira. Arquivo em uso fica. O agente não segue links: um atalho de pasta plantado num temporário não leva a limpeza para outro lugar.</p>
+<fieldset class="escolhas"><legend>Opcionais <small>mais demorados; desmarcados por padrão</small></legend>
+{{range .Items}}{{if .Optional}}<label class="opcao"><input type="checkbox" name="item" value="{{.Value}}" {{if .Checked}}checked{{end}}><span><b>{{.Label}}</b><small>{{.Hint}}</small></span></label>{{end}}{{end}}
+</fieldset>
+<p class="muted nota-limpeza">Sai só arquivo sem mudança há mais de 2 dias, e só das pastas acima: nada de Downloads, Documentos ou Lixeira. Arquivo em uso fica. O agente não segue links: um atalho de pasta plantado num temporário não leva a limpeza para outro lugar.</p>
 <div class="tabela"><table><thead><tr><th>Máquina</th><th>Volumes em alerta</th></tr></thead>
 <tbody>{{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=desempenho">{{.Name}}</a></td><td>{{.Volumes}}</td></tr>{{end}}</tbody></table></div>
 <div class="acoes"><button type="submit" name="confirmar" value="1" {{if .NoKey}}disabled{{end}}>Limpar em {{len .Machines}} máquina(s)</button> <a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">Cancelar</a></div>

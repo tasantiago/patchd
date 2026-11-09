@@ -237,7 +237,7 @@ func (w *Watcher) campaigns(ctx context.Context, now time.Time) ([]message, erro
 	for _, i := range idx {
 		c := cs[i]
 		body := fmt.Sprintf("A campanha nº %d (%s, %s) parou sozinha em %s:\n\n%s\n\nOs anéis seguintes só são liberados depois de resolver e retomar (painel ou patchd-server campaign resume).",
-			c.ID, c.Name, c.Target(), stamp(c.UpdatedAt), c.Detail) + w.link(fmt.Sprintf("/painel/campanhas/%d", c.ID))
+			c.ID, c.Name, c.Target(), stamp(c.UpdatedAt), shortDetail(c.Detail)) + w.link(fmt.Sprintf("/painel/campanhas/%d", c.ID))
 		out = append(out, message{kind: KindCampaigns, subject: "Campanha pausada: " + c.Name, body: body, keys: []string{keys[i]}})
 	}
 	return out, nil
@@ -309,4 +309,13 @@ func oneLine(s string, n int) string {
 		return string(r[:n]) + "…"
 	}
 	return s
+}
+
+// shortDetail: o detalhe da campanha sem a lista dos jobs (centenas, num parque grande); a
+// lista fica no painel.
+func shortDetail(d string) string {
+	if i := strings.Index(d, ". Jobs: "); i >= 0 {
+		return d[:i+1] + " A lista dos jobs está no painel."
+	}
+	return d
 }
