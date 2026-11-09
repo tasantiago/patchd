@@ -12,6 +12,10 @@ No Windows, a Central inicia no logon. No Linux com sessão gráfica XDG, o serv
 
 Após atualizar, reinicie o serviço. No Linux, reinstale a unidade (`patchd-agent service uninstall`, depois `patchd-agent service install` com as mesmas opções da instalação original; a credencial é preservada) se a unidade antiga ainda restringir `/usr`, `/opt` e `/etc` a leitura. A unidade atual permite a escrita necessária aos instaladores nesses locais; `/home` continua somente leitura para o serviço. Faça novo logon para carregar a configuração de início da sessão. Para testar na sessão atual, execute `patchd-agent app -no-tray`, sem sudo. A primeira sincronização ocorre após 15 segundos e se repete a cada cinco minutos.
 
+## Diferença para grupos de implantação
+
+Os grupos desta área definem **aplicativos e atalhos desejados**, podem se somar e podem usar grupos do AD do usuário. Os **grupos de implantação** (antigos anéis, comando `ring`) definem etapas e janelas das campanhas; cada computador fica em um único grupo numérico. Uma regra de prédio/IP do grupo de implantação não cria automaticamente um padrão de aplicativos. Consulte [o manual](manual-do-usuario.md#grupos-de-implantação-e-padronização) para escolher o fluxo.
+
 ## Criar o padrão básico e os setores
 
 1. Abra **Padronização** como administrador e clique em **Criar padrão básico**.

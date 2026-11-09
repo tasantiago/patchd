@@ -1,0 +1,67 @@
+name: Documentação da wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'scripts/exportar-wiki.py'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: documentacao-wiki
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Obter a wiki e preservar seu histórico
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          git clone https://github.com/tasantiago/patchd.wiki.git "$RUNNER_TEMP/wiki"
+          git -C "$RUNNER_TEMP/wiki" bundle create "$RUNNER_TEMP/wiki-antes.bundle" --all
+          git -C "$RUNNER_TEMP/wiki" bundle verify "$RUNNER_TEMP/wiki-antes.bundle"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wiki-antes-${{ github.run_id }}
+          path: ${{ runner.temp }}/wiki-antes.bundle
+          retention-days: 30
+          if-no-files-found: error
+      - name: Preparar páginas a partir dos guias versionados
+        run: |
+          python3 scripts/exportar-wiki.py --destino "$RUNNER_TEMP/wiki"
+          git -C "$RUNNER_TEMP/wiki" diff --check
+      - name: Publicar somente a atualização preparada
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          cat > "$RUNNER_TEMP/wiki-askpass" <<'SH'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *) printf '%s\n' "$GH_TOKEN" ;;
+          esac
+          SH
+          chmod 700 "$RUNNER_TEMP/wiki-askpass"
+          cd "$RUNNER_TEMP/wiki"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '*.md'
+          if git diff --cached --quiet; then
+            echo 'Wiki já corresponde aos guias versionados.'
+            exit 0
+          fi
+          git commit -m "docs: sincronizar guias operacionais de $GITHUB_SHA"
+          GIT_ASKPASS="$RUNNER_TEMP/wiki-askpass" git push origin HEAD

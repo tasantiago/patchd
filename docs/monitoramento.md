@@ -60,7 +60,7 @@ O servidor manda os limites no check-in, e o agente os usa só para decidir quan
 próximo. O servidor confere cada lote: N amostras seguidas acima do limite **abrem** um alerta
 (máquina, medida e, no disco, o volume); N seguidas abaixo o **fecham**. Um alerta aberto
 guarda o pico e o último valor. O admin pode **reconhecer** um alerta (com nota), o que o tira
-do contador sem fechá-lo; ele só fecha quando a medida volta.
+do contador sem fechá-lo; ele fecha automaticamente quando a medida volta; o fechamento manual em lote é descrito a seguir.
 
 **Em lote** (tela Alertas, só admin): marque os alertas na tabela, ou escolha "todos os
 abertos" (do filtro de medida em uso), e clique **Fechar** ou **Reconhecer**. Nada muda antes
@@ -127,6 +127,10 @@ Agente anterior: rejeita o job (tipo desconhecido) e o job aparece como falho co
   (usa os padrões).
 - O check-in leva no máximo 1.440 amostras (24 horas); um lote fora do formato é descartado com
   aviso no log, sem derrubar o check-in.
+
+## Rotina de operação
+
+Reconhecimento, fechamento e limpeza têm finalidades diferentes; acompanhe os jobs e as amostras posteriores antes de considerar o disco recuperado. Para o fluxo completo de aprovações/campanhas e a distinção entre grupos, veja [o manual](manual-do-usuario.md). Para o desempenho do processo e do banco do servidor, use [Saúde do servidor](saude-servidor.md).
 
 ## 7. Fora desta versão
 

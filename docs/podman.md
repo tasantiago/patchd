@@ -156,6 +156,14 @@ Mudou o `deploy/.env` (portas, LDAP, SMTP...)? `./deploy/podman/instalar.sh` de 
 Parâmetros (título, fuso, retenção, notificações, grupos) seguem o que a tela gravou: o `.env`
 só vale de novo com "restaurar o padrão".
 
+## Portas e fuso sem reconstruir a imagem
+
+Para alterar a publicação de portas usando a imagem já instalada, ajuste `deploy/.env`, rode `./deploy/podman/instalar.sh`, reinicie `patchd-pod` e inicie `patchd-server`. Não é necessário executar `atualizar.sh` para uma mudança somente de configuração. O reinício do pod também interrompe o banco e as conexões; planeje a migração dos agentes mantendo a entrada antiga disponível.
+
+Para o fuso local do processo, acrescente `Timezone=America/Manaus` na seção `[Container]` do **modelo** `deploy/podman/patchd-server.container`, regenere e reinicie só o servidor. A imagem `scratch` não possui `date` nem shell. O fuso do painel é o parâmetro `PATCHD_TIMEZONE`, que pode estar sobrescrito em Configuração › Parâmetros.
+
+Os comandos completos, validação de TLS, migração por `server_url` e interpretação de `Z`/`-04:00` estão em [Portas, comunicação e horário](comunicacao-e-horario.md). Para separar a entrada do relé do painel, veja [Relé na nuvem](rele.md).
+
 ## Login pelo AD (LDAPS)
 
 O patchd fala com o AD só por LDAPS (porta 636): a senha da rede não passa aberta. No

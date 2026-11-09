@@ -9,6 +9,15 @@ sai do próprio servidor, sem o ambiente de desenvolvimento: `./deploy/agente.sh
 `backup.sh`, o `restaurar.sh` e o `gerar-segredos.sh` são os mesmos (o `PATCHD_MOTOR=podman`
 do `.env` decide); no lugar do `compose.sh`, os comandos da tabela de lá.
 
+## Navegação por tarefa
+
+- [Manual de operação do painel](manual-do-usuario.md): grupos, aprovações, campanhas, alertas e máquinas fora da rede.
+- [Atualizações recentes e compatibilidade](atualizacoes-recentes.md): mudanças revisadas em 9 de novembro de 2026 e quais exigem agente novo.
+- [Portas, comunicação e horário](comunicacao-e-horario.md): aplicar configuração sem compilar, migrar agentes e ajustar o fuso dos logs.
+- [Canal em tempo real e perguntas](canal-tempo-real.md), [relé](rele.md), [padronização](padronizacao.md) e [índice completo](README.md).
+
+Os grupos de implantação das campanhas e os grupos de padronização de aplicativos/atalhos são configurações diferentes. As descrições antigas de “anéis” continuam correspondendo ao comando `ring` e aos grupos numéricos 0 a 9.
+
 ## Comandos do compose e atualização (Aula 10.4)
 
 Variáveis `PATCHD_*` exportadas no shell valem mais que o `deploy/.env` na interpolação do
@@ -1205,6 +1214,14 @@ para todas. O servidor confere de novo no clique: versão já aprovada por outra
 excluída ou de programa que saiu do parque fica de fora, com a contagem na mensagem. Cada
 versão aprovada vai para a auditoria como `terceiros.aprovar`, como a aprovação na página do
 programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tudo de uma vez.
+
+### Downloads grandes no agente
+
+Instaladores de terceiros, bundles de scripts e releases do próprio agente usam um cliente de download separado dos relatórios. O download não tem o teto total fixo de dois minutos do cliente de check-in: aguarda até um minuto para os cabeçalhos e interrompe a tentativa após dois minutos sem receber bytes. Continuam valendo o contexto e os limites de tamanho da operação que pediu o arquivo.
+
+Se a conexão cair depois de receber parte do corpo e houver um identificador do arquivo (`ETag` ou `Last-Modified`), o agente pode retomar por `Range`/`If-Range`, até cinco tentativas no total. O servidor precisa devolver `206` e o deslocamento correto; um arquivo alterado não é concatenado à parte anterior. O chamador continua conferindo tamanho e SHA-256, além da assinatura quando aplicável. A retomada vale nessa execução do download; não promete manter um parcial entre reinícios do serviço.
+
+Atualize o agente para obter esse comportamento. Se os downloads falharem só no relé, confira os timeouts do HAProxy e a conectividade; para instalador que baixou mas excedeu o prazo de execução, use o log e o diagnóstico da seção seguinte.
 
 ### Prazo da instalação e a fila do Windows Installer
 

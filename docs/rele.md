@@ -140,17 +140,31 @@ PATCHD_AGENT_BIND=0.0.0.0     # quem limita é o firewall (zona rele); não amar
 PATCHD_AGENT_PORT=9443
 ```
 
-Podman: `./deploy/podman/instalar.sh` e **reinicie o pod** (as portas publicadas são do pod,
-definidas quando ele sobe; o `atualizar.sh` só reinicia o servidor):
-`systemctl --user daemon-reload && systemctl --user restart patchd-pod.service`, depois
-`./deploy/atualizar.sh` com a versão atual. No host, `ss -ltn | grep 9443` mostra a porta.
-Compose: `docker compose up -d`. O log mostra `Agentes (relé) escutando`.
+Se a imagem instalada já tem a porta só de agentes, aplique a configuração **sem gerar versão nova**. Se não tem, atualize primeiro o servidor pelo roteiro do README.
+
+Podman, como o usuário do serviço:
+
+```bash
+./deploy/podman/instalar.sh
+systemctl --user restart patchd-pod
+systemctl --user start patchd-server
+```
+
+As portas são do pod; o reinício interrompe temporariamente o banco e as conexões. No Docker, use o wrapper de produção:
+
+```bash
+./deploy/compose.sh up -d --no-build --pull never --force-recreate server
+```
+
+No host, `ss -ltn | grep 9443` mostra a publicação. O log do servidor mostra `Agentes (relé) escutando`. Consulte [portas e migração de agentes](comunicacao-e-horario.md) para mudar a entrada principal.
 
 Do relé, confira o caminho e o filtro:
 
 ```bash
-curl -sk -o /dev/null -w '%{http_code}\n' https://10.99.0.2:9443/healthz          # 200
-curl -sk -o /dev/null -w '%{http_code}\n' https://10.99.0.2:9443/painel/entrar    # 403
+curl --cacert /caminho/ca.crt --resolve patchd.exemplo:9443:10.99.0.2 \
+  -sS -o /dev/null -w '%{http_code}\n' https://patchd.exemplo:9443/healthz       # 200
+curl --cacert /caminho/ca.crt --resolve patchd.exemplo:9443:10.99.0.2 \
+  -sS -o /dev/null -w '%{http_code}\n' https://patchd.exemplo:9443/painel/entrar # 403
 ```
 
 ## 4. O HAProxy no relé
@@ -202,8 +216,9 @@ Só o endereço discado muda: o TLS continua com o **nome do servidor** (o da UR
 mesmo sendo `.local`) e a CA interna. Não precisa de nome público, DNS externo nem certificado
 novo; um endereço de relé adulterado só deixa o notebook sem contato. Requisitos: o agente
 nesta versão (atualize **enquanto as máquinas estão dentro da rede**, para aprenderem o relé),
-a URL do agente em HTTPS e **a mesma porta** no relé e no servidor (o HAProxy escuta na porta
-que está na URL do agente; ex.: `bind :8443` se os agentes usam `:8443`).
+a URL do agente em HTTPS e o endereço completo do relé (`host:porta`) correto.
+
+**No relé automático, as portas podem ser diferentes.** O código troca o endereço TCP discado pelo `PATCHD_RELAY_ADDR` inteiro e preserva o nome da URL no TLS. Exemplo: agente com URL `https://patchd.exemplo:8443`, relé configurado como `IP_DO_RELE:443` e HAProxy encaminhando para `10.99.0.2:9443`. Não é necessário mudar a URL dos agentes para usar esse relé. A exigência de porta igual vale para a alternativa de DNS dividido abaixo, na qual só o IP resolvido muda.
 
 ### Alternativa: um nome público com DNS dividido
 
@@ -220,14 +235,14 @@ Num notebook com o agente desta versão, que já fez um check-in dentro da rede 
 configurado (ele aprende o endereço), conecte fora da rede (o 4G do celular serve):
 
 ```powershell
-Test-NetConnection IP_DO_RELE -Port 8443   # TcpTestSucceeded : True
+Test-NetConnection IP_DO_RELE -Port 443    # porta pública do HAProxy neste exemplo
 Restart-Service patchd-agent               # força um check-in agora
 ```
 
 O log do agente mostra "rede: o servidor não responde direto; falando pelo relé"; voltando à
 rede, "o servidor responde direto de novo".
 
-No painel, a máquina passa a mostrar **Rede: fora da rede (pelo relé na nuvem)** depois do
+A indicação de fora da rede é baseada na porta em que o check-in chegou, não em geolocalização. No painel, a máquina passa a mostrar **Rede: fora da rede (pelo relé na nuvem)** depois do
 próximo check-in; com o canal em tempo real ligado, "Tempo real: conectado". Um job pedido
 para ela sai em segundos.
 
@@ -248,3 +263,7 @@ firewall); o painel nunca fica exposto.
 **Tráfego:** check-ins e o canal em tempo real são poucos MB por notebook por dia; instaladores
 e o catálogo offline pesam mais. Fora da rede, as atualizações do Windows podem vir direto da
 Microsoft (Configuração › Parâmetros › Agentes › Fonte reserva do Windows).
+
+## Referências da implementação
+
+A seleção do destino TCP está em [internal/agent/route.go](../internal/agent/route.go). A filtragem da entrada está em [cmd/server/agentport.go](../cmd/server/agentport.go), e os modelos de publicação ficam em [Compose](../deploy/compose.yaml) e [Quadlet](../deploy/podman/patchd.pod). O [guia de comunicação](comunicacao-e-horario.md) distingue entrada principal, porta só de agentes, métricas e migração de URL.

@@ -8,7 +8,7 @@ O objetivo é oferecer uma base para compreender **quais equipamentos existem, o
 
 > **Estado do projeto:** em desenvolvimento. A presença de uma funcionalidade nos requisitos ou na Wiki não significa, por si só, que ela esteja implementada ou pronta para produção. Consulte a versão do código, os testes e a documentação operacional antes de utilizá-la.
 
-**[Instalar servidor do zero](#instalar-um-servidor-novo-do-zero)** · **[Gerar e publicar uma nova versão](#gerar-e-publicar-uma-nova-versão-do-servidor-e-do-agente)** · **[Documentação (Wiki)](https://github.com/tasantiago/patchd/wiki)** · **[Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior)** · **[Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno)** · **[Manual do Usuário](https://github.com/tasantiago/patchd/wiki/Manual-do-usuario)** · **[Como contribuir](https://github.com/tasantiago/patchd/wiki/Como-contribuir)**
+**[Índice dos guias](docs/README.md)** · **[Manual de operação](docs/manual-do-usuario.md)** · **[Atualizações recentes](docs/atualizacoes-recentes.md)** · **[Instalar servidor do zero](#instalar-um-servidor-novo-do-zero)** · **[Gerar e publicar uma nova versão](#gerar-e-publicar-uma-nova-versão-do-servidor-e-do-agente)** · **[Documentação (Wiki)](https://github.com/tasantiago/patchd/wiki)** · **[Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior)** · **[Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno)** · **[Manual do Usuário](https://github.com/tasantiago/patchd/wiki/Manual-do-usuario)** · **[Como contribuir](https://github.com/tasantiago/patchd/wiki/Como-contribuir)**
 
 ---
 
@@ -49,6 +49,7 @@ flowchart TB
 | PostgreSQL | Armazenar informações necessárias à operação do servidor. |
 | Interface web | Oferecer acesso às informações e operações disponíveis para cada perfil autorizado. |
 | Fontes do sistema operacional | Fornecer evidências de software, sistema operacional e atualizações, conforme suporte da versão. |
+| Relé TCP opcional | Encaminhar conexões dos agentes fora da rede até a entrada só de agentes, mantendo TLS de ponta a ponta. |
 
 **Princípio de arquitetura:** o agente coleta e executa; o servidor define as políticas e as autorizações.
 
@@ -56,17 +57,24 @@ Saiba mais em [Arquitetura](https://github.com/tasantiago/patchd/wiki/Arquitetur
 
 ## Áreas funcionais
 
-As áreas abaixo representam o **escopo e a direção do projeto**, e não uma garantia de disponibilidade integral em todas as revisões.
+As áreas abaixo descrevem os fluxos do código revisado em **9 de novembro de 2026**. Confira a versão instalada: funções do servidor e do agente são atualizadas separadamente. Os limites por plataforma estão nos guias vinculados.
 
-| Área | O que se pretende gerenciar |
+| Área | Fluxo disponível e referência |
 | --- | --- |
-| Inventário | Dispositivos, sistema operacional, softwares, versões e evidências de coleta. |
-| Atualizações | Consultas às fontes nativas e identificação de correções disponíveis ou instaladas. |
-| Conformidade | Avaliação baseada em políticas, fonte dos dados e atualidade das observações. |
-| Jobs | Solicitação, autorização, acompanhamento e verificação de tarefas específicas. |
-| Campanhas | Planejamento de implantações controladas, por etapas ou anéis. |
-| Segurança | Identidade dos agentes, autenticação, autorização e rastreabilidade de operações. |
-| Autoatendimento | Catálogo e solicitações de software, quando suportados e habilitados. |
+| Início e Parque | [Indicadores personalizáveis](docs/dashboard.md), conformidade, máquinas, filtros e evidências com data. |
+| Patch | Avaliação e aprovação por item ou correção, incluindo lotes do filtro completo; [manual](docs/manual-do-usuario.md#aprovar-e-instalar-atualizações). |
+| Jobs e campanhas | Jobs assinados, grupos de implantação, janelas/horário fixo, campanhas de todas as aprovações e reenvios por motivo; [operação](docs/operacao.md). |
+| Grupos de implantação | Regras por prédio do patrimônio ou faixa de IP, com exceções manuais. O comando `ring` continua válido. |
+| Padronização | [Padrão básico e grupos por computador/AD](docs/padronizacao.md), com aplicativos e atalhos por sistema. |
+| Scripts | [ZIPs ou scripts avulsos](docs/pacotes-de-scripts.md), Run, parâmetros e timeout reutilizáveis. |
+| Tempo real e consultas | [Canal de saída e perguntas de leitura](docs/canal-tempo-real.md) sobre arquivo, processo, serviço, Registro e programa. |
+| Máquinas externas | [Relé na nuvem](docs/rele.md), porta só de agentes e escolha automática entre caminho direto e relé. |
+| Monitoramento | [CPU, memória, disco e alertas](docs/monitoramento.md), ações em lote e limpeza de temporários com conferência. |
+| Saúde da plataforma | [Saúde do servidor](docs/saude-servidor.md), com recomendações de CPU, memória, banco e disco. |
+| Autoatendimento e BIOS | Catálogo/aprovação da TI, guarda/aplicação de senhas e configurações de firmware, com os limites dos guias. |
+| Ligar pela rede | [Wake-on-LAN por agentes da sub-rede](docs/wake-on-lan.md), com acompanhamento da resposta. |
+
+Windows e Linux têm fluxos de instalação de atualizações do sistema. macOS tem inventário e avaliação; aplicativos no macOS podem ser instalados por scripts de padronização. O canal e o relé não fornecem acesso gráfico remoto nem terminal de comandos livres.
 
 Para requisitos e limites detalhados, consulte [docs/requisitos.md](docs/requisitos.md), [docs/fontes-de-verdade.md](docs/fontes-de-verdade.md) e [docs/seguranca.md](docs/seguranca.md).
 
@@ -74,7 +82,7 @@ Para requisitos e limites detalhados, consulte [docs/requisitos.md](docs/requisi
 
 | Perfil | Caminho recomendado |
 | --- | --- |
-| **Usuário ou operador** | [Manual do Usuário](https://github.com/tasantiago/patchd/wiki/Manual-do-usuario) → [Utilização](https://github.com/tasantiago/patchd/wiki/Usuario-03-Utilizacao). |
+| **Usuário ou operador** | [Manual de operação atualizado](docs/manual-do-usuario.md) → [Manual do Usuário](https://github.com/tasantiago/patchd/wiki/Manual-do-usuario) → [Utilização](https://github.com/tasantiago/patchd/wiki/Usuario-03-Utilizacao). |
 | **Administrador** | [Servidor novo do zero](#instalar-um-servidor-novo-do-zero) → [Instalação](https://github.com/tasantiago/patchd/wiki/Usuario-01-Instalacao) → [Configuração](https://github.com/tasantiago/patchd/wiki/Usuario-02-Configuracao) → [Diagnóstico](https://github.com/tasantiago/patchd/wiki/Usuario-05-Diagnostico). |
 | **Desenvolvedor júnior** | [Trilha Júnior](https://github.com/tasantiago/patchd/wiki/Trilha-junior): funcionamento do sistema, agente, inventário, atualizações e diagnóstico. |
 | **Desenvolvedor pleno** | [Trilha Pleno](https://github.com/tasantiago/patchd/wiki/Trilha-pleno): arquitetura, API, persistência, resiliência, jobs e integrações. |
@@ -185,7 +193,7 @@ Se a rede usa inspeção TLS, obtenha o certificado **público** da CA com a equ
 
 #### 4. Gerar a chave de jobs desta instalação
 
-Para uma **parque novo**, gere o par usando a imagem recém-compilada:
+Para um **parque novo**, gere o par usando a imagem recém-compilada:
 
 ```bash
 docker run --rm --network none --user "$(id -u):$(id -g)" \
@@ -433,7 +441,7 @@ podman run --rm --network none \
   > deploy/secrets/job_signing_key.pub
 ```
 
-A privada é criada pelo próprio programa e não é sobrescrita. Preserve-a em backup protegido fora da VM; a pública será embutida nos agentes. Este é o procedimento de uma **parque novo**. Para migrar equipamentos existentes, preserve a chave de jobs de produção e siga o plano de migração; trocar essa chave sem preparar os agentes faz os jobs serem recusados.
+A privada é criada pelo próprio programa e não é sobrescrita. Preserve-a em backup protegido fora da VM; a pública será embutida nos agentes. Este é o procedimento de um **parque novo**. Para migrar equipamentos existentes, preserve a chave de jobs de produção e siga o plano de migração; trocar essa chave sem preparar os agentes faz os jobs serem recusados.
 
 O `keep-id` apresenta o usuário do serviço como UID 65532 no contêiner. Assim ele lê os segredos e o TLS que pertencem a esse usuário, sem aplicar as ACLs do roteiro Docker. Os sufixos `:Z` preparam os rótulos do SELinux.
 
@@ -659,11 +667,11 @@ A publicação usa um contêiner temporário com a pasta para escrita: o servido
 
 ### 3. Receber a atualização no próximo check-in
 
-Após publicar, **Configuração › Agente** oferece a nova versão e o servidor a anuncia na resposta aos próximos check-ins. A oferta é global aos agentes elegíveis; esse mecanismo de atualização do próprio agente não usa os anéis das campanhas de instalação de software. Homologue os artefatos em um ambiente de teste antes de publicá-los no parque de produção.
+Após publicar, **Configuração › Agente** oferece a nova versão e o servidor a anuncia na resposta aos próximos check-ins. A oferta é global aos agentes elegíveis; esse mecanismo de atualização do próprio agente não usa os grupos de implantação das campanhas de instalação de software. Homologue os artefatos em um ambiente de teste antes de publicá-los no parque de produção.
 
 O agente instalado precisa estar rodando como serviço, com autoatualização ativa, uma versão válida e a pública correspondente à chave que assinou a release. Ele aceita apenas uma versão **mais nova que a instalada**, e o servidor só oferece agentes com versão **menor ou igual à sua**. O agente verifica assinatura, plataforma, tamanho, SHA-256 e identificação do executável antes de iniciar a substituição e o reinício do serviço. Identidade e credencial de registro são preservadas; não é necessário criar outro token de enrollment.
 
-O intervalo padrão é **1 h com variação de ±10%**; rede indisponível e novas tentativas podem aumentar a espera. Para antecipar em uma estação de teste, reinicie o serviço do agente como administrador: `Restart-Service patchd-agent` no Windows ou `sudo systemctl restart patchd-agent` no Linux. Há um atraso aleatório inicial de até cinco minutos. Um processo executado apenas no terminal não habilita a autoatualização do serviço.
+O intervalo padrão é **1 h com variação de ±10%**, ajustável para agentes compatíveis em **Configuração › Parâmetros › Agentes › Intervalo de check-in**; rede indisponível e novas tentativas podem aumentar a espera. O canal em tempo real antecipa jobs; a nova release é anunciada no check-in, não deve ser considerada instalada só por estar publicada. Para antecipar em uma estação de teste, reinicie o serviço do agente como administrador: `Restart-Service patchd-agent` no Windows ou `sudo systemctl restart patchd-agent` no Linux. Há um atraso aleatório inicial de até cinco minutos. Um processo executado apenas no terminal não habilita a autoatualização do serviço.
 
 Confira em **Inventário** a versão reportada do agente e o último contato de cada equipamento, depois do reinício e do novo check-in. Veja os logs do agente para confirmar instalação ou erro; `release current` comprova a oferta, não a adoção pelo parque.
 
@@ -729,11 +737,21 @@ Consulte [docs/seguranca.md](docs/seguranca.md) e [Segurança no desenvolvimento
 
 | Recurso | Finalidade |
 | --- | --- |
-| [Wiki do patchd](https://github.com/tasantiago/patchd/wiki) | Portal central de documentação e formação. |
+| [Índice dos guias](docs/README.md) | Entrada para a documentação versionada no checkout. |
+| [Manual de operação](docs/manual-do-usuario.md) | Fluxo atual do painel, grupos, aprovações, campanhas e alertas. |
+| [Atualizações recentes](docs/atualizacoes-recentes.md) | Mudanças revisadas e dependências de servidor/agente. |
+| [Wiki do patchd](https://github.com/tasantiago/patchd/wiki) | Trilhas de formação e navegação. |
 | [docs/requisitos.md](docs/requisitos.md) | Requisitos funcionais, não funcionais e restrições. |
 | [docs/fontes-de-verdade.md](docs/fontes-de-verdade.md) | Fontes consideradas para inventário e atualizações em cada SO. |
 | [docs/dashboard.md](docs/dashboard.md) | Página inicial: indicadores, prioridades, janelas de tempo e limites dos dados. |
 | [docs/operacao.md](docs/operacao.md) | Orientações operacionais vinculadas ao código. |
+| [docs/comunicacao-e-horario.md](docs/comunicacao-e-horario.md) | Portas, migração de URL dos agentes e fuso dos logs sem nova imagem. |
+| [docs/canal-tempo-real.md](docs/canal-tempo-real.md) | Entrega antecipada de jobs e perguntas ao parque. |
+| [docs/rele.md](docs/rele.md) | Notebooks externos, túnel, porta só de agentes e relé automático. |
+| [docs/padronizacao.md](docs/padronizacao.md) | Aplicativos e atalhos básicos ou por setor. |
+| [docs/monitoramento.md](docs/monitoramento.md) | CPU, memória, disco, alertas em lote e limpeza. |
+| [docs/saude-servidor.md](docs/saude-servidor.md) | Dimensionamento e histórico do próprio servidor. |
+| [docs/wake-on-lan.md](docs/wake-on-lan.md) | Acordar máquinas pelos repetidores da sub-rede. |
 | [docs/seguranca.md](docs/seguranca.md) | Modelo de ameaças e decisões de segurança. |
 | [docs/podman.md](docs/podman.md) | Operação com Podman sem root, Quadlet, agentes e diagnóstico. |
 | [docs/tls-laboratorio.md](docs/tls-laboratorio.md) | TLS com CA nova para laboratório isolado. |

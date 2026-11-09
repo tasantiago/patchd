@@ -35,7 +35,7 @@ não são executadas; os contadores normais do menu continuam seguindo seu cache
 
 **— indica dado indisponível**, nunca zero. Uma falha de consulta é sinalizada e
 os demais blocos continuam sendo apresentados quando suas fontes respondem.
-Umo parque vazio não recebe taxa de conformidade de 100%.
+Um parque vazio não recebe taxa de conformidade de 100%.
 
 ## Gráficos e acompanhamentos
 
@@ -74,6 +74,12 @@ Avisos de catálogo atrasado continuam visíveis. Ausência de dados, busca com 
 e estado desconhecido não são considerados evidência de conformidade. Uma
 avaliação e a listagem de inventário são consultas distintas: mudanças durante a
 consulta podem aparecer no próximo carregamento.
+
+## Dados recentes e reavaliação
+
+A conformidade por máquina é reaproveitada em memória e refeita quando inventário, busca ou catálogo mudam, ou quando o prazo da avaliação vence. A manutenção periódica evita reavaliar o parque inteiro a cada abertura de página. Após reiniciar o servidor ou uma mudança ampla de catálogo, o aquecimento pode levar tempo; a visão geral trata avaliações em reconstrução sem considerar ausência de dado como conformidade. Veja [Saúde e avaliação](operacao.md#saúde-do-servidor).
+
+Para investigar os gráficos de uma máquina, use a aba Desempenho. As curvas atuais têm valores e detalhes no próprio SVG; a interpretação, retenção e as ações em lote ficam em [Monitoramento](monitoramento.md). Para novidades dos demais menus, veja [o manual](manual-do-usuario.md).
 
 ## Acesso e operação
 
