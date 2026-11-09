@@ -67,6 +67,9 @@ type Client struct {
 	// Capabilities vão em cada check-in (Aula 8.1): o servidor só entrega jobs a quem
 	// anuncia que sabe recebê-los.
 	Capabilities []string
+
+	// Injetáveis nos testes do download.
+	downloadIdle, retryWait time.Duration
 }
 
 // NewClient monta o cliente com o prazo padrão.
