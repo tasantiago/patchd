@@ -96,11 +96,12 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 		AgentVersion:   req.AgentVersion,
 		Evidence:       req.Evidence,
 		Keys:           keys,
+		ViaRelay:       viaRelay(r.Context()),
 	}
 	links, err := a.store.Enroll(r.Context(), identity.Hash(tok), m)
 	if errors.Is(err, identity.ErrEnrollmentRejected) {
 		// O motivo (desconhecido, vencido, esgotado, revogado) fica no log; nunca o token.
-		a.logger.Warn("enrollment recusado", "reason", err.Error(), "request_id", RequestID(r.Context()), "remote", r.RemoteAddr)
+		a.logger.Warn("enrollment recusado", "reason", err.Error(), "pelo_rele", m.ViaRelay, "request_id", RequestID(r.Context()), "remote", r.RemoteAddr)
 		unauthorized(w, "token de enrollment ausente ou inválido")
 		return
 	}
@@ -111,7 +112,7 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 
 	a.logger.Info("máquina registrada",
 		"machine_id", m.ID, "hostname", req.Evidence.Hostname, "os_family", req.Evidence.OSFamily,
-		"agent_version", req.AgentVersion, "request_id", RequestID(r.Context()))
+		"agent_version", req.AgentVersion, "pelo_rele", m.ViaRelay, "request_id", RequestID(r.Context()))
 	// Os alertas vão para o log e para /api/v1/identity-links; nunca para a resposta, que
 	// não pode revelar a quem pede o ID de outras máquinas.
 	for _, l := range links {

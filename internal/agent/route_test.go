@@ -127,3 +127,24 @@ func TestEnderecoPrincipal(t *testing.T) {
 		}
 	}
 }
+
+// O -relay do install fica no estado (o serviço sobe sabendo do relé), sem trocar o que o
+// servidor já mandou.
+func TestSeedRelay(t *testing.T) {
+	dir := t.TempDir()
+	if err := SeedRelay(dir, "https://x"); err == nil {
+		t.Error("endereço inválido aceito")
+	}
+	if err := SeedRelay(dir, "203.0.113.10:8443"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := loadState(dir); s.Relay != "203.0.113.10:8443" {
+		t.Fatalf("estado: %+v", s)
+	}
+	if err := SeedRelay(dir, "198.51.100.1:443"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := loadState(dir); s.Relay != "203.0.113.10:8443" {
+		t.Errorf("trocou o relé guardado: %q", s.Relay)
+	}
+}

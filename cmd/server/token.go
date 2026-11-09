@@ -86,8 +86,22 @@ func tokenCreate(ctx context.Context, st *store.Postgres, args []string, stdout,
 	uses := fs.Int("uses", 1, "número máximo de máquinas; 0 = ilimitado")
 	ttl := fs.Duration("ttl", 24*time.Hour, "validade: 0 = sem vencimento, ex.: 2h, 72h (máximo 720h)")
 	note := fs.String("note", "", "descrição para a lista, ex.: \"piloto grupo de implantação 0\"")
+	relay := fs.Bool("relay", false, "token pelo relé (docs/rele.md): uso único, só vale pela porta do relé, validade de até 168h")
 	if err := fs.Parse(args); err != nil {
 		return exitConfig
+	}
+	if *relay {
+		given := false
+		fs.Visit(func(f *flag.Flag) { given = given || f.Name == "uses" })
+		if given && *uses != 1 {
+			fmt.Fprintln(stderr, "patchd-server: o token -relay é de uso único (-uses 1)")
+			return exitConfig
+		}
+		*uses = 1
+		if *ttl <= 0 || *ttl > 168*time.Hour {
+			fmt.Fprintln(stderr, "patchd-server: o token -relay vence em até 168h (7 dias); -ttl 0 não vale")
+			return exitConfig
+		}
 	}
 	if *uses < 0 || *uses > tokenMaxUses {
 		fmt.Fprintf(stderr, "patchd-server: -uses deve ficar entre 0 (ilimitado) e %d\n", tokenMaxUses)
@@ -103,7 +117,13 @@ func tokenCreate(ctx context.Context, st *store.Postgres, args []string, stdout,
 	if *ttl > 0 {
 		expires = time.Now().Add(*ttl).UTC()
 	}
-	id, err := st.CreateEnrollmentToken(ctx, hash, *note, expires, *uses)
+	var id int64
+	var err error
+	if *relay {
+		id, err = st.CreateRelayEnrollmentToken(ctx, hash, *note, expires)
+	} else {
+		id, err = st.CreateEnrollmentToken(ctx, hash, *note, expires, *uses)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: criar token: %v\n", err)
 		return exitRuntime
@@ -122,9 +142,13 @@ func tokenList(ctx context.Context, st *store.Postgres, stdout, stderr io.Writer
 	}
 	now := time.Now()
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSITUAÇÃO\tUSOS\tVENCE (UTC)\tNOTA")
+	fmt.Fprintln(tw, "ID\tSITUAÇÃO\tUSOS\tVENCE (UTC)\tRELÉ\tNOTA")
 	for _, t := range list {
-		fmt.Fprintf(tw, "%d\t%s\t%d/%s\t%s\t%s\n", t.ID, t.Status(now), t.Uses, tokenUsesText(t.MaxUses), tokenExpiryText(t.ExpiresAt), t.Note)
+		via := "-"
+		if t.Relay {
+			via = "sim"
+		}
+		fmt.Fprintf(tw, "%d\t%s\t%d/%s\t%s\t%s\t%s\n", t.ID, t.Status(now), t.Uses, tokenUsesText(t.MaxUses), tokenExpiryText(t.ExpiresAt), via, t.Note)
 	}
 	_ = tw.Flush()
 	return exitOK

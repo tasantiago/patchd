@@ -193,6 +193,7 @@ type Store interface {
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
 	// Tokens de registro pelo painel (Aula 15.2): os mesmos do patchd-server token.
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
+	CreateRelayEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time) (int64, error)
 	EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error)
 	RevokeEnrollmentToken(ctx context.Context, id int64) (bool, error)
 	// Usuários locais pelo painel (Aula 15.3): os mesmos do patchd-server user.

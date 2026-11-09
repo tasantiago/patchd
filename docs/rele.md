@@ -19,9 +19,9 @@ banco, certificado nem chave. O servidor, o banco e os arquivos continuam dentro
   o servidor, com o certificado da CA interna (`-ca-file` no agente). A chave privada nunca
   sai da rede interna; um relé adulterado não se passa pelo servidor nem assina jobs.
 - **Porta só de agentes** (`PATCHD_AGENT_LISTEN_ADDR`): a única que o túnel alcança. Atende as
-  rotas do agente (`/api/v1/agent/...`, sempre com a credencial da máquina) e o `/healthz`;
-  recusa o painel, a API de leitura e o registro de máquina nova (máquina nova se registra
-  dentro da rede). As recusas vão para o log, no máximo uma linha por minuto.
+  rotas do agente (`/api/v1/agent/...`, sempre com a credencial da máquina), o `/healthz` e o
+  registro **só com o token pelo relé** (seção 5.1); recusa o painel e a API de leitura. As
+  recusas vão para o log, no máximo uma linha por minuto.
 - **Dentro ou fora:** o servidor guarda por qual porta chegou o último check-in; o Resumo da
   máquina mostra "Rede: fora da rede (pelo relé na nuvem)" ou "dentro da rede".
 - **Canal em tempo real** atravessa o relé sem mudança (a espera de 45 s cabe nos 90 s do
@@ -213,6 +213,32 @@ que está na URL do agente; ex.: `bind :8443` se os agentes usam `:8443`).
   no host pede `net.ipv4.ip_unprivileged_port_start=443` em `/etc/sysctl.d/`).
 - **Certificado** da CA interna com o nome no SAN; `PATCHD_PUBLIC_URL` com nome e porta; os
   agentes instalados mudam de endereço pelo job `server_url`.
+
+### 5.1. Instalar num notebook que nunca entra na rede
+
+O notebook comum se registra dentro da rede e aprende o relé no primeiro check-in. Para o que
+nunca passa pela rede, há o **token pelo relé**:
+
+- **Uso único** (uma máquina), **validade de até 7 dias**, e **só vale pela porta do relé**.
+  Dentro da rede ele é recusado; o token comum, ao contrário, é recusado pelo relé. Um token
+  comum vazado não vira cadastro pela internet, e o pelo relé serve a uma máquina só.
+- Criação: **Configuração › Agente › Tokens de registro**, marque **Pelo relé** (exige o
+  `PATCHD_RELAY_ADDR` em Parâmetros), ou `patchd-server token create -relay -ttl 24h -note
+  "notebook X"`. A lista mostra a marca "pelo relé"; a criação vai para a auditoria.
+- O comando de instalação da tela já leva o `-relay IP_DO_RELE:8443`:
+
+  ```powershell
+  .\patchd-agent-windows-amd64.exe install -server https://NOME_DO_SERVIDOR:8443 -enroll-token-file $t -ca-file C:\ProgramData\patchd\ca.crt -relay IP_DO_RELE:8443
+  ```
+
+  O agente tenta o servidor direto (3 s); sem resposta, registra pelo relé. O TLS confere o
+  certificado no nome do servidor, com a CA interna (`-ca-file`): um relé falso não se passa
+  pelo servidor. O relé fica gravado no estado do agente (não na linha do serviço), e o
+  primeiro check-in já sai por ele; depois, vale o que o servidor manda no check-in.
+- `-relay` não vai com `-offline` (o registro pelo relé é na hora). Agente anterior a esta
+  versão não conhece o `-relay`.
+- No log do servidor, o registro traz `pelo_rele=true`; uma recusa diz o motivo ("é de
+  registro pelo relé e só vale pela porta do relé", "é da rede interna e não vale pelo relé").
 
 ## 6. Teste de ponta a ponta
 

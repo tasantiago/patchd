@@ -165,6 +165,7 @@ func ensureEnrolled(cfg agentConfig, look config.Lookup, stdout, stderr io.Write
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
 		return c, exitConfig
 	}
+	setEnrollRelay(cfg.Relay)
 	c, err = enrollMachine(cfg.ServerURL, cfg.DataDir, token, agentVersion, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-agent: %v\n", err)
@@ -210,7 +211,8 @@ func serviceArgs(args []string) []string {
 		if strings.HasPrefix(a, "-") && (name == "offline" || name == "image") {
 			continue
 		}
-		if strings.HasPrefix(a, "-") && (name == "server" || name == "enroll-token-file") {
+		// -relay fica no estado (o servidor manda o dele no check-in), não na linha do serviço.
+		if strings.HasPrefix(a, "-") && (name == "server" || name == "enroll-token-file" || name == "relay") {
 			if !hasValue {
 				i++ // o valor vem no argumento seguinte
 			}

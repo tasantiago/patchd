@@ -875,10 +875,11 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <label for="nota">Descrição</label><input id="nota" name="nota" maxlength="{{.MaxNote}}" placeholder="ex.: laboratório da SEAT, outubro">
 <label for="validade">Validade</label><select id="validade" name="validade">{{range .TTLs}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <label for="usos">Máquinas</label><input id="usos" name="usos" type="number" min="0" max="{{.MaxUses}}" value="1">
+<span></span><label class="opcao-linha"><input type="checkbox" name="rele" value="1"> <span><b>Pelo relé</b> <small class="muted">para notebook que nunca entra na rede: uso único (ignora Máquinas), só vale pela porta do relé e vence em até 7 dias; o comando já leva o -relay</small></span></label>
 <span></span><span><button type="submit">Criar token</button> <span class="muted">O token aparece uma única vez, com o comando de instalação. Máquinas: 0 permite usos ilimitados. Escolha Sem vencimento para um token permanente.</span></span>
 </form>
 {{if .Tokens}}<div class="tabela"><table><thead><tr><th>ID</th><th>Descrição</th><th>Criado</th><th>Vence</th><th>Usos</th><th>Estado</th><th></th></tr></thead>
-<tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{if .MaxUses}}{{.MaxUses}}{{else}}ilimitados{{end}}</td><td>{{.Status}}</td>
+<tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{if .MaxUses}}{{.MaxUses}}{{else}}ilimitados{{end}}</td><td>{{.Status}}{{if .Relay}} · <span class="muted">pelo relé</span>{{end}}</td>
 <td>{{if .CanRevoke}}<form class="inline" method="post" action="/painel/configuracao/agente/token/{{.ID}}/revogar"><button class="perigo" type="submit">Revogar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum token criado.</p>{{end}}</div>{{end}}
 {{if eq .Tab "acesso"}}{{with .Access}}
@@ -931,6 +932,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p><a href="/painel/configuracao?aba=agente">← Configuração › Agente</a></p>
 <h1>Token de registro {{.ID}}</h1>
 <p class="aviso atencao">Guarde agora: o token não será mostrado de novo. Validade: {{.Expires}}, para {{if .Uses}}{{.Uses}} máquina(s){{else}}usos ilimitados{{end}}{{if .Note}} ({{.Note}}){{end}}.</p>
+{{if .Relay}}<p class="aviso">Token <b>pelo relé</b>: vale para uma máquina só, e só fora da rede, pelo relé ({{.Relay}}). Dentro da rede ele é recusado: use um token comum. O comando abaixo já leva o <code>-relay</code>; o agente tenta o servidor direto e, sem resposta, registra pelo relé.</p>{{end}}
 <div class="card"><div class="card-cab"><h2>Token</h2></div><pre class="comando">{{.Token}}</pre></div>
 <div class="card"><div class="card-cab"><h2>Windows</h2><span class="muted">{{if .Version}}patchd-agent {{.Version}} · {{end}}baixe o executável{{if .CA}} e o ca.crt{{end}} em Configuração › Agente</span></div><pre class="comando">{{.WinCommand}}</pre></div>
 <div class="card"><div class="card-cab"><h2>Linux</h2></div><pre class="comando">{{.LinCommand}}</pre></div>
