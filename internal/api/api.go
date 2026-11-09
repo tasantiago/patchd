@@ -110,6 +110,8 @@ type Store interface {
 	Question(ctx context.Context, id int64) (store.Question, bool, error)
 	QuestionJobs(ctx context.Context, id int64) ([]store.QuestionJob, error)
 	RingMachines(ctx context.Context, ring int) ([]string, error)
+	SetCheckinRelay(ctx context.Context, id string, relay bool) error // docs/rele.md
+	CheckinRelay(ctx context.Context, id string) (*bool, error)
 	SetMachineCapabilities(ctx context.Context, id string, caps []string) error                      // fechar o programa com aviso
 	MarkJobsUnblocked(ctx context.Context, machineID string, ids []int64, at time.Time) (int, error) // tentar assim que fechar
 	// CheckinTLS diz por qual canal chegou o último check-in (nil: nenhum desde a Aula 9.2).

@@ -39,6 +39,15 @@ func (a *api) channelView(r *http.Request, id string, v *machineView) error {
 	default:
 		v.Channel = "HTTP (porta de transição)"
 	}
+	// docs/rele.md: dentro da rede, ou fora (pelo relé na nuvem).
+	if relay, err := a.store.CheckinRelay(r.Context(), id); err != nil {
+		return err
+	} else if relay != nil {
+		v.Network = "dentro da rede (porta interna)"
+		if *relay {
+			v.Network = "fora da rede (pelo relé na nuvem)"
+		}
+	}
 	if a.channelOn() {
 		v.RealTime = "não conectado agora: os jobs saem no próximo check-in"
 		if a.channel.IsConnected(id) {

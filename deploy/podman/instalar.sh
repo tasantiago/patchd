@@ -67,6 +67,7 @@ servidor_env() {
   fixo PATCHD_TLS_KEY_FILE /run/patchd/tls/server.key
   ausente PATCHD_HTTP_LISTEN_ADDR :8080
   padrao PATCHD_HTTP_CACHE_ONLY false
+  padrao PATCHD_AGENT_LISTEN_ADDR ""
   obrigatoria PATCHD_PUBLIC_URL
   padrao PATCHD_AGENT_CA_FILE ""
   fixo PATCHD_JOB_SIGNING_KEY_FILE /run/secrets/job_signing_key
@@ -179,6 +180,7 @@ RELEASES_DIR="$(caminho PATCHD_RELEASES_HOST_DIR ../releases)"
 DISCOVERY_KEY_FILE="$(caminho PATCHD_DISCOVERY_KEY_HOST_FILE /dev/null)"
 TLS_BIND="$(endereco PATCHD_TLS_BIND 0.0.0.0)"; TLS_PORT="$(porta PATCHD_TLS_PORT 8443)"
 HTTP_BIND="$(endereco PATCHD_HTTP_BIND 0.0.0.0)"; HTTP_PORT="$(porta PATCHD_HTTP_PORT 8080)"
+AGENT_BIND="$(endereco PATCHD_AGENT_BIND 127.0.0.1)"; AGENT_PORT="$(porta PATCHD_AGENT_PORT 9443)"
 METRICS_BIND="$(endereco PATCHD_METRICS_BIND 127.0.0.1)"; METRICS_PORT="$(porta PATCHD_METRICS_PORT 9090)"
 [[ "$CONF" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "XDG_CONFIG_HOME com caracteres que o systemd interpreta: $CONF" >&2; exit 1; }
 
@@ -186,7 +188,7 @@ METRICS_BIND="$(endereco PATCHD_METRICS_BIND 127.0.0.1)"; METRICS_PORT="$(porta 
 # não subiu". Com o pod no ar, as portas são dele: não há o que conferir.
 if command -v ss >/dev/null && ! systemctl --user is-active --quiet patchd-pod.service; then
   ocupadas=""
-  for par in "PATCHD_TLS_PORT:$TLS_PORT" "PATCHD_HTTP_PORT:$HTTP_PORT" "PATCHD_METRICS_PORT:$METRICS_PORT"; do
+  for par in "PATCHD_TLS_PORT:$TLS_PORT" "PATCHD_HTTP_PORT:$HTTP_PORT" "PATCHD_METRICS_PORT:$METRICS_PORT" "PATCHD_AGENT_PORT:$AGENT_PORT"; do
     if [ -n "$(ss -Hltn "( sport = :${par#*:} )" 2>/dev/null)" ]; then
       ocupadas="$ocupadas ${par%%:*}=${par#*:}"
     fi
@@ -211,6 +213,7 @@ modelo() { # ARQUIVO DESTINO
       -e "s|@TLS_DIR@|$TLS_DIR|g" -e "s|@RELEASES_DIR@|$RELEASES_DIR|g" \
       -e "s|@TLS_BIND@|$TLS_BIND|g" -e "s|@TLS_PORT@|$TLS_PORT|g" \
       -e "s|@HTTP_BIND@|$HTTP_BIND|g" -e "s|@HTTP_PORT@|$HTTP_PORT|g" \
+      -e "s|@AGENT_BIND@|$AGENT_BIND|g" -e "s|@AGENT_PORT@|$AGENT_PORT|g" \
       -e "s|@METRICS_BIND@|$METRICS_BIND|g" -e "s|@METRICS_PORT@|$METRICS_PORT|g" "$1" > "$2.novo"
   if grep -q '@[A-Z_]*@' "$2.novo"; then
     echo "modelo com marcador sem valor: $1" >&2; rm -f "$2.novo"; exit 1
@@ -250,7 +253,7 @@ fi
 
 cat <<MSG
 unidades geradas em $QDIR e $UDIR; variáveis do servidor em $ENV_FILE
-  portas no host: $TLS_BIND:$TLS_PORT (HTTPS), $HTTP_BIND:$HTTP_PORT (HTTP), $METRICS_BIND:$METRICS_PORT (métricas)
+  portas no host: $TLS_BIND:$TLS_PORT (HTTPS), $HTTP_BIND:$HTTP_PORT (HTTP), $METRICS_BIND:$METRICS_PORT (métricas), $AGENT_BIND:$AGENT_PORT (só agentes, relé)
   deploy/.env: PATCHD_MOTOR=podman (os scripts do deploy/ passam a usar o Podman)
 próximos passos: ./deploy/gerar-segredos.sh e, com tudo presente, ./deploy/atualizar.sh vX.Y.Z
 depois da primeira subida: systemctl --user enable --now patchd-backup.timer
