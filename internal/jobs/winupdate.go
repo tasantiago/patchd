@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -49,12 +50,19 @@ const (
 type WinUpdateParams struct {
 	Updates []WinUpdate `json:"updates"`
 	Source  string      `json:"source,omitempty"`
+	// Fallback (só com a fonte da política): se a política não entregar (a busca falha, o KB
+	// não aparece, o download falha), o agente refaz o mesmo job direto pela Microsoft. Vai só
+	// para agentes que anunciam (MicrosoftUpdate.InJob): os anteriores recusam o campo.
+	Fallback bool `json:"fallback,omitempty"`
 }
 
 // SourceLabel: a fonte em palavras.
 func (p WinUpdateParams) SourceLabel() string {
 	if p.Source == WinSourceMicrosoft {
 		return "Microsoft Update (fonte reserva)"
+	}
+	if p.Fallback {
+		return "fonte da política, com a Microsoft de reserva"
 	}
 	return "fonte da política"
 }
@@ -84,6 +92,9 @@ func (p WinUpdateParams) Validate() error {
 	}
 	if p.Source != WinSourcePolicy && p.Source != WinSourceMicrosoft {
 		return fmt.Errorf("fonte do windows_update desconhecida %q", p.Source)
+	}
+	if p.Fallback && p.Source != WinSourcePolicy {
+		return errors.New("a reserva no job (fallback) só vai com a fonte da política")
 	}
 	seen := map[string]bool{}
 	for _, u := range p.Updates {
@@ -175,7 +186,13 @@ func WinUpdatesForKBs(rep protocol.PatchScanReport, kbs []string) (p WinUpdatePa
 // Microsoft: vale a busca direta na Microsoft, se veio; senão, a da política.
 func StillMissing(p WinUpdateParams, rep protocol.PatchScanReport) (still []string, failed string) {
 	want := sourceWUADefault
+	hasMS := slices.ContainsFunc(rep.Scans, func(s protocol.ScanResult) bool { return s.Source == sourceWUAMicrosoft && s.Missing != nil })
 	if p.Source == WinSourceMicrosoft && slices.ContainsFunc(rep.Scans, func(s protocol.ScanResult) bool { return s.Source == sourceWUAMicrosoft }) {
+		want = sourceWUAMicrosoft
+	}
+	// Com a reserva no job, a política falhando (o motivo de ir à Microsoft) não prova nada: vale
+	// a busca direta na Microsoft, se veio.
+	if p.Fallback && hasMS && PolicySourceProblem(rep) != "" {
 		want = sourceWUAMicrosoft
 	}
 	for _, s := range rep.Scans {

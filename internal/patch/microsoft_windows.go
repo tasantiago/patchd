@@ -14,6 +14,12 @@ const wuPolicyKey = `SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate`
 // "Remover o acesso a todos os recursos do Windows Update"; com qualquer uma ligada, o WUA
 // recusa a busca direta.
 func MicrosoftInfo() *protocol.MicrosoftUpdate {
+	info := microsoftPolicy()
+	info.InJob = true // este agente refaz pela Microsoft no job da política (Fallback)
+	return info
+}
+
+func microsoftPolicy() *protocol.MicrosoftUpdate {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, wuPolicyKey, registry.QUERY_VALUE)
 	if err != nil {
 		return &protocol.MicrosoftUpdate{Available: true} // sem política nenhuma do Windows Update

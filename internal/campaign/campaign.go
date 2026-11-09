@@ -282,7 +282,16 @@ func (e *Engine) closeApps(ctx context.Context, c *Campaign, id string, p *jobs.
 // que a Microsoft resolve e a campanha pede, pela fonte Microsoft.
 func (e *Engine) winUpdates(c *Campaign, rep protocol.PatchScanReport, kbs []string) (jobs.WinUpdateParams, string) {
 	p, skip := jobs.PolicyWinUpdates(rep, kbs)
-	if skip == "" || !jobs.FallbackReason(skip) || !c.MicrosoftFallback {
+	if skip == "" {
+		// A política oferece hoje; se na hora não entregar (o KB sumiu do WSUS, o download
+		// falha), o agente que sabe refaz pela Microsoft no mesmo job.
+		if c.MicrosoftFallback && e.MicrosoftAllowed != nil && e.MicrosoftAllowed() &&
+			rep.MicrosoftUpdate != nil && rep.MicrosoftUpdate.Available && rep.MicrosoftUpdate.InJob {
+			p.Fallback = true
+		}
+		return p, skip
+	}
+	if !jobs.FallbackReason(skip) || !c.MicrosoftFallback {
 		return p, skip
 	}
 	if e.MicrosoftAllowed == nil || !e.MicrosoftAllowed() {

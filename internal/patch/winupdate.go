@@ -196,3 +196,16 @@ func clipTitle(s string) string {
 	}
 	return s
 }
+
+// policyDidNotDeliver: a falha é da fonte (a busca falhou, o pedido não aparece nela, o
+// download falhou), não da máquina (outra instalação em andamento, prazo): vale tentar a
+// Microsoft.
+func policyDidNotDeliver(err error) bool {
+	var se sourceError
+	return err != nil && !errors.Is(err, jobs.ErrRetry) && (errors.Is(err, jobs.ErrNotPending) || errors.As(err, &se))
+}
+
+// sourceError marca a falha da fonte (busca ou download), sem mudar a mensagem.
+type sourceError struct{ error }
+
+func (e sourceError) Unwrap() error { return e.error }
