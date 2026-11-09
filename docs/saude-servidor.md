@@ -53,6 +53,18 @@ O veredito no alto junta os recursos: **Aumente agora** (algum crítico), **Fiqu
 (alguma atenção) ou **Nada a aumentar agora**, com a folga da CPU ("aguenta cerca de 3× a
 carga de hoje antes de chegar a 70%") e o crescimento do banco por dia, para planejar.
 
+### Em que disco o banco cresce
+
+A previsão "o disco enche em N dias" divide o crescimento do banco pelo espaço livre **do
+volume onde o banco fica**. Nos containers (compose e Podman), o PostgreSQL mora nos volumes
+nomeados, junto com o Conteúdo e o Cache de repositórios: a conta usa esse volume. As Versões
+do agente são uma pasta do host (no Podman, em `/home/USUARIO/patchd/releases`), que pode
+estar noutra partição: a tela mostra o espaço dela, mas o banco não a enche. Fora de container
+(sem como saber onde o banco grava), a conta usa, por cautela, o disco mais cheio.
+
+Para ver onde fica cada coisa no Podman: `podman info --format '{{.Store.GraphRoot}}'` (os
+volumes, com o banco) e `df -h` dessa pasta e do `/home`.
+
 ### O que o próprio servidor faz para não pesar no pool
 
 Antes de aumentar, confira se a versão já traz estes cuidados (desde 09/11/2026):
