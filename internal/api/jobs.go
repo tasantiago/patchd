@@ -129,6 +129,10 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	if job.Type == jobs.TypeBIOSSettings { // docs/bios-config.md
 		return a.judgeBIOSSettings(r, job, res)
 	}
+	if job.Type == jobs.TypeCleanup {
+		// A limpeza: o efeito é o espaço liberado, que o agente mede e conta no detalhe.
+		return jobs.StateDone, res.Detail
+	}
 	if job.Type == jobs.TypeQuery {
 		// Perguntas ao parque: a resposta é o efeito (só leitura); o detalhe guarda o JSON.
 		return jobs.StateDone, res.Detail

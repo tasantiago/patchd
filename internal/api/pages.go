@@ -1747,7 +1747,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <label><input type="radio" name="quais" value="marcados" checked> os marcados na tabela</label>
 <label><input type="radio" name="quais" value="todos"> todos os {{.InFilter}} abertos{{if .Metric}} desta medida{{end}}</label>
 <input name="nota" maxlength="{{.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do lote">
-<button type="submit" name="acao" value="fechar">Fechar</button> <button class="sec" type="submit" name="acao" value="reconhecer">Reconhecer</button>
+<button type="submit" name="acao" value="fechar">Fechar</button> <button class="sec" type="submit" name="acao" value="reconhecer">Reconhecer</button> <button class="sec" type="submit" name="acao" value="limpar" title="só os alertas de disco">Limpar temporários</button>
 <span class="muted">Nada muda antes da conferência.</span></form>{{end}}
 {{if .Rows}}{{template "alertas-tabela" .}}{{else}}<p class="muted">{{if .All}}Nenhum alerta nos últimos 90 dias.{{else}}Nenhum alerta aberto.{{end}}</p>{{end}}
 <p class="muted">Abre com: {{.Policy}}. Fecha quando a medida fica dentro do limite pelo mesmo tempo. Reconhecer tira do contador do menu, sem fechar. Fechar à mão (em lote) zera a contagem da medida: se o problema continuar, um alerta novo abre depois dos minutos seguidos.</p>
@@ -1758,7 +1758,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <thead><tr>{{if $.Batch}}<th></th>{{end}}<th>Máquina</th><th>Medida</th><th>Aberto em</th><th>Duração</th><th>Pico</th><th>Último</th><th>Estado</th>{{if $.Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr>{{if $.Batch}}<td>{{if .Open}}<input type="checkbox" name="alerta" value="{{.ID}}" form="alertas-lote" aria-label="marcar o alerta {{.ID}}">{{end}}</td>{{end}}<td><a href="/painel/maquinas/{{.MachineID}}?aba=desempenho">{{if .Name}}{{.Name}}{{else}}<code>{{.Short}}</code>{{end}}</a></td><td>{{.Label}}</td><td>{{.Opened}}</td><td>{{.Duration}}</td><td class="num">{{.Peak}}</td><td class="num">{{.Last}}</td>
 <td><span class="nivel-{{.Level}}">{{.State}}</span>{{if .Closed}}<br><span class="muted">{{.Closed}}</span>{{end}}{{if .Ack}}<br><span class="muted">{{.Ack}}</span>{{end}}</td>
-{{if $.Admin}}<td>{{if .CanAck}}<form class="inline" method="post" action="/painel/alertas/{{.ID}}/reconhecer"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do reconhecimento do alerta {{.ID}}"> <button class="sec" type="submit">Reconhecer</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
+{{if $.Admin}}<td>{{if .CanClean}}<form class="inline" method="post" action="/painel/alertas/lote"><input type="hidden" name="acao" value="limpar"><input type="hidden" name="quais" value="marcados"><input type="hidden" name="alerta" value="{{.ID}}"><button class="sec" type="submit">Limpar temporários</button></form> {{end}}{{if .CanAck}}<form class="inline" method="post" action="/painel/alertas/{{.ID}}/reconhecer"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do reconhecimento do alerta {{.ID}}"> <button class="sec" type="submit">Reconhecer</button></form>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
 
 {{define "alertas-lote"}}{{template "topo" .}}
 <p><a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">← Alertas</a></p>
@@ -1810,6 +1810,24 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{range .Groups}}<div class="card"><div class="card-cab"><h2><span class="nivel-{{.Level}}">{{.Value}}</span></h2><span class="muted"><span class="barra" title="{{.Pct}}%"><span class="w{{.Pct}}"></span></span> {{.Count}} máquina(s) · {{.Pct}}%</span></div>
 <details><summary>Ver as máquinas</summary><div class="tabela"><table><thead><tr><th>Máquina</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td class="muted">{{.Extra}}</td></tr>{{end}}</tbody></table></div>{{if .More}}<p class="muted">e mais {{.More}} (no CSV).</p>{{end}}</details></div>{{else}}<p class="muted">Nenhuma máquina no alvo.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "alertas-limpeza"}}{{template "topo" .}}
+<p><a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">← Alertas</a></p>
+<h1>Limpar temporários: {{len .Machines}} máquina(s)</h1>
+{{if .Changed}}<p class="aviso atencao">A lista de alertas mudou desde a conferência (um alerta fechou ou abriu): confira de novo.</p>{{end}}
+{{if .NoKey}}<p class="aviso atencao">O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE): a limpeza vai como job assinado.</p>{{end}}
+<form class="card" method="post" action="/painel/alertas/lote">
+<input type="hidden" name="acao" value="limpar"><input type="hidden" name="quais" value="{{.Which}}">{{if .Metric}}<input type="hidden" name="medida" value="{{.Metric}}">{{end}}
+<input type="hidden" name="lista" value="{{.Digest}}">{{range .IDs}}<input type="hidden" name="alerta" value="{{.}}">{{end}}
+<fieldset class="campo"><legend>O que limpar</legend>
+{{range .Items}}<label class="opcao"><input type="checkbox" name="item" value="{{.Value}}" {{if .Checked}}checked{{end}}><span><b>{{.Label}}</b><small>{{.Hint}}</small></span></label>{{end}}
+</fieldset>
+<p class="muted">Sai só arquivo sem mudança há mais de 2 dias, e só das pastas acima: nada de Downloads, Documentos ou Lixeira. Arquivo em uso fica. O agente não segue links: um atalho de pasta plantado num temporário não leva a limpeza para outro lugar.</p>
+<div class="tabela"><table><thead><tr><th>Máquina</th><th>Volumes em alerta</th></tr></thead>
+<tbody>{{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=desempenho">{{.Name}}</a></td><td>{{.Volumes}}</td></tr>{{end}}</tbody></table></div>
+<div class="acoes"><button type="submit" name="confirmar" value="1" {{if .NoKey}}disabled{{end}}>Limpar em {{len .Machines}} máquina(s)</button> <a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">Cancelar</a></div>
+</form>
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}
