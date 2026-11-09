@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Canal em tempo real (internal/canal): os avisos de job novo saem do gatilho da 0062.
@@ -62,4 +65,42 @@ func (m *Memory) OnJobCreated(f func(machineID string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.jobHook = f
+}
+
+// SetCheckinRelay guarda por onde chegou o último check-in (true: pelo relé). Só escreve se mudou.
+func (p *Postgres) SetCheckinRelay(ctx context.Context, id string, relay bool) error {
+	_, err := p.pool.Exec(ctx, `UPDATE machines SET last_checkin_relay = $2 WHERE id = $1 AND last_checkin_relay IS DISTINCT FROM $2`, id, relay)
+	return err
+}
+
+// CheckinRelay: por onde chegou o último check-in; nil: nenhum desde a 0064 (ou máquina desconhecida).
+func (p *Postgres) CheckinRelay(ctx context.Context, id string) (*bool, error) {
+	var v *bool
+	err := p.pool.QueryRow(ctx, `SELECT last_checkin_relay FROM machines WHERE id = $1`, id).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return v, err
+}
+
+// SetCheckinRelay na memória.
+func (m *Memory) SetCheckinRelay(ctx context.Context, id string, relay bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mm := m.machines[id]; mm != nil {
+		v := relay
+		mm.checkinRelay = &v
+	}
+	return nil
+}
+
+// CheckinRelay na memória.
+func (m *Memory) CheckinRelay(ctx context.Context, id string) (*bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if mm := m.machines[id]; mm != nil && mm.checkinRelay != nil {
+		v := *mm.checkinRelay
+		return &v, nil
+	}
+	return nil, nil
 }

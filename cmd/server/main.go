@@ -501,6 +501,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		if cfg.HTTPListenAddr != "" {
 			ls = append(ls, listener{name: "HTTP de transição", addr: cfg.HTTPListenAddr, handler: transitionHandler(handler, logger, cfg.HTTPCacheOnly)})
 		}
+		if cfg.AgentListenAddr != "" { // docs/rele.md
+			ls = append(ls, listener{name: "Agentes (relé)", addr: cfg.AgentListenAddr, handler: withHSTS(agentOnlyHandler(handler, logger)), tls: tlsConfig(certs)})
+		}
 	}
 	if reg != nil {
 		var snap *snapshotter

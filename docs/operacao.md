@@ -729,6 +729,9 @@ check-in na hora. Sem novidade, a espera volta e o agente abre outra.
   vez, depois 1 a cada 10 s). 2.000 esperas abertas não ocupam conexão do PostgreSQL. Se a escuta
   do banco cair, o servidor tenta de novo (5 s até 2 min) e os agentes seguem pelo check-in.
 - **Agentes antigos:** não abrem a espera; continuam pelo check-in, como antes.
+- **Notebooks fora da rede:** pelo relé na nuvem e a porta só de agentes
+  (`PATCHD_AGENT_LISTEN_ADDR`), em [rele.md](rele.md). O Resumo da máquina mostra se o último
+  check-in veio de dentro da rede ou pelo relé.
 
 **Perguntas ao parque** (Automação › Perguntas ao parque, só admin). Uma pergunta de um catálogo
 fechado, **só de leitura**, a todas as máquinas ou a um grupo de implantação:

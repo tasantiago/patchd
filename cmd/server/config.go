@@ -45,6 +45,10 @@ type serverConfig struct {
 	HTTPListenAddr string
 	// HTTPCacheOnly (Aula 9.3): a porta HTTP fica só para o cache de repositórios.
 	HTTPCacheOnly bool
+	// AgentListenAddr (docs/rele.md): porta HTTPS só dos agentes, a que o relé na nuvem
+	// alcança pelo túnel. Recusa o painel, a API de leitura e o registro de máquina nova.
+	// Vazio: desligada.
+	AgentListenAddr string
 	// PublicURL (Aula 9.2): a URL HTTPS pela qual os agentes alcançam este servidor, levada
 	// no job server_url. Normalizada na leitura.
 	PublicURL string
@@ -89,6 +93,8 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		"chave privada do certificado TLS, em PEM (env PATCHD_TLS_KEY_FILE)")
 	fs.StringVar(&cfg.HTTPListenAddr, "http-listen", config.String(look, "PATCHD_HTTP_LISTEN_ADDR", ""),
 		"com TLS: porta HTTP de transição, só para agentes e o cache de repositórios, ex.: :8080 (env PATCHD_HTTP_LISTEN_ADDR)")
+	fs.StringVar(&cfg.AgentListenAddr, "agent-listen", config.String(look, "PATCHD_AGENT_LISTEN_ADDR", ""),
+		"com TLS: porta HTTPS só dos agentes (a do relé para os notebooks fora da rede, docs/rele.md), ex.: :9443 (env PATCHD_AGENT_LISTEN_ADDR)")
 	cacheOnly, errCacheOnly := config.Bool(look, "PATCHD_HTTP_CACHE_ONLY", false)
 	fs.BoolVar(&cfg.HTTPCacheOnly, "http-cache-only", cacheOnly,
 		"com -http-listen: a porta HTTP só atende o cache de repositórios; registro e agentes só por HTTPS (env PATCHD_HTTP_CACHE_ONLY)")
@@ -135,6 +141,18 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 			problems = append(problems, fmt.Errorf("-public-url/PATCHD_PUBLIC_URL: %w", err))
 		} else {
 			cfg.PublicURL = n
+		}
+	}
+	if cfg.AgentListenAddr != "" {
+		switch {
+		case !cfg.TLS():
+			problems = append(problems, errors.New("-agent-listen/PATCHD_AGENT_LISTEN_ADDR só vale com TLS: a porta do relé é HTTPS de ponta a ponta"))
+		case cfg.AgentListenAddr == cfg.ListenAddr || cfg.AgentListenAddr == cfg.HTTPListenAddr:
+			problems = append(problems, errors.New("-agent-listen precisa ser uma porta só dela (diferente de -listen e de -http-listen)"))
+		default:
+			if err := validateListenAddr(cfg.AgentListenAddr); err != nil {
+				problems = append(problems, fmt.Errorf("-agent-listen: %w", err))
+			}
 		}
 	}
 	if cfg.HTTPListenAddr != "" {
@@ -205,6 +223,9 @@ func loadServerConfig(args []string, look config.Lookup, usage io.Writer) (serve
 		problems = append(problems, err)
 	} else {
 		cfg.MetricsListenAddr, cfg.MetricsToken = addr, token
+		if addr != "" && addr == cfg.AgentListenAddr {
+			problems = append(problems, errors.New("-agent-listen e a porta de métricas precisam ser diferentes"))
+		}
 	}
 
 	if err := logging.Check(cfg.LogLevel, cfg.LogFormat); err != nil {

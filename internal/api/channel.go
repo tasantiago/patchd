@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"net/http"
 
@@ -42,3 +43,14 @@ func (a *api) channelWait(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	writeJSON(w, http.StatusOK, protocol.ChannelResponse{Enabled: a.channelOn(), Wake: woke, Reason: reason})
 }
+
+// Porta só de agentes (docs/rele.md): o servidor marca as requisições que chegaram por ela.
+
+type viaRelayKey struct{}
+
+// ViaRelay marca a requisição como vinda pelo relé (a porta só de agentes).
+func ViaRelay(ctx context.Context) context.Context {
+	return context.WithValue(ctx, viaRelayKey{}, true)
+}
+
+func viaRelay(ctx context.Context) bool { v, _ := ctx.Value(viaRelayKey{}).(bool); return v }

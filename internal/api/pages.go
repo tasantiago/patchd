@@ -255,6 +255,7 @@ type machineView struct {
 	Window, NextWindow                   string
 	Channel                              string // canal do último check-in (Aula 9.2)
 	RealTime                             string // o canal em tempo real (vazio: desligado)
+	Network                              string // docs/rele.md: dentro da rede ou pelo relé (vazio: sem check-in desde a 0064)
 	CanHTTPS                             bool   // admin, chave, URL pública e último check-in sem TLS
 	PublicURL                            string
 	Host                                 hostView       // rede e discos (Aula 12.1)
@@ -1215,7 +1216,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Agente</dt><dd>{{if .D.AgentVersion}}{{.D.AgentVersion}}{{else}}—{{end}}</dd>
 {{if .Host.SignersKnown}}<dt>Instaladores aceitos</dt>{{if .Host.Signers}}<dd>só os assinados por {{.Host.Signers}}</dd>{{else}}<dd class="nivel-atencao">qualquer assinatura (sem <code>-allowed-signers</code> nesta máquina)</dd>{{end}}{{end}}
 {{if .Host.Has}}<dt>Chave de cifragem</dt>{{if .Host.BoxKeyID}}<dd><code>{{.Host.BoxKeyID}}</code> <span class="muted">(segredos para esta máquina são fechados com ela)</span></dd>{{else}}<dd class="muted">não informada (agente anterior à v0.18.2)</dd>{{end}}{{end}}
-<dt>Canal</dt><dd>{{.Channel}}</dd>{{if .RealTime}}
+<dt>Canal</dt><dd>{{.Channel}}</dd>{{if .Network}}
+<dt>Rede</dt><dd>{{.Network}}</dd>{{end}}{{if .RealTime}}
 <dt>Tempo real</dt><dd>{{.RealTime}}</dd>{{end}}
 {{if .Ring}}<dt>Grupo de implantação</dt><dd><a href="/painel/grupos-implantacao/{{.RingN}}">{{.Ring}}</a>{{if .Admin}} <form class="inline" method="post" action="/painel/maquinas/{{.D.MachineID}}/anel"><select name="anel" aria-label="grupo de implantação novo">{{range .Rings}}<option value="{{.}}" {{if eq . $.RingN}}selected{{end}}>{{.}}</option>{{end}}</select> <button class="sec" type="submit">Mudar de grupo de implantação</button></form>{{end}}</dd>
 <dt>Janela</dt><dd>{{if .Window}}{{.Window}}{{if .NextWindow}} · {{.NextWindow}}{{end}}{{else}}— (jobs com janela não podem ser criados para este grupo de implantação){{end}}</dd>{{end}}

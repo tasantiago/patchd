@@ -88,6 +88,7 @@ type Memory struct {
 
 type memMachine struct {
 	capabilities       []string // o que o agente anunciou no último check-in
+	checkinRelay       *bool    // o último check-in chegou pelo relé (docs/rele.md)
 	inventory          *protocol.InventoryReport
 	inventoryChangedAt time.Time
 	scan               *protocol.PatchScanReport

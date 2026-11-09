@@ -28,6 +28,10 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	a.checkClock(r, id, req.SentAt)
 	a.saveHostState(r, id, req.State)
+	// docs/rele.md: por onde a máquina falou (dentro da rede ou pelo relé, de fora).
+	if err := a.store.SetCheckinRelay(r.Context(), id, viaRelay(r.Context())); err != nil {
+		a.logger.Error("guardar por onde chegou o check-in", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
+	}
 	if err := a.store.SetMachineCapabilities(r.Context(), id, agentCaps(req.Capabilities)); err != nil {
 		a.logger.Error("guardar as capacidades do agente", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
 	}

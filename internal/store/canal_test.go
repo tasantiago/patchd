@@ -79,6 +79,21 @@ func TestCanalEPerguntasPostgres(t *testing.T) {
 	if l, _ := st.Questions(ctx, 5); len(l) != 1 || l[0].Answered != 1 {
 		t.Errorf("perguntas: %+v", l)
 	}
+	// docs/rele.md: por onde chegou o último check-in.
+	if v, _ := st.CheckinRelay(ctx, "canal-1"); v != nil {
+		t.Errorf("sem check-in: %v", *v)
+	}
+	st.SetCheckinRelay(ctx, "canal-1", true)
+	if v, _ := st.CheckinRelay(ctx, "canal-1"); v == nil || !*v {
+		t.Errorf("pelo relé: %v", v)
+	}
+	st.SetCheckinRelay(ctx, "canal-1", false)
+	if v, _ := st.CheckinRelay(ctx, "canal-1"); v == nil || *v {
+		t.Errorf("de dentro: %v", v)
+	}
+	if v, err := st.CheckinRelay(ctx, "nao-existe"); v != nil || err != nil {
+		t.Errorf("desconhecida: %v %v", v, err)
+	}
 	cancel()
 	if err := <-done; err == nil {
 		t.Error("ListenJobs terminou sem erro com o contexto cancelado")

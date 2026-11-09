@@ -59,6 +59,9 @@ services:
       # PATCHD_HTTP_CACHE_ONLY=true quando machine list não mostrar ninguém "por HTTP".
       PATCHD_HTTP_LISTEN_ADDR: ${PATCHD_HTTP_LISTEN_ADDR-:8080}
       PATCHD_HTTP_CACHE_ONLY: ${PATCHD_HTTP_CACHE_ONLY:-false}
+      # Porta só dos agentes, a do relé para os notebooks fora da rede (docs/rele.md). Vazia:
+      # fechada. Com ela, PATCHD_AGENT_BIND=0.0.0.0 e o firewall do host aceitando só o túnel.
+      PATCHD_AGENT_LISTEN_ADDR: ${PATCHD_AGENT_LISTEN_ADDR:-}
       # A URL HTTPS como os agentes a veem (Aula 9.2): obrigatória.
       PATCHD_PUBLIC_URL: ${PATCHD_PUBLIC_URL:?defina PATCHD_PUBLIC_URL em deploy/.env}
       # CA que as máquinas devem confiar, oferecida em Configuração › Agente (Aula 15.2): só
@@ -127,6 +130,8 @@ services:
     ports:
       - "${PATCHD_TLS_BIND:-0.0.0.0}:${PATCHD_TLS_PORT:-8443}:8443"
       - "${PATCHD_HTTP_BIND:-0.0.0.0}:${PATCHD_HTTP_PORT:-8080}:8080"
+      # Porta só dos agentes (docs/rele.md): fechada no host por padrão.
+      - "${PATCHD_AGENT_BIND:-127.0.0.1}:${PATCHD_AGENT_PORT:-9443}:9443"
       # Métricas: só no host por padrão; abra (PATCHD_METRICS_BIND) para o IP do Prometheus
       # com o firewall do host, não para a rede inteira.
       - "${PATCHD_METRICS_BIND:-127.0.0.1}:${PATCHD_METRICS_PORT:-9090}:9090"
