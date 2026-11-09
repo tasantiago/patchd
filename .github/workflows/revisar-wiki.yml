@@ -1,0 +1,28 @@
+name: Revisar wiki para atualização documental
+on:
+  push:
+    branches: [docs/revisao-operacional-20261109]
+    paths: [.github/workflows/revisar-wiki.yml]
+permissions:
+  contents: read
+jobs:
+  ler:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Ler a wiki pública sem alterar páginas
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          git clone --depth 1 https://github.com/tasantiago/patchd.wiki.git "$RUNNER_TEMP/wiki"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'wiki'
+          print('PAGINAS:', ', '.join(sorted(p.name for p in root.glob('*.md'))))
+          for name in ['Home.md', '_Sidebar.md', 'Manual-do-usuario.md', 'Usuario-03-Utilizacao.md', 'Usuario-02-Configuracao.md']:
+              p = root / name
+              if p.exists():
+                  print('\nPAGINA:', name)
+                  print(p.read_text()[:18000])
+          PY
