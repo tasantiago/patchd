@@ -104,6 +104,9 @@ type Agent struct {
 	ProgramOpen func(names []string) (bool, error)
 	blockedOnce sync.Once
 	bs          *blockedState
+	// Route (docs/rele.md): direto ou pelo relé. nil: sempre direto. O transporte do Client
+	// precisa ser o Route.Wrap para o relé valer.
+	Route *Route
 	// Canal em tempo real: ligado pelo check-in (CheckinResponse.Channel).
 	channelOn   atomic.Bool
 	channelOnce sync.Once
@@ -205,8 +208,11 @@ func (a *Agent) waitTurn(ctx context.Context, d time.Duration) (woke bool, err e
 // Run executa o laço até o contexto acabar. Encerramento pedido não é erro.
 func (a *Agent) Run(ctx context.Context) error {
 	a.defaults()
-	if st, err := loadState(a.DataDir); err == nil && protocol.ValidCheckinMinutes(st.ServerCheckinMinutes) {
-		a.serverEvery.Store(int64(st.ServerCheckinMinutes))
+	if st, err := loadState(a.DataDir); err == nil {
+		if protocol.ValidCheckinMinutes(st.ServerCheckinMinutes) {
+			a.serverEvery.Store(int64(st.ServerCheckinMinutes))
+		}
+		a.Route.SetRelay(st.Relay) // o relé vale já, mesmo reiniciando fora da rede
 	}
 	wait := initialDelay(a.rand, a.every())
 	a.Logger.Info("laço de check-in iniciado", "first_checkin_in", wait.Round(time.Second).String(),
@@ -243,6 +249,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			return nil
 		}
 		if out == outcomeTransient {
+			a.Route.Invalidate() // o próximo ciclo testa de novo o caminho (direto ou relé)
 			failures++
 			wait = backoff(a.rand, failures, a.every())
 		} else {
@@ -290,6 +297,13 @@ func (a *Agent) applyServerInterval(minutes int, state *State) bool {
 func (a *Agent) CheckIn(ctx context.Context) outcome {
 	a.defaults()
 	start := a.now()
+
+	// docs/rele.md: direto, ou pelo relé quando o servidor não responde (fora da rede). Na
+	// mudança de rede, testa de novo na hora.
+	if reason, _ := a.wakeReason.Load().(string); reason == ReasonNetwork {
+		a.Route.Invalidate()
+	}
+	a.Route.Choose(ctx, a.baseURL())
 
 	// 1. Uma busca que ficou para trás vai primeiro: ela levou minutos para ser feita.
 	pending, err := loadPendingScan(a.DataDir)
@@ -349,6 +363,11 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	a.wakeReason.Store("")
 	a.unblockedSent(unblocked)
 	a.setChannel(resp.Channel)
+	if resp.Relay != nil && a.Route.SetRelay(resp.Relay.Addr) {
+		state.Relay = a.Route.Relay()
+		a.saveStateOrLog(state)
+		a.Logger.Info("relé para fora da rede", "rele", state.Relay)
+	}
 	a.perfSent(len(perf), resp.Monitor)
 	if a.applyServerInterval(resp.CheckinMinutes, &state) {
 		a.saveStateOrLog(state)
@@ -628,4 +647,11 @@ func (a *Agent) checkClock(server time.Time) {
 	if skew := a.now().Sub(server); skew > maxClockSkew || skew < -maxClockSkew {
 		a.Logger.Warn("relógio desta máquina divergente do servidor", "skew_seconds", int64(skew.Seconds()))
 	}
+}
+
+// baseURL: o endereço do servidor (o job server_url troca, de outra goroutine).
+func (a *Agent) baseURL() string {
+	a.clientMu.RLock()
+	defer a.clientMu.RUnlock()
+	return a.Client.BaseURL
 }

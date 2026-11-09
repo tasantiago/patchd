@@ -10,8 +10,9 @@ banco, certificado nem chave. O servidor, o banco e os arquivos continuam dentro
   Notebook dentro ─────────────── TCP 443 direto (DNS interno) ──────► porta principal
 ```
 
-- **O agente usa um endereço só.** O DNS decide o caminho: no DNS interno, o nome aponta para
-  o servidor; no público, para o relé.
+- **O agente escolhe o caminho sozinho** (relé automático, seção 5): tenta o servidor direto e,
+  sem resposta (fora da rede), disca o relé, com o TLS conferindo o nome do servidor; volta
+  sozinho quando alcança o servidor de novo. Sem DNS público nem certificado novo.
 - **Nenhuma porta de entrada na rede interna.** Quem abre o túnel é o servidor de dentro (UDP
   51820 de saída), com um pacote a cada 25 s que mantém a volta aberta no firewall.
 - **TLS de ponta a ponta.** O relé repassa bytes cifrados; o aperto de mão é entre o agente e
@@ -139,7 +140,10 @@ PATCHD_AGENT_BIND=0.0.0.0     # quem limita é o firewall (zona rele); não amar
 PATCHD_AGENT_PORT=9443
 ```
 
-Podman: `./deploy/podman/instalar.sh` e reinicie (`./deploy/atualizar.sh` com a versão atual).
+Podman: `./deploy/podman/instalar.sh` e **reinicie o pod** (as portas publicadas são do pod,
+definidas quando ele sobe; o `atualizar.sh` só reinicia o servidor):
+`systemctl --user daemon-reload && systemctl --user restart patchd-pod.service`, depois
+`./deploy/atualizar.sh` com a versão atual. No host, `ss -ltn | grep 9443` mostra a porta.
 Compose: `docker compose up -d`. O log mostra `Agentes (relé) escutando`.
 
 Do relé, confira o caminho e o filtro:
@@ -180,26 +184,48 @@ O HAProxy **não termina o TLS** (modo TCP): o servidor vê as conexões vindo d
 IP real de cada notebook fica no log do HAProxy (`journalctl -u haproxy`). O patchd identifica
 e limita cada máquina pela credencial, não pelo IP.
 
-## 5. DNS, porta e certificado
+## 5. Como o notebook chega ao relé
+
+### Recomendado: relé automático (sem DNS público)
+
+Em Configuração › Parâmetros › Agentes › **Relé para fora da rede** (`PATCHD_RELAY_ADDR`),
+ponha o `IP_DO_RELE:PORTA` (a porta pública do HAProxy). O servidor manda o endereço em cada
+check-in; o agente o guarda no disco (vale mesmo reiniciando fora da rede). A cada ciclo:
+
+1. o agente tenta o servidor direto, com prazo de 3 s (fora da rede, o nome interno nem
+   resolve);
+2. sem resposta, **disca o relé**; respondendo de novo, **volta ao servidor direto**;
+3. a escolha vale 1 minuto; a mudança de rede (IP novo) e uma falha de conexão fazem testar
+   de novo na hora; o canal em tempo real também reavalia quando cai.
+
+Só o endereço discado muda: o TLS continua com o **nome do servidor** (o da URL do agente,
+mesmo sendo `.local`) e a CA interna. Não precisa de nome público, DNS externo nem certificado
+novo; um endereço de relé adulterado só deixa o notebook sem contato. Requisitos: o agente
+nesta versão (atualize **enquanto as máquinas estão dentro da rede**, para aprenderem o relé),
+a URL do agente em HTTPS e **a mesma porta** no relé e no servidor (o HAProxy escuta na porta
+que está na URL do agente; ex.: `bind :8443` se os agentes usam `:8443`).
+
+### Alternativa: um nome público com DNS dividido
 
 - **O mesmo nome dentro e fora:** no DNS público, `patchd.exemplo` → `IP_DO_RELE`; no DNS
-  interno, o mesmo nome → o servidor.
-- **A mesma porta dentro e fora:** o endereço do agente leva a porta. O mais simples é **443**
-  nos dois lados: o relé já escuta na 443; dentro, `PATCHD_TLS_PORT=443` (no Podman sem root,
-  o host precisa de `net.ipv4.ip_unprivileged_port_start=443` em `/etc/sysctl.d/`). Se os
-  agentes já usam outra porta (8443), faça o relé escutar nela (`bind :8443`, regra da
-  Security List e `iptables` na 8443): redes de hotel às vezes só deixam a 443.
-- **Certificado:** o de sempre, da CA interna, com `patchd.exemplo` no SAN. Nada muda no relé.
-- `PATCHD_PUBLIC_URL` é esse endereço (nome e porta).
+  interno, o mesmo nome → o servidor. Um nome `.local` não serve: só existe no DNS interno.
+- **A mesma porta dentro e fora:** o endereço do agente leva a porta (no Podman sem root, a 443
+  no host pede `net.ipv4.ip_unprivileged_port_start=443` em `/etc/sysctl.d/`).
+- **Certificado** da CA interna com o nome no SAN; `PATCHD_PUBLIC_URL` com nome e porta; os
+  agentes instalados mudam de endereço pelo job `server_url`.
 
 ## 6. Teste de ponta a ponta
 
-Num notebook fora da rede (o 4G do celular serve), com o agente instalado e registrado dentro:
+Num notebook com o agente desta versão, que já fez um check-in dentro da rede com o relé
+configurado (ele aprende o endereço), conecte fora da rede (o 4G do celular serve):
 
 ```powershell
-Resolve-DnsName patchd.exemplo            # deve dar IP_DO_RELE
-Test-NetConnection patchd.exemplo -Port 443
+Test-NetConnection IP_DO_RELE -Port 8443   # TcpTestSucceeded : True
+Restart-Service patchd-agent               # força um check-in agora
 ```
+
+O log do agente mostra "rede: o servidor não responde direto; falando pelo relé"; voltando à
+rede, "o servidor responde direto de novo".
 
 No painel, a máquina passa a mostrar **Rede: fora da rede (pelo relé na nuvem)** depois do
 próximo check-in; com o canal em tempo real ligado, "Tempo real: conectado". Um job pedido

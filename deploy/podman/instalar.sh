@@ -257,4 +257,5 @@ unidades geradas em $QDIR e $UDIR; variáveis do servidor em $ENV_FILE
   deploy/.env: PATCHD_MOTOR=podman (os scripts do deploy/ passam a usar o Podman)
 próximos passos: ./deploy/gerar-segredos.sh e, com tudo presente, ./deploy/atualizar.sh vX.Y.Z
 depois da primeira subida: systemctl --user enable --now patchd-backup.timer
+mudou alguma porta (PATCHD_*_PORT, *_BIND, PATCHD_AGENT_*)? as portas são do pod: systemctl --user restart patchd-pod.service
 MSG

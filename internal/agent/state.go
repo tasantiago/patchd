@@ -42,6 +42,9 @@ type State struct {
 	// (Configuração › Parâmetros › Agentes). Guardado para valer já depois de reiniciar,
 	// antes do primeiro check-in; 0: vale o do agente.
 	ServerCheckinMinutes int `json:"server_checkin_minutes,omitempty"`
+	// Relay (docs/rele.md): o relé para fora da rede, como o servidor mandou no último
+	// check-in. Guardado para valer já depois de reiniciar fora da rede.
+	Relay string `json:"relay,omitempty"`
 }
 
 // PendingServerMove guarda o job server_url até a troca ser tentada.
