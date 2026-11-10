@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
@@ -184,7 +185,8 @@ func (s Sensors) program(ctx context.Context, needle string) jobs.QueryAnswer {
 	n := strings.ToLower(needle)
 	var versions, names []string
 	for _, sw := range list {
-		if !strings.Contains(strings.ToLower(sw.Name), n) {
+		// O marcador do .bat de senha da BIOS não é programa (docs/bios-senha.md, seção 11).
+		if bioslegacy.IsMarker(sw.Name, "") || !strings.Contains(strings.ToLower(sw.Name), n) {
 			continue
 		}
 		v := sw.Version

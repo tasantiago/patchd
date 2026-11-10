@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
@@ -146,6 +147,13 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	}
 	if job.Type == jobs.TypeQuery {
 		// Perguntas ao parque: a resposta é o efeito (só leitura); o detalhe guarda o JSON.
+		if bioslegacy.Mentions(res.Detail) {
+			// O agente anterior à correção responde a pergunta "programa" com a senha da BIOS
+			// do marcador do .bat ao lado do nome (docs/bios-senha.md, seção 11). Não entra no banco.
+			held, _ := json.Marshal(jobs.QueryAnswer{Value: "resposta retida", Extra: "a resposta citava o marcador " + bioslegacy.KeyName +
+				", que guarda a senha da BIOS; atualize o agente desta máquina e pergunte de novo"})
+			return jobs.StateDone, string(held)
+		}
 		return jobs.StateDone, res.Detail
 	}
 	if job.Type == jobs.TypeWakeOnLAN {

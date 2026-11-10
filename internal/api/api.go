@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/canal"
 	"github.com/tasantiago/patchd/internal/descoberta"
@@ -494,6 +495,13 @@ func (a *api) submitInventory(w http.ResponseWriter, r *http.Request, id string)
 			hw.Wake = nil
 			rep.Errors = append(rep.Errors, "ligar pela rede: descartado pelo servidor: "+err.Error())
 		}
+	}
+
+	// O marcador do .bat de senha da BIOS (docs/bios-senha.md, seção 11): o agente anterior à
+	// correção manda a senha em uso como a versão de um programa. Ela não entra no banco.
+	if n := bioslegacy.Redact(rep.Software); n > 0 {
+		a.logger.Warn("inventário: senha da BIOS do marcador descartada (atualize o agente desta máquina)", "machine_id", id,
+			"entradas", n, "agent_version", rep.AgentVersion)
 	}
 
 	stored, err := a.store.SaveInventory(r.Context(), id, rep)

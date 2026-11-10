@@ -172,8 +172,9 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			}
 			s.JobKeys, s.ReleaseKeys = jobIDs, releaseIDs
 			s.BoxKey = boxKey
-			s.BIOSCopy = biosPW != nil // docs/bios-senha.md, seção 9: guarda a cópia no Registro
-			s.WakeRelay = true         // docs/wake-on-lan.md, Aula 22.2: repete o pacote mágico
+			s.BIOSCopy = biosPW != nil                   // docs/bios-senha.md, seção 9: guarda a cópia no Registro
+			s.BIOSLegacy = biosPW != nil && biosLegacy() // seção 11: o marcador do .bat tem a senha em uso
+			s.WakeRelay = true                           // docs/wake-on-lan.md, Aula 22.2: repete o pacote mágico
 			return s
 		},
 		DataDir:   opts.DataDir,

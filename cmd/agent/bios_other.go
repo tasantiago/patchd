@@ -18,3 +18,6 @@ func biosRunner(*slog.Logger, []byte, string) func(context.Context, int64, jobs.
 func biosSettingsRunner(*slog.Logger, []byte) func(context.Context, int64, jobs.BIOSSettingsParams) (string, error) {
 	return nil
 }
+
+// biosLegacy: o marcador do .bat só existe no Registro do Windows.
+func biosLegacy() bool { return false }

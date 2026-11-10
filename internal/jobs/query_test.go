@@ -44,6 +44,8 @@ func TestPerguntasAoParque(t *testing.T) {
 		{Sensor: SensorRegistry, Arg: `HKCU\Software\x`},
 		{Sensor: SensorRegistry, Arg: `HKLM\SAM\SAM\Domains`},
 		{Sensor: SensorRegistry, Arg: `hklm\security`},
+		{Sensor: SensorRegistry, Arg: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\BIOS_password`, Name: "DisplayVersion"},
+		{Sensor: SensorRegistry, Arg: `HKLM\SOFTWARE\Exemplo\bios_password\Historico\x`},
 		{Sensor: SensorRegistry, Arg: `HKLM\SOFTWARE\`},
 		{Sensor: SensorProgram, Arg: "x"},
 		{Sensor: SensorProcess, Arg: "x.exe", Name: "y"},

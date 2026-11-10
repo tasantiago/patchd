@@ -28,7 +28,15 @@ type BIOSPasswordParams struct {
 	// Copy: a senha nova fechada para a chave de guarda (biospw.Copy), que o agente deixa no
 	// Registro da máquina depois de gravar (docs/bios-senha.md, seção 9). Vazio: sem cópia.
 	Copy string `json:"copy,omitempty"`
+	// CurrentFrom: de onde o agente tira a senha em uso quando ela não vem no job. Só
+	// BIOSCurrentMarker (docs/bios-senha.md, seção 11): o marcador que o .bat deixou no Registro
+	// da máquina. Vai só para o agente que anuncia bios_legacy no estado.
+	CurrentFrom string `json:"current_from,omitempty"`
 }
+
+// BIOSCurrentMarker: a senha em uso é a do marcador do .bat, que o agente lê no Registro da
+// própria máquina, só na memória. Cada máquina tem a sua, e o servidor não a conhece.
+const BIOSCurrentMarker = "marcador"
 
 // BIOSVendors: as interfaces que o job aceita. A HP primeiro (é onde o .bat rodou); Dell e
 // Lenovo desde docs/bios-config.md, seção 8 (o piloto de cada uma começa por uma máquina).
@@ -71,6 +79,12 @@ func ParseBIOSPasswordParams(raw json.RawMessage) (BIOSPasswordParams, error) {
 		return p, errors.New("bios_password: envelope da senha nova inválido")
 	case p.Current != "" && !sealedOK(p.Current):
 		return p, errors.New("bios_password: envelope da senha atual inválido")
+	case p.CurrentFrom != "" && p.CurrentFrom != BIOSCurrentMarker:
+		return p, fmt.Errorf("bios_password: origem da senha atual %q fora da lista", p.CurrentFrom)
+	case p.CurrentFrom != "" && p.Current != "":
+		return p, errors.New("bios_password: a senha atual vem no job ou do marcador, não dos dois")
+	case p.CurrentFrom == BIOSCurrentMarker && p.Vendor != "hp":
+		return p, errors.New("bios_password: o marcador do .bat só existe nas máquinas HP")
 	}
 	if p.Copy != "" {
 		c, err := biospw.ParseCopy(p.Copy)
