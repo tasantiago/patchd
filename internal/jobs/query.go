@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 )
 
 // TypeQuery (perguntas ao parque): o agente responde a uma pergunta de um catálogo fechado de
@@ -131,6 +133,8 @@ func (p QueryParams) Validate() error {
 			return errors.New(`a chave começa por HKLM\ (só o HKEY_LOCAL_MACHINE), até 255 caracteres`)
 		case queryRegDenied.MatchString(arg):
 			return errors.New(`HKLM\SAM e HKLM\SECURITY não: guardam as senhas do Windows`)
+		case bioslegacy.InPath(arg):
+			return errors.New("essa chave guarda a senha da BIOS que o .bat deixou legível; o patchd não a lê pelo painel")
 		case strings.Contains(arg, `\\`) || strings.HasSuffix(arg, `\`):
 			return errors.New("a chave não termina em barra nem tem barras repetidas")
 		case len(p.Name) > 128:

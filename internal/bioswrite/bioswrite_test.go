@@ -208,3 +208,110 @@ func TestCopiaNoRegistro(t *testing.T) {
 		t.Errorf("sem cópia: %q %v %+v", det, err, got)
 	}
 }
+
+// TestSenhaAtualDoMarcador (docs/bios-senha.md, seção 11): a senha em uso é a que o .bat deixou
+// no Registro. O agente a lê na hora, chama o fabricante uma vez e só a apaga depois do "ok".
+func TestSenhaAtualDoMarcador(t *testing.T) {
+	priv, _ := machinebox.Generate()
+	pub, _ := machinebox.Public(priv)
+	kid := machinebox.KeyID(pub)
+	const nova, antiga = "abcd2345efgh", "Exemplo@12345678"
+	sealed, _ := machinebox.Seal(pub, machinebox.PurposeBIOS, []byte(nova))
+	p := jobs.BIOSPasswordParams{Guard: 1, Vendor: "hp", BoxKey: kid, New: base64.StdEncoding.EncodeToString(sealed), CurrentFrom: jobs.BIOSCurrentMarker}
+	var log bytes.Buffer
+	type marcador struct {
+		valor    string
+		lerErr   error
+		apagaErr error
+		apagou   int
+	}
+	runner := func(f *fabricante, m *marcador) Runner {
+		return Runner{BoxKeyID: kid, Logger: slog.New(slog.NewTextHandler(&log, nil)),
+			Open:   func(purpose string, sealed []byte) ([]byte, error) { return machinebox.Open(priv, purpose, sealed) },
+			Detect: func(context.Context) (Vendor, error) { return f, nil },
+			Legacy: func() ([]byte, error) {
+				if m.valor == "" {
+					return nil, m.lerErr
+				}
+				return []byte(m.valor), m.lerErr
+			},
+			ClearLegacy: func() (bool, error) {
+				if m.apagaErr != nil {
+					return false, m.apagaErr
+				}
+				m.apagou++
+				had := m.valor != ""
+				m.valor = ""
+				return had, nil
+			}}
+	}
+	ctx := context.Background()
+
+	// O caminho feliz: a do marcador vai como atual, e sai do Registro depois do código 0.
+	f, m := &fabricante{nome: "hp", called: true}, &marcador{valor: antiga}
+	det, err := runner(f, m).Run(ctx, 1, p)
+	if err != nil || f.chamadas != 1 || f.atual != antiga || f.novaVista != nova || m.valor != "" ||
+		!strings.Contains(det, "trocada (hp, código 0)") || !strings.Contains(det, "senha antiga do marcador do .bat apagada do Registro") {
+		t.Fatalf("troca pelo marcador: %q %v %+v %+v", det, err, f, m)
+	}
+	// Não deu para apagar: a BIOS já mudou, o job segue concluído e o detalhe avisa.
+	f, m = &fabricante{nome: "hp", called: true}, &marcador{valor: antiga, apagaErr: errors.New("acesso negado")}
+	if det, err := runner(f, m).Run(ctx, 2, p); err != nil || !strings.Contains(det, "continua no Registro (acesso negado)") {
+		t.Errorf("apagar falhou: %q %v", det, err)
+	}
+
+	// A BIOS recusou (código 6): uma chamada só, o marcador fica, e o detalhe diz o que fazer.
+	f, m = &fabricante{nome: "hp", called: true, code: 6}, &marcador{valor: antiga}
+	_, err = runner(f, m).Run(ctx, 3, p)
+	if err == nil || errors.Is(err, jobs.ErrRefused) || errors.Is(err, ErrUncertain) || f.chamadas != 1 || m.apagou != 0 || m.valor != antiga ||
+		!strings.Contains(err.Error(), "a senha do marcador do .bat não é a que a BIOS aceita") {
+		t.Errorf("código 6: %v %+v %+v", err, f, m)
+	}
+	// Resultado incerto: nada é apagado (a senha antiga pode ser a que ainda vale).
+	f, m = &fabricante{nome: "hp", called: true, err: errors.New("COM quebrou")}, &marcador{valor: antiga}
+	if _, err := runner(f, m).Run(ctx, 4, p); !errors.Is(err, ErrUncertain) || m.apagou != 0 || m.valor != antiga {
+		t.Errorf("incerto: %v %+v", err, m)
+	}
+
+	// Recusas: nada chega ao fabricante.
+	for nome, c := range map[string]struct {
+		m    *marcador
+		quer string
+	}{
+		"marcador sem senha": {&marcador{}, "já não tem senha no Registro"},
+		"erro de leitura":    {&marcador{lerErr: errors.New("acesso negado")}, "não pôde ser lido (acesso negado)"},
+		"valor longo demais": {&marcador{valor: strings.Repeat("a", 33)}, "não tem formato de senha"},
+		"valor com controle": {&marcador{valor: "a\x00b"}, "não tem formato de senha"},
+	} {
+		f := &fabricante{nome: "hp", called: true}
+		_, err := runner(f, c.m).Run(ctx, 5, p)
+		if !errors.Is(err, jobs.ErrRefused) || !strings.Contains(err.Error(), c.quer) || !strings.Contains(err.Error(), "não foi tocada") || f.chamadas != 0 || c.m.apagou != 0 {
+			t.Errorf("%s: %v %+v", nome, err, f)
+		}
+	}
+	semLeitor := runner(&fabricante{nome: "hp"}, &marcador{valor: antiga})
+	semLeitor.Legacy = nil
+	if _, err := semLeitor.Run(ctx, 6, p); !errors.Is(err, jobs.ErrRefused) || !strings.Contains(err.Error(), "não lê o marcador") {
+		t.Errorf("agente sem o leitor: %v", err)
+	}
+
+	// A troca com a senha vinda no job também tira a antiga do Registro: ela deixou de valer.
+	cur, _ := machinebox.Seal(pub, machinebox.PurposeBIOSCurrent, []byte("Digitada#1"))
+	comAtual := p
+	comAtual.CurrentFrom, comAtual.Current = "", base64.StdEncoding.EncodeToString(cur)
+	f, m = &fabricante{nome: "hp", called: true}, &marcador{valor: antiga}
+	if det, err := runner(f, m).Run(ctx, 7, comAtual); err != nil || f.atual != "Digitada#1" || m.valor != "" || !strings.Contains(det, "apagada do Registro") {
+		t.Errorf("troca com a digitada: %q %v %+v", det, err, m)
+	}
+	// Sem marcador na máquina, o detalhe não fala dele.
+	f, m = &fabricante{nome: "hp", called: true}, &marcador{}
+	if det, err := runner(f, m).Run(ctx, 8, comAtual); err != nil || strings.Contains(det, "marcador") {
+		t.Errorf("sem marcador: %q %v", det, err)
+	}
+
+	for _, s := range []string{nova, antiga, "Digitada#1"} {
+		if strings.Contains(log.String(), s) {
+			t.Errorf("senha no log: %s", s)
+		}
+	}
+}

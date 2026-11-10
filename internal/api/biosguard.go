@@ -60,6 +60,7 @@ type biosCard struct {
 	NeedCurrent bool   // a BIOS tem senha e a guarda não tem a ativa: o admin digita a atual
 	MaxCurrent  int
 	FleetLabel  string // há senha padrão do fabricante: o campo pode ficar em branco (docs/bios-senha.md, seção 10)
+	Legacy      bool   // o Registro da máquina tem a senha que o .bat deixou: em branco, o agente usa essa (seção 11)
 	Uncertain   bool   // há uma senha incerta: nada é gravado até alguém conferir
 }
 
@@ -137,6 +138,7 @@ func (a *api) biosView(r *http.Request, id string, admin bool) (*biosCard, error
 			hasActive = hasActive || (b.State == store.BIOSActive && b.EscrowKeyID == c.KeyID)
 		}
 		c.NeedCurrent = c.Blocker == "" && facts.Firmware.AdminPassword != nil && *facts.Firmware.AdminPassword && !hasActive
+		c.Legacy = c.NeedCurrent && facts.legacyOK()
 		if c.NeedCurrent {
 			if _, b, err := a.fleetPassword(r.Context(), facts.Firmware.Interface); err == nil && b != nil {
 				c.FleetLabel = vendorLabel(b.Vendor)

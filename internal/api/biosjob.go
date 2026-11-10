@@ -121,6 +121,14 @@ type biosFacts struct {
 	BoxKey   []byte
 	BoxKeyID string
 	CopyOK   bool // o agente guarda a cópia de emergência no Registro
+	// Legacy: o Registro da máquina tem o marcador do .bat com a senha em uso, e o agente sabe
+	// lê-la na hora do job (docs/bios-senha.md, seção 11).
+	Legacy bool
+}
+
+// legacyOK: a primeira troca pode usar a senha do marcador do .bat (que só rodou nas HP).
+func (f biosFacts) legacyOK() bool {
+	return f.Legacy && f.Firmware != nil && f.Firmware.Interface == protocol.FirmwareHP
 }
 
 func (a *api) biosFacts(ctx context.Context, id string) (biosFacts, error) {
@@ -141,6 +149,7 @@ func (a *api) biosFacts(ctx context.Context, id string) (biosFacts, error) {
 			f.BoxKey, f.BoxKeyID = pub, machinebox.KeyID(pub)
 		}
 		f.CopyOK = h.State.BIOSCopy
+		f.Legacy = h.State.BIOSLegacy
 	}
 	return f, nil
 }
@@ -219,9 +228,11 @@ func (a *api) writeBIOSAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		back("bios-erro=bloqueada")
 		return
 	}
-	// A senha atual: a ativa da guarda; sem ela, com a BIOS já com senha, a que o admin digitou
-	// (a da frota, na primeira troca). BIOS sem senha: não há atual.
+	// A senha atual: a ativa da guarda; sem ela, com a BIOS já com senha, a que o admin digitou;
+	// em branco, a que o .bat deixou no Registro da máquina (o agente a lê lá: o servidor não a
+	// conhece) e, sem o marcador, a padrão do fabricante. BIOS sem senha: não há atual.
 	var current []byte
+	currentFrom := ""
 	source := "definição (a BIOS estava sem senha)"
 	if *facts.Firmware.AdminPassword {
 		switch {
@@ -234,6 +245,10 @@ func (a *api) writeBIOSAction(w http.ResponseWriter, r *http.Request, s panel.Se
 			current, source = []byte(pw), fmt.Sprintf("troca (senha atual: a da guarda #%d)", active.ID)
 		default:
 			typed := r.PostFormValue("senha_atual")
+			if typed == "" && facts.legacyOK() {
+				currentFrom, source = jobs.BIOSCurrentMarker, "troca (senha atual: a que o .bat deixou no Registro da máquina, lida pelo agente)"
+				break
+			}
 			if typed == "" {
 				// Em branco: a senha padrão do fabricante (docs/bios-senha.md, seção 10).
 				fleet, b, err := a.fleetPassword(ctx, facts.Firmware.Interface)
@@ -266,7 +281,7 @@ func (a *api) writeBIOSAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		b, err := machinebox.Seal(facts.BoxKey, purpose, pw)
 		return base64.StdEncoding.EncodeToString(b), err
 	}
-	p := jobs.BIOSPasswordParams{Guard: gid, Vendor: facts.Firmware.Interface, BoxKey: facts.BoxKeyID}
+	p := jobs.BIOSPasswordParams{Guard: gid, Vendor: facts.Firmware.Interface, BoxKey: facts.BoxKeyID, CurrentFrom: currentFrom}
 	if p.New, err = seal(machinebox.PurposeBIOS, []byte(newPW)); err == nil && current != nil {
 		p.Current, err = seal(machinebox.PurposeBIOSCurrent, current)
 	}

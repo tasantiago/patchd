@@ -24,6 +24,7 @@ import (
 	"log/slog"
 	"strconv"
 
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 	"github.com/tasantiago/patchd/internal/biospw"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/machinebox"
@@ -90,6 +91,11 @@ type Runner struct {
 	// cópia da senha anterior fica ao lado da nova.
 	MachineID string
 	SaveCopy  func(copy string, uncertain bool) error
+	// Legacy e ClearLegacy: o marcador que o .bat deixou no Registro (docs/bios-senha.md, seção
+	// 11). Legacy lê a senha em uso (nil, nil: não há); ClearLegacy a apaga depois que a BIOS
+	// confirma a senha nova. nil: o agente não usa o marcador.
+	Legacy      func() ([]byte, error)
+	ClearLegacy func() (cleared bool, err error)
 }
 
 // hpCodes: os códigos de retorno do SetBIOSSetting da HP (HP Client Management Interface).
@@ -124,7 +130,25 @@ func (r Runner) Run(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams)
 		return refuse("a senha nova está fora do formato da guarda")
 	}
 	var current []byte
-	if p.Current != "" {
+	fromMarker := p.CurrentFrom == jobs.BIOSCurrentMarker
+	switch {
+	case fromMarker:
+		// A senha em uso é a que o .bat deixou no Registro desta máquina: lida aqui, só na
+		// memória. Sem ela (ou com um valor que não é senha), nada é tentado.
+		if r.Legacy == nil {
+			return refuse("este agente não lê o marcador do .bat")
+		}
+		current, err = r.Legacy()
+		defer clear(current)
+		switch {
+		case err != nil:
+			return refuse("o marcador do .bat no Registro não pôde ser lido (%v)", err)
+		case current == nil:
+			return refuse("o marcador do .bat já não tem senha no Registro; informe a senha atual no painel")
+		case !bioslegacy.Usable(current):
+			return refuse("o valor do marcador do .bat não tem formato de senha da BIOS; informe a senha atual no painel")
+		}
+	case p.Current != "":
 		if current, err = r.openPassword(machinebox.PurposeBIOSCurrent, p.Current); err != nil {
 			return refuse("o envelope da senha atual não abre (%v)", err)
 		}
@@ -153,7 +177,7 @@ func (r Runner) Run(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams)
 		return refuse("HP Sure Admin ligado: esta BIOS só aceita mudanças por pacote assinado")
 	}
 	r.Logger.Warn("gravando a senha de administrador da BIOS", "job_id", jobID, "guarda", p.Guard, "fabricante", v.Name(),
-		"troca", current != nil)
+		"troca", current != nil, "atual_do_marcador", fromMarker)
 	reply, called, err := v.SetAdminPassword(ctx, newPW, current)
 	switch {
 	case err != nil && !called:
@@ -165,11 +189,34 @@ func (r Runner) Run(ctx context.Context, jobID int64, p jobs.BIOSPasswordParams)
 		if current != nil {
 			what = "trocada"
 		}
-		return fmt.Sprintf("senha de administrador da BIOS %s (%s, código %s)%s", what, v.Name(), reply.Code, r.saveCopy(p.Copy, false)), nil
+		return fmt.Sprintf("senha de administrador da BIOS %s (%s, código %s)%s%s", what, v.Name(), reply.Code, r.saveCopy(p.Copy, false),
+			r.clearLegacy()), nil
 	case reply.Uncertain:
 		return "", fmt.Errorf("%w: %s respondeu %s (%s)%s", ErrUncertain, v.Name(), reply.Code, reply.Text, r.saveCopy(p.Copy, true))
 	}
-	return "", fmt.Errorf("%s respondeu %s (%s); a senha anterior continua valendo", v.Name(), reply.Code, reply.Text)
+	hint := ""
+	if fromMarker && reply.WrongPassword {
+		hint = "; a senha do marcador do .bat não é a que a BIOS aceita (o histórico do .bat pode ter a certa): informe a senha atual no painel"
+	}
+	return "", fmt.Errorf("%s respondeu %s (%s); a senha anterior continua valendo%s", v.Name(), reply.Code, reply.Text, hint)
+}
+
+// clearLegacy apaga do Registro a senha que o .bat deixou legível, agora que a BIOS confirmou a
+// nova: ela já não vale, e sem ela o .bat para antes de tocar na BIOS se alguém o rodar de
+// novo. Devolve o que vai no fim do detalhe. Num resultado incerto nada é apagado.
+func (r Runner) clearLegacy() string {
+	if r.ClearLegacy == nil {
+		return ""
+	}
+	cleared, err := r.ClearLegacy()
+	switch {
+	case err != nil:
+		r.Logger.Warn("a senha antiga do marcador do .bat não saiu do Registro", "error", err)
+		return fmt.Sprintf("; a senha antiga do marcador do .bat continua no Registro (%v)", err)
+	case cleared:
+		return "; senha antiga do marcador do .bat apagada do Registro"
+	}
+	return ""
 }
 
 func (r Runner) openPassword(purpose, b64 string) ([]byte, error) {

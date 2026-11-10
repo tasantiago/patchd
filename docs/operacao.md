@@ -1136,6 +1136,9 @@ numa máquina, confira no inventário (`patchd-agent -inventory`, `hardware.firm
 2. **Gravar na BIOS**. Na primeira troca (a BIOS tem a senha padrão do parque e a guarda não), o
    formulário pede a senha atual: digite a padrão do parque. Ela vai cifrada para a máquina e não fica
    guardada.
+   Nas HP em que o `.bat` sorteou uma senha por máquina e a deixou no Registro, o campo fica
+   opcional: em branco, o agente lê a senha na própria máquina, troca e apaga a antiga do
+   Registro (`docs/bios-senha.md`, seção 11). Tire o `.bat` da distribuição nessas máquinas.
 3. A máquina grava no próximo check-in (até 1 h; `Restart-Service patchd-agent` antecipa).
    O cartão mostra a resposta: **ativa**, **falhou** (com o código da HP), **incerta**, ou de
    volta a pendente com o motivo da recusa.

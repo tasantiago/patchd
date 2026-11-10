@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
 
@@ -59,6 +60,11 @@ func softwareFromUninstall(e uninstallEntry, loc uninstallLocation) (Software, b
 		SystemComponent: e.SystemComponent == 1,
 		IsUpdate:        strings.TrimSpace(e.ParentKeyName) != "" || updateReleaseTypes[strings.TrimSpace(e.ReleaseType)],
 		Source:          loc.Path + `\` + e.KeyName,
+	}
+	if bioslegacy.IsMarker(name, e.KeyName) {
+		// O marcador do .bat de senha da BIOS guarda a senha em uso no lugar da versão
+		// (docs/bios-senha.md, seção 11). A entrada segue no inventário; a senha, não.
+		s.Version = ""
 	}
 	if e.WindowsInstaller == 1 && isGUID(e.KeyName) {
 		s.ProductCode = strings.ToUpper(e.KeyName)

@@ -153,3 +153,22 @@ func TestSoftwareFromUninstallBundle(t *testing.T) {
 		t.Errorf("código inválido: %+v", x)
 	}
 }
+
+// O marcador do .bat de senha da BIOS (docs/bios-senha.md, seção 11): a entrada segue no
+// inventário, mas a "versão" dela é a senha em uso e não sai da máquina.
+func TestSoftwareFromUninstallMarcadorDaSenhaDaBIOS(t *testing.T) {
+	for nome, e := range map[string]uninstallEntry{
+		"como o .bat grava":  {KeyName: "BIOS_password", DisplayName: "BIOS_password", DisplayVersion: "Exemplo@12345678", SystemComponent: 1},
+		"só o nome da chave": {KeyName: "bios_password", DisplayName: "Outro nome", DisplayVersion: "Exemplo@12345678"},
+		"só o nome exibido":  {KeyName: "{X}", DisplayName: " BIOS_PASSWORD ", DisplayVersion: "Exemplo@12345678"},
+	} {
+		s, ok := softwareFromUninstall(e, maquina64)
+		if !ok || s.Version != "" || s.Name == "" {
+			t.Errorf("%s: %+v", nome, s)
+		}
+	}
+	// Um programa de verdade com "password" no nome mantém a versão.
+	if s, _ := softwareFromUninstall(uninstallEntry{KeyName: "PM", DisplayName: "Password Manager", DisplayVersion: "2.1"}, maquina64); s.Version != "2.1" {
+		t.Errorf("programa de verdade: %+v", s)
+	}
+}

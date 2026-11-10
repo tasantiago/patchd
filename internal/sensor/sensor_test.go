@@ -24,7 +24,8 @@ func TestSensores(t *testing.T) {
 		},
 		Software: func(context.Context) ([]protocol.Software, error) {
 			return []protocol.Software{{Name: "LibreOffice 25.2", Version: "25.2.1.1"}, {Name: "LibreOffice Help Pack", Version: "25.2.1.1"},
-				{Name: "libreoffice (x86)", Version: "24.8.0"}, {Name: "7-Zip", Version: "24.09"}}, nil
+				{Name: "libreoffice (x86)", Version: "24.8.0"}, {Name: "7-Zip", Version: "24.09"},
+				{Name: "BIOS_password", Version: "Exemplo@12345678"}, {Name: "HP BIOS Config", Version: "4.0"}}, nil
 		},
 		Registry: func(path, name string) (string, bool, bool, error) {
 			switch {
@@ -49,6 +50,9 @@ func TestSensores(t *testing.T) {
 		{jobs.QueryParams{Sensor: jobs.SensorProcess, Arg: "chrome.exe"}, "não está rodando", ""},
 		{jobs.QueryParams{Sensor: jobs.SensorProgram, Arg: "libreoffice"}, "24.8.0, 25.2.1.1", "LibreOffice 25.2"},
 		{jobs.QueryParams{Sensor: jobs.SensorProgram, Arg: "Acrobat"}, "não instalado", ""},
+		// O marcador do .bat de senha da BIOS não é programa: fica fora da resposta.
+		{jobs.QueryParams{Sensor: jobs.SensorProgram, Arg: "bios"}, "4.0", "HP BIOS Config 4.0"},
+		{jobs.QueryParams{Sensor: jobs.SensorProgram, Arg: "bios_password"}, "não instalado", ""},
 		{jobs.QueryParams{Sensor: jobs.SensorRegistry, Arg: `HKLM\SOFTWARE\Nada`}, "chave não existe", ""},
 		{jobs.QueryParams{Sensor: jobs.SensorRegistry, Arg: `HKLM\SOFTWARE\X`, Name: "Falta"}, "valor não existe", ""},
 		{jobs.QueryParams{Sensor: jobs.SensorRegistry, Arg: `HKLM\SOFTWARE\X`, Name: "DefaultPassword"}, "existe (conteúdo oculto: o nome parece de senha)", ""},

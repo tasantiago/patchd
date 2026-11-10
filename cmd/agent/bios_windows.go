@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/tasantiago/patchd/internal/bioslegacy"
 	"github.com/tasantiago/patchd/internal/bioswrite"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/machinebox"
@@ -27,9 +28,15 @@ func biosRunner(logger *slog.Logger, boxPriv []byte, machineID string) func(cont
 		// A cópia de emergência no Registro (docs/bios-senha.md, seção 9).
 		MachineID: machineID,
 		SaveCopy:  bioswrite.SaveRegistryCopy,
+		// O marcador que o .bat deixou no Registro (docs/bios-senha.md, seção 11).
+		Legacy:      bioslegacy.Read,
+		ClearLegacy: bioslegacy.Clear,
 	}
 	return r.Run
 }
+
+// biosLegacy: o Registro tem o marcador do .bat com uma senha que serve de senha atual.
+func biosLegacy() bool { return bioslegacy.Present() }
 
 // biosSettingsRunner: o executor do job bios_settings (docs/bios-config.md), com a caixa desta
 // máquina e o BitLocker do Windows. Sem a caixa, nil: o agente recusa esses jobs.

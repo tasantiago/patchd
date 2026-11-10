@@ -299,8 +299,9 @@ cópias.
 
 **O que isto não cobre:** quem tem a chave de guarda e uma cópia lê a senha sem deixar
 rastro no patchd; por isso a chave fica em cofre com acesso registrado, não num notebook. E a
-senha padrão do parque que o `.bat` deixou legível na máquina continua lá até alguém apagar: depois da
-primeira troca pela guarda, ela já não vale na BIOS, mas deve sair do Registro.
+senha que o `.bat` deixou legível na máquina sai do Registro quando a primeira troca pela guarda
+é confirmada (seção 11); o histórico do `.bat`, que fica em outra chave, continua lá até alguém
+apagar.
 
 ## 10. A senha padrão de cada fabricante
 
@@ -328,3 +329,76 @@ Agora ela pode ser cadastrada uma vez, por fabricante, em **Configuração › B
 Errar a senha padrão tem o custo de sempre: a BIOS recusa ("acesso negado" / código 6 / 3), o
 agente não repete e a senha da guarda volta a pendente. Conferir numa máquina antes de seguir
 com as outras.
+
+## 11. As máquinas em que o `.bat` sorteou a senha (o marcador no Registro)
+
+O pedido (10/11/2026): nas HP, o `.bat` não deixou uma senha padrão. Cada execução sorteou uma
+senha por máquina e a gravou, legível, no Registro da própria máquina. Não há o que cadastrar
+em Configuração › BIOS (seção 10), e digitar máquina por máquina exigiria ler a senha de algum
+lugar.
+
+**Onde ela está.** O `.bat` cria um programa de mentira para o inventário de software de outra
+ferramenta coletar a senha: a chave `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\BIOS_password`
+(visão de 64 bits), com `DisplayName = BIOS_password`, `SystemComponent = 1` e a senha em uso no
+valor `DisplayVersion`. Versões anteriores usavam também `PendingPassword`. Um histórico de
+todas as trocas (a anterior e a nova de cada uma) fica em outra chave, fora do `Uninstall`.
+
+**O achado.** O inventário do patchd lê todas as chaves `Uninstall`, inclusive as ocultas, e
+guardava o `DisplayVersion` como a versão do programa. A senha da BIOS de cada HP veio para o
+banco do patchd como "versão" do programa `BIOS_password`: aparecia na aba Software, nas
+exportações e nas cópias do banco. Corrigido em quatro pontos (`internal/bioslegacy`):
+
+| Onde | O que mudou |
+|---|---|
+| agente, inventário | a entrada do marcador segue na lista, **sem a versão** |
+| agente, perguntas ao parque | a pergunta "programa" ignora o marcador; a de "registro" recusa a chave do marcador e a do histórico |
+| servidor, ao receber | tira a versão do marcador do inventário de um agente anterior (com aviso no log, sem o valor) e retém a resposta de pergunta que cite o marcador; a pergunta de registro nessas chaves nem é criada |
+| banco (migração 0070) | apaga a versão do marcador de todos os inventários guardados e retém as respostas antigas que o citavam |
+
+O nome é exato (`BIOS_password`, no nome exibido ou no nome da chave): procurar por "password"
+esconderia a versão de programas de verdade.
+
+**O que a correção não alcança:** as cópias do banco feitas antes da migração 0070, o
+inventário da outra ferramenta e o próprio Registro das máquinas continuam com as senhas. O que
+as invalida é a troca de cada máquina pela guarda, abaixo. O terminal do administrador
+(`docs/terminal.md`) roda o que o admin digitar e guarda a saída: não ler essas chaves por ele.
+
+**A primeira troca, sem ninguém digitar.** A senha em uso já está na máquina, e é o agente
+quem vai usá-la: ela não precisa passar pelo servidor.
+
+1. O agente (Windows, com a caixa) confere a cada estado se o marcador tem um valor com
+   formato de senha (1 a 32 caracteres ASCII visíveis) e avisa o servidor com `bios_legacy` no
+   estado. Só o fato vai; a senha não sai da máquina.
+2. No cartão Senha da BIOS, com a BIOS já com senha, a guarda sem a ativa e o aviso do agente
+   (só nas HP), o campo "senha atual" fica opcional. Em branco, o job `bios_password` vai com
+   `current_from: "marcador"` e **sem** envelope de senha atual. A digitada continua valendo e
+   tem prioridade; sem o marcador, vale a padrão do fabricante (seção 10).
+3. O agente lê o `DisplayVersion` na hora do job, só na memória, e faz a mesma chamada única ao
+   fabricante. Marcador sem valor, ilegível ou fora do formato: **recusado**, "a BIOS não foi
+   tocada", e a senha da guarda volta a pendente.
+4. Código 0: a senha da guarda vale. O agente guarda a cópia cifrada (seção 9) e **apaga do
+   marcador** o `DisplayVersion` e o `PendingPassword`. A chave do marcador fica, sem senha.
+5. Código 6 (a do marcador não é a que a BIOS aceita): falhou, sem nova tentativa, e o marcador
+   fica como está. O `.bat` avisa no próprio log que o marcador pode ficar desatualizado quando
+   a troca dele deu certo e a gravação do Registro não; a senha certa pode estar no histórico
+   dele. Alguém a confere e a digita no campo.
+6. Resultado incerto: nada é apagado, e a regra da senha incerta (seção 8) vale igual.
+
+O campo novo só vai para o agente que anuncia `bios_legacy`: um agente anterior recusaria o
+job inteiro (parâmetro desconhecido), e para ele o painel continua pedindo a senha digitada.
+
+**Por que apagar.** Depois da troca, a senha do marcador não abre mais nada, e deixá-la lá tem
+um custo: o `.bat` usa o `DisplayVersion` como senha anterior, e uma nova execução dele
+tentaria a senha velha na BIOS (senha errada repetida trava a BIOS até reiniciar). Sem o valor,
+o `.bat` para antes de tocar na BIOS ("senha anterior indisponível"). A limpeza vale para
+qualquer troca confirmada, também a feita com a senha digitada.
+
+**O que fica por conta de quem opera:**
+
+- **Tirar o `.bat` da distribuição** nas máquinas que passarem para a guarda. Enquanto ele
+  rodar numa máquina ainda não trocada, a senha muda de novo (o marcador acompanha, e a troca
+  pela guarda continua funcionando); o problema é a senha legível continuar sendo criada.
+- **O histórico do `.bat`** guarda todas as senhas antigas, legíveis. O patchd não o toca (o
+  caminho leva o nome da organização e não é do patchd). Depois de conferir a troca nas
+  máquinas, ele pode ser apagado.
+- **Conferir numa máquina antes das outras**, como em toda primeira troca.

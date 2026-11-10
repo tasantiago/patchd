@@ -39,6 +39,27 @@ func TestParametrosDaSenhaDaBIOS(t *testing.T) {
 			t.Errorf("%s: aceito", nome)
 		}
 	}
+	// A senha atual lida do marcador do .bat (docs/bios-senha.md, seção 11): só na HP, e sem
+	// envelope de senha atual junto.
+	marcador := semAtual
+	marcador.CurrentFrom = BIOSCurrentMarker
+	if raw, err := BIOSPasswordParamsJSON(marcador); err != nil || !strings.Contains(string(raw), `"current_from":"marcador"`) {
+		t.Errorf("atual do marcador: %s %v", raw, err)
+	}
+	for nome, muda := range map[string]func(*BIOSPasswordParams){
+		"origem desconhecida": func(p *BIOSPasswordParams) { p.CurrentFrom = "arquivo" },
+		"marcador e envelope": func(p *BIOSPasswordParams) { p.Current = env },
+		"marcador fora da HP": func(p *BIOSPasswordParams) { p.Vendor = "lenovo" },
+	} {
+		p := marcador
+		muda(&p)
+		if _, err := BIOSPasswordParamsJSON(p); err == nil {
+			t.Errorf("%s: aceito", nome)
+		}
+	}
+	if raw, _ := BIOSPasswordParamsJSON(semAtual); strings.Contains(string(raw), "current_from") {
+		t.Error("o campo novo vai no job de quem não pediu (o agente anterior o recusaria)")
+	}
 	// Campo desconhecido (uma senha em texto, por exemplo) é recusado.
 	if _, err := ParseBIOSPasswordParams([]byte(`{"guard":1,"vendor":"hp","box_key":"0123456789ab","new":"` + env + `","senha":"x"}`)); err == nil {
 		t.Error("campo desconhecido aceito")

@@ -181,6 +181,10 @@ quem resolve.
   offline só com a chave de guarda (`docs/bios-senha.md`, seção 9); a revelação offline fica
   fora da trilha. Senha padrão por fabricante (Configuração › BIOS, `docs/bios-senha.md`,
   seção 10): fechada para a chave de guarda, usada só como a atual na primeira troca.
+  O marcador do `.bat` nas HP (`docs/bios-senha.md`, seção 11): o inventário de software
+  trazia a senha em uso como a versão do programa `BIOS_password`; o agente e o servidor
+  deixaram de aceitá-la, a migração 0070 a tira dos inventários guardados, e a primeira troca
+  usa a senha lida pelo agente na própria máquina, que a apaga do Registro depois do "ok".
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; o parque continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem
