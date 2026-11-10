@@ -28,6 +28,9 @@ import (
 
 const campaignsShown = 50
 
+// campaignsScan: quantas campanhas a lista lê para separar as arquivadas.
+const campaignsScan = 2000
+
 // As opções do formulário: listas fechadas, como na janela dos grupos de implantação.
 var (
 	observeHours = []int{0, 1, 4, 12, 24, 48, 72, 168}
@@ -82,6 +85,8 @@ type campaignForm struct {
 	TZ         string
 	// Close: terceiros com o programa aberto: 0 adia; N fecha com aviso de N minutos (só com horário).
 	Close int
+	// Wake (Aula 22.3): ligar pela rede na janela e desligar depois.
+	Wake bool
 	// Resend: reenvios automáticos das falhas (expirado e falhou), por máquina; 0..5.
 	Resend  int
 	Resends []int
@@ -92,10 +97,14 @@ type campaignForm struct {
 
 type campaignsView struct {
 	pageBase
-	Rows   []campaignRow
-	CanNew bool // admin e chave de jobs
-	NoKey  bool // admin sem a chave: o formulário não aparece
-	Form   campaignForm
+	Rows []campaignRow
+	// Archived: a lista das arquivadas (?arquivadas=1); NArchived, quantas há; NFinished,
+	// quantas encerradas ainda na lista (o botão de arquivá-las de uma vez).
+	Archived             bool
+	NArchived, NFinished int
+	CanNew               bool // admin e chave de jobs
+	NoKey                bool // admin sem a chave: o formulário não aparece
+	Form                 campaignForm
 }
 
 func campaignLabel(s string) string {
@@ -164,6 +173,14 @@ func (a *api) ringChoices(r *http.Request, checked []int) ([]ringChoice, error) 
 func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v := campaignsView{pageBase: a.base(r, "Campanhas", "campanhas")}
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
+	switch q := r.URL.Query(); {
+	case q.Has("arquivada"):
+		v.Flash = fmt.Sprintf("Campanha %s arquivada: saiu da lista, sem perder nada. Ela fica em Arquivadas, de onde volta ou é excluída.", numOnly(q.Get("arquivada")))
+	case q.Has("arquivadas-agora"):
+		v.Flash = fmt.Sprintf("%s campanha(s) encerrada(s) arquivada(s).", numOnly(q.Get("arquivadas-agora")))
+	case q.Has("excluida"):
+		v.Flash = fmt.Sprintf("Campanha %s excluída. Os jobs dela continuam em Automação › Jobs.", numOnly(q.Get("excluida")))
+	}
 	if v.CanNew {
 		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays, Resends: resendChoices,
 			DailyStart: "02:00", DailyDur: 180}
@@ -204,12 +221,23 @@ func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int
 	for _, m := range windowDurations {
 		v.Form.Durations = append(v.Form.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
 	}
-	list, err := a.store.Campaigns(r.Context(), campaignsShown)
+	list, err := a.store.Campaigns(r.Context(), campaignsScan)
 	if err != nil {
 		a.internalError(w, r, "listar campanhas", err)
 		return
 	}
+	v.Archived = r.URL.Query().Get("arquivadas") == "1"
+	shown := 0
 	for _, c := range list {
+		if c.ArchivedAt != nil {
+			v.NArchived++
+		} else if c.Finished() {
+			v.NFinished++
+		}
+		if (c.ArchivedAt != nil) != v.Archived || shown >= campaignsShown {
+			continue
+		}
+		shown++
 		typ := typeLabel(c.Type)
 		if c.UseWindow {
 			typ += ", na janela"
@@ -253,6 +281,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	f.MicrosoftOn = a.microsoftAllowed()
 	f.Resend, _ = strconv.Atoi(r.PostFormValue("reenvios"))
+	f.Wake = r.PostFormValue("ligar") == "1"
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
@@ -264,7 +293,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
-		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft,
+		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft, Wake: f.Wake,
 		CloseDelay: time.Duration(f.Close) * time.Minute, AutoResend: f.Resend}
 	if f.Type == jobs.TypeReboot {
 		c.RebootDelay = time.Duration(f.Delay) * time.Minute
@@ -287,6 +316,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		return c, f, "Escolha o aviso antes de fechar o programa da lista."
 	case f.Close != 0 && f.When == "prazo":
 		return c, f, "Fechar o programa aberto só em horário fixo (de madrugada) ou na janela de cada grupo: com prazo, o programa seria fechado em pleno expediente."
+	case f.Wake && f.When == "prazo":
+		return c, f, "Ligar pela rede vai com a janela do grupo ou o horário fixo (de madrugada), não com o prazo."
 	case f.Resend < 0 || f.Resend > campaign.MaxAutoResend:
 		return c, f, "Escolha os reenvios automáticos da lista."
 	case len(f.Chosen) == 0:
@@ -461,6 +492,9 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			}
 			v.Rings = append(v.Rings, cr)
 		}
+		if c.Wake {
+			v.Warnings = append(v.Warnings, fmt.Sprintf("Ligar pela rede: %d min antes da janela (ou do horário), o servidor pede a um agente ligado da mesma sub-rede o pacote mágico para cada máquina do grupo com job da campanha e sem check-in há mais de %d min. Quando os jobs dela terminam, manda desligar só as que acordaram assim, e o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto (aba Hardware › Ligar pela rede) e de um agente ligado em cada sub-rede.", int(campaign.WakeLead/time.Minute), int(campaign.WakeOffline/time.Minute)))
+		}
 		if f.Chosen[0] != store.PilotRing {
 			v.Warnings = append(v.Warnings, "A campanha não começa pelo piloto (grupo de implantação 0).")
 		}
@@ -571,15 +605,18 @@ const campaignJobsPerPage = 100
 
 type campaignView struct {
 	pageBase
-	C                                  campaign.Campaign
-	TypeLabel, State, StateLabel, When string
-	Fallback                           string // a fonte reserva da Microsoft, quando a campanha a usa
-	CloseL                             string // terceiros: fechar o programa aberto com aviso
-	Sources, Observe, Created          string
-	Rings                              []campaignRingView
-	CanPause, CanResume, CanCancel     bool
-	ResendL                            string         // os reenvios automáticos
-	Resend                             []resendOption // o que dá para reenviar no grupo atual (admin)
+	C                                   campaign.Campaign
+	TypeLabel, State, StateLabel, When  string
+	Fallback                            string // a fonte reserva da Microsoft, quando a campanha a usa
+	WakeL                               string // ligar pela rede na janela (Aula 22.3): o resumo
+	Wakes                               []wakeRow
+	CloseL                              string // terceiros: fechar o programa aberto com aviso
+	Sources, Observe, Created           string
+	Rings                               []campaignRingView
+	CanPause, CanResume, CanCancel      bool
+	CanArchive, CanUnarchive, CanDelete bool
+	ResendL                             string         // os reenvios automáticos
+	Resend                              []resendOption // o que dá para reenviar no grupo atual (admin)
 }
 
 func campaignID(r *http.Request) (int64, bool) {
@@ -622,12 +659,21 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	if c.MicrosoftFallback {
 		v.Fallback = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft Update"
 	}
+	if c.Wake {
+		if err := a.campaignWakeView(r, c, &v); err != nil {
+			a.internalError(w, r, "ler o ligar pela rede", err)
+			return
+		}
+	}
 	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
 	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"
 	if v.Admin {
 		v.CanPause = c.State == campaign.StateRunning
 		v.CanResume = c.State == campaign.StatePaused
 		v.CanCancel = c.State == campaign.StateRunning || c.State == campaign.StatePaused
+		v.CanArchive = c.Finished() && c.ArchivedAt == nil
+		v.CanUnarchive = c.ArchivedAt != nil
+		v.CanDelete = c.Finished() && c.ArchivedAt != nil
 		if v.CanCancel && c.LaunchedIdx == c.CurrentIdx {
 			list, err := a.store.CampaignJobs(r.Context(), c.ID, c.CurrentIdx)
 			if err != nil {
@@ -760,6 +806,10 @@ func campaignFlash(r *http.Request, b *pageBase) {
 		b.Flash = "Campanha retomada: as falhas do grupo de implantação atual ficam aceitas, e ela segue."
 	case q.Get("feito") == "reenviar":
 		b.Flash = "Reenvio pedido: no próximo minuto o servidor refaz o plano de cada máquina e manda os jobs de novo (a que já não precisa sai como dispensada). O que falhar de novo pausa a campanha de novo."
+	case q.Get("feito") == "desarquivar":
+		b.Flash = "Campanha desarquivada: ela volta para a lista."
+	case q.Get("erro") == "confirmar":
+		b.Error = "Para excluir, marque a confirmação."
 	case q.Get("erro") == "reenvio-vazio":
 		b.Error = "Marque o que reenviar."
 	case q.Get("feito") == "cancelar":
@@ -775,7 +825,8 @@ func campaignFlash(r *http.Request, b *pageBase) {
 // campaignChangeAction: pausar, retomar ou cancelar, pelas regras de campaign.Change.
 func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	id, ok := campaignID(r)
-	ops := map[string]string{"pausar": campaign.OpPause, "retomar": campaign.OpResume, "cancelar": campaign.OpCancel, "reenviar": "reenviar"}
+	ops := map[string]string{"pausar": campaign.OpPause, "retomar": campaign.OpResume, "cancelar": campaign.OpCancel, "reenviar": "reenviar",
+		"arquivar": "arquivar", "desarquivar": "desarquivar", "excluir": "excluir"}
 	op, known := ops[r.PathValue("op")]
 	if !ok || !known {
 		http.NotFound(w, r)
@@ -790,8 +841,12 @@ func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s pan
 		http.NotFound(w, r)
 		return
 	}
-	if op == "reenviar" {
+	switch op {
+	case "reenviar":
 		a.campaignResendAction(w, r, s, c)
+		return
+	case "arquivar", "desarquivar", "excluir":
+		a.campaignArchiveAction(w, r, s, c, op)
 		return
 	}
 	back := fmt.Sprintf("/painel/campanhas/%d", id)
@@ -857,4 +912,128 @@ func (a *api) campaignResendAction(w http.ResponseWriter, r *http.Request, s pan
 	}
 	a.audit(r, s, "campanha.reenviar", fmt.Sprintf("campanha %d", c.ID), "motivos: "+strings.Join(reasons, ", "))
 	http.Redirect(w, r, back+"?feito=reenviar", http.StatusSeeOther)
+}
+
+// campaignArchiveAction: arquivar, desarquivar ou excluir uma campanha (só a encerrada; a
+// exclusão, só a arquivada e com a confirmação).
+func (a *api) campaignArchiveAction(w http.ResponseWriter, r *http.Request, s panel.Session, c campaign.Campaign, op string) {
+	back := fmt.Sprintf("/painel/campanhas/%d", c.ID)
+	var n int
+	var err error
+	switch op {
+	case "arquivar":
+		n, err = a.store.ArchiveCampaigns(r.Context(), []int64{c.ID}, true, a.now())
+	case "desarquivar":
+		n, err = a.store.ArchiveCampaigns(r.Context(), []int64{c.ID}, false, a.now())
+	case "excluir":
+		if r.PostFormValue("confirmo") != "1" {
+			http.Redirect(w, r, back+"?erro=confirmar", http.StatusSeeOther)
+			return
+		}
+		var ok bool
+		ok, err = a.store.DeleteCampaign(r.Context(), c.ID)
+		if ok {
+			n = 1
+		}
+	}
+	if err != nil {
+		a.internalError(w, r, op+" campanha", err)
+		return
+	}
+	if n == 0 {
+		http.Redirect(w, r, back+"?erro=estado", http.StatusSeeOther)
+		return
+	}
+	a.audit(r, s, "campanha."+op, fmt.Sprintf("campanha %d", c.ID), fmt.Sprintf("%s (%s, %s)", c.Name, campaignLabel(c.State), typeLabel(c.Type)))
+	switch op {
+	case "excluir":
+		http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivadas=1&excluida=%d", c.ID), http.StatusSeeOther)
+	case "arquivar":
+		http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivada=%d", c.ID), http.StatusSeeOther)
+	default:
+		http.Redirect(w, r, back+"?feito=desarquivar", http.StatusSeeOther)
+	}
+}
+
+// archiveFinishedAction: POST /painel/campanhas/arquivar-encerradas. Arquiva de uma vez as
+// concluídas e canceladas que ainda estão na lista.
+func (a *api) archiveFinishedAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	list, err := a.store.Campaigns(r.Context(), campaignsScan)
+	if err != nil {
+		a.internalError(w, r, "listar campanhas", err)
+		return
+	}
+	var ids []int64
+	var keys []string
+	for _, c := range list {
+		if c.Finished() && c.ArchivedAt == nil {
+			ids = append(ids, c.ID)
+			keys = append(keys, strconv.FormatInt(c.ID, 10))
+		}
+	}
+	n := 0
+	if len(ids) > 0 {
+		if n, err = a.store.ArchiveCampaigns(r.Context(), ids, true, a.now()); err != nil {
+			a.internalError(w, r, "arquivar campanhas", err)
+			return
+		}
+		a.audit(r, s, "campanha.arquivar-encerradas", fmt.Sprintf("%d campanha(s)", n), texto.Clip("ids: "+strings.Join(keys, ","), 2000))
+	}
+	http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivadas-agora=%d", n), http.StatusSeeOther)
+}
+
+type wakeRow struct {
+	MachineID, Name, Ring, Wake, Woke, Shutdown string
+}
+
+// campaignWakeView: o resumo e a tabela do ligar e desligar (Aula 22.3), de todos os grupos.
+func (a *api) campaignWakeView(r *http.Request, c campaign.Campaign, v *campaignView) error {
+	recs, err := a.store.CampaignWakes(r.Context(), c.ID, -1)
+	if err != nil {
+		return err
+	}
+	if len(recs) == 0 {
+		v.WakeL = "ligada: nenhuma máquina precisou ainda (o pacote sai minutos antes da janela, para as desligadas)"
+		return nil
+	}
+	names, err := a.machineNames(r.Context())
+	if err != nil {
+		return err
+	}
+	var asked, notAsked, woke, off, stayed int
+	for _, w := range recs {
+		row := wakeRow{MachineID: w.MachineID, Name: dash(names[w.MachineID]), Ring: strconv.Itoa(c.Rings[min(w.Idx, len(c.Rings)-1)])}
+		switch {
+		case w.WakeRequestID == 0:
+			notAsked++
+			row.Wake, row.Woke = "não saiu: "+w.Problem, "—"
+		case w.AnsweredAt != nil:
+			asked++
+			woke++
+			row.Wake = "pedido " + a.stamp(w.RequestedAt)
+			row.Woke = "acordou " + lapse(w.AnsweredAt.Sub(w.RequestedAt)) + " depois do pedido"
+		default:
+			asked++
+			row.Wake = "pedido " + a.stamp(w.RequestedAt)
+			row.Woke = "ainda não"
+		}
+		switch {
+		case w.ShutdownJobID != 0 && strings.HasPrefix(w.ShutdownDetail, "desligando"):
+			off++
+			row.Shutdown = "desligada (job " + strconv.FormatInt(w.ShutdownJobID, 10) + ")"
+		case w.ShutdownJobID != 0 && w.ShutdownDetail != "":
+			stayed++
+			row.Shutdown = w.ShutdownDetail
+		case w.ShutdownJobID != 0:
+			row.Shutdown = "job " + strconv.FormatInt(w.ShutdownJobID, 10) + " " + stateLabel(w.ShutdownState)
+		case w.ShutdownNote != "":
+			row.Shutdown = w.ShutdownNote
+		default:
+			row.Shutdown = "depois dos jobs dela"
+		}
+		v.Wakes = append(v.Wakes, row)
+	}
+	v.WakeL = fmt.Sprintf("%d pedido(s) de ligar, %d acordaram, %d desligadas depois, %d ficaram ligadas (alguém conectado); %d sem pedido (sem repetidor, sem MAC...)",
+		asked, woke, off, stayed, notAsked)
+	return nil
 }

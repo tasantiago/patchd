@@ -86,7 +86,12 @@ type Campaign struct {
 	// AutoResend: quantas vezes, por máquina, o motor reenvia sozinho o job que falhou ou
 	// expirou (máquina desligada, rede) antes de contar como falha e pausar; 0: nenhuma. O
 	// recusado não volta sozinho (assinatura, sistema: tende a recusar de novo).
-	AutoResend  int
+	AutoResend int
+	// Wake (docs/wake-on-lan.md, Aula 22.3): no início da janela (ou do horário fixo), ligar
+	// pela rede as máquinas do grupo desligadas com job da campanha; quando os jobs delas
+	// terminam, desligar só as que o patchd ligou e sem ninguém conectado. Só com janela ou
+	// horário fixo.
+	Wake        bool
 	Observe     time.Duration
 	TTL         time.Duration // prazo dos jobs sem janela
 	State       string
@@ -99,7 +104,12 @@ type Campaign struct {
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// ArchivedAt: arquivada (só a encerrada): fora da lista, sem perder nada. nil: na lista.
+	ArchivedAt *time.Time
 }
+
+// Finished: concluída ou cancelada (o motor não mexe mais nela).
+func (c Campaign) Finished() bool { return c.State == StateDone || c.State == StateCanceled }
 
 // Ring é o grupo de implantação atual.
 func (c Campaign) Ring() int { return c.Rings[c.CurrentIdx] }
@@ -132,6 +142,8 @@ func (c Campaign) Validate() error {
 		return fmt.Errorf("o aviso do reinício fica entre %v e %v", jobs.MinRebootDelay, jobs.MaxRebootDelay)
 	case c.Type != jobs.TypeReboot && c.RebootDelay != 0:
 		return errors.New("só a campanha de reinício leva aviso")
+	case c.Wake && !c.UseWindow && c.Daily == nil:
+		return errors.New("ligar pela rede vai com a janela do grupo ou o horário fixo (de madrugada), não com o prazo")
 	case c.AutoResend < 0 || c.AutoResend > MaxAutoResend:
 		return fmt.Errorf("os reenvios automáticos vão de 0 a %d", MaxAutoResend)
 	case c.Type == jobs.TypeServerURL:
@@ -198,7 +210,30 @@ type JobState struct {
 	// Slot: o que o job leva, quando uma máquina recebe mais de um na mesma campanha (na de
 	// todos os programas de terceiros, o programa). Vazio: um job por máquina.
 	Slot string
+	// NotBefore: o início da janela (ou do horário fixo) do job; nil: sem janela.
+	NotBefore *time.Time
 }
+
+// WakeRecord (Aula 22.3): o ligar e o desligar de uma máquina num grupo da campanha.
+type WakeRecord struct {
+	CampaignID  int64
+	Idx         int
+	MachineID   string
+	RequestedAt time.Time
+	// WakeRequestID: o pedido de ligar (0: não saiu; o motivo em Problem).
+	WakeRequestID int64
+	Problem       string
+	// ShutdownJobID: o job de desligar (0: ainda não, ou não vai; o motivo em ShutdownNote).
+	ShutdownJobID int64
+	ShutdownNote  string
+	// Lidos com o registro: a máquina respondeu ao pacote (o primeiro check-in depois dele) e
+	// a situação do job de desligar.
+	AnsweredAt                    *time.Time
+	ShutdownState, ShutdownDetail string
+}
+
+// ShutdownDecided: o desligar já foi decidido (o job saiu, ou ficou anotado por que não).
+func (w WakeRecord) ShutdownDecided() bool { return w.ShutdownJobID != 0 || w.ShutdownNote != "" }
 
 // Store é o que a campanha usa do banco.
 type Store interface {
@@ -211,6 +246,10 @@ type Store interface {
 	DismissJob(ctx context.Context, id int64, why string) (bool, error)
 	// TakeResend: o pedido de reenvio do admin (os motivos), esvaziado ao ler.
 	TakeResend(ctx context.Context, id int64) ([]string, error)
+	// Ligar e desligar na janela (Aula 22.3).
+	SaveCampaignWake(ctx context.Context, w WakeRecord) error
+	CampaignWakes(ctx context.Context, id int64, idx int) ([]WakeRecord, error)
+	LastSeen(ctx context.Context, ids []string) (map[string]time.Time, error)
 }
 
 // Novas tentativas dos jobs adiados (Aula 14.9): o agente responde "adiado" quando não deu
@@ -261,7 +300,12 @@ type Engine struct {
 	MicrosoftAllowed func() bool
 	// CanCloseApps: o agente da máquina anunciou que fecha o programa com aviso. nil: ninguém.
 	CanCloseApps func(ctx context.Context, machineID string) (bool, error)
-	Logger       *slog.Logger
+	// Wake liga a máquina pela rede (Aula 22.3, o pedido do internal/wakereq): o ID do pedido,
+	// ou, sem ele, por que não saiu. nil: as campanhas com Wake não ligam ninguém.
+	Wake func(ctx context.Context, machineID, by string) (requestID int64, problem string, err error)
+	// CanShutdown: o agente da máquina anunciou o job desligar. nil: ninguém.
+	CanShutdown func(ctx context.Context, machineID string) (bool, error)
+	Logger      *slog.Logger
 }
 
 // closeApps põe o "fechar o programa com aviso" no job de terceiros, quando a campanha pede,
@@ -384,6 +428,11 @@ func (e *Engine) Advance(ctx context.Context, c *Campaign, now time.Time) error 
 				return e.save(ctx, c)
 			}
 			st.open += reissued
+		}
+		if c.Wake {
+			if err := e.wakeStep(ctx, c, list, now); err != nil {
+				return err
+			}
 		}
 		switch {
 		case st.open > 0 || st.waiting > 0:

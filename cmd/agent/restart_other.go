@@ -17,3 +17,6 @@ func newRestart(platform.Runner) func(ctx context.Context, jobID int64, delay ti
 
 // newAbortRestart: sem reinício pelo patchd, nada a cancelar.
 func newAbortRestart(platform.Runner) func(ctx context.Context) error { return nil }
+
+// newShutdown: sem desligar pelo patchd neste sistema (o job é recusado).
+func newShutdown(platform.Runner) func(ctx context.Context, jobID int64) error { return nil }

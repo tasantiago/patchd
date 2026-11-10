@@ -1477,11 +1477,12 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Automação <span class="muted">› Campanhas</span></h1>
 {{template "automacao-abas" "campanhas"}}
 <p class="muted">O mesmo pedido passando pelos grupos de implantação em ordem: o servidor libera o grupo seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
-<div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
+<div class="card"><div class="card-cab"><h2>{{if .Archived}}Campanhas arquivadas{{else}}Campanhas recentes{{end}}</h2>
+<span class="acoes">{{if .Archived}}<a href="/painel/campanhas">← Campanhas</a>{{else}}{{if and .Admin .NFinished}}<form class="inline" method="post" action="/painel/campanhas/arquivar-encerradas"><button class="sec" type="submit" title="tiram da lista as concluídas e as canceladas; nada se perde">Arquivar as encerradas ({{.NFinished}})</button></form>{{end}}{{if .NArchived}} <a href="/painel/campanhas?arquivadas=1">Arquivadas ({{.NArchived}})</a>{{end}}{{end}}</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Grupos de implantação</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td><td class="nowrap">{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
+{{else}}<p class="muted">{{if .Archived}}Nenhuma campanha arquivada.{{else}}Nenhuma campanha ainda.{{end}}</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
@@ -1522,6 +1523,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <small class="linha">às <input type="time" name="hora" value="{{.Form.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Form.Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Form.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
 <small>ex.: de madrugada; vale para todos os grupos, sem mexer na janela deles (fuso {{.Form.TZ}})</small></span></label>
 </fieldset>
+<fieldset class="campo"><legend>Ligar pela rede</legend><label class="opcao"><input type="checkbox" name="ligar" value="1" {{if .Form.Wake}}checked{{end}}><span><b>Ligar as desligadas no início da janela e desligar depois as que o patchd ligou</b>
+<small>só com a janela do grupo ou o horário fixo; o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto e de um agente ligado em cada sub-rede</small></span></label></fieldset>
 <div class="acoes"><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></div>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
@@ -1533,6 +1536,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}{{if .Extra}} · {{.Extra}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada grupo de implantação concluído</dd>
+{{if .Form.Wake}}<dt>Ligar pela rede</dt><dd>as desligadas, no início da janela; desligar depois as que o patchd ligou</dd>{{end}}
 <dt>Reenvios automáticos</dt><dd>{{if .Form.Resend}}até {{.Form.Resend}} vez(es) por máquina, nas falhas e nos expirados{{else}}nenhum: a primeira falha pausa a campanha{{end}}</dd>
 </dl></div>
 <div class="card"><div class="card-cab"><h2>Grupos de implantação, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Grupo de implantação</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
@@ -1542,7 +1546,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}"><input type="hidden" name="hora" value="{{.Form.DailyStart}}"><input type="hidden" name="duracao" value="{{.Form.DailyDur}}">
-<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">
+<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">{{if .Form.Wake}}<input type="hidden" name="ligar" value="1">{{end}}
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
@@ -1552,7 +1556,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 
 {{define "campanha"}}{{template "topo" .}}
 <p><a href="/painel/campanhas">← Campanhas</a></p>
-<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
+<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span>{{if .C.ArchivedAt}} <span class="muted">· arquivada</span>{{end}}</h1>
 <div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
 <dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else if eq .C.Type "reboot"}}Reinício{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
@@ -1560,7 +1564,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Programa aberto</dt><dd>{{.CloseL}}</dd>{{end}}{{if .Fallback}}
 <dt>Fonte do Windows</dt><dd>{{.Fallback}}</dd>{{end}}
 <dt>Observação</dt><dd>{{.Observe}}</dd>
-<dt>Reenvios automáticos</dt><dd>{{.ResendL}}</dd>
+<dt>Reenvios automáticos</dt><dd>{{.ResendL}}</dd>{{if .WakeL}}
+<dt>Ligar pela rede</dt><dd>{{.WakeL}}</dd>{{end}}
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{template "leia-mais" (leia .C.Detail)}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
@@ -1569,7 +1574,14 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button class="sec" type="submit">Pausar</button></form>{{end}}
 {{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
-<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
+<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}
+{{if or .CanArchive .CanUnarchive}}<div class="lote">
+{{if .CanArchive}}<form method="post" action="/painel/campanhas/{{.C.ID}}/arquivar"><button class="sec" type="submit">Arquivar</button></form> <span class="muted">Sai da lista de campanhas, sem perder nada; dá para desarquivar.</span>{{end}}
+{{if .CanUnarchive}}<form method="post" action="/painel/campanhas/{{.C.ID}}/desarquivar"><button class="sec" type="submit">Desarquivar</button></form>
+<details class="excluir"><summary>Excluir a campanha</summary><form method="post" action="/painel/campanhas/{{.C.ID}}/excluir">
+<label><input type="checkbox" name="confirmo" value="1" required> Entendo que a campanha some de vez; os jobs dela continuam em Automação › Jobs, sem a ligação com ela.</label>
+<button class="perigo" type="submit">Excluir de vez</button></form></details>{{end}}
+</div>{{end}}</div>
 {{if .Resend}}<div class="card"><div class="card-cab"><h2>Reenviar o que não deu certo</h2><span class="muted">grupo de implantação atual</span></div>
 <form class="limpeza" method="post" action="/painel/campanhas/{{.C.ID}}/reenviar">
 <fieldset class="escolhas"><legend>O que reenviar</legend>
@@ -1578,6 +1590,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted nota-limpeza">No próximo minuto o servidor refaz o plano de cada máquina e manda o job de novo; a que já não precisa (já em dia, sem o programa) sai como dispensada. A campanha volta a andar sem aceitar as falhas: o que falhar de novo pausa de novo.</p>
 <div class="acoes"><button type="submit">Reenviar</button></div>
 </form></div>{{end}}
+{{if .Wakes}}<div class="card" id="ligar"><div class="card-cab"><h2>Ligar pela rede</h2><span class="muted">{{len .Wakes}} máquina(s)</span></div>
+<div class="tabela"><table><thead><tr><th>Máquina</th><th>Grupo</th><th>Pedido</th><th>Acordou</th><th>Desligar</th></tr></thead>
+<tbody>{{range .Wakes}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=hardware#ligar">{{.Name}}</a></td><td class="num">{{.Ring}}</td><td>{{.Wake}}</td><td>{{.Woke}}</td><td class="detalhe">{{template "leia-mais" (leia .Shutdown)}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
 {{if .Counts}}<ul class="chips camp-estados" aria-label="jobs por estado">{{range .Counts}}<li><a class="chip{{if .Active}} ativo{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}}><span class="job {{.State}}">{{.Label}}</span> <b>{{.N}}</b></a></li>{{end}}</ul>{{end}}

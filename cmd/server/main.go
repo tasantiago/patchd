@@ -35,6 +35,7 @@ import (
 	"github.com/tasantiago/patchd/internal/settings"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/wakereq"
 )
 
 // Códigos de saída do servidor.
@@ -406,6 +407,23 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		eng.CanCloseApps = func(ctx context.Context, id string) (bool, error) {
 			caps, err := pg.MachineCapabilities(ctx, id)
 			return slices.Contains(caps, protocol.CapabilityCloseApps), err
+		}
+		// Ligar pela rede na janela e desligar depois (Aula 22.3): o mesmo pedido do painel.
+		eng.Wake = func(ctx context.Context, id, by string) (int64, string, error) {
+			res, err := wakereq.Request(ctx, pg, jobKey, id, time.Time{}, time.Now(), by)
+			switch {
+			case errors.Is(err, wakereq.ErrNotFound):
+				return 0, "máquina sem estado (nunca fez check-in)", nil
+			case err != nil:
+				return 0, "", err
+			case res.Problem != "":
+				return 0, wakereq.ProblemText(res.Problem), nil
+			}
+			return res.ID, "", nil
+		}
+		eng.CanShutdown = func(ctx context.Context, id string) (bool, error) {
+			caps, err := pg.MachineCapabilities(ctx, id)
+			return slices.Contains(caps, protocol.CapabilityShutdown), err
 		}
 		go campaignLoop(ctx, logger, pg, eng)
 		logger.Info("campanhas ligadas: o servidor libera os grupos de implantação a cada minuto")

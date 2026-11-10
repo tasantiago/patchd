@@ -398,6 +398,19 @@ O detalhe da campanha pausada começa pelo resumo por motivo ("247 job(s) sem su
 expirado, 14 rejeitado, 2 falhou)") e o que fazer; a lista dos jobs fica no fim, atrás do
 "leia mais" (no painel) e fora do e-mail de campanha pausada.
 
+### Arquivar e excluir campanhas
+
+As campanhas não somem sozinhas. A **encerrada** (concluída ou cancelada) pode ser
+**arquivada**: sai da lista, sem perder nada, e fica em **Arquivadas** (link no alto da
+lista), de onde volta (**Desarquivar**) ou é **excluída**. O botão **Arquivar as encerradas
+(N)** tira da lista todas as concluídas e canceladas de uma vez. A em andamento ou pausada não
+se arquiva: primeiro cancele.
+
+**Excluir** vale só para a arquivada e pede confirmação: a campanha some de vez; os jobs dela
+continuam em Automação › Jobs, sem a ligação com ela. Tudo vai para a auditoria
+(`campanha.arquivar`, `campanha.arquivar-encerradas`, `campanha.desarquivar`,
+`campanha.excluir`).
+
 ### Reenviar o que não deu certo
 
 Duas formas, que se somam:

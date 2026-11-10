@@ -19,7 +19,7 @@ import (
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
 	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
-	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend`
+	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, archived_at, wake`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
@@ -30,7 +30,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var dTZ *string
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
 		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
-		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend)
+		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend, &c.ArchivedAt, &c.Wake)
 	if err != nil {
 		return c, err
 	}
@@ -49,6 +49,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	c.RebootDelay = time.Duration(delay) * time.Second
 	c.CloseDelay = time.Duration(closeDelay) * time.Second
 	c.AutoResend = int(autoResend)
+	c.ArchivedAt = utc(c.ArchivedAt)
 	c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx = int(cur), int(launched), int(accepted)
 	c.RingDoneAt = utc(c.RingDoneAt)
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
@@ -73,10 +74,10 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 	var id int64
 	err := p.pool.QueryRow(ctx, `
 		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec,
-			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
+			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, wake)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
 		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
-		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second), c.AutoResend).Scan(&id)
+		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second), c.AutoResend, c.Wake).Scan(&id)
 	return id, err
 }
 
@@ -149,6 +150,40 @@ func (p *Postgres) TakeResend(ctx context.Context, id int64) ([]string, error) {
 	return out, err
 }
 
+// ArchiveCampaigns arquiva (ou, com archive false, desarquiva) as campanhas encerradas dos IDs.
+// Devolve quantas mudaram; a em andamento ou pausada fica como está.
+func (p *Postgres) ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error) {
+	if !archive {
+		tag, err := p.pool.Exec(ctx, `UPDATE campaigns SET archived_at = NULL WHERE id = ANY($1) AND archived_at IS NOT NULL`, ids)
+		return int(tag.RowsAffected()), err
+	}
+	tag, err := p.pool.Exec(ctx, `UPDATE campaigns SET archived_at = $2
+		WHERE id = ANY($1) AND state IN ('concluida', 'cancelada') AND archived_at IS NULL`, ids, at)
+	return int(tag.RowsAffected()), err
+}
+
+// DeleteCampaign exclui a campanha arquivada (e encerrada). Os jobs dela ficam no histórico,
+// sem a ligação com a campanha. false: não existe, ou não está arquivada.
+func (p *Postgres) DeleteCampaign(ctx context.Context, id int64) (bool, error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var ok bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaigns WHERE id = $1 AND archived_at IS NOT NULL
+		AND state IN ('concluida', 'cancelada') FOR UPDATE)`, id).Scan(&ok); err != nil || !ok {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET campaign_id = NULL, campaign_idx = NULL WHERE campaign_id = $1`, id); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM campaigns WHERE id = $1`, id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
+}
+
 // notes: o text[] não aceita NULL.
 func notes(n []string) []string {
 	if n == nil {
@@ -161,7 +196,7 @@ func notes(n []string) []string {
 func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT id, machine_id, state, detail, finished_at, type,
-			CASE WHEN type = 'thirdparty' THEN coalesce(payload::jsonb #>> '{params,app}', '') ELSE '' END, unblocked_at
+			CASE WHEN type = 'thirdparty' THEN coalesce(payload::jsonb #>> '{params,app}', '') ELSE '' END, unblocked_at, not_before
 		FROM jobs WHERE campaign_id = $1 AND campaign_idx = $2 ORDER BY id`, id, idx)
 	if err != nil {
 		return nil, err
@@ -171,8 +206,8 @@ func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campa
 		var typ string
 		// O slot (o programa) sai do payload no banco: a campanha roda a cada minuto, e trazer
 		// o payload assinado de milhares de jobs para ler um campo pesava.
-		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt, &typ, &j.Slot, &j.Unblocked)
-		j.FinishedAt, j.Unblocked = utc(j.FinishedAt), utc(j.Unblocked)
+		err := r.Scan(&j.ID, &j.MachineID, &j.State, &j.Detail, &j.FinishedAt, &typ, &j.Slot, &j.Unblocked, &j.NotBefore)
+		j.FinishedAt, j.Unblocked, j.NotBefore = utc(j.FinishedAt), utc(j.Unblocked), utc(j.NotBefore)
 		return j, err
 	})
 }
@@ -308,6 +343,46 @@ func (m *Memory) TakeResend(ctx context.Context, id int64) ([]string, error) {
 	return r, nil
 }
 
+// ArchiveCampaigns arquiva ou desarquiva as encerradas.
+func (m *Memory) ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for i := range m.campaigns {
+		c := &m.campaigns[i]
+		if !slices.Contains(ids, c.ID) {
+			continue
+		}
+		switch {
+		case archive && c.Finished() && c.ArchivedAt == nil:
+			t := at.UTC()
+			c.ArchivedAt = &t
+			n++
+		case !archive && c.ArchivedAt != nil:
+			c.ArchivedAt = nil
+			n++
+		}
+	}
+	return n, nil
+}
+
+// DeleteCampaign exclui a arquivada; os jobs ficam sem a ligação.
+func (m *Memory) DeleteCampaign(ctx context.Context, id int64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	i := slices.IndexFunc(m.campaigns, func(c campaign.Campaign) bool { return c.ID == id })
+	if i < 0 || m.campaigns[i].ArchivedAt == nil || !m.campaigns[i].Finished() {
+		return false, nil
+	}
+	for _, j := range m.jobs {
+		if j.campaignID == id {
+			j.campaignID, j.campaignIdx = 0, 0
+		}
+	}
+	m.campaigns = slices.Delete(m.campaigns, i, i+1)
+	return true, nil
+}
+
 // CampaignJobs lista os jobs da campanha num grupo de implantação.
 func (m *Memory) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error) {
 	m.mu.RLock()
@@ -316,7 +391,7 @@ func (m *Memory) CampaignJobs(ctx context.Context, id int64, idx int) ([]campaig
 	for _, j := range m.jobs {
 		if j.campaignID == id && j.campaignIdx == idx {
 			out = append(out, campaign.JobState{ID: j.ID, MachineID: j.MachineID, State: j.State, Detail: j.Detail, FinishedAt: j.FinishedAt,
-				Slot: jobSlot(j.Type, j.signed.Payload), Unblocked: j.unblockedAt})
+				Slot: jobSlot(j.Type, j.signed.Payload), Unblocked: j.unblockedAt, NotBefore: j.NotBefore})
 		}
 	}
 	return out, nil
@@ -385,4 +460,119 @@ func jobSlot(typ, payload string) string {
 		return ""
 	}
 	return j.Params.App
+}
+
+// --- Ligar e desligar na janela (Aula 22.3) -------------------------------------------
+
+// SaveCampaignWake grava (ou atualiza) o registro do ligar e desligar de uma máquina.
+func (p *Postgres) SaveCampaignWake(ctx context.Context, w campaign.WakeRecord) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO campaign_wakes (campaign_id, campaign_idx, machine_id, requested_at, wake_request_id, problem, shutdown_job_id, shutdown_note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (campaign_id, campaign_idx, machine_id) DO UPDATE SET wake_request_id = EXCLUDED.wake_request_id,
+			problem = EXCLUDED.problem, shutdown_job_id = EXCLUDED.shutdown_job_id, shutdown_note = EXCLUDED.shutdown_note`,
+		w.CampaignID, w.Idx, w.MachineID, w.RequestedAt, nullID(w.WakeRequestID), w.Problem, nullID(w.ShutdownJobID), w.ShutdownNote)
+	return err
+}
+
+// CampaignWakes lista os registros da campanha (idx < 0: todos os grupos), com a resposta ao
+// pacote e a situação do job de desligar.
+func (p *Postgres) CampaignWakes(ctx context.Context, id int64, idx int) ([]campaign.WakeRecord, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT w.campaign_id, w.campaign_idx, w.machine_id, w.requested_at, coalesce(w.wake_request_id, 0), w.problem,
+			coalesce(w.shutdown_job_id, 0), w.shutdown_note, r.answered_at, coalesce(j.state, ''), coalesce(j.detail, '')
+		FROM campaign_wakes w
+		LEFT JOIN wake_requests r ON r.id = w.wake_request_id
+		LEFT JOIN jobs j ON j.id = w.shutdown_job_id
+		WHERE w.campaign_id = $1 AND ($2 < 0 OR w.campaign_idx = $2)
+		ORDER BY w.campaign_idx, w.machine_id`, id, idx)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (campaign.WakeRecord, error) {
+		var w campaign.WakeRecord
+		var i int16
+		err := r.Scan(&w.CampaignID, &i, &w.MachineID, &w.RequestedAt, &w.WakeRequestID, &w.Problem,
+			&w.ShutdownJobID, &w.ShutdownNote, &w.AnsweredAt, &w.ShutdownState, &w.ShutdownDetail)
+		w.Idx, w.RequestedAt, w.AnsweredAt = int(i), w.RequestedAt.UTC(), utc(w.AnsweredAt)
+		return w, err
+	})
+}
+
+// LastSeen: o último contato de cada máquina dos IDs (as que nunca falaram ficam de fora).
+func (p *Postgres) LastSeen(ctx context.Context, ids []string) (map[string]time.Time, error) {
+	rows, err := p.pool.Query(ctx, `SELECT id, last_seen_at FROM machines WHERE id = ANY($1) AND last_seen_at IS NOT NULL`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var at time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		out[id] = at.UTC()
+	}
+	return out, rows.Err()
+}
+
+func nullID(id int64) *int64 {
+	if id == 0 {
+		return nil
+	}
+	return &id
+}
+
+// SaveCampaignWake na memória.
+func (m *Memory) SaveCampaignWake(ctx context.Context, w campaign.WakeRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, x := range m.campaignWakes {
+		if x.CampaignID == w.CampaignID && x.Idx == w.Idx && x.MachineID == w.MachineID {
+			w.RequestedAt = x.RequestedAt
+			m.campaignWakes[i] = w
+			return nil
+		}
+	}
+	m.campaignWakes = append(m.campaignWakes, w)
+	return nil
+}
+
+// CampaignWakes na memória, com a resposta e o job de desligar.
+func (m *Memory) CampaignWakes(ctx context.Context, id int64, idx int) ([]campaign.WakeRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []campaign.WakeRecord
+	for _, w := range m.campaignWakes {
+		if w.CampaignID != id || (idx >= 0 && w.Idx != idx) {
+			continue
+		}
+		for _, r := range m.wakeRequests {
+			if r.ID == w.WakeRequestID {
+				w.AnsweredAt = r.AnsweredAt
+			}
+		}
+		for _, j := range m.jobs {
+			if j.ID == w.ShutdownJobID {
+				w.ShutdownState, w.ShutdownDetail = j.State, j.Detail
+			}
+		}
+		out = append(out, w)
+	}
+	return out, nil
+}
+
+// LastSeen na memória.
+func (m *Memory) LastSeen(ctx context.Context, ids []string) (map[string]time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := map[string]time.Time{}
+	for _, id := range ids {
+		if mm := m.machines[id]; mm != nil && !mm.lastSeenAt.IsZero() {
+			out[id] = mm.lastSeenAt
+		}
+	}
+	return out, nil
 }

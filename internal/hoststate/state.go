@@ -171,3 +171,7 @@ func dedupe(ds []protocol.Disk) []protocol.Disk {
 	sort.Slice(out, func(i, j int) bool { return out[i].Mount < out[j].Mount })
 	return out
 }
+
+// LoggedUsers: quem está conectado agora (sessões ativas e desconectadas). Usado pelo job
+// desligar (Aula 22.3): com alguém, o agente não desliga.
+func LoggedUsers(ctx context.Context) ([]protocol.LoggedUser, error) { return loggedUsers(ctx) }

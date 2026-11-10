@@ -31,6 +31,8 @@ type acceptedJobs struct {
 	queries []acceptedQuery
 	// Limpeza de temporários.
 	cleanups []acceptedCleanup
+	// Desligar (Aula 22.3): o ID de cada job.
+	shutdowns []int64
 }
 
 type acceptedCleanup struct {
@@ -187,6 +189,15 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: ligar outra máquina pela rede", "job_id", j.ID, "maquina", p.Target, "rede", p.Network, "macs", len(p.MACs))
 			acc.wakes = append(acc.wakes, acceptedWake{id: j.ID, p: p})
+		case jobs.TypeShutdown:
+			if a.Shutdown == nil || a.LoggedUsers == nil {
+				why := "este sistema não desliga pelo patchd"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: desligar se ninguém estiver conectado", "job_id", j.ID)
+			acc.shutdowns = append(acc.shutdowns, j.ID)
 		case jobs.TypeCleanup:
 			p, _ := jobs.ParseCleanupParams(j.Params) // o Verify já conferiu
 			if a.Cleanup == nil {
@@ -624,6 +635,39 @@ func (a *Agent) runCleanups(ctx context.Context, list []acceptedCleanup) []Pendi
 		a.Logger.Info("limpeza de temporários", "job_id", j.id, "status", status, "detail", detail,
 			"duration", a.now().Sub(start).Round(time.Second).String())
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out
+}
+
+// runShutdowns desliga a máquina (Aula 22.3) só se ninguém estiver conectado, nem em sessão
+// desconectada; com alguém, conta quem e não desliga. Um job basta: os outros do mesmo ciclo
+// ficam com o mesmo resultado.
+func (a *Agent) runShutdowns(ctx context.Context, ids []int64) []PendingJobResult {
+	res := func(id int64, status, detail string) PendingJobResult {
+		return PendingJobResult{ID: id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}}
+	}
+	var out []PendingJobResult
+	users, err := a.LoggedUsers(ctx)
+	status, detail := protocol.JobResultOK, ""
+	switch {
+	case err != nil:
+		status, detail = protocol.JobResultFailed, "não desligou: não deu para saber quem está conectado ("+err.Error()+")"
+	case len(users) > 0:
+		names := make([]string, len(users))
+		for i, u := range users {
+			names[i] = u.Account
+		}
+		detail = "não desligou: sessão aberta de " + strings.Join(names, ", ")
+	default:
+		if err := a.Shutdown(ctx, ids[0]); err != nil {
+			status, detail = protocol.JobResultFailed, "não foi possível agendar o desligar: "+err.Error()
+		} else {
+			detail = fmt.Sprintf("desligando em %d min: ninguém conectado", int(jobs.ShutdownDelay/time.Minute))
+		}
+	}
+	a.Logger.Warn("desligar", "jobs", fmt.Sprint(ids), "resultado", detail)
+	for _, id := range ids {
+		out = append(out, res(id, status, detail))
 	}
 	return out
 }
