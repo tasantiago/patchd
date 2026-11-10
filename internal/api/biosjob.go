@@ -272,62 +272,79 @@ func (a *api) writeBIOSAction(w http.ResponseWriter, r *http.Request, s panel.Se
 			current, source = []byte(typed), "troca (senha atual informada pelo admin)"
 		}
 	}
-	newPW, err := biospw.Open(a.escrow.priv, id, target.Escrow)
-	if err != nil {
+	jobID, ok, err := a.issueBIOSWrite(ctx, id, *target, facts, biosCurrent{pw: current, from: currentFrom}, s.Username)
+	switch {
+	case errors.Is(err, errBIOSEnvelope):
 		back("bios-erro=envelope")
 		return
+	case errors.Is(err, jobs.ErrMachineUnavailable):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		a.internalError(w, r, "criar o job da BIOS", err)
+		return
+	case !ok:
+		back("bios-erro=nao-pendente")
+		return
+	}
+	a.logger.Warn("gravação da senha da BIOS pedida", "machine_id", id, "guarda", gid, "job_id", jobID, "username", s.Username,
+		"request_id", RequestID(ctx))
+	a.audit(r, s, "bios.senha.gravar", id, fmt.Sprintf("guarda #%d, job %d, %s", gid, jobID, source))
+	back(fmt.Sprintf("bios=gravando&job=%d", jobID))
+}
+
+// biosCurrent: a senha em uso que vai na gravação. pw nil e from vazio: a BIOS está sem senha
+// (é uma definição). from = jobs.BIOSCurrentMarker: o agente a lê no Registro da máquina.
+type biosCurrent struct {
+	pw   []byte
+	from string
+}
+
+// errBIOSEnvelope: a senha pendente não abre com a chave de guarda carregada.
+var errBIOSEnvelope = errors.New("o envelope da guarda não abre com a chave carregada")
+
+// issueBIOSWrite cria o job que grava a senha pendente target e o liga à guarda. A senha atual
+// (cur.pw) é zerada aqui. ok = false: outro pedido chegou antes, e o job criado foi cancelado.
+func (a *api) issueBIOSWrite(ctx context.Context, id string, target store.BIOSPassword, facts biosFacts, cur biosCurrent, by string) (jobID int64, ok bool, err error) {
+	defer clear(cur.pw)
+	newPW, err := biospw.Open(a.escrow.priv, id, target.Escrow)
+	if err != nil {
+		return 0, false, errBIOSEnvelope
 	}
 	seal := func(purpose string, pw []byte) (string, error) {
 		b, err := machinebox.Seal(facts.BoxKey, purpose, pw)
 		return base64.StdEncoding.EncodeToString(b), err
 	}
-	p := jobs.BIOSPasswordParams{Guard: gid, Vendor: facts.Firmware.Interface, BoxKey: facts.BoxKeyID, CurrentFrom: currentFrom}
-	if p.New, err = seal(machinebox.PurposeBIOS, []byte(newPW)); err == nil && current != nil {
-		p.Current, err = seal(machinebox.PurposeBIOSCurrent, current)
+	p := jobs.BIOSPasswordParams{Guard: target.ID, Vendor: facts.Firmware.Interface, BoxKey: facts.BoxKeyID, CurrentFrom: cur.from}
+	if p.New, err = seal(machinebox.PurposeBIOS, []byte(newPW)); err == nil && cur.pw != nil {
+		p.Current, err = seal(machinebox.PurposeBIOSCurrent, cur.pw)
 	}
-	clear(current)
 	if err != nil {
-		a.internalError(w, r, "fechar a senha para a caixa", err)
-		return
+		return 0, false, fmt.Errorf("fechar a senha para a caixa: %w", err)
 	}
 	// A cópia de emergência que a máquina guarda no Registro (docs/bios-senha.md, seção 9): o
 	// mesmo envelope da guarda, que só a chave de guarda abre. Só para o agente que a entende.
 	if facts.CopyOK {
-		if p.Copy, err = (biospw.Copy{MachineID: id, Guard: gid, KeyID: target.EscrowKeyID, Escrow: target.Escrow}).Format(); err != nil {
-			a.internalError(w, r, "montar a cópia de emergência", err)
-			return
+		if p.Copy, err = (biospw.Copy{MachineID: id, Guard: target.ID, KeyID: target.EscrowKeyID, Escrow: target.Escrow}).Format(); err != nil {
+			return 0, false, fmt.Errorf("montar a cópia de emergência: %w", err)
 		}
 	}
 	raw, err := jobs.BIOSPasswordParamsJSON(p)
 	if err != nil {
-		a.internalError(w, r, "montar o job da BIOS", err)
-		return
+		return 0, false, fmt.Errorf("montar o job da BIOS: %w", err)
 	}
 	rec, err := jobs.Issue(ctx, a.store, a.jobKey, jobs.Request{MachineID: id, Type: jobs.TypeBIOSPassword, TTL: panelBIOSTTL,
-		By: s.Username, Params: raw}, a.now())
-	if errors.Is(err, jobs.ErrMachineUnavailable) {
-		http.NotFound(w, r)
-		return
-	}
+		By: by, Params: raw}, a.now())
 	if err != nil {
-		a.internalError(w, r, "criar o job da BIOS", err)
-		return
+		return 0, false, err
 	}
-	attached, err := a.store.AttachBIOSJob(ctx, gid, rec.ID, a.now())
+	attached, err := a.store.AttachBIOSJob(ctx, target.ID, rec.ID, a.now())
 	if err != nil || !attached {
 		// Dois pedidos ao mesmo tempo: o segundo job não segue.
-		_, _ = a.store.CancelJob(ctx, rec.ID, s.Username)
-		if err != nil {
-			a.internalError(w, r, "ligar o job à guarda", err)
-			return
-		}
-		back("bios-erro=nao-pendente")
-		return
+		_, _ = a.store.CancelJob(ctx, rec.ID, by)
+		return 0, false, err
 	}
-	a.logger.Warn("gravação da senha da BIOS pedida", "machine_id", id, "guarda", gid, "job_id", rec.ID, "username", s.Username,
-		"request_id", RequestID(ctx))
-	a.audit(r, s, "bios.senha.gravar", id, fmt.Sprintf("guarda #%d, job %d, %s", gid, rec.ID, source))
-	back(fmt.Sprintf("bios=gravando&job=%d", rec.ID))
+	return rec.ID, true, nil
 }
 
 // resolveBIOSAction decide uma senha incerta, depois que alguém conferiu na BIOS.

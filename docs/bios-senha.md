@@ -402,3 +402,67 @@ qualquer troca confirmada, também a feita com a senha digitada.
   caminho leva o nome da organização e não é do patchd). Depois de conferir a troca nas
   máquinas, ele pode ser apagado.
 - **Conferir numa máquina antes das outras**, como em toda primeira troca.
+
+## 12. Em lote
+
+O pedido (10/11/2026): muitas máquinas estão com a BIOS sem senha, com uma das senhas padrão
+ou com a que o `.bat` sorteou. Preparar e gravar uma por uma, na aba Hardware de cada máquina,
+não escala. **Configuração › BIOS › Senha da BIOS em lote** (`/painel/bios/lote`, só admin)
+faz para várias o que o cartão faz para uma: sorteia a senha da guarda de cada máquina e cria
+o job `bios_password`. As regras da gravação (seção 8) não mudam: uma chamada ao fabricante por
+job, e nenhuma nova tentativa automática.
+
+**A contagem.** A tela classifica a frota inteira (uma consulta: o firmware do inventário
+atual, a caixa e os avisos do estado, e as senhas da guarda):
+
+| Situação | Entra em lote? | O que o lote faz |
+|---|---|---|
+| sem senha na BIOS | sim | define a senha da guarda |
+| com a senha do `.bat` no Registro (seção 11) | sim | troca; o agente lê a atual na máquina e a apaga depois |
+| com senha, sem marcador | sim | troca, com a padrão do fabricante (seção 10) ou a digitada no lote |
+| gravação a caminho | não | o job espera o check-in (até 24 h) |
+| já com a senha da guarda | não | nada a fazer |
+| senha incerta | não | alguém confere na BIOS (seção 8) |
+| precisa de uma pessoa | não | a tela da máquina decide (por exemplo, a BIOS recusou a senha do marcador) |
+| fora do alcance | não | sem interface de fabricante, Sure Admin ligado, agente sem a caixa... |
+
+Cada número abre a lista das máquinas daquela situação, com o motivo.
+
+**O lote.** O admin marca as situações, escolhe o grupo de implantação (ou todos) e o tamanho
+(1, 10, 50, 200 ou 500 máquinas, na ordem do nome) e pede a conferência: a lista das máquinas,
+com a senha atual que cada uma vai usar. Nada é enviado nesse passo. Para enviar: o motivo
+(obrigatório) e, quando o lote tem máquinas "com senha, sem marcador", o campo da senha atual.
+
+- **Em branco:** cada máquina usa a padrão cadastrada do fabricante dela. Uma máquina de
+  fabricante sem padrão cadastrada só entra com a senha digitada.
+- **Digitada:** vale para todas as "com senha, sem marcador" do lote, no lugar da cadastrada.
+  Vai fechada para a caixa de cada máquina e não é guardada. É o caminho de quem tem **mais de
+  uma senha padrão** no mesmo fabricante: um lote com a primeira e, para as que falharem,
+  outro lote com a segunda.
+- As do marcador usam sempre a do Registro; as sem senha não têm atual.
+
+O servidor refaz a lista no envio e a compara com a conferida (uma impressão das máquinas e da
+situação de cada uma): se algo mudou no meio, nada sai e a tela pede nova conferência.
+
+**A trilha.** `bios.senha.lote` é gravada **antes** de qualquer job, com quantas máquinas de
+cada situação, a origem da senha atual (nunca a senha), o grupo, a impressão da conferência e
+o motivo; se ela não gravar, nada é enviado. Cada máquina ganha ainda os registros de sempre
+(`bios.senha.preparar`, `bios.senha.gravar`), com a impressão do lote.
+
+**Falhas.** Uma máquina cuja última tentativa falhou sai dos lotes seguintes. Ela só volta
+com a caixa "incluir as que falharam" marcada, e então:
+
+- as sem senha tentam de novo como estão (não há senha a errar);
+- as com senha só entram com uma senha **digitada** (repetir a padrão que acabou de ser
+  recusada é errar de novo);
+- as do marcador não voltam: a senha do Registro já foi recusada, e alguém confere a senha em
+  uso;
+- com 2 falhas em 24 horas a máquina sai de qualquer lote. Senha errada repetida trava a BIOS
+  até reiniciar; a terceira tentativa é de uma pessoa, na tela da máquina.
+
+**O que o lote não faz:** não troca a senha de quem já está na guarda (rotação), não resolve
+senha incerta e não revela nada. Uma máquina desligada não grava: o job expira em 24 h sem
+entrega, a senha volta a pendente e a máquina reaparece na contagem para o próximo lote.
+
+**A ordem recomendada:** 1 máquina de cada situação, conferida na frente dela (entrar na BIOS
+com a senha revelada); depois 10; depois o resto, por grupo de implantação.
