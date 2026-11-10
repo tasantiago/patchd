@@ -72,6 +72,10 @@ const MaxUnblocked = 50
 // (o campo close). Os anteriores recusam o job com o campo: o servidor só o manda a quem anuncia.
 const CapabilityCloseApps = "fechar-programa-v1"
 
+// CapabilityShutdown (Aula 22.3): o agente entende o job desligar (sem ninguém conectado). O
+// servidor só o manda a quem anuncia.
+const CapabilityShutdown = "desligar-v1"
+
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
 

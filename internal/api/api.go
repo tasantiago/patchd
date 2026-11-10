@@ -192,6 +192,7 @@ type Store interface {
 	RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error)
 	ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error)
 	DeleteCampaign(ctx context.Context, id int64) (bool, error)
+	CampaignWakes(ctx context.Context, id int64, idx int) ([]campaign.WakeRecord, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
 	// Tokens de registro pelo painel (Aula 15.2): os mesmos do patchd-server token.
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)

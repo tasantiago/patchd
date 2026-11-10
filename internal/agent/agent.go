@@ -87,6 +87,11 @@ type Agent struct {
 	WakeOnLAN func(ctx context.Context, p jobs.WakeOnLANParams) (string, error)
 	// Cleanup faz a limpeza de temporários (internal/cleanup). nil: o agente recusa.
 	Cleanup func(ctx context.Context, p jobs.CleanupParams) (string, error)
+	// Shutdown agenda o desligar (Aula 22.3) para daqui a jobs.ShutdownDelay; nil: o sistema
+	// não desliga pelo patchd (o job é recusado). LoggedUsers diz quem está conectado: com
+	// alguém, o agente não desliga.
+	Shutdown    func(ctx context.Context, jobID int64) error
+	LoggedUsers func(ctx context.Context) ([]protocol.LoggedUser, error)
 	// Query responde as perguntas ao parque (internal/sensor). nil: o agente recusa.
 	Query func(ctx context.Context, p jobs.QueryParams) jobs.QueryAnswer
 
@@ -581,6 +586,16 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// vira resultado "falhou", entregue logo abaixo pelo endereço atual.
 	if state.PendingServerMove != nil {
 		a.moveServer(ctx, &state)
+		a.saveStateOrLog(state)
+		if ctx.Err() != nil {
+			return outcomeTransient
+		}
+	}
+
+	// Desligar (Aula 22.3): por último, depois de tudo do ciclo; o resultado sai logo abaixo,
+	// antes do prazo do desligar.
+	if len(accepted.shutdowns) > 0 {
+		state.PendingJobResults = append(state.PendingJobResults, a.runShutdowns(ctx, accepted.shutdowns)...)
 		a.saveStateOrLog(state)
 		if ctx.Err() != nil {
 			return outcomeTransient

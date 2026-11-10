@@ -47,6 +47,8 @@ type Memory struct {
 	campaignSeq int64
 	// campaignResend: os pedidos de reenvio das campanhas (RequestResend).
 	campaignResend map[int64][]string
+	// campaignWakes: o ligar e desligar das campanhas (Aula 22.3).
+	campaignWakes []campaign.WakeRecord
 
 	approvals map[string]PatchApproval // aprovação de patches (Aula 13.1), por ApprovalKey
 
@@ -372,4 +374,11 @@ func (m *Memory) MachineByCredential(ctx context.Context, credentialHash []byte)
 		return "", false, nil // aposentada: a credencial não vale (Aula 7.5)
 	}
 	return id, ok, nil
+}
+
+// SetClock troca o relógio da memória (os testes: o último contato das máquinas).
+func (m *Memory) SetClock(now func() time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.now = now
 }

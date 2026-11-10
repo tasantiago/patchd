@@ -85,6 +85,8 @@ type campaignForm struct {
 	TZ         string
 	// Close: terceiros com o programa aberto: 0 adia; N fecha com aviso de N minutos (só com horário).
 	Close int
+	// Wake (Aula 22.3): ligar pela rede na janela e desligar depois.
+	Wake bool
 	// Resend: reenvios automáticos das falhas (expirado e falhou), por máquina; 0..5.
 	Resend  int
 	Resends []int
@@ -279,6 +281,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	f.MicrosoftOn = a.microsoftAllowed()
 	f.Resend, _ = strconv.Atoi(r.PostFormValue("reenvios"))
+	f.Wake = r.PostFormValue("ligar") == "1"
 	seen := map[int]bool{}
 	for _, s := range r.PostForm["anel"] {
 		n, err := strconv.Atoi(s)
@@ -290,7 +293,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
 	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
-		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft,
+		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft, Wake: f.Wake,
 		CloseDelay: time.Duration(f.Close) * time.Minute, AutoResend: f.Resend}
 	if f.Type == jobs.TypeReboot {
 		c.RebootDelay = time.Duration(f.Delay) * time.Minute
@@ -313,6 +316,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		return c, f, "Escolha o aviso antes de fechar o programa da lista."
 	case f.Close != 0 && f.When == "prazo":
 		return c, f, "Fechar o programa aberto só em horário fixo (de madrugada) ou na janela de cada grupo: com prazo, o programa seria fechado em pleno expediente."
+	case f.Wake && f.When == "prazo":
+		return c, f, "Ligar pela rede vai com a janela do grupo ou o horário fixo (de madrugada), não com o prazo."
 	case f.Resend < 0 || f.Resend > campaign.MaxAutoResend:
 		return c, f, "Escolha os reenvios automáticos da lista."
 	case len(f.Chosen) == 0:
@@ -487,6 +492,9 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			}
 			v.Rings = append(v.Rings, cr)
 		}
+		if c.Wake {
+			v.Warnings = append(v.Warnings, fmt.Sprintf("Ligar pela rede: %d min antes da janela (ou do horário), o servidor pede a um agente ligado da mesma sub-rede o pacote mágico para cada máquina do grupo com job da campanha e sem check-in há mais de %d min. Quando os jobs dela terminam, manda desligar só as que acordaram assim, e o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto (aba Hardware › Ligar pela rede) e de um agente ligado em cada sub-rede.", int(campaign.WakeLead/time.Minute), int(campaign.WakeOffline/time.Minute)))
+		}
 		if f.Chosen[0] != store.PilotRing {
 			v.Warnings = append(v.Warnings, "A campanha não começa pelo piloto (grupo de implantação 0).")
 		}
@@ -600,6 +608,8 @@ type campaignView struct {
 	C                                   campaign.Campaign
 	TypeLabel, State, StateLabel, When  string
 	Fallback                            string // a fonte reserva da Microsoft, quando a campanha a usa
+	WakeL                               string // ligar pela rede na janela (Aula 22.3): o resumo
+	Wakes                               []wakeRow
 	CloseL                              string // terceiros: fechar o programa aberto com aviso
 	Sources, Observe, Created           string
 	Rings                               []campaignRingView
@@ -648,6 +658,12 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.MicrosoftFallback {
 		v.Fallback = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft Update"
+	}
+	if c.Wake {
+		if err := a.campaignWakeView(r, c, &v); err != nil {
+			a.internalError(w, r, "ler o ligar pela rede", err)
+			return
+		}
 	}
 	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
 	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"
@@ -964,4 +980,60 @@ func (a *api) archiveFinishedAction(w http.ResponseWriter, r *http.Request, s pa
 		a.audit(r, s, "campanha.arquivar-encerradas", fmt.Sprintf("%d campanha(s)", n), texto.Clip("ids: "+strings.Join(keys, ","), 2000))
 	}
 	http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivadas-agora=%d", n), http.StatusSeeOther)
+}
+
+type wakeRow struct {
+	MachineID, Name, Ring, Wake, Woke, Shutdown string
+}
+
+// campaignWakeView: o resumo e a tabela do ligar e desligar (Aula 22.3), de todos os grupos.
+func (a *api) campaignWakeView(r *http.Request, c campaign.Campaign, v *campaignView) error {
+	recs, err := a.store.CampaignWakes(r.Context(), c.ID, -1)
+	if err != nil {
+		return err
+	}
+	if len(recs) == 0 {
+		v.WakeL = "ligada: nenhuma máquina precisou ainda (o pacote sai minutos antes da janela, para as desligadas)"
+		return nil
+	}
+	names, err := a.machineNames(r.Context())
+	if err != nil {
+		return err
+	}
+	var asked, notAsked, woke, off, stayed int
+	for _, w := range recs {
+		row := wakeRow{MachineID: w.MachineID, Name: dash(names[w.MachineID]), Ring: strconv.Itoa(c.Rings[min(w.Idx, len(c.Rings)-1)])}
+		switch {
+		case w.WakeRequestID == 0:
+			notAsked++
+			row.Wake, row.Woke = "não saiu: "+w.Problem, "—"
+		case w.AnsweredAt != nil:
+			asked++
+			woke++
+			row.Wake = "pedido " + a.stamp(w.RequestedAt)
+			row.Woke = "acordou " + lapse(w.AnsweredAt.Sub(w.RequestedAt)) + " depois do pedido"
+		default:
+			asked++
+			row.Wake = "pedido " + a.stamp(w.RequestedAt)
+			row.Woke = "ainda não"
+		}
+		switch {
+		case w.ShutdownJobID != 0 && strings.HasPrefix(w.ShutdownDetail, "desligando"):
+			off++
+			row.Shutdown = "desligada (job " + strconv.FormatInt(w.ShutdownJobID, 10) + ")"
+		case w.ShutdownJobID != 0 && w.ShutdownDetail != "":
+			stayed++
+			row.Shutdown = w.ShutdownDetail
+		case w.ShutdownJobID != 0:
+			row.Shutdown = "job " + strconv.FormatInt(w.ShutdownJobID, 10) + " " + stateLabel(w.ShutdownState)
+		case w.ShutdownNote != "":
+			row.Shutdown = w.ShutdownNote
+		default:
+			row.Shutdown = "depois dos jobs dela"
+		}
+		v.Wakes = append(v.Wakes, row)
+	}
+	v.WakeL = fmt.Sprintf("%d pedido(s) de ligar, %d acordaram, %d desligadas depois, %d ficaram ligadas (alguém conectado); %d sem pedido (sem repetidor, sem MAC...)",
+		asked, woke, off, stayed, notAsked)
+	return nil
 }

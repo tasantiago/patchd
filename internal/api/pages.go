@@ -1523,6 +1523,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <small class="linha">às <input type="time" name="hora" value="{{.Form.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Form.Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Form.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
 <small>ex.: de madrugada; vale para todos os grupos, sem mexer na janela deles (fuso {{.Form.TZ}})</small></span></label>
 </fieldset>
+<fieldset class="campo"><legend>Ligar pela rede</legend><label class="opcao"><input type="checkbox" name="ligar" value="1" {{if .Form.Wake}}checked{{end}}><span><b>Ligar as desligadas no início da janela e desligar depois as que o patchd ligou</b>
+<small>só com a janela do grupo ou o horário fixo; o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto e de um agente ligado em cada sub-rede</small></span></label></fieldset>
 <div class="acoes"><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></div>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
@@ -1534,6 +1536,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}{{if .Extra}} · {{.Extra}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
 <dt>Observação</dt><dd>{{.ObserveL}} depois de cada grupo de implantação concluído</dd>
+{{if .Form.Wake}}<dt>Ligar pela rede</dt><dd>as desligadas, no início da janela; desligar depois as que o patchd ligou</dd>{{end}}
 <dt>Reenvios automáticos</dt><dd>{{if .Form.Resend}}até {{.Form.Resend}} vez(es) por máquina, nas falhas e nos expirados{{else}}nenhum: a primeira falha pausa a campanha{{end}}</dd>
 </dl></div>
 <div class="card"><div class="card-cab"><h2>Grupos de implantação, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Grupo de implantação</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
@@ -1543,7 +1546,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}"><input type="hidden" name="hora" value="{{.Form.DailyStart}}"><input type="hidden" name="duracao" value="{{.Form.DailyDur}}">
-<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">
+<input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">{{if .Form.Wake}}<input type="hidden" name="ligar" value="1">{{end}}
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
@@ -1561,7 +1564,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Programa aberto</dt><dd>{{.CloseL}}</dd>{{end}}{{if .Fallback}}
 <dt>Fonte do Windows</dt><dd>{{.Fallback}}</dd>{{end}}
 <dt>Observação</dt><dd>{{.Observe}}</dd>
-<dt>Reenvios automáticos</dt><dd>{{.ResendL}}</dd>
+<dt>Reenvios automáticos</dt><dd>{{.ResendL}}</dd>{{if .WakeL}}
+<dt>Ligar pela rede</dt><dd>{{.WakeL}}</dd>{{end}}
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{template "leia-mais" (leia .C.Detail)}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
@@ -1586,6 +1590,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted nota-limpeza">No próximo minuto o servidor refaz o plano de cada máquina e manda o job de novo; a que já não precisa (já em dia, sem o programa) sai como dispensada. A campanha volta a andar sem aceitar as falhas: o que falhar de novo pausa de novo.</p>
 <div class="acoes"><button type="submit">Reenviar</button></div>
 </form></div>{{end}}
+{{if .Wakes}}<div class="card" id="ligar"><div class="card-cab"><h2>Ligar pela rede</h2><span class="muted">{{len .Wakes}} máquina(s)</span></div>
+<div class="tabela"><table><thead><tr><th>Máquina</th><th>Grupo</th><th>Pedido</th><th>Acordou</th><th>Desligar</th></tr></thead>
+<tbody>{{range .Wakes}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=hardware#ligar">{{.Name}}</a></td><td class="num">{{.Ring}}</td><td>{{.Wake}}</td><td>{{.Woke}}</td><td class="detalhe">{{template "leia-mais" (leia .Shutdown)}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
 {{if .Counts}}<ul class="chips camp-estados" aria-label="jobs por estado">{{range .Counts}}<li><a class="chip{{if .Active}} ativo{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}}><span class="job {{.State}}">{{.Label}}</span> <b>{{.N}}</b></a></li>{{end}}</ul>{{end}}

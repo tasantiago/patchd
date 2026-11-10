@@ -30,9 +30,10 @@ motivos em texto fixo: o cartão da máquina e o resumo do parque contam pelos m
   pacote mágico para uma lista fechada de MACs (só broadcast local, porta 9, sem destino livre:
   o agente não vira ferramenta de varredura). Botão "Ligar pela rede" na aba Hardware. Detalhes
   na seção "Acordar" abaixo.
-- **22.3: a janela.** No início da janela do grupo de implantação, o servidor acorda as máquinas desligadas que
-  têm pendências; no fim, um job de desligar só para as que o patchd acordou e sem usuário
-  conectado. Cada máquina guarda "acordou / não acordou": é a medida do módulo.
+- **22.3 (feita): a janela.** No início da janela do grupo de implantação, o servidor acorda as
+  máquinas desligadas que têm job da campanha; depois dos jobs, um job de desligar só para as
+  que o patchd acordou e sem usuário conectado. Cada máquina guarda "acordou / não acordou": é
+  a medida do módulo. Detalhes na seção "Na janela da campanha" abaixo.
 - **22.4: a BIOS.** Ligar o Wake on LAN e desligar a economia profunda pela interface do
   fabricante, com a senha da guarda (Aulas 21.4 e 21.5). Escrita no firmware: mesmas regras da
   21.5 (uma chamada, sem nova tentativa, o resultado decide).
@@ -70,6 +71,41 @@ de 10 minutos. Cada pedido entra na auditoria (`maquina.ligar`).
 **Sem repetidor.** Nenhuma máquina ligada na sub-rede: o painel diz qual sub-rede e não cria
 nada. A saída é ter uma máquina sempre ligada por sub-rede (um servidor, uma impressora não
 serve: precisa do agente).
+
+## Na janela da campanha (Aula 22.3)
+
+**A opção.** No formulário da campanha, "Ligar as desligadas no início da janela e desligar
+depois as que o patchd ligou". Só com a janela do grupo ou o horário fixo (de madrugada); com
+prazo, a conferência recusa. Linha de comando: ainda não.
+
+**Acordar.** A cada minuto, o motor olha o grupo atual: a máquina com job **pendente** cuja
+janela (ou horário) começa em até **10 minutos**, e **sem check-in há mais de 75 minutos**
+(o check-in é de hora em hora: está desligada), recebe o pedido de ligar, o mesmo do botão
+(repetidores da mesma sub-rede, `wake_requests`, pedido por "campanha N"). Uma vez por máquina
+e grupo. A ligada não recebe pacote: o job sai no check-in dela. O pedido que não sai (sem
+repetidor na sub-rede, sem MAC) fica anotado com o motivo.
+
+**Desligar.** Quando todos os jobs da máquina no grupo terminam (nenhum pendente, entregue ou
+adiado), o motor decide, uma vez:
+
+- respondeu ao pacote (check-in depois dele) e o agente anuncia o desligar
+  (`desligar-v1`): job `desligar` (vale 2 horas). O agente **só desliga sem ninguém
+  conectado**, nem em sessão desconectada; com alguém, conta "não desligou: sessão aberta de
+  ..." e a máquina fica ligada. Sem ninguém, agenda o desligar para 2 minutos depois (o
+  resultado sai antes) com `shutdown /s` no Windows (evento 1074, "hotfix (planejado)") e
+  `shutdown -h` no Linux. macOS: o job é recusado.
+- não respondeu: "não acordou: nenhum check-in depois do pacote", sem job.
+- agente anterior: "agente sem o desligar (atualize o agente)", sem job.
+
+**A medida.** A página da campanha mostra o resumo ("N pedidos de ligar, N acordaram, N
+desligadas depois, N ficaram ligadas, N sem pedido") e a tabela por máquina (pedido,
+acordou, desligar), com o link para o cartão "Ligar pela rede" da aba Hardware dela. A tabela
+`campaign_wakes` (migração 0068) guarda o pedido (ou o motivo) e o desligar (o job ou o
+motivo) de cada máquina e grupo.
+
+**Limites.** Uma tentativa por máquina e grupo: a que não acordou na primeira noite não é
+pedida de novo nas novas tentativas do grupo. O desligar não espera o fim da janela: sai
+quando os jobs da máquina terminam.
 
 ## Segurança
 

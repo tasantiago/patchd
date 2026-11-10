@@ -15,6 +15,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/wake"
+	"github.com/tasantiago/patchd/internal/wakereq"
 )
 
 // O cartão "Ligar pela rede" na aba Hardware (Aula 22.1): a decisão do internal/wake e o
@@ -76,14 +77,10 @@ func wakeView(hw protocol.Hardware) *wakeCard {
 
 // panelWakeTTL: o job do repetidor vale 2 horas (ele recebe no próximo check-in, de hora em
 // hora; depois disso a decisão de ligar já é outra).
-const panelWakeTTL = 2 * time.Hour
-
-// scheduledWakeTTL: o pacote agendado (reinício em horário marcado) vale meia hora a partir
-// do horário: depois disso, o reinício já passou da hora de ligar.
-const scheduledWakeTTL = 30 * time.Minute
+const panelWakeTTL = wakereq.TTL
 
 // wakeRetry: um pedido com o pacote mandado e sem resposta pode ser repetido depois disso.
-const wakeRetry = 10 * time.Minute
+const wakeRetry = wakereq.Retry
 
 // wakeShown: os pedidos mostrados no cartão.
 const wakeShown = 5
@@ -99,22 +96,9 @@ type wakeRequestRow struct {
 	When, By, Network, Relays, Sent, Answer, Level string
 }
 
-// wakePending: o pedido mais novo ainda está correndo (sem pacote dentro do prazo do job, ou
-// com pacote há menos de wakeRetry e sem resposta).
+// wakePending: o pedido mais novo ainda está correndo (wakereq.Pending).
 func wakePending(list []store.WakeRequest, now time.Time) *store.WakeRequest {
-	if len(list) == 0 {
-		return nil
-	}
-	r := list[0]
-	switch {
-	case r.AnsweredAt != nil:
-		return nil
-	case r.SentAt == nil && now.Sub(r.RequestedAt) < panelWakeTTL:
-		return &r
-	case r.SentAt != nil && now.Sub(*r.SentAt) < wakeRetry:
-		return &r
-	}
-	return nil
+	return wakereq.Pending(list, now)
 }
 
 func (a *api) wakeActionView(ctx context.Context, id string, hw *protocol.Hardware, st *protocol.MachineState, admin bool) (*wakeAction, error) {
@@ -205,7 +189,7 @@ func (a *api) wakeOnLANAction(w http.ResponseWriter, r *http.Request, s panel.Se
 	}
 }
 
-var errWakeNotFound = errors.New("máquina sem estado")
+var errWakeNotFound = wakereq.ErrNotFound
 
 // wakeResult: o pedido de ligar criado (jobs: quantos repetidores) ou o motivo de não criar
 // (problem: o parâmetro da volta, ex.: "ligar-erro=mac").
@@ -214,91 +198,29 @@ type wakeResult struct {
 	problem string
 }
 
-// requestWake monta e grava o pedido de ligar: um job wake_on_lan para cada repetidor da
-// sub-rede. at: o horário do pacote (zero: agora), para o reinício em horário marcado ligar a
-// máquina antes; os jobs só são entregues a partir dele.
+// requestWake grava o pedido de ligar (internal/wakereq), com o registro e a auditoria. at: o
+// horário do pacote (zero: agora), para o reinício em horário marcado ligar a máquina antes.
 func (a *api) requestWake(r *http.Request, s panel.Session, id string, at time.Time) (wakeResult, error) {
 	ctx := r.Context()
-	now := a.now()
-	list, err := a.store.WakeRequests(ctx, id, 1)
-	if err != nil {
-		return wakeResult{}, err
-	}
-	if wakePending(list, now) != nil {
-		return wakeResult{problem: "ligar-erro=andamento"}, nil
-	}
-	h, found, err := a.store.HostState(ctx, id)
-	if err != nil {
-		return wakeResult{}, err
-	}
-	if !found {
+	res, err := wakereq.Request(ctx, a.store, a.jobKey, id, at, a.now(), s.Username)
+	if errors.Is(err, wakereq.ErrNotFound) {
 		return wakeResult{}, errWakeNotFound
 	}
-	var hw *protocol.Wake
-	if inv, ok, err := a.store.LatestInventory(ctx, id); err != nil {
-		return wakeResult{}, err
-	} else if ok && inv.Hardware != nil {
-		hw = inv.Hardware.Wake
+	if err != nil || res.Problem != "" {
+		return wakeResult{problem: res.Problem}, err
 	}
-	cands, err := a.store.WakeRelayHosts(ctx, id, now.Add(-wake.RelayFresh))
-	if err != nil {
-		return wakeResult{}, err
-	}
-	hosts := make([]wake.Host, 0, len(cands))
-	for _, c := range cands {
-		hosts = append(hosts, wake.Host{ID: c.ID, Name: c.Name, LastSeen: c.LastSeen, State: c.State})
-	}
-	plan, err := wake.Build(hw, h.State, hosts, now)
-	var noRelay wake.NoRelayError
-	switch {
-	case errors.Is(err, wake.ErrNoMAC):
-		return wakeResult{problem: "ligar-erro=mac"}, nil
-	case errors.Is(err, wake.ErrNoNetwork):
-		return wakeResult{problem: "ligar-erro=rede"}, nil
-	case errors.As(err, &noRelay):
-		return wakeResult{problem: "ligar-erro=repetidor&rede=" + url.QueryEscape(fmt.Sprint(noRelay.Networks))}, nil
-	case err != nil:
-		return wakeResult{}, err
-	}
-	params, err := jobs.WakeOnLANParamsJSON(jobs.WakeOnLANParams{Target: id, MACs: plan.MACs, Network: plan.Network.String()})
-	if err != nil {
-		return wakeResult{}, err
-	}
-	requested := now
-	if at.After(now) {
-		requested = at
-	}
-	req := store.WakeRequest{MachineID: id, RequestedAt: requested, RequestedBy: s.Username, Network: plan.Network.String(), MACs: plan.MACs}
-	var relayNames []string
-	for _, relay := range plan.Relays {
-		jr := jobs.Request{MachineID: relay.ID, Type: jobs.TypeWakeOnLAN, TTL: panelWakeTTL, By: s.Username, Params: params}
-		if at.After(now) {
-			jr.NotBefore, jr.TTL = at, scheduledWakeTTL
-		}
-		rec, err := jobs.Issue(ctx, a.store, a.jobKey, jr, now)
-		if errors.Is(err, jobs.ErrMachineUnavailable) {
-			continue // aposentada entre a lista e agora
-		}
-		if err != nil {
-			return wakeResult{}, err
-		}
-		req.Relays = append(req.Relays, relay.ID)
-		req.JobIDs = append(req.JobIDs, rec.ID)
-		relayNames = append(relayNames, dash(relay.Name))
-	}
-	if len(req.JobIDs) == 0 {
-		return wakeResult{problem: "ligar-erro=repetidor"}, nil
-	}
-	if _, err := a.store.CreateWakeRequest(ctx, req); err != nil {
-		return wakeResult{}, err
+	req := res.Request
+	names := make([]string, len(res.RelayNames))
+	for i, n := range res.RelayNames {
+		names[i] = dash(n)
 	}
 	when := "agora"
-	if at.After(now) {
+	if at.After(a.now()) {
 		when = at.UTC().Format(time.RFC3339)
 	}
 	a.logger.Info("ligar pela rede pedido", "machine_id", id, "rede", req.Network, "macs", strings.Join(req.MACs, ","),
 		"repetidores", strings.Join(req.Relays, ","), "jobs", fmt.Sprint(req.JobIDs), "quando", when, "username", s.Username, "request_id", RequestID(ctx))
-	a.audit(r, s, "maquina.ligar", id, fmt.Sprintf("rede %s · %d repetidor(es): %s · jobs %v · %s", req.Network, len(req.JobIDs), strings.Join(relayNames, ", "), req.JobIDs, when))
+	a.audit(r, s, "maquina.ligar", id, fmt.Sprintf("rede %s · %d repetidor(es): %s · jobs %v · %s", req.Network, len(req.JobIDs), strings.Join(names, ", "), req.JobIDs, when))
 	return wakeResult{jobs: len(req.JobIDs)}, nil
 }
 

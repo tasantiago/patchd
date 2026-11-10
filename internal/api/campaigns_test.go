@@ -56,6 +56,7 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		"observação fora":               {formCampanha("observacao", "5"), "observação da lista"},
 		"prazo fora":                    {formCampanha("prazo", "2"), "prazo da lista"},
 		"reenvios fora":                 {formCampanha("reenvios", "9"), "reenvios automáticos da lista"},
+		"ligar com prazo":               {formCampanha("ligar", "1"), "Ligar pela rede vai com a janela"},
 		"sem nome":                      {formCampanha("nome", "   "), "dê um nome"},
 		"janela sem janela":             {formCampanha("quando", "janela"), "Grupo de implantação sem janela de manutenção: 0, 1"},
 	} {

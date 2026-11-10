@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/platform"
 )
 
@@ -46,6 +47,17 @@ func newRestart(run platform.Runner) func(ctx context.Context, jobID int64, dela
 func newAbortRestart(run platform.Runner) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		_, err := run.Run(ctx, shutdownExe(), "/a")
+		return err
+	}
+}
+
+// newShutdown agenda o desligar do job desligar (Aula 22.3), em jobs.ShutdownDelay. O agente
+// só chama sem ninguém conectado; o comentário fica no log de eventos (evento 1074), com o
+// motivo "Sistema operacional: hotfix (planejado)".
+func newShutdown(run platform.Runner) func(ctx context.Context, jobID int64) error {
+	return func(ctx context.Context, jobID int64) error {
+		msg := fmt.Sprintf("patchd (job %d): desligando o computador que o patchd ligou pela rede para atualizar.", jobID)
+		_, err := run.Run(ctx, shutdownExe(), "/s", "/t", fmt.Sprint(int(jobs.ShutdownDelay/time.Second)), "/d", "p:2:17", "/c", msg)
 		return err
 	}
 }

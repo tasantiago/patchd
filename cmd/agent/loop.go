@@ -269,6 +269,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		ag.AbortRestart = newAbortRestart(platform.ExecRunner{}) // Aula 17.6
 		ag.RebootStatus = scanner.Reboot
 	}
+	// Job desligar (Aula 22.3): a máquina que o patchd ligou para a campanha, sem ninguém.
+	if shutdown := newShutdown(platform.ExecRunner{}); shutdown != nil {
+		ag.Shutdown, ag.LoggedUsers = shutdown, hoststate.LoggedUsers
+		client.Capabilities = append(client.Capabilities, protocol.CapabilityShutdown)
+	}
 
 	logger.Info("agente iniciado",
 		"commit", info.Commit,

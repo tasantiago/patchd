@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,11 +25,16 @@ type contratoCampanhas interface {
 	TakeResend(ctx context.Context, id int64) ([]string, error)
 	ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error)
 	DeleteCampaign(ctx context.Context, id int64) (bool, error)
+	SaveCampaignWake(ctx context.Context, w campaign.WakeRecord) error
+	CampaignWakes(ctx context.Context, id int64, idx int) ([]campaign.WakeRecord, error)
+	LastSeen(ctx context.Context, ids []string) (map[string]time.Time, error)
+	CreateWakeRequest(ctx context.Context, r WakeRequest) (int64, error)
 }
 
 func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	ctx := context.Background()
 	defer testarArquivar(t, st)
+	defer testarLigarNaJanela(t, st)
 	defer testarReenvio(t, st) // no fim: a campanha dele não entra nas contagens daqui
 	if _, err := st.SaveInventory(ctx, "camp-a", protocol.InventoryReport{SchemaVersion: 1, Hash: "camp-a"}); err != nil {
 		t.Fatal(err)
@@ -270,5 +276,57 @@ func testarArquivar(t *testing.T, st contratoCampanhas) {
 	}
 	if l, _ := st.CampaignJobs(ctx, id, 0); len(l) != 0 {
 		t.Error("o job ficou ligado à campanha excluída")
+	}
+}
+
+// O registro do ligar e desligar (Aula 22.3): grava, atualiza o desligar e lê com a resposta
+// ao pacote e a situação do job.
+func testarLigarNaJanela(t *testing.T, st contratoCampanhas) {
+	ctx := context.Background()
+	id, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "noite", Type: "rescan", Rings: []int{0}, UseWindow: true, TTL: time.Hour, CreatedBy: "t", Wake: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _, _ := st.Campaign(ctx, id); !c.Wake {
+		t.Error("sem o Wake")
+	}
+	agora := time.Now().UTC().Truncate(time.Second)
+	rid, err := st.CreateWakeRequest(ctx, WakeRequest{MachineID: "camp-a", RequestedAt: agora, RequestedBy: "campanha", Network: "192.0.2.0/24",
+		MACs: []string{"00:11:22:33:44:55"}, Relays: []string{"camp-a"}, JobIDs: []int64{1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := campaign.WakeRecord{CampaignID: id, Idx: 0, MachineID: "camp-a", RequestedAt: agora, WakeRequestID: rid}
+	if err := st.SaveCampaignWake(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	jid, _ := st.NextJobID(ctx)
+	if err := st.CreateJob(ctx, NewJob{ID: jid, MachineID: "camp-a", Type: "desligar", Signed: protocol.SignedJob{Payload: "{}", Signature: "s"},
+		CreatedBy: "t", NotAfter: agora.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = st.FinishJob(ctx, jid, "concluido", "desligando em 2 min: ninguém conectado", agora)
+	w.ShutdownJobID = jid
+	if err := st.SaveCampaignWake(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	l, err := st.CampaignWakes(ctx, id, -1)
+	if err != nil || len(l) != 1 || l[0].WakeRequestID != rid || l[0].ShutdownJobID != jid || l[0].ShutdownState != "concluido" ||
+		!strings.HasPrefix(l[0].ShutdownDetail, "desligando") || !l[0].RequestedAt.Equal(agora) {
+		t.Fatalf("registros: %+v %v", l, err)
+	}
+	if l, _ := st.CampaignWakes(ctx, id, 1); len(l) != 0 {
+		t.Error("filtro do grupo")
+	}
+	if m, err := st.LastSeen(ctx, []string{"camp-a", "nenhuma"}); err != nil || len(m) != 1 || m["camp-a"].IsZero() {
+		t.Errorf("último contato: %v %v", m, err)
+	}
+	// A campanha excluída leva os registros junto.
+	c, _, _ := st.Campaign(ctx, id)
+	c.State = campaign.StateCanceled
+	_, _ = st.SaveCampaign(ctx, c, campaign.StateRunning)
+	_, _ = st.ArchiveCampaigns(ctx, []int64{id}, true, agora)
+	if ok, err := st.DeleteCampaign(ctx, id); !ok || err != nil {
+		t.Fatalf("excluir: %v %v", ok, err)
 	}
 }
