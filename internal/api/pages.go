@@ -773,6 +773,10 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 </div>
 {{end}}{{end}}
 {{if eq .Tab "bios"}}{{with .Fleet}}
+<div class="card"><div class="card-cab"><h2>Senha da BIOS em lote</h2></div>
+<p class="muted">Define a senha da guarda nas máquinas sem senha na BIOS e troca a das que têm a senha do <code>.bat</code> no Registro ou uma senha padrão, várias de uma vez, com conferência antes.</p>
+<p><a href="/painel/bios/lote">Abrir a senha da BIOS em lote →</a></p>
+</div>
 <div class="card" id="senha-padrao"><div class="card-cab"><h2>Senha padrão da BIOS</h2>{{if .On}}<span class="muted">chave de guarda <code>{{.KeyID}}</code></span>{{end}}</div>
 <p class="muted">A senha que as máquinas de um fabricante já têm antes da primeira troca pela guarda (posta à mão ou pelo <code>.bat</code>). Com ela aqui, a primeira troca de cada máquina usa esta senha como a atual, sem digitar máquina por máquina. Fica cifrada para a chave de guarda, não aparece de novo nesta tela e só sai do servidor cifrada para a máquina, no job de troca. Depois da troca, cada máquina passa a ter a própria senha.</p>
 {{if not .On}}<p class="aviso atencao">Guarda desligada: o servidor está sem a chave de guarda (<code>PATCHD_BIOS_ESCROW_KEY_FILE</code>; crie com <code>patchd-server bios keygen</code>).</p>{{end}}
@@ -1913,6 +1917,50 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .HasOutput}}<details class="term-det"><summary>saída{{if .Truncated}} (cortada: ficou o fim){{end}}</summary><pre class="term-saida">{{.Output}}</pre></details>{{end}}</div>{{end}}</div>
 <p class="acoes">{{if .Prev}}<a href="{{.Prev}}">‹ mais novos</a>{{end}} {{if .Next}}<a href="{{.Next}}">mais antigos ›</a>{{end}}</p>
 {{else}}<p class="muted">Nenhum comando{{if or .Machine .User}} neste filtro{{end}}.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "bios-lote"}}{{template "topo" .}}
+<p><a href="/painel/configuracao?aba=bios">← Configuração › BIOS</a></p>
+<h1>Senha da BIOS <span class="muted">› em lote</span></h1>
+<p class="muted">O mesmo que o cartão Senha da BIOS faz numa máquina, para várias: o servidor sorteia uma senha por máquina, guarda-a cifrada e manda o job de gravação. Cada máquina grava no próximo check-in, com uma chamada só ao fabricante; se a BIOS recusar, o agente não repete.</p>
+{{if not .On}}<p class="aviso atencao">Guarda desligada: o servidor está sem a chave de guarda (<code>PATCHD_BIOS_ESCROW_KEY_FILE</code>; crie com <code>patchd-server bios keygen</code>).</p>{{else}}
+{{if .NoJobs}}<p class="aviso atencao">O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE): a gravação vai como job assinado.</p>{{end}}
+<div class="card">
+<div class="card-cab"><h2>A frota</h2><span class="muted">{{.Total}} máquina(s) · chave de guarda <code>{{.KeyID}}</code></span></div>
+<div class="tabela"><table><thead><tr><th>No lote</th><th>Situação</th><th class="num">Máquinas</th><th>O que acontece</th></tr></thead><tbody>
+{{range .Counts}}<tr><td>{{if .Selectable}}<input form="lote-filtro" type="checkbox" name="sit" value="{{.Key}}" id="sit-{{.Key}}"{{if .Checked}} checked{{end}}{{if not .N}} disabled{{end}} aria-label="incluir no lote: {{.Name}}">{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if .Selectable}}<label for="sit-{{.Key}}">{{.Name}}</label>{{else}}{{.Name}}{{end}}</td><td class="num">{{if .N}}<a href="{{.Href}}">{{.N}}</a>{{else}}0{{end}}</td><td class="muted">{{.Does}}</td></tr>{{end}}
+</tbody></table></div>
+<h3>Montar um lote</h3>
+<form id="lote-filtro" class="grade" method="get" action="/painel/bios/lote">
+<label for="lote-grupo">Grupo de implantação</label><select id="lote-grupo" name="grupo">{{range .Rings}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label for="lote-limite">Tamanho do lote</label><select id="lote-limite" name="limite">{{range .Sizes}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<span>Falhas</span><fieldset class="escolhas"><label class="opcao"><input type="checkbox" name="falhas" value="1"{{if .Failed}} checked{{end}}><span><b>Incluir as máquinas em que a última tentativa falhou</b><small>{{.FailedCount}} máquina(s) agora. As sem senha tentam de novo; as com senha, só com outra senha digitada na conferência. Com {{.MaxFailures}} falhas em 24 horas a máquina sai dos lotes: senha errada repetida trava a BIOS até reiniciar.</small></span></label></fieldset>
+<span></span><span><button type="submit">Ver as máquinas do lote</button> <span class="muted">Nada é enviado neste passo. Comece por 1 máquina e confira na frente dela antes de seguir.</span></span>
+</form>
+</div>
+{{if .Chosen}}<div class="card" id="conferencia"><div class="card-cab"><h2>Conferência</h2><span class="muted">{{.Selected}} máquina(s) neste lote</span></div>
+{{if .Preview}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Fabricante</th><th>Grupo</th><th>Situação</th><th>Senha atual usada</th></tr></thead><tbody>
+{{range .Preview}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=hardware">{{.Name}}</a>{{if .Detail}}<br><span class="muted">{{.Detail}}</span>{{end}}</td><td>{{.Vendor}}</td><td>{{.Ring}}</td><td>{{.Situation}}</td><td{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Current}}</td></tr>{{end}}
+</tbody></table></div>
+{{if .More}}<p class="muted">e mais {{.More}} máquina(s), na ordem do nome.</p>{{end}}
+<h3>Confirmar o lote</h3>
+<form class="grade" method="post" action="/painel/bios/lote" autocomplete="off">
+{{range .Hidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}<input type="hidden" name="lista" value="{{.Digest}}">
+{{if .AskCurrent}}<label for="lote-senha">Senha atual das máquinas com senha</label><span><input id="lote-senha" type="password" name="senha_atual" maxlength="{{.MaxCurrent}}" autocomplete="off"{{if .NeedTyped}} required{{end}} placeholder="{{if .NeedTyped}}a senha em uso nessas máquinas{{else}}em branco: a padrão cadastrada{{end}}">
+<small class="muted">{{if .NeedTyped}}{{.NeedTyped}} máquina(s) deste lote só entram com a senha digitada (fabricante sem senha padrão cadastrada, ou a última tentativa falhou). {{end}}Digitada, ela vale para todas as máquinas "com senha, sem marcador" deste lote, no lugar da padrão cadastrada{{if .Defaults}} ({{.Defaults}}){{end}}. Vai cifrada para cada máquina e não fica guardada. As do marcador do <code>.bat</code> usam sempre a do Registro.</small></span>{{end}}
+<label for="lote-motivo">Motivo</label><input id="lote-motivo" name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="chamado, ordem de serviço...">
+<span></span><span><button type="submit">Gravar a senha em {{.Selected}} máquina(s)</button> <span class="muted">Fica na auditoria com quem pediu, o motivo e cada máquina.</span></span>
+</form>
+{{else}}<p class="muted">Nenhuma máquina nas situações e no grupo escolhidos.</p>{{end}}
+</div>{{end}}
+{{if .Listing}}<div class="card" id="lista"><div class="card-cab"><h2>{{.Listing}}</h2><span class="muted"><a href="/painel/bios/lote">fechar a lista</a></span></div>
+{{if .ListRows}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Fabricante</th><th>Grupo</th><th>Detalhe</th></tr></thead><tbody>
+{{range .ListRows}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=hardware">{{.Name}}</a></td><td>{{.Vendor}}</td><td>{{.Ring}}</td><td>{{if .Detail}}{{.Detail}}{{else}}—{{end}}</td></tr>{{end}}
+</tbody></table></div>{{if .ListMore}}<p class="muted">e mais {{.ListMore}} máquina(s).</p>{{end}}
+{{else}}<p class="muted">Nenhuma máquina nesta situação.</p>{{end}}
+</div>{{end}}
+{{end}}
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}

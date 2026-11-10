@@ -171,18 +171,7 @@ func (a *api) prepareBIOSAction(w http.ResponseWriter, r *http.Request, s panel.
 		a.internalError(w, r, "fechar gravações da BIOS", err)
 		return
 	}
-	pw, err := biospw.Generate()
-	if err != nil {
-		a.internalError(w, r, "sortear a senha da BIOS", err)
-		return
-	}
-	env, err := biospw.Seal(a.escrow.pub, id, pw)
-	if err != nil {
-		a.internalError(w, r, "fechar a senha da BIOS", err)
-		return
-	}
-	b, created, err := a.store.CreateBIOSPassword(r.Context(), store.BIOSPassword{MachineID: id, Escrow: env,
-		EscrowKeyID: a.escrow.id, CreatedAt: a.now(), CreatedBy: s.Username})
+	b, created, err := a.prepareBIOS(r.Context(), id, s.Username)
 	if errors.Is(err, store.ErrNoMachine) {
 		http.NotFound(w, r)
 		return
@@ -199,6 +188,20 @@ func (a *api) prepareBIOSAction(w http.ResponseWriter, r *http.Request, s panel.
 		"chave_guarda", a.escrow.id, "username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "bios.senha.preparar", id, fmt.Sprintf("guarda #%d, chave %s", b.ID, a.escrow.id))
 	http.Redirect(w, r, biosBack(id, "bios=preparada"), http.StatusSeeOther)
+}
+
+// prepareBIOS sorteia uma senha e a guarda como pendente. created = false: a máquina já tinha
+// uma pendente, que é a devolvida (a sorteada agora é descartada).
+func (a *api) prepareBIOS(ctx context.Context, id, by string) (store.BIOSPassword, bool, error) {
+	pw, err := biospw.Generate()
+	if err != nil {
+		return store.BIOSPassword{}, false, fmt.Errorf("sortear a senha da BIOS: %w", err)
+	}
+	env, err := biospw.Seal(a.escrow.pub, id, pw)
+	if err != nil {
+		return store.BIOSPassword{}, false, fmt.Errorf("fechar a senha da BIOS: %w", err)
+	}
+	return a.store.CreateBIOSPassword(ctx, store.BIOSPassword{MachineID: id, Escrow: env, EscrowKeyID: a.escrow.id, CreatedAt: a.now(), CreatedBy: by})
 }
 
 // revealView: a página que mostra a senha, uma vez, para quem pediu.

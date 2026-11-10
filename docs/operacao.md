@@ -1148,6 +1148,13 @@ numa máquina, confira no inventário (`patchd-agent -inventory`, `hardware.firm
 **Código 6** (acesso negado): a senha atual não confere. Não repita o pedido às cegas: a BIOS
 da HP pode travar novas tentativas até reiniciar. Confirme a senha padrão do parque antes.
 
+**Em lote.** Para várias máquinas de uma vez (as sem senha, as com a senha do `.bat` no
+Registro e as com uma senha padrão): **Configuração › BIOS › Senha da BIOS em lote**. Marque as
+situações, escolha o grupo e o tamanho, confira a lista e informe o motivo. Comece com 1
+máquina e confira na frente dela. Quem tem mais de uma senha padrão no mesmo fabricante digita
+uma por lote; a máquina que falhar sai dos lotes seguintes até alguém pedir (regras em
+`docs/bios-senha.md`, seção 12).
+
 **Incerta**: nada mais é gravado nessa máquina até alguém resolver. Revele a nova e a anterior,
 teste qual a BIOS aceita e clique em **A nova vale** ou **A anterior vale**.
 

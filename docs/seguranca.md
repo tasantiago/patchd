@@ -185,6 +185,9 @@ quem resolve.
   trazia a senha em uso como a versão do programa `BIOS_password`; o agente e o servidor
   deixaram de aceitá-la, a migração 0070 a tira dos inventários guardados, e a primeira troca
   usa a senha lida pelo agente na própria máquina, que a apaga do Registro depois do "ok".
+  Em lote (`docs/bios-senha.md`, seção 12): a mesma gravação para várias máquinas, com
+  conferência da lista, motivo obrigatório, trilha gravada antes de qualquer job e teto de 2
+  falhas por máquina em 24 horas.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; o parque continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem
