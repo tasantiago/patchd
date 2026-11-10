@@ -19,7 +19,7 @@ import (
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
 	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
-	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend`
+	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, archived_at`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
@@ -30,7 +30,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var dTZ *string
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
 		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
-		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend)
+		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend, &c.ArchivedAt)
 	if err != nil {
 		return c, err
 	}
@@ -49,6 +49,7 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	c.RebootDelay = time.Duration(delay) * time.Second
 	c.CloseDelay = time.Duration(closeDelay) * time.Second
 	c.AutoResend = int(autoResend)
+	c.ArchivedAt = utc(c.ArchivedAt)
 	c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx = int(cur), int(launched), int(accepted)
 	c.RingDoneAt = utc(c.RingDoneAt)
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
@@ -147,6 +148,40 @@ func (p *Postgres) TakeResend(ctx context.Context, id int64) ([]string, error) {
 		return nil, nil
 	}
 	return out, err
+}
+
+// ArchiveCampaigns arquiva (ou, com archive false, desarquiva) as campanhas encerradas dos IDs.
+// Devolve quantas mudaram; a em andamento ou pausada fica como está.
+func (p *Postgres) ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error) {
+	if !archive {
+		tag, err := p.pool.Exec(ctx, `UPDATE campaigns SET archived_at = NULL WHERE id = ANY($1) AND archived_at IS NOT NULL`, ids)
+		return int(tag.RowsAffected()), err
+	}
+	tag, err := p.pool.Exec(ctx, `UPDATE campaigns SET archived_at = $2
+		WHERE id = ANY($1) AND state IN ('concluida', 'cancelada') AND archived_at IS NULL`, ids, at)
+	return int(tag.RowsAffected()), err
+}
+
+// DeleteCampaign exclui a campanha arquivada (e encerrada). Os jobs dela ficam no histórico,
+// sem a ligação com a campanha. false: não existe, ou não está arquivada.
+func (p *Postgres) DeleteCampaign(ctx context.Context, id int64) (bool, error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var ok bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaigns WHERE id = $1 AND archived_at IS NOT NULL
+		AND state IN ('concluida', 'cancelada') FOR UPDATE)`, id).Scan(&ok); err != nil || !ok {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET campaign_id = NULL, campaign_idx = NULL WHERE campaign_id = $1`, id); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM campaigns WHERE id = $1`, id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
 }
 
 // notes: o text[] não aceita NULL.
@@ -306,6 +341,46 @@ func (m *Memory) TakeResend(ctx context.Context, id int64) ([]string, error) {
 	r := m.campaignResend[id]
 	delete(m.campaignResend, id)
 	return r, nil
+}
+
+// ArchiveCampaigns arquiva ou desarquiva as encerradas.
+func (m *Memory) ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for i := range m.campaigns {
+		c := &m.campaigns[i]
+		if !slices.Contains(ids, c.ID) {
+			continue
+		}
+		switch {
+		case archive && c.Finished() && c.ArchivedAt == nil:
+			t := at.UTC()
+			c.ArchivedAt = &t
+			n++
+		case !archive && c.ArchivedAt != nil:
+			c.ArchivedAt = nil
+			n++
+		}
+	}
+	return n, nil
+}
+
+// DeleteCampaign exclui a arquivada; os jobs ficam sem a ligação.
+func (m *Memory) DeleteCampaign(ctx context.Context, id int64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	i := slices.IndexFunc(m.campaigns, func(c campaign.Campaign) bool { return c.ID == id })
+	if i < 0 || m.campaigns[i].ArchivedAt == nil || !m.campaigns[i].Finished() {
+		return false, nil
+	}
+	for _, j := range m.jobs {
+		if j.campaignID == id {
+			j.campaignID, j.campaignIdx = 0, 0
+		}
+	}
+	m.campaigns = slices.Delete(m.campaigns, i, i+1)
+	return true, nil
 }
 
 // CampaignJobs lista os jobs da campanha num grupo de implantação.

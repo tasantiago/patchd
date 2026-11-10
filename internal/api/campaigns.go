@@ -28,6 +28,9 @@ import (
 
 const campaignsShown = 50
 
+// campaignsScan: quantas campanhas a lista lê para separar as arquivadas.
+const campaignsScan = 2000
+
 // As opções do formulário: listas fechadas, como na janela dos grupos de implantação.
 var (
 	observeHours = []int{0, 1, 4, 12, 24, 48, 72, 168}
@@ -92,10 +95,14 @@ type campaignForm struct {
 
 type campaignsView struct {
 	pageBase
-	Rows   []campaignRow
-	CanNew bool // admin e chave de jobs
-	NoKey  bool // admin sem a chave: o formulário não aparece
-	Form   campaignForm
+	Rows []campaignRow
+	// Archived: a lista das arquivadas (?arquivadas=1); NArchived, quantas há; NFinished,
+	// quantas encerradas ainda na lista (o botão de arquivá-las de uma vez).
+	Archived             bool
+	NArchived, NFinished int
+	CanNew               bool // admin e chave de jobs
+	NoKey                bool // admin sem a chave: o formulário não aparece
+	Form                 campaignForm
 }
 
 func campaignLabel(s string) string {
@@ -164,6 +171,14 @@ func (a *api) ringChoices(r *http.Request, checked []int) ([]ringChoice, error) 
 func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	v := campaignsView{pageBase: a.base(r, "Campanhas", "campanhas")}
 	v.CanNew, v.NoKey = v.Admin && a.jobKey != nil, v.Admin && a.jobKey == nil
+	switch q := r.URL.Query(); {
+	case q.Has("arquivada"):
+		v.Flash = fmt.Sprintf("Campanha %s arquivada: saiu da lista, sem perder nada. Ela fica em Arquivadas, de onde volta ou é excluída.", numOnly(q.Get("arquivada")))
+	case q.Has("arquivadas-agora"):
+		v.Flash = fmt.Sprintf("%s campanha(s) encerrada(s) arquivada(s).", numOnly(q.Get("arquivadas-agora")))
+	case q.Has("excluida"):
+		v.Flash = fmt.Sprintf("Campanha %s excluída. Os jobs dela continuam em Automação › Jobs.", numOnly(q.Get("excluida")))
+	}
 	if v.CanNew {
 		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays, Resends: resendChoices,
 			DailyStart: "02:00", DailyDur: 180}
@@ -204,12 +219,23 @@ func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int
 	for _, m := range windowDurations {
 		v.Form.Durations = append(v.Form.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
 	}
-	list, err := a.store.Campaigns(r.Context(), campaignsShown)
+	list, err := a.store.Campaigns(r.Context(), campaignsScan)
 	if err != nil {
 		a.internalError(w, r, "listar campanhas", err)
 		return
 	}
+	v.Archived = r.URL.Query().Get("arquivadas") == "1"
+	shown := 0
 	for _, c := range list {
+		if c.ArchivedAt != nil {
+			v.NArchived++
+		} else if c.Finished() {
+			v.NFinished++
+		}
+		if (c.ArchivedAt != nil) != v.Archived || shown >= campaignsShown {
+			continue
+		}
+		shown++
 		typ := typeLabel(c.Type)
 		if c.UseWindow {
 			typ += ", na janela"
@@ -571,15 +597,16 @@ const campaignJobsPerPage = 100
 
 type campaignView struct {
 	pageBase
-	C                                  campaign.Campaign
-	TypeLabel, State, StateLabel, When string
-	Fallback                           string // a fonte reserva da Microsoft, quando a campanha a usa
-	CloseL                             string // terceiros: fechar o programa aberto com aviso
-	Sources, Observe, Created          string
-	Rings                              []campaignRingView
-	CanPause, CanResume, CanCancel     bool
-	ResendL                            string         // os reenvios automáticos
-	Resend                             []resendOption // o que dá para reenviar no grupo atual (admin)
+	C                                   campaign.Campaign
+	TypeLabel, State, StateLabel, When  string
+	Fallback                            string // a fonte reserva da Microsoft, quando a campanha a usa
+	CloseL                              string // terceiros: fechar o programa aberto com aviso
+	Sources, Observe, Created           string
+	Rings                               []campaignRingView
+	CanPause, CanResume, CanCancel      bool
+	CanArchive, CanUnarchive, CanDelete bool
+	ResendL                             string         // os reenvios automáticos
+	Resend                              []resendOption // o que dá para reenviar no grupo atual (admin)
 }
 
 func campaignID(r *http.Request) (int64, bool) {
@@ -628,6 +655,9 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		v.CanPause = c.State == campaign.StateRunning
 		v.CanResume = c.State == campaign.StatePaused
 		v.CanCancel = c.State == campaign.StateRunning || c.State == campaign.StatePaused
+		v.CanArchive = c.Finished() && c.ArchivedAt == nil
+		v.CanUnarchive = c.ArchivedAt != nil
+		v.CanDelete = c.Finished() && c.ArchivedAt != nil
 		if v.CanCancel && c.LaunchedIdx == c.CurrentIdx {
 			list, err := a.store.CampaignJobs(r.Context(), c.ID, c.CurrentIdx)
 			if err != nil {
@@ -760,6 +790,10 @@ func campaignFlash(r *http.Request, b *pageBase) {
 		b.Flash = "Campanha retomada: as falhas do grupo de implantação atual ficam aceitas, e ela segue."
 	case q.Get("feito") == "reenviar":
 		b.Flash = "Reenvio pedido: no próximo minuto o servidor refaz o plano de cada máquina e manda os jobs de novo (a que já não precisa sai como dispensada). O que falhar de novo pausa a campanha de novo."
+	case q.Get("feito") == "desarquivar":
+		b.Flash = "Campanha desarquivada: ela volta para a lista."
+	case q.Get("erro") == "confirmar":
+		b.Error = "Para excluir, marque a confirmação."
 	case q.Get("erro") == "reenvio-vazio":
 		b.Error = "Marque o que reenviar."
 	case q.Get("feito") == "cancelar":
@@ -775,7 +809,8 @@ func campaignFlash(r *http.Request, b *pageBase) {
 // campaignChangeAction: pausar, retomar ou cancelar, pelas regras de campaign.Change.
 func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	id, ok := campaignID(r)
-	ops := map[string]string{"pausar": campaign.OpPause, "retomar": campaign.OpResume, "cancelar": campaign.OpCancel, "reenviar": "reenviar"}
+	ops := map[string]string{"pausar": campaign.OpPause, "retomar": campaign.OpResume, "cancelar": campaign.OpCancel, "reenviar": "reenviar",
+		"arquivar": "arquivar", "desarquivar": "desarquivar", "excluir": "excluir"}
 	op, known := ops[r.PathValue("op")]
 	if !ok || !known {
 		http.NotFound(w, r)
@@ -790,8 +825,12 @@ func (a *api) campaignChangeAction(w http.ResponseWriter, r *http.Request, s pan
 		http.NotFound(w, r)
 		return
 	}
-	if op == "reenviar" {
+	switch op {
+	case "reenviar":
 		a.campaignResendAction(w, r, s, c)
+		return
+	case "arquivar", "desarquivar", "excluir":
+		a.campaignArchiveAction(w, r, s, c, op)
 		return
 	}
 	back := fmt.Sprintf("/painel/campanhas/%d", id)
@@ -857,4 +896,72 @@ func (a *api) campaignResendAction(w http.ResponseWriter, r *http.Request, s pan
 	}
 	a.audit(r, s, "campanha.reenviar", fmt.Sprintf("campanha %d", c.ID), "motivos: "+strings.Join(reasons, ", "))
 	http.Redirect(w, r, back+"?feito=reenviar", http.StatusSeeOther)
+}
+
+// campaignArchiveAction: arquivar, desarquivar ou excluir uma campanha (só a encerrada; a
+// exclusão, só a arquivada e com a confirmação).
+func (a *api) campaignArchiveAction(w http.ResponseWriter, r *http.Request, s panel.Session, c campaign.Campaign, op string) {
+	back := fmt.Sprintf("/painel/campanhas/%d", c.ID)
+	var n int
+	var err error
+	switch op {
+	case "arquivar":
+		n, err = a.store.ArchiveCampaigns(r.Context(), []int64{c.ID}, true, a.now())
+	case "desarquivar":
+		n, err = a.store.ArchiveCampaigns(r.Context(), []int64{c.ID}, false, a.now())
+	case "excluir":
+		if r.PostFormValue("confirmo") != "1" {
+			http.Redirect(w, r, back+"?erro=confirmar", http.StatusSeeOther)
+			return
+		}
+		var ok bool
+		ok, err = a.store.DeleteCampaign(r.Context(), c.ID)
+		if ok {
+			n = 1
+		}
+	}
+	if err != nil {
+		a.internalError(w, r, op+" campanha", err)
+		return
+	}
+	if n == 0 {
+		http.Redirect(w, r, back+"?erro=estado", http.StatusSeeOther)
+		return
+	}
+	a.audit(r, s, "campanha."+op, fmt.Sprintf("campanha %d", c.ID), fmt.Sprintf("%s (%s, %s)", c.Name, campaignLabel(c.State), typeLabel(c.Type)))
+	switch op {
+	case "excluir":
+		http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivadas=1&excluida=%d", c.ID), http.StatusSeeOther)
+	case "arquivar":
+		http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivada=%d", c.ID), http.StatusSeeOther)
+	default:
+		http.Redirect(w, r, back+"?feito=desarquivar", http.StatusSeeOther)
+	}
+}
+
+// archiveFinishedAction: POST /painel/campanhas/arquivar-encerradas. Arquiva de uma vez as
+// concluídas e canceladas que ainda estão na lista.
+func (a *api) archiveFinishedAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	list, err := a.store.Campaigns(r.Context(), campaignsScan)
+	if err != nil {
+		a.internalError(w, r, "listar campanhas", err)
+		return
+	}
+	var ids []int64
+	var keys []string
+	for _, c := range list {
+		if c.Finished() && c.ArchivedAt == nil {
+			ids = append(ids, c.ID)
+			keys = append(keys, strconv.FormatInt(c.ID, 10))
+		}
+	}
+	n := 0
+	if len(ids) > 0 {
+		if n, err = a.store.ArchiveCampaigns(r.Context(), ids, true, a.now()); err != nil {
+			a.internalError(w, r, "arquivar campanhas", err)
+			return
+		}
+		a.audit(r, s, "campanha.arquivar-encerradas", fmt.Sprintf("%d campanha(s)", n), texto.Clip("ids: "+strings.Join(keys, ","), 2000))
+	}
+	http.Redirect(w, r, fmt.Sprintf("/painel/campanhas?arquivadas-agora=%d", n), http.StatusSeeOther)
 }

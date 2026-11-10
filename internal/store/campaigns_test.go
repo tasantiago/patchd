@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -21,10 +22,13 @@ type contratoCampanhas interface {
 	DismissJob(ctx context.Context, id int64, why string) (bool, error)
 	RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error)
 	TakeResend(ctx context.Context, id int64) ([]string, error)
+	ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error)
+	DeleteCampaign(ctx context.Context, id int64) (bool, error)
 }
 
 func testarCampanhas(t *testing.T, st contratoCampanhas) {
 	ctx := context.Background()
+	defer testarArquivar(t, st)
 	defer testarReenvio(t, st) // no fim: a campanha dele não entra nas contagens daqui
 	if _, err := st.SaveInventory(ctx, "camp-a", protocol.InventoryReport{SchemaVersion: 1, Hash: "camp-a"}); err != nil {
 		t.Fatal(err)
@@ -216,5 +220,55 @@ func testarReenvio(t *testing.T, st contratoCampanhas) {
 	}
 	if r, _ := st.TakeResend(ctx, id); r != nil {
 		t.Errorf("pegou duas vezes: %v", r)
+	}
+}
+
+// Arquivar só a encerrada; excluir só a arquivada, e os jobs ficam sem a ligação.
+func testarArquivar(t *testing.T, st contratoCampanhas) {
+	ctx := context.Background()
+	id, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "arquivo", Type: "rescan", Rings: []int{0}, TTL: time.Hour, CreatedBy: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.ArchiveCampaigns(ctx, []int64{id}, true, time.Now()); n != 0 {
+		t.Error("arquivou a em andamento")
+	}
+	if ok, _ := st.DeleteCampaign(ctx, id); ok {
+		t.Error("excluiu a em andamento")
+	}
+	jid, _ := st.NextJobID(ctx)
+	if err := st.CreateJob(ctx, NewJob{ID: jid, MachineID: "camp-a", Type: "rescan", Signed: protocol.SignedJob{Payload: "{}", Signature: "s"},
+		CreatedBy: "t", NotAfter: time.Now().Add(time.Hour), CampaignID: id, CampaignIdx: 0}); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _ := st.Campaign(ctx, id)
+	c.State = campaign.StateCanceled
+	if ok, err := st.SaveCampaign(ctx, c, campaign.StateRunning); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if ok, _ := st.DeleteCampaign(ctx, id); ok {
+		t.Error("excluiu sem arquivar")
+	}
+	if n, err := st.ArchiveCampaigns(ctx, []int64{id}, true, time.Now()); n != 1 || err != nil {
+		t.Fatalf("arquivar: %d %v", n, err)
+	}
+	if c, _, _ := st.Campaign(ctx, id); c.ArchivedAt == nil {
+		t.Error("sem a data de arquivada")
+	}
+	if n, _ := st.ArchiveCampaigns(ctx, []int64{id}, false, time.Now()); n != 1 {
+		t.Error("desarquivar")
+	}
+	_, _ = st.ArchiveCampaigns(ctx, []int64{id}, true, time.Now())
+	if ok, err := st.DeleteCampaign(ctx, id); !ok || err != nil {
+		t.Fatalf("excluir: %v %v", ok, err)
+	}
+	if _, found, _ := st.Campaign(ctx, id); found {
+		t.Error("a campanha ficou")
+	}
+	if l, _ := st.Jobs(ctx, "camp-a", 50); !slices.ContainsFunc(l, func(j JobRow) bool { return j.ID == jid }) {
+		t.Error("o job sumiu junto")
+	}
+	if l, _ := st.CampaignJobs(ctx, id, 0); len(l) != 0 {
+		t.Error("o job ficou ligado à campanha excluída")
 	}
 }

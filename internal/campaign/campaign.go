@@ -99,7 +99,12 @@ type Campaign struct {
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// ArchivedAt: arquivada (só a encerrada): fora da lista, sem perder nada. nil: na lista.
+	ArchivedAt *time.Time
 }
+
+// Finished: concluída ou cancelada (o motor não mexe mais nela).
+func (c Campaign) Finished() bool { return c.State == StateDone || c.State == StateCanceled }
 
 // Ring é o grupo de implantação atual.
 func (c Campaign) Ring() int { return c.Rings[c.CurrentIdx] }

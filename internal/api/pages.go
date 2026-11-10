@@ -1477,11 +1477,12 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Automação <span class="muted">› Campanhas</span></h1>
 {{template "automacao-abas" "campanhas"}}
 <p class="muted">O mesmo pedido passando pelos grupos de implantação em ordem: o servidor libera o grupo seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
-<div class="card"><div class="card-cab"><h2>Campanhas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
+<div class="card"><div class="card-cab"><h2>{{if .Archived}}Campanhas arquivadas{{else}}Campanhas recentes{{end}}</h2>
+<span class="acoes">{{if .Archived}}<a href="/painel/campanhas">← Campanhas</a>{{else}}{{if and .Admin .NFinished}}<form class="inline" method="post" action="/painel/campanhas/arquivar-encerradas"><button class="sec" type="submit" title="tiram da lista as concluídas e as canceladas; nada se perde">Arquivar as encerradas ({{.NFinished}})</button></form>{{end}}{{if .NArchived}} <a href="/painel/campanhas?arquivadas=1">Arquivadas ({{.NArchived}})</a>{{end}}{{end}}</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Grupos de implantação</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td><td class="nowrap">{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhuma campanha ainda.</p>{{end}}</div>
+{{else}}<p class="muted">{{if .Archived}}Nenhuma campanha arquivada.{{else}}Nenhuma campanha ainda.{{end}}</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
@@ -1552,7 +1553,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 
 {{define "campanha"}}{{template "topo" .}}
 <p><a href="/painel/campanhas">← Campanhas</a></p>
-<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span></h1>
+<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span>{{if .C.ArchivedAt}} <span class="muted">· arquivada</span>{{end}}</h1>
 <div class="card"><dl class="dados">
 <dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
 <dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else if eq .C.Type "reboot"}}Reinício{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
@@ -1569,7 +1570,14 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button class="sec" type="submit">Pausar</button></form>{{end}}
 {{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
-<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}</div>
+<span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}
+{{if or .CanArchive .CanUnarchive}}<div class="lote">
+{{if .CanArchive}}<form method="post" action="/painel/campanhas/{{.C.ID}}/arquivar"><button class="sec" type="submit">Arquivar</button></form> <span class="muted">Sai da lista de campanhas, sem perder nada; dá para desarquivar.</span>{{end}}
+{{if .CanUnarchive}}<form method="post" action="/painel/campanhas/{{.C.ID}}/desarquivar"><button class="sec" type="submit">Desarquivar</button></form>
+<details class="excluir"><summary>Excluir a campanha</summary><form method="post" action="/painel/campanhas/{{.C.ID}}/excluir">
+<label><input type="checkbox" name="confirmo" value="1" required> Entendo que a campanha some de vez; os jobs dela continuam em Automação › Jobs, sem a ligação com ela.</label>
+<button class="perigo" type="submit">Excluir de vez</button></form></details>{{end}}
+</div>{{end}}</div>
 {{if .Resend}}<div class="card"><div class="card-cab"><h2>Reenviar o que não deu certo</h2><span class="muted">grupo de implantação atual</span></div>
 <form class="limpeza" method="post" action="/painel/campanhas/{{.C.ID}}/reenviar">
 <fieldset class="escolhas"><legend>O que reenviar</legend>

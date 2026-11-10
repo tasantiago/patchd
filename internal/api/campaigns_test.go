@@ -408,3 +408,67 @@ func TestReenviarFalhasPeloPainel(t *testing.T) {
 		t.Errorf("trilha: %+v", ev)
 	}
 }
+
+// Arquivar e excluir: a encerrada sai da lista (sozinha ou todas de uma vez) e vai para as
+// Arquivadas, de onde volta ou é excluída com a confirmação; os jobs ficam.
+func TestArquivarEExcluirCampanha(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	ctx := context.Background()
+	nova := func(nome, estado string) int64 {
+		id, _ := st.CreateCampaign(ctx, campaign.Campaign{Name: nome, Type: jobs.TypeRescan, Rings: []int{0}, TTL: time.Hour, CreatedBy: "t"})
+		c, _, _ := st.Campaign(ctx, id)
+		c.State = estado
+		_, _ = st.SaveCampaign(ctx, c, campaign.StateRunning)
+		return id
+	}
+	andando, feita, cancelada := nova("andando", campaign.StateRunning), nova("feita", campaign.StateDone), nova("cancelada", campaign.StateCanceled)
+	det := func(id int64) string { return fmt.Sprintf("/painel/campanhas/%d", id) }
+
+	b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "Arquivar as encerradas (2)") || strings.Contains(b, "Arquivadas (") {
+		t.Errorf("lista: falta o botão")
+	}
+	if b := pagina(h, "GET", det(andando), sessaoAdmin, nil).Body.String(); strings.Contains(b, "/arquivar") {
+		t.Error("a em andamento não se arquiva")
+	}
+	if l := local(pagina(h, "POST", det(feita)+"/arquivar", sessaoAdmin, nil)); l != fmt.Sprintf("/painel/campanhas?arquivada=%d", feita) {
+		t.Fatalf("arquivar: %s", l)
+	}
+	if l := local(pagina(h, "POST", det(andando)+"/arquivar", sessaoAdmin, nil)); l != det(andando)+"?erro=estado" {
+		t.Errorf("arquivar a em andamento: %s", l)
+	}
+	b = pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
+	if strings.Contains(b, ">feita</a>") || !strings.Contains(b, "Arquivadas (1)") || !strings.Contains(b, "Arquivar as encerradas (1)") {
+		t.Errorf("depois de arquivar:\n%s", b)
+	}
+	if l := local(pagina(h, "POST", "/painel/campanhas/arquivar-encerradas", sessaoAdmin, nil)); l != "/painel/campanhas?arquivadas-agora=1" {
+		t.Errorf("todas: %s", l)
+	}
+	b = pagina(h, "GET", "/painel/campanhas?arquivadas=1", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, ">feita</a>") || !strings.Contains(b, ">cancelada</a>") || strings.Contains(b, ">andando</a>") {
+		t.Errorf("arquivadas:\n%s", b)
+	}
+	if b := pagina(h, "GET", det(feita), sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Excluir de vez") || !strings.Contains(b, "/desarquivar") {
+		t.Error("página da arquivada")
+	}
+	if l := local(pagina(h, "POST", det(feita)+"/excluir", sessaoAdmin, nil)); l != det(feita)+"?erro=confirmar" {
+		t.Errorf("sem confirmar: %s", l)
+	}
+	if r := pagina(h, "POST", det(feita)+"/excluir", sessaoTeste, url.Values{"confirmo": {"1"}}); r.Code != http.StatusForbidden {
+		t.Errorf("leitura exclui: %d", r.Code)
+	}
+	if l := local(pagina(h, "POST", det(feita)+"/excluir", sessaoAdmin, url.Values{"confirmo": {"1"}})); l != fmt.Sprintf("/painel/campanhas?arquivadas=1&excluida=%d", feita) {
+		t.Fatalf("excluir: %s", l)
+	}
+	if _, found, _ := st.Campaign(ctx, feita); found {
+		t.Error("ficou")
+	}
+	if l := local(pagina(h, "POST", det(cancelada)+"/desarquivar", sessaoAdmin, nil)); l != det(cancelada)+"?feito=desarquivar" {
+		t.Errorf("desarquivar: %s", l)
+	}
+	for _, acao := range []string{"campanha.arquivar", "campanha.arquivar-encerradas", "campanha.excluir", "campanha.desarquivar"} {
+		if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: acao}); len(ev) != 1 {
+			t.Errorf("trilha %s: %d", acao, len(ev))
+		}
+	}
+}

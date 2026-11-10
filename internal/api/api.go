@@ -190,6 +190,8 @@ type Store interface {
 	Campaign(ctx context.Context, id int64) (campaign.Campaign, bool, error)
 	SaveCampaign(ctx context.Context, c campaign.Campaign, from string) (bool, error)
 	RequestResend(ctx context.Context, id int64, reasons []string, detail, from string) (bool, error)
+	ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error)
+	DeleteCampaign(ctx context.Context, id int64) (bool, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
 	// Tokens de registro pelo painel (Aula 15.2): os mesmos do patchd-server token.
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
@@ -356,6 +358,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/autoatendimento/pedidos/{id}/recusar", a.sameOrigin(a.adminAction(a.staleAfter(a.refuseSelfServiceAction))))
 	mux.Handle("GET /painel/campanhas", a.panelPage(a.campaignsPage))
 	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
+	mux.Handle("POST /painel/campanhas/arquivar-encerradas", a.sameOrigin(a.adminAction(a.archiveFinishedAction)))
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))
 	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.staleAfter(a.campaignChangeAction))))
 	mux.Handle("GET /painel/grupos-implantacao", a.panelPage(a.ringsPage))
