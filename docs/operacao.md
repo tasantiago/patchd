@@ -1148,6 +1148,11 @@ numa máquina, confira no inventário (`patchd-agent -inventory`, `hardware.firm
 **Código 6** (acesso negado): a senha atual não confere. Não repita o pedido às cegas: a BIOS
 da HP pode travar novas tentativas até reiniciar. Confirme a senha padrão do parque antes.
 
+**Padrão da BIOS.** Senha, Wake on LAN ligado e boot por USB desligado para o parque inteiro,
+de qualquer marca: **Configuração › BIOS › Padrão da BIOS** mostra a conformidade de cada
+objetivo e aplica o que falta em lote (`docs/bios-config.md`, seção 9). As máquinas com senha
+fora da guarda passam antes pela senha em lote.
+
 **Em lote.** Para várias máquinas de uma vez (as sem senha, as com a senha do `.bat` no
 Registro e as com uma senha padrão): **Configuração › BIOS › Senha da BIOS em lote**. Marque as
 situações, escolha o grupo e o tamanho, confira a lista e informe o motivo. Comece com 1

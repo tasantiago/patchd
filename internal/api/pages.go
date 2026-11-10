@@ -773,9 +773,9 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 </div>
 {{end}}{{end}}
 {{if eq .Tab "bios"}}{{with .Fleet}}
-<div class="card"><div class="card-cab"><h2>Senha da BIOS em lote</h2></div>
-<p class="muted">Define a senha da guarda nas máquinas sem senha na BIOS e troca a das que têm a senha do <code>.bat</code> no Registro ou uma senha padrão, várias de uma vez, com conferência antes.</p>
-<p><a href="/painel/bios/lote">Abrir a senha da BIOS em lote →</a></p>
+<div class="card"><div class="card-cab"><h2>Padrão da BIOS</h2></div>
+<p class="muted">Três objetivos para a frota inteira, de qualquer marca e modelo: senha de administrador pela guarda, Wake on LAN ligado e boot por USB desligado. A tela mostra quantas máquinas já estão conformes e aplica o que falta em lote, com conferência antes.</p>
+<p><a href="/painel/bios/padrao">Abrir o padrão da BIOS →</a> <span class="muted">·</span> <a href="/painel/bios/lote">Senha da BIOS em lote →</a></p>
 </div>
 <div class="card" id="senha-padrao"><div class="card-cab"><h2>Senha padrão da BIOS</h2>{{if .On}}<span class="muted">chave de guarda <code>{{.KeyID}}</code></span>{{end}}</div>
 <p class="muted">A senha que as máquinas de um fabricante já têm antes da primeira troca pela guarda (posta à mão ou pelo <code>.bat</code>). Com ela aqui, a primeira troca de cada máquina usa esta senha como a atual, sem digitar máquina por máquina. Fica cifrada para a chave de guarda, não aparece de novo nesta tela e só sai do servidor cifrada para a máquina, no job de troca. Depois da troca, cada máquina passa a ter a própria senha.</p>
@@ -1917,6 +1917,52 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .HasOutput}}<details class="term-det"><summary>saída{{if .Truncated}} (cortada: ficou o fim){{end}}</summary><pre class="term-saida">{{.Output}}</pre></details>{{end}}</div>{{end}}</div>
 <p class="acoes">{{if .Prev}}<a href="{{.Prev}}">‹ mais novos</a>{{end}} {{if .Next}}<a href="{{.Next}}">mais antigos ›</a>{{end}}</p>
 {{else}}<p class="muted">Nenhum comando{{if or .Machine .User}} neste filtro{{end}}.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "bios-padrao"}}{{template "topo" .}}
+<p><a href="/painel/configuracao?aba=bios">← Configuração › BIOS</a></p>
+<h1>Padrão da BIOS</h1>
+<p class="muted">O que toda máquina deve ter, de qualquer marca e modelo. O patchd lê as configurações que cada BIOS informa no inventário e resolve, máquina por máquina, o que mudar: só propõe o que a máquina mostrou que tem, com um valor que ela mostrou que aceita. O modelo que não tem a configuração fica marcado, sem tentativa às cegas.</p>
+{{if .NoJobs}}<p class="aviso atencao">O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE): a alteração vai como job assinado.</p>{{end}}
+<div class="card">
+<div class="card-cab"><h2>Conformidade</h2><span class="muted">{{.Total}} máquina(s)</span></div>
+<div class="tabela"><table><thead><tr><th>No lote</th><th>Objetivo</th>{{range .Buckets}}<th class="num">{{.}}</th>{{end}}</tr></thead><tbody>
+{{range .Goals}}<tr><td>{{if .Link}}<span class="muted">—</span>{{else}}<input form="padrao-filtro" type="checkbox" name="objetivo" value="{{.Key}}" id="obj-{{.Key}}"{{if .Checked}} checked{{end}} aria-label="incluir no lote: {{.Name}}">{{end}}</td>
+<td>{{if .Link}}{{.Name}}<br><a href="{{.Link}}">senha em lote →</a>{{else}}<label for="obj-{{.Key}}">{{.Name}}</label>{{end}}</td>
+{{range .Cells}}<td class="num">{{if and .N .Href}}<a href="{{.Href}}">{{.N}}</a>{{else}}{{.N}}{{end}}</td>{{end}}</tr>{{end}}
+</tbody></table></div>
+<p class="muted">Quem tem senha na BIOS fora da guarda aparece em "não dá agora": a alteração precisa da senha em uso, então essas máquinas passam antes pela senha em lote. Na linha da senha, "aguardando" são as gravações a caminho.</p>
+<h3>Montar um lote</h3>
+<form id="padrao-filtro" class="grade" method="get" action="/painel/bios/padrao">
+<label for="padrao-grupo">Grupo de implantação</label><select id="padrao-grupo" name="grupo">{{range .Rings}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label for="padrao-limite">Tamanho do lote</label><select id="padrao-limite" name="limite">{{range .Sizes}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<span></span><span><button type="submit">Ver as máquinas do lote</button> <span class="muted">Nada é enviado neste passo. Comece por 1 máquina de cada modelo e confira na frente dela.</span></span>
+</form>
+</div>
+{{if .Chosen}}<div class="card" id="conferencia"><div class="card-cab"><h2>Conferência</h2><span class="muted">{{.Selected}} máquina(s) neste lote</span></div>
+{{if .Preview}}<h3>O que o padrão vira em cada fabricante</h3>
+<div class="tabela"><table><thead><tr><th>Fabricante</th><th>Configuração</th><th>De</th><th>Para</th><th class="num">Máquinas</th></tr></thead><tbody>
+{{range .Mapping}}<tr><td>{{.Vendor}}</td><td><code>{{.Name}}</code></td><td>{{.From}}</td><td><b>{{.To}}</b></td><td class="num">{{.N}}</td></tr>{{end}}
+</tbody></table></div>
+<h3>As máquinas</h3>
+<div class="tabela"><table><thead><tr><th>Máquina</th><th>Fabricante</th><th>Grupo</th><th>Alterações</th></tr></thead><tbody>
+{{range .Preview}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=bios">{{.Name}}</a></td><td>{{.Vendor}}</td><td>{{.Ring}}</td><td>{{range $i, $c := .Changes}}{{if $i}}<br>{{end}}{{$c}}{{end}}</td></tr>{{end}}
+</tbody></table></div>
+{{if .More}}<p class="muted">e mais {{.More}} máquina(s), na ordem do nome.</p>{{end}}
+<h3>Confirmar o lote</h3>
+<form class="grade" method="post" action="/painel/bios/padrao" autocomplete="off">
+{{range .Hidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}<input type="hidden" name="lista" value="{{.Digest}}">
+<label for="padrao-motivo">Motivo</label><input id="padrao-motivo" name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="chamado, ordem de serviço...">
+<span></span><span><button type="submit">Aplicar o padrão em {{.Selected}} máquina(s)</button> <span class="muted">Cada máquina grava no próximo check-in; em vários modelos a mudança vale depois do reinício. Fica na auditoria.</span></span>
+</form>
+{{else}}<p class="muted">Nenhuma máquina a corrigir nos objetivos e no grupo escolhidos.</p>{{end}}
+</div>{{end}}
+{{if .Listing}}<div class="card" id="lista"><div class="card-cab"><h2>{{.Listing}}</h2><span class="muted"><a href="/painel/bios/padrao">fechar a lista</a></span></div>
+{{if .ListRows}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Fabricante</th><th>Grupo</th><th>Na BIOS</th><th>Detalhe</th></tr></thead><tbody>
+{{range .ListRows}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=bios">{{.Name}}</a></td><td>{{.Vendor}}</td><td>{{.Ring}}</td><td>{{range $i, $c := .Changes}}{{if $i}}<br>{{end}}{{$c}}{{else}}—{{end}}</td><td>{{if .Detail}}{{.Detail}}{{else}}—{{end}}</td></tr>{{end}}
+</tbody></table></div>{{if .ListMore}}<p class="muted">e mais {{.ListMore}} máquina(s).</p>{{end}}
+{{else}}<p class="muted">Nenhuma máquina nesta situação.</p>{{end}}
+</div>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "bios-lote"}}{{template "topo" .}}

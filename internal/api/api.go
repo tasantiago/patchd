@@ -87,7 +87,8 @@ type Store interface {
 	ClosePerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error) // fechar à mão, em lote
 	PerfAlertCounts(ctx context.Context) (open, unacked int, err error)
 	// A senha padrão de cada fabricante (docs/bios-senha.md, seção 10).
-	BIOSFleet(ctx context.Context) ([]store.BIOSFleetRow, error) // a senha da BIOS em lote (docs/bios-senha.md, seção 12)
+	BIOSFleet(ctx context.Context) ([]store.BIOSFleetRow, error)                                              // a senha da BIOS em lote (docs/bios-senha.md, seção 12)
+	BIOSFleetSettings(ctx context.Context, pattern, strip string) (map[string]store.BIOSFleetSettings, error) // o padrão da BIOS
 	BIOSFleetPasswords(ctx context.Context) ([]store.BIOSFleetPassword, error)
 	SetBIOSFleetPassword(ctx context.Context, b store.BIOSFleetPassword) error
 	DeleteBIOSFleetPassword(ctx context.Context, vendor string) (bool, error)
@@ -404,6 +405,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/revelar", a.sameOrigin(a.adminAction(a.revealBIOSAction)))   // Aula 21.4
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/gravar", a.sameOrigin(a.adminAction(a.writeBIOSAction)))     // Aula 21.5
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/resolver", a.sameOrigin(a.adminAction(a.resolveBIOSAction))) // Aula 21.5
+	mux.Handle("GET /painel/bios/padrao", a.adminAction(a.biosStdPage))                                               // docs/bios-config.md, seção 9
+	mux.Handle("POST /painel/bios/padrao", a.sameOrigin(a.adminAction(a.biosStdAction)))                              // idem
 	mux.Handle("GET /painel/bios/lote", a.adminAction(a.biosLotePage))                                                // docs/bios-senha.md, seção 12
 	mux.Handle("POST /painel/bios/lote", a.sameOrigin(a.adminAction(a.biosLoteAction)))                               // idem
 	mux.Handle("POST /painel/maquinas/{id}/bios/configurar", a.sameOrigin(a.adminAction(a.configureBIOSAction)))      // docs/bios-config.md

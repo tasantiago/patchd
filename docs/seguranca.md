@@ -188,6 +188,9 @@ quem resolve.
   Em lote (`docs/bios-senha.md`, seção 12): a mesma gravação para várias máquinas, com
   conferência da lista, motivo obrigatório, trilha gravada antes de qualquer job e teto de 2
   falhas por máquina em 24 horas.
+  Padrão da BIOS (`docs/bios-config.md`, seção 9): Wake on LAN e boot por USB resolvidos por
+  máquina só com as configurações e os valores que a BIOS dela informou, sempre pela lista
+  fechada; um job `bios_settings` por máquina, com conferência, motivo e trilha antes.
 - **F4 — Sem cópia do banco** (Aula 20.2, resposta do lab da 20.1). Perder o disco do
   servidor é perder aprovações, auditoria e histórico; o parque continua de pé (o agente não
   depende do banco para funcionar), mas sem trilha. As ferramentas já existem

@@ -155,3 +155,63 @@ parâmetros dos métodos da Dell em cada geração; se a Lenovo aceita a **prime
 supervisor pelo WMI (em vários modelos não: o job volta "acesso negado" e a primeira senha é
 definida na BIOS); e os nomes das configurações nos modelos do parque. O piloto de cada
 fabricante começa por uma máquina de bancada, como foi com a HP.
+
+## 9. O padrão da BIOS (qualquer marca e modelo)
+
+O pedido (10/11/2026): padronizar a BIOS do parque inteiro, independente de modelo ou marca:
+**senha de administrador**, **Wake on LAN ligado** e **boot por USB desligado**. Fica em
+**Configuração › BIOS › Padrão da BIOS** (`/painel/bios/padrao`, só admin).
+
+**Objetivos, não nomes.** Cada fabricante (e às vezes cada geração) chama a mesma coisa de um
+jeito, com valores diferentes. O padrão é escrito como objetivo, e `internal/biosstd` o resolve
+para cada máquina com as configurações que **a própria BIOS informou** no inventário (seção 2).
+O patchd só propõe mudar o que a máquina mostrou que tem, para um valor que ela mostrou que
+aceita, e toda mudança passa de novo pela lista fechada (seção 3), no servidor e no agente.
+
+| Objetivo | O que conta | Exemplos (de → para) |
+|---|---|---|
+| Senha de administrador | a senha da guarda valendo na BIOS | é a senha em lote (`docs/bios-senha.md`, seção 12) |
+| Wake on LAN ligado | o WoL da placa cabeada (não o do Wi-Fi, o da dock nem a política de senha do WoL) e a economia profunda do desligado, que corta a energia da placa | HP `Wake On LAN`: Disable → Boot to Hard Drive; HP `S5 Maximum Power Savings`: Enable → Disable; Dell `WakeOnLan`: Disabled → LanOnly (WlanOnly → LanWlan); Dell `DeepSleepCtrl` → Disabled; Lenovo `WakeOnLAN`: Disable → ACOnly (notebook) ou Primary (desktop) |
+| Boot por USB desligado | a configuração que liga o boot por armazenamento USB | HP `USB Storage Boot`: Enable → Disable; Dell `UsbEmu` ("Enable USB Boot Support"): Enabled → Disabled; outros nomes com "USB Boot" / "Boot from USB" |
+
+Para ligar o WoL, o valor preferido mantém o boot normal ("Boot to Hard Drive", "LanOnly",
+"ACOnly"...); "Boot to Network" (a máquina acorda e tenta o PXE) só entra se for o único.
+Um WoL já ligado, com qualquer valor, conta como conforme.
+
+Ficam de fora de propósito: a `UsbEmuNoUsbBoot` das Dell antigas (o sentido é o contrário), a
+ordem de boot (é lista, não escolha), o suporte legado a USB da Lenovo (`USBBIOSSupport`: é o
+teclado USB na tela da BIOS, não o boot) e desligar as portas USB (tiraria teclado e mouse).
+
+**A conformidade.** Para cada objetivo, a tela conta a frota em cinco colunas, e cada número
+abre a lista das máquinas com o valor atual na BIOS e o motivo:
+
+| Coluna | Quer dizer |
+|---|---|
+| conforme | a BIOS já está como o padrão pede |
+| a corrigir | há o que mudar, e a máquina pode receber o job agora |
+| aguardando reinício | o job foi concluído e o inventário ainda mostra o valor antigo (vários modelos só mudam depois do reinício); por até 7 dias, sem novo pedido |
+| o modelo não tem a configuração | a BIOS não informa nada deste objetivo: nenhuma tentativa às cegas |
+| não dá agora | o motivo vai junto: senha fora da guarda, senha incerta, alteração a caminho, falha nas últimas 24 h, configuração só leitura, inventário sem as configurações, fora do alcance |
+
+**A senha vem primeiro.** Gravar uma configuração numa BIOS com senha exige a senha em uso, e
+o patchd só a tem quando ela está na guarda. A máquina com senha fora da guarda (a do `.bat`,
+uma padrão) fica em "não dá agora" até passar pela senha em lote; a sem senha recebe as
+configurações já, e a senha depois (ou antes: a ordem é livre).
+
+**O lote.** Marque os objetivos, o grupo de implantação e o tamanho (1 a 500 máquinas) e peça a
+conferência. Ela mostra **o que o padrão vira em cada fabricante** (configuração, de, para, e
+quantas máquinas) e a lista das máquinas com as alterações. Nada é enviado nesse passo. Com o
+motivo, o servidor refaz a lista, compara com a conferida e cria **um job `bios_settings` por
+máquina**, com as mesmas regras de sempre (seção 4): BitLocker suspenso por um reinício, uma
+chamada por configuração, parar na primeira senha recusada, a senha da guarda fechada para a
+caixa da máquina. A trilha `bios.padrao.lote` é gravada antes de qualquer job; cada máquina
+ganha o `bios.config.job` de sempre, com a impressão do lote. Uma alteração de risco alto
+(seção 3) nunca sai pelo padrão; os três objetivos não têm nenhuma.
+
+**A ordem recomendada:** 1 máquina de cada fabricante e modelo, conferida na frente dela
+depois do reinício (o WoL acorda? o pendrive deixa de aparecer no menu de boot?); depois o
+resto por grupo de implantação.
+
+**O que não está conferido:** os nomes e os valores nos modelos do parque. Um modelo com outro
+nome para o boot por USB aparece em "o modelo não tem a configuração"; a lista da coluna mostra
+quais são, e o nome entra em `internal/biosstd` (e na lista fechada) com o piloto daquele modelo.
