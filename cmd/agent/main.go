@@ -141,5 +141,6 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) int {
 		CAFile:         cfg.CAFile,
 		Interval:       cfg.CheckinInterval,
 		AllowContainer: allowContainer(look),
+		NoTerminal:     cfg.NoTerminal,
 	})
 }

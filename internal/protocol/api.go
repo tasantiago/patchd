@@ -76,6 +76,10 @@ const CapabilityCloseApps = "fechar-programa-v1"
 // servidor só o manda a quem anuncia.
 const CapabilityShutdown = "desligar-v1"
 
+// CapabilityTerminal (docs/terminal.md): o agente aceita o job comando (o terminal do
+// administrador). Instalado com -no-terminal, não anuncia e recusa.
+const CapabilityTerminal = "terminal-v1"
+
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
 
@@ -301,6 +305,10 @@ type JobResult struct {
 	Status     string    `json:"status"`
 	Detail     string    `json:"detail,omitempty"`
 	FinishedAt time.Time `json:"finished_at"`
+	// Output e ExitCode: só do job comando (o terminal do administrador, docs/terminal.md): o
+	// fim da saída (até 64 KiB) e o código de saída. O servidor os guarda no registro do terminal.
+	Output   string `json:"output,omitempty"`
+	ExitCode *int   `json:"exit_code,omitempty"`
 }
 
 // JobResultPath é o caminho do resultado: JobResultPath + ID do job + "/result".

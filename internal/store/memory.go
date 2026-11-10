@@ -47,6 +47,8 @@ type Memory struct {
 	campaignSeq int64
 	// campaignResend: os pedidos de reenvio das campanhas (RequestResend).
 	campaignResend map[int64][]string
+	// terminalData: o terminal do administrador (docs/terminal.md).
+	terminalData *memTerminal
 	// campaignWakes: o ligar e desligar das campanhas (Aula 22.3).
 	campaignWakes []campaign.WakeRecord
 

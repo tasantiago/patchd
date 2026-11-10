@@ -185,6 +185,15 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v, nil
 			}, Show: showChoice(microsoftChoices)},
+		{Key: api.TerminalKey, Group: "Agentes", Label: "Terminal do administrador", Kind: settings.Select, Options: terminalChoices,
+			Default: "0", Help: "Ligado: o admin ganha a aba Terminal na página de cada máquina, para rodar um comando por vez com a conta do agente (SYSTEM ou root). Cada sessão pede o motivo, e tudo fica registrado por 365 dias: quem, quando, o texto do comando, o código de saída e a saída. Só agentes desta versão em diante, e não os instalados com -no-terminal.",
+			Effect: "na hora: a aba aparece (ou some) para os administradores", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v != "0" && v != "1" {
+					return "", errors.New("use 0 (desligado) ou 1 (ligado)")
+				}
+				return v, nil
+			}, Show: showChoice(terminalChoices)},
 		{Key: "PATCHD_CATALOG_INTERVAL", Group: "Catálogo", Label: "Sincronização automática", Kind: settings.Select, Options: catalogChoices,
 			Default: "6h", Help: "De quanto em quanto tempo o servidor busca as fontes do catálogo (Microsoft, Ubuntu, Fedora, Apple, KEV, terceiros).",
 			Effect: "na hora: a próxima sincronização é recalculada", Check: func(v string) (string, error) {
@@ -317,6 +326,8 @@ func settingDefs(look config.Lookup) []settings.Def {
 
 // notifyEffect: quando a mudança nas notificações vale.
 const notifyEffect = "na hora: o próximo e-mail já sai com a configuração nova"
+
+var terminalChoices = []settings.Option{{Value: "0", Label: "desligado"}, {Value: "1", Label: "ligado: comandos pelo painel, com motivo e registro"}}
 
 var channelChoices = []settings.Option{{Value: "1", Label: "ligado: jobs em segundos"}, {Value: "0", Label: "desligado: só o check-in"}}
 

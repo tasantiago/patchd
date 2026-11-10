@@ -5,15 +5,19 @@ import "sync"
 // tailBuffer guarda apenas o fim do log, já durante a execução. O byte extra permite
 // que clip informe truncamento sem manter todo o log em memória.
 type tailBuffer struct {
-	mu sync.Mutex
-	b  []byte
+	mu  sync.Mutex
+	b   []byte
+	max int // 0: MaxOutput
 }
 
 func (b *tailBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n := len(p)
-	const capacity = MaxOutput + 1
+	capacity := MaxOutput + 1
+	if b.max > 0 {
+		capacity = b.max + 1
+	}
 	if len(p) >= capacity {
 		b.b = append(b.b[:0], p[len(p)-capacity:]...)
 	} else {

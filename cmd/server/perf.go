@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // Desempenho (docs/monitoramento.md, seção 5): de hora em hora, as amostras viram médias e
@@ -23,6 +25,8 @@ const (
 type perfKeeper interface {
 	RollupPerf(ctx context.Context, from, to time.Time) (int64, error)
 	PrunePerf(ctx context.Context, samplesBefore, hoursBefore, alertsBefore time.Time) (int64, error)
+	// PruneTerminal: o registro do terminal do administrador sai depois de store.TerminalKeep.
+	PruneTerminal(ctx context.Context, before time.Time) (int64, error)
 }
 
 // perfPass monta as horas fechadas e aplica os prazos.
@@ -40,6 +44,11 @@ func perfPass(ctx context.Context, logger *slog.Logger, k perfKeeper, now time.T
 		logger.Error("desempenho: retenção", "error", err)
 	case n > 0:
 		logger.Info("desempenho: linhas antigas apagadas", "linhas", n)
+	}
+	if n, err := k.PruneTerminal(ctx, now.Add(-store.TerminalKeep)); err != nil && ctx.Err() == nil {
+		logger.Error("terminal: retenção", "error", err)
+	} else if n > 0 {
+		logger.Info("terminal: comandos com mais de 365 dias apagados", "linhas", n)
 	}
 }
 

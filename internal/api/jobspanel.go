@@ -68,6 +68,12 @@ func typeLabel(t string) string {
 		return "alterar configurações da BIOS"
 	case jobs.TypeWakeOnLAN:
 		return "ligar outra máquina pela rede"
+	case jobs.TypeCommand:
+		return "comando do terminal"
+	case jobs.TypeShutdown:
+		return "desligar (ligada pelo patchd)"
+	case jobs.TypeCleanup:
+		return "limpar temporários"
 	case campaign.TypeOSAll: // tipos de campanha, não de job
 		return "todas as atualizações do sistema"
 	case campaign.TypeThirdPartyAll:

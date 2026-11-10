@@ -31,6 +31,9 @@ type agentConfig struct {
 	OfflineCatalog  string // caminho do wsusscn2.cab (Windows); vazio = sem busca offline
 	EnrollTokenFile string // arquivo com o token de enrollment (enroll e install)
 	CAFile          string // CA do servidor (Aula 9.2); vazio = as CAs do sistema
+	// NoTerminal: o agente recusa o terminal do administrador (docs/terminal.md). Fica na linha
+	// de comando do serviço, que só um administrador da máquina muda: o servidor não alcança.
+	NoTerminal bool
 	// Relay (docs/rele.md): o relé na nuvem (host:porta) para registrar fora da rede, com o
 	// token "pelo relé". Fica gravado no estado; depois, o servidor manda o dele no check-in.
 	Relay       string
@@ -86,6 +89,8 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 	fs.StringVar(&signers, "allowed-signers", config.String(look, "PATCHD_ALLOWED_SIGNERS", ""),
 		"Windows: organizações aceitas na assinatura dos instaladores de terceiros, separadas por ponto e vírgula, "+
 			"ex.: \"Google LLC;Mozilla Corporation\" (env PATCHD_ALLOWED_SIGNERS; no install, use a flag: ela fica no serviço)")
+	fs.BoolVar(&cfg.NoTerminal, "no-terminal", false,
+		"recusa o terminal do administrador (comandos digitados no painel); no install, a opção fica no serviço")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "mostra a versão e sai")
 	fs.BoolVar(&cfg.Inventory, "inventory", false, "coleta o inventário, imprime em JSON na saída padrão e sai")
 	fs.BoolVar(&cfg.Scan, "scan", false, "busca atualizações faltantes e o histórico, imprime em JSON na saída padrão e sai")

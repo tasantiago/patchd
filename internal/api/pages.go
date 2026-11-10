@@ -271,6 +271,7 @@ type machineView struct {
 	BIOS          *biosCard       // Aula 21.4: a guarda da senha (só na aba Hardware)
 	BIOSConfig    *biosConfigCard // as configurações da BIOS (só na aba BIOS; docs/bios-config.md)
 	Perf          *perfCard       // o desempenho (só na aba Desempenho; docs/monitoramento.md)
+	Terminal      *terminalView   // o terminal do administrador (só admin, na aba Terminal; docs/terminal.md)
 	Wake          *wakeCard       // Aula 22.1: ligar pela rede
 	WakeOn        *wakeAction     // Aula 22.2: o botão Ligar e os pedidos
 	HWSources     []string
@@ -425,6 +426,19 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if v.Tab == "terminal" && !v.Admin {
+		v.Tab = "resumo" // o terminal é só do administrador
+	}
+	if v.Tab == "terminal" {
+		if v.Terminal, err = a.terminalTabView(r, v.Session, id); err != nil {
+			a.internalError(w, r, "ler o terminal", err)
+			return
+		}
+		if v.Terminal.Refresh {
+			v.Refresh = terminalRefresh
+		}
+		terminalFlash(r.URL.Query(), &v.pageBase)
+	}
 	if v.Tab == "bios" {
 		if v.BIOSConfig, err = a.biosConfigView(r, id, v.Admin); err != nil {
 			a.internalError(w, r, "ler as configurações da BIOS", err)
@@ -468,6 +482,9 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 		v.Links = append(v.Links, linkView{ID: other, Short: short(other), Relation: relationLabel(l.Relation), Retired: isRetired[other]})
 	}
 	v.Tabs = tabsView(id, v.Tab, v.SoftwareCount, d.Pending+len(v.ThirdParty), len(v.Jobs.Rows))
+	if !v.Admin || !a.terminalOn() { // a aba Terminal: só para o admin, e só com o terminal ligado
+		v.Tabs = slices.DeleteFunc(v.Tabs, func(t tabView) bool { return t.Label == "Terminal" })
+	}
 	a.render(w, r, http.StatusOK, "maquina", v)
 }
 
@@ -841,7 +858,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 </div>{{end}}
 {{end}}{{end}}
 {{if eq .Tab "auditoria"}}{{with .Audit}}
-<div class="card"><div class="card-cab"><h2>Trilha de auditoria</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
+<div class="card"><div class="card-cab"><h2>Trilha de auditoria</h2><span class="grupo-btn"><a class="btn" href="/painel/terminal">Comandos do terminal</a> <a class="btn" href="{{.CSV}}">CSV</a></span></div>
 <p class="muted">Logins, ações pelo painel, pedidos do autoatendimento, comandos no terminal (origem "linha de comando") e exportações, do mais novo para o mais antigo. Só se acrescenta: nada aqui se edita; os eventos além do prazo da retenção saem, e a limpeza fica registrada aqui. O request_id liga cada evento à linha do log do servidor.</p>
 <form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="auditoria">
 <input type="search" name="usuario" value="{{.Q.User}}" maxlength="64" placeholder="Usuário (exato)" aria-label="usuário">
@@ -1455,6 +1472,29 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted">O último check-in desta máquina chegou pela porta HTTP de transição. O job leva, assinado, o endereço <code>{{.PublicURL}}</code>; o agente entrega o resultado por ele (certificado conferido e credencial aceita) e só então grava o endereço novo. Se não der, ele continua no endereço atual e o motivo aparece no job.</p>
 <form class="acao" method="post" action="/painel/maquinas/{{.D.MachineID}}/https"><button type="submit">Passar para HTTPS</button></form></section>{{end}}
 {{end}}
+{{if eq .Tab "terminal"}}{{with .Terminal}}
+<div class="card" id="terminal"><div class="card-cab"><h2>Terminal do administrador</h2><span class="acoes"><a href="/painel/terminal?maquina={{.MachineID}}">histórico completo</a></span></div>
+{{if .Why}}<p class="aviso atencao">{{.Why}}</p>{{end}}
+<p class="muted">Um comando por vez, com a conta do agente (SYSTEM no Windows, root no Linux), sem teclado: o que pedir uma resposta fica sem ela. Cada comando começa na raiz do disco; para mudar de pasta, use <code>cd PASTA; comando</code> na mesma linha. <b>Tudo fica registrado</b> (quem, quando, o texto, o código de saída e a saída) por 365 dias: <b>não digite senha</b> na linha de comando.</p>
+{{if .Rows}}<div class="terminal" role="log" aria-label="comandos e saídas">{{range .Rows}}<div class="term-item"><div class="term-cab"><span class="term-prompt">{{.Prompt}}</span> <span class="term-cmd">{{.Command}}</span></div>
+<div class="term-meta">{{.User}} · {{.When}} · <span class="job {{.Class}}">{{.State}}</span>{{if .Note}} · {{.Note}}{{end}}</div>
+{{if .HasOutput}}<pre class="term-saida">{{.Output}}</pre>{{else if not .Pending}}<pre class="term-saida vazia">(sem saída)</pre>{{end}}</div>{{end}}</div>
+{{if .Refresh}}<p class="muted">Esperando a máquina: a página se atualiza sozinha a cada 3 segundos.</p>{{else if .Pending}}<p class="muted">A máquina ainda não respondeu (desligada, ou sem o canal em tempo real): <a href="/painel/maquinas/{{.MachineID}}?aba=terminal#terminal">atualizar</a>. O comando expira em 10 minutos.</p>{{end}}
+{{else}}<p class="muted">Nenhum comando nesta máquina ainda.</p>{{end}}
+{{if not .Why}}{{if .Session}}
+<form class="term-form" method="post" action="/painel/maquinas/{{.MachineID}}/terminal/comando">
+<select name="shell" aria-label="interpretador">{{range .Shells}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="text" name="comando" maxlength="{{.MaxLen}}" required autofocus autocomplete="off" spellcheck="false" placeholder="comando" aria-label="comando">
+<select name="tempo" aria-label="tempo máximo">{{range .Timeouts}}<option value="{{.}}" {{if eq . $.Terminal.Timeout}}selected{{end}}>até {{.}} s</option>{{end}}</select>
+<button type="submit">Executar</button></form>
+<form class="lote" method="post" action="/painel/maquinas/{{.MachineID}}/terminal/fechar"><span class="muted">Sessão aberta até {{.Until}} (cada comando renova por 15 min). Motivo: {{.Reason}}</span> <button class="sec" type="submit">Fechar a sessão</button></form>
+{{else}}
+<form class="formulario" method="post" action="/painel/maquinas/{{.MachineID}}/terminal/abrir">
+<div class="campo"><label for="motivo">Motivo para abrir o terminal nesta máquina</label><input id="motivo" name="motivo" type="text" required minlength="{{.MinR}}" maxlength="{{.MaxR}}" placeholder="ex.: chamado 12345, conferir o serviço de impressão">
+<span class="muted">Obrigatório, de {{.MinR}} a {{.MaxR}} caracteres. Fica na auditoria, junto de cada comando, e a lista de notificações recebe um e-mail. A sessão vale 15 minutos sem comando.</span></div>
+<div class="acoes"><button type="submit">Abrir o terminal</button></div></form>
+{{end}}{{end}}</div>
+{{end}}{{end}}
 {{template "fim"}}{{end}}
 
 {{define "jobs-tabela"}}<div class="tabela"><table>
@@ -1861,6 +1901,18 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <tbody>{{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}?aba=desempenho">{{.Name}}</a></td><td>{{.Volumes}}</td></tr>{{end}}</tbody></table></div>
 <div class="acoes"><button type="submit" name="confirmar" value="1" {{if .NoKey}}disabled{{end}}>Limpar em {{len .Machines}} máquina(s)</button> <a href="/painel/alertas{{if .Metric}}?medida={{.Metric}}{{end}}">Cancelar</a></div>
 </form>
+{{template "fim"}}{{end}}
+
+{{define "terminal-historico"}}{{template "topo" .}}
+<p><a href="/painel/configuracao?aba=auditoria">← Auditoria</a></p>
+<h1>Terminal do administrador <span class="muted">› histórico</span></h1>
+<p class="muted">Todos os comandos enviados pelo terminal, do mais novo para o mais antigo, com quem mandou, de onde, o motivo da sessão, o código de saída e a saída. Nada aqui se edita nem se apaga pelo painel; o registro sai sozinho depois de 365 dias.</p>
+<form class="busca" method="get" action="/painel/terminal"><input type="text" name="maquina" value="{{.Machine}}" placeholder="ID da máquina" aria-label="ID da máquina"> <input type="text" name="usuario" value="{{.User}}" placeholder="administrador" aria-label="administrador"> <button type="submit">Filtrar</button>{{if or .Machine .User}} <a href="/painel/terminal">limpar</a>{{end}}</form>
+{{if .Rows}}<div class="terminal" role="log">{{range .Rows}}<div class="term-item"><div class="term-cab"><span class="term-prompt">{{.Prompt}}</span> <span class="term-cmd">{{.Command}}</span></div>
+<div class="term-meta">#{{.ID}} · <a href="/painel/maquinas/{{.MachineID}}?aba=terminal">{{.Machine}}</a> · {{.User}}{{if .Remote}} ({{.Remote}}){{end}} · {{.When}} · <span class="job {{.Class}}">{{.State}}</span>{{if .Note}} · {{.Note}}{{end}} · motivo: {{.Reason}}</div>
+{{if .HasOutput}}<details class="term-det"><summary>saída{{if .Truncated}} (cortada: ficou o fim){{end}}</summary><pre class="term-saida">{{.Output}}</pre></details>{{end}}</div>{{end}}</div>
+<p class="acoes">{{if .Prev}}<a href="{{.Prev}}">‹ mais novos</a>{{end}} {{if .Next}}<a href="{{.Next}}">mais antigos ›</a>{{end}}</p>
+{{else}}<p class="muted">Nenhum comando{{if or .Machine .User}} neste filtro{{end}}.</p>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "aposentadas"}}{{template "topo" .}}

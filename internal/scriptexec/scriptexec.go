@@ -222,10 +222,19 @@ const waitDelay = 5 * time.Second
 
 // RunLocal executa de verdade: saída combinada, na pasta do bundle.
 func RunLocal(ctx context.Context, dir, name string, args []string) ([]byte, int, error) {
-	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- programa e argumentos conferidos pelo pacote jobs; nada vem de shell
+	return RunLocalMax(ctx, dir, name, args, 0)
+}
+
+// RunLocalMax é o RunLocal guardando até max bytes do fim da saída (0: MaxOutput), mais um
+// byte que denuncia o corte.
+func RunLocalMax(ctx context.Context, dir, name string, args []string, max int) ([]byte, int, error) {
+	// #nosec G204 -- o programa é o interpretador de caminho fixo deste sistema; os argumentos vêm de um
+	// job assinado e conferido pelo pacote jobs. No terminal do administrador (internal/cmdexec), o
+	// argumento é o comando que o admin digitou: executá-lo é a função, com sessão, motivo e registro.
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.WaitDelay = waitDelay
-	var buf tailBuffer
+	buf := tailBuffer{max: max}
 	cmd.Stdout, cmd.Stderr = &buf, &buf
 	err := runProcess(ctx, cmd)
 	code := 0
