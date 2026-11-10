@@ -23,7 +23,7 @@ import (
 
 var machineTabs = []struct{ Key, Label string }{
 	{"resumo", "Resumo"}, {"hardware", "Hardware"}, {"bios", "BIOS"}, {"desempenho", "Desempenho"}, {"software", "Software"},
-	{"pendencias", "Pendências"}, {"tarefas", "Tarefas"},
+	{"pendencias", "Pendências"}, {"tarefas", "Tarefas"}, {"terminal", "Terminal"},
 }
 
 // Avisos que voltam de um formulário de outra aba: a página abre nela.

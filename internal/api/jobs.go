@@ -75,6 +75,9 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 	if changed {
 		a.count(jobsOf, job.Type, state)
 	}
+	if job.Type == jobs.TypeCommand { // o terminal do administrador: a saída vai para o registro
+		a.terminalJobFinished(r.Context(), job, res)
+	}
 	if job.Type == jobs.TypeWakeOnLAN { // Aula 22.2: o pedido de ligar anota quem mandou o pacote
 		a.wakeJobFinished(r.Context(), job, state)
 	}
@@ -128,6 +131,10 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	}
 	if job.Type == jobs.TypeBIOSSettings { // docs/bios-config.md
 		return a.judgeBIOSSettings(r, job, res)
+	}
+	if job.Type == jobs.TypeCommand {
+		// O comando do terminal: rodou; o código de saída e a saída ficam no registro do terminal.
+		return jobs.StateDone, res.Detail
 	}
 	if job.Type == jobs.TypeShutdown {
 		// O desligar: o agente conta se desligou ou por que não (alguém conectado).

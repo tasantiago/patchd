@@ -33,6 +33,13 @@ type acceptedJobs struct {
 	cleanups []acceptedCleanup
 	// Desligar (Aula 22.3): o ID de cada job.
 	shutdowns []int64
+	// Terminal do administrador (docs/terminal.md).
+	commands []acceptedCommand
+}
+
+type acceptedCommand struct {
+	id int64
+	p  jobs.CommandParams
 }
 
 type acceptedCleanup struct {
@@ -189,6 +196,17 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			}
 			a.Logger.Info("job aceito: ligar outra máquina pela rede", "job_id", j.ID, "maquina", p.Target, "rede", p.Network, "macs", len(p.MACs))
 			acc.wakes = append(acc.wakes, acceptedWake{id: j.ID, p: p})
+		case jobs.TypeCommand:
+			p, _ := jobs.ParseCommandParams(j.Params) // o Verify já conferiu
+			if a.Command == nil {
+				why := "o terminal está desligado nesta máquina (agente instalado com -no-terminal)"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			// O texto do comando vai para o log da máquina: quem a administra vê o que rodou nela.
+			a.Logger.Warn("job aceito: comando do terminal do administrador", "job_id", j.ID, "shell", p.Shell, "comando", p.Command)
+			acc.commands = append(acc.commands, acceptedCommand{id: j.ID, p: p})
 		case jobs.TypeShutdown:
 			if a.Shutdown == nil || a.LoggedUsers == nil {
 				why := "este sistema não desliga pelo patchd"
@@ -668,6 +686,33 @@ func (a *Agent) runShutdowns(ctx context.Context, ids []int64) []PendingJobResul
 	a.Logger.Warn("desligar", "jobs", fmt.Sprint(ids), "resultado", detail)
 	for _, id := range ids {
 		out = append(out, res(id, status, detail))
+	}
+	return out
+}
+
+// runCommands roda os comandos do terminal do administrador, um por vez. O resultado leva o
+// código de saída e o fim da saída; o comando que passa do tempo volta como falha, com o que
+// saiu até ali.
+func (a *Agent) runCommands(ctx context.Context, list []acceptedCommand) []PendingJobResult {
+	var out []PendingJobResult
+	for _, c := range list {
+		res, err := a.Command(ctx, c.p)
+		r := protocol.JobResult{Status: protocol.JobResultOK, Output: res.Output, FinishedAt: a.now().UTC()}
+		switch {
+		case err != nil:
+			r.Status, r.Detail = protocol.JobResultRejected, err.Error()
+		case res.TimedOut:
+			r.Status, r.Detail = protocol.JobResultFailed, fmt.Sprintf("passou do tempo máximo de %d s e foi encerrado", c.p.TimeoutSec)
+		default:
+			code := res.ExitCode
+			r.ExitCode = &code
+			r.Detail = fmt.Sprintf("código de saída %d em %s", res.ExitCode, res.Took)
+		}
+		if res.Truncated {
+			r.Detail += "; saída cortada (ficou o fim)"
+		}
+		a.Logger.Warn("comando do terminal executado", "job_id", c.id, "resultado", r.Detail)
+		out = append(out, PendingJobResult{ID: c.id, Result: r})
 	}
 	return out
 }

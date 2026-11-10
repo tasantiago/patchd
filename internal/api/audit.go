@@ -102,6 +102,9 @@ var auditActions = []struct{ Key, Label string }{
 	{"bios.senha.revelar", "Senha da BIOS revelada"},
 	{"bios.senha.gravar", "Gravação da senha da BIOS pedida"},
 	{"bios.senha.resolver", "Senha da BIOS incerta resolvida"},
+	{"terminal.abrir", "Terminal: sessão aberta (com o motivo)"},
+	{"terminal.comando", "Terminal: comando enviado"},
+	{"terminal.fechar", "Terminal: sessão fechada"},
 	{"exportar.csv", "Exportação CSV"},
 	{"acesso.negado", "Acesso negado (perfil)"},
 	// Aula 18.1: a linha de comando (patchd-server no terminal) e a retenção da trilha.

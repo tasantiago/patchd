@@ -102,6 +102,7 @@ func serviceRun(args []string, look config.Lookup, stderr io.Writer) int {
 		ServiceArgs:    args,
 		UserApp:        cfg.UserApp,
 		AllowedSigners: cfg.AllowedSigners,
+		NoTerminal:     cfg.NoTerminal,
 	}
 	if asService {
 		return runAsService(logger, func(ctx context.Context) int { return runLoop(ctx, logger, opts) })

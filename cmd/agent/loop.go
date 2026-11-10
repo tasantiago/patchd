@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/agent"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/cleanup"
+	"github.com/tasantiago/patchd/internal/cmdexec"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/credential"
 	"github.com/tasantiago/patchd/internal/hoststate"
@@ -45,6 +46,8 @@ type loopOptions struct {
 	ServiceArgs []string
 	// UserApp: põe ou tira o aplicativo de sessão no logon, nos três sistemas.
 	UserApp bool
+	// NoTerminal: recusa o terminal do administrador (docs/terminal.md).
+	NoTerminal bool
 	// AllowedSigners (Aula 20.5b): a lista de organizações aceitas nos instaladores.
 	AllowedSigners []string
 }
@@ -268,6 +271,14 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		ag.Restart = restart
 		ag.AbortRestart = newAbortRestart(platform.ExecRunner{}) // Aula 17.6
 		ag.RebootStatus = scanner.Reboot
+	}
+	// Terminal do administrador (docs/terminal.md): o job comando só vem a quem anuncia; com
+	// -no-terminal, o agente não anuncia e recusa.
+	if !opts.NoTerminal {
+		ag.Command = cmdexec.New().Execute
+		client.Capabilities = append(client.Capabilities, protocol.CapabilityTerminal)
+	} else {
+		logger.Info("terminal do administrador desligado nesta máquina (-no-terminal)")
 	}
 	// Job desligar (Aula 22.3): a máquina que o patchd ligou para a campanha, sem ninguém.
 	if shutdown := newShutdown(platform.ExecRunner{}); shutdown != nil {

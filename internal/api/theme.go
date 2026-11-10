@@ -79,6 +79,14 @@ tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeri
 td.nowrap{white-space:nowrap}.barra{display:inline-block;vertical-align:middle;width:4.5rem;height:.45rem;background:#eef0f3;border-radius:999px;overflow:hidden}.barra>span{display:block;height:100%;background:var(--verde-ok)}
 .atencao-lista{list-style:none;margin:0;padding:0}.atencao-lista li{padding:.45rem .7rem;border-left:3px solid var(--laranja);background:#fffaf0;margin:0 0 .4rem;border-radius:4px}
 .atencao-lista li.erro{border-left-color:var(--vermelho);background:#fdf2f2}.atencao-lista a{color:var(--texto);text-decoration:none}.atencao-lista a:hover{text-decoration:underline}
+/* Terminal do administrador: a transcrição (comando, quem e quando, a saída) e a linha de comando. */
+.terminal{background:#0f172a;color:#e2e8f0;border-radius:6px;padding:.75rem 1rem;max-height:36rem;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.82rem}
+.term-item{padding:.45rem 0;border-bottom:1px solid #1e293b}.term-item:last-child{border-bottom:0}
+.term-prompt{color:#38bdf8;font-weight:600}.term-cmd{color:#f8fafc;white-space:pre-wrap;overflow-wrap:anywhere}
+.term-meta{color:#94a3b8;font-size:.76rem;margin:.15rem 0 .3rem;font-family:inherit}.term-meta a{color:#7dd3fc}
+pre.term-saida{margin:0;padding:.4rem .6rem;background:#020617;color:#cbd5e1;border-radius:4px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:22rem;overflow-y:auto;font-size:.8rem}pre.term-saida.vazia{color:#64748b}
+details.term-det summary{cursor:pointer;color:#7dd3fc;font-size:.78rem}details.term-det pre{margin-top:.3rem}
+form.term-form{display:flex;gap:.5rem;margin:.9rem 0 .5rem;flex-wrap:wrap}form.term-form input[type=text]{flex:1 1 22rem;min-width:12rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}form.term-form select{width:auto}
 pre.comando{margin:0;padding:.75rem 1rem;background:#0f172a;color:#e2e8f0;border-radius:6px;overflow-x:auto;font-size:.82rem;white-space:pre}
 dd.nivel-atencao,td.nivel-atencao,span.nivel-atencao{color:#8a5a00}dd.nivel-erro,td.nivel-erro,span.nivel-erro{color:var(--vermelho)}dd.nivel-ok{color:var(--verde-ok)}.senha-bios{font-size:1.5rem;letter-spacing:.12em;padding:.2rem .6rem}
 .duas-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(28rem,100%),1fr));gap:0 1.25rem}tr.total td{font-weight:600}

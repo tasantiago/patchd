@@ -91,7 +91,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 401.
 | GET | `/api/v1/machines/{id}/scan` |
 | GET | `/api/v1/machines` |
 
-## Admin (leitura) (13)
+## Admin (leitura) (14)
 
 Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria.
 
@@ -110,8 +110,9 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/perguntas/{id}` |
 | GET | `/painel/perguntas` |
 | GET | `/painel/scripts` |
+| GET | `/painel/terminal` |
 
-## Admin (ação) (74)
+## Admin (ação) (77)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -174,6 +175,9 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/maquinas/{id}/reiniciar` |
 | POST | `/painel/maquinas/{id}/restaurar` |
 | POST | `/painel/maquinas/{id}/terceiros/atualizar` |
+| POST | `/painel/maquinas/{id}/terminal/abrir` |
+| POST | `/painel/maquinas/{id}/terminal/comando` |
+| POST | `/painel/maquinas/{id}/terminal/fechar` |
 | POST | `/painel/maquinas/{id}/windows/instalar` |
 | POST | `/painel/padronizacao/{id}/excluir` |
 | POST | `/painel/padronizacao` |

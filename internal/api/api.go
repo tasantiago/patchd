@@ -193,6 +193,14 @@ type Store interface {
 	ArchiveCampaigns(ctx context.Context, ids []int64, archive bool, at time.Time) (int, error)
 	DeleteCampaign(ctx context.Context, id int64) (bool, error)
 	CampaignWakes(ctx context.Context, id int64, idx int) ([]campaign.WakeRecord, error)
+	// O terminal do administrador (docs/terminal.md).
+	MachineCapabilities(ctx context.Context, id string) ([]string, error)
+	OpenTerminalSession(ctx context.Context, s store.TerminalSession) (int64, error)
+	ActiveTerminalSession(ctx context.Context, machineID, username string, now time.Time) (store.TerminalSession, bool, error)
+	SetTerminalSessionExpiry(ctx context.Context, id int64, expires time.Time) error
+	CreateTerminalCommand(ctx context.Context, c store.TerminalCommand) (int64, error)
+	FinishTerminalCommand(ctx context.Context, jobID int64, exit *int, output string, truncated bool, note string, at time.Time) (bool, error)
+	TerminalCommands(ctx context.Context, f store.TerminalFilter) ([]store.TerminalCommand, error)
 	CampaignJobs(ctx context.Context, id int64, idx int) ([]campaign.JobState, error)
 	// Tokens de registro pelo painel (Aula 15.2): os mesmos do patchd-server token.
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
@@ -341,6 +349,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/parque.csv", a.panelPage(a.fleetCSV))
 	mux.Handle("GET /painel/maquinas/{id}/pendencias.csv", a.panelPage(a.itemsCSV))
 	mux.Handle("POST /painel/maquinas/{id}/aposentar", a.sameOrigin(a.adminAction(a.retireAction)))
+	mux.Handle("POST /painel/maquinas/{id}/terminal/abrir", a.sameOrigin(a.adminAction(a.terminalOpenAction)))
+	mux.Handle("POST /painel/maquinas/{id}/terminal/comando", a.sameOrigin(a.adminAction(a.terminalCommandAction)))
+	mux.Handle("POST /painel/maquinas/{id}/terminal/fechar", a.sameOrigin(a.adminAction(a.terminalCloseAction)))
+	mux.Handle("GET /painel/terminal", a.adminAction(a.terminalHistoryPage))
 	mux.Handle("POST /painel/maquinas/{id}/restaurar", a.sameOrigin(a.adminAction(a.restoreAction)))
 	mux.Handle("GET /painel/maquinas/{id}/mesclar", a.adminAction(a.mergePage))
 	mux.Handle("POST /painel/maquinas/{id}/mesclar", a.sameOrigin(a.adminAction(a.mergeAction)))

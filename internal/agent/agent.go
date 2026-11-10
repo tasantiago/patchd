@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/cmdexec"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
@@ -87,6 +88,9 @@ type Agent struct {
 	WakeOnLAN func(ctx context.Context, p jobs.WakeOnLANParams) (string, error)
 	// Cleanup faz a limpeza de temporários (internal/cleanup). nil: o agente recusa.
 	Cleanup func(ctx context.Context, p jobs.CleanupParams) (string, error)
+	// Command roda o comando do terminal do administrador (docs/terminal.md). nil: o terminal
+	// está desligado nesta máquina (-no-terminal) e o job é recusado.
+	Command func(ctx context.Context, p jobs.CommandParams) (cmdexec.Result, error)
 	// Shutdown agenda o desligar (Aula 22.3) para daqui a jobs.ShutdownDelay; nil: o sistema
 	// não desliga pelo patchd (o job é recusado). LoggedUsers diz quem está conectado: com
 	// alguém, o agente não desliga.
@@ -433,6 +437,19 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 	// Perguntas ao parque: a resposta vai já, sem esperar a busca e as instalações.
 	if len(accepted.queries) > 0 {
 		state.PendingJobResults = append(state.PendingJobResults, a.runQueries(ctx, accepted.queries)...)
+		a.saveStateOrLog(state)
+		if !state.InventoryFirst {
+			out := a.flushJobResults(ctx, &state)
+			a.saveStateOrLog(state)
+			if out != outcomeOK {
+				return out
+			}
+		}
+	}
+
+	// Terminal do administrador: como as perguntas, na hora (o admin espera a saída na tela).
+	if len(accepted.commands) > 0 {
+		state.PendingJobResults = append(state.PendingJobResults, a.runCommands(ctx, accepted.commands)...)
 		a.saveStateOrLog(state)
 		if !state.InventoryFirst {
 			out := a.flushJobResults(ctx, &state)
