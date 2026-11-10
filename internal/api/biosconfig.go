@@ -289,32 +289,15 @@ func (a *api) configureBIOSAction(w http.ResponseWriter, r *http.Request, s pane
 		back("bios-config-erro=confirmar")
 		return
 	}
-	p := jobs.BIOSSettingsParams{Vendor: facts.Firmware.Interface, BoxKey: facts.BoxKeyID, Changes: changes}
-	if active != nil {
-		pw, err := biospw.Open(a.escrow.priv, id, active.Escrow)
-		if err != nil {
-			back("bios-config-erro=envelope")
-			return
-		}
-		sealed, err := machinebox.Seal(facts.BoxKey, machinebox.PurposeBIOSConfig, []byte(pw))
-		if err != nil {
-			a.internalError(w, r, "fechar a senha para a caixa", err)
-			return
-		}
-		p.Password = base64.StdEncoding.EncodeToString(sealed)
-	}
-	raw, err := jobs.BIOSSettingsParamsJSON(p)
-	if err != nil {
-		a.internalError(w, r, "montar o job de configuração da BIOS", err)
+	jobID, err := a.issueBIOSSettings(ctx, id, facts, active, changes, s.Username)
+	switch {
+	case errors.Is(err, errBIOSEnvelope):
+		back("bios-config-erro=envelope")
 		return
-	}
-	rec, err := jobs.Issue(ctx, a.store, a.jobKey, jobs.Request{MachineID: id, Type: jobs.TypeBIOSSettings, TTL: panelBIOSTTL,
-		By: s.Username, Params: raw}, a.now())
-	if errors.Is(err, jobs.ErrMachineUnavailable) {
+	case errors.Is(err, jobs.ErrMachineUnavailable):
 		http.NotFound(w, r)
 		return
-	}
-	if err != nil {
+	case err != nil:
 		a.internalError(w, r, "criar o job de configuração da BIOS", err)
 		return
 	}
@@ -322,10 +305,36 @@ func (a *api) configureBIOSAction(w http.ResponseWriter, r *http.Request, s pane
 	if active != nil {
 		source = fmt.Sprintf("senha da guarda #%d", active.ID)
 	}
-	a.logger.Warn("alteração de configurações da BIOS pedida", "machine_id", id, "job_id", rec.ID, "alteracoes", len(changes),
+	a.logger.Warn("alteração de configurações da BIOS pedida", "machine_id", id, "job_id", jobID, "alteracoes", len(changes),
 		"username", s.Username, "request_id", RequestID(ctx))
-	a.audit(r, s, "bios.config.job", id, fmt.Sprintf("job %d, %s; motivo: %s; %s", rec.ID, source, reason, strings.Join(audit, "; ")))
-	back(fmt.Sprintf("bios-config=pedida&job=%d", rec.ID))
+	a.audit(r, s, "bios.config.job", id, fmt.Sprintf("job %d, %s; motivo: %s; %s", jobID, source, reason, strings.Join(audit, "; ")))
+	back(fmt.Sprintf("bios-config=pedida&job=%d", jobID))
+}
+
+// issueBIOSSettings cria o job bios_settings com as alterações já conferidas. active: a senha
+// em uso da guarda (nil: a BIOS está sem senha); ela vai fechada para a caixa da máquina.
+func (a *api) issueBIOSSettings(ctx context.Context, id string, facts biosFacts, active *store.BIOSPassword, changes []biosconfig.Change, by string) (int64, error) {
+	p := jobs.BIOSSettingsParams{Vendor: facts.Firmware.Interface, BoxKey: facts.BoxKeyID, Changes: changes}
+	if active != nil {
+		pw, err := biospw.Open(a.escrow.priv, id, active.Escrow)
+		if err != nil {
+			return 0, errBIOSEnvelope
+		}
+		sealed, err := machinebox.Seal(facts.BoxKey, machinebox.PurposeBIOSConfig, []byte(pw))
+		if err != nil {
+			return 0, fmt.Errorf("fechar a senha para a caixa: %w", err)
+		}
+		p.Password = base64.StdEncoding.EncodeToString(sealed)
+	}
+	raw, err := jobs.BIOSSettingsParamsJSON(p)
+	if err != nil {
+		return 0, fmt.Errorf("montar o job de configuração da BIOS: %w", err)
+	}
+	rec, err := jobs.Issue(ctx, a.store, a.jobKey, jobs.Request{MachineID: id, Type: jobs.TypeBIOSSettings, TTL: panelBIOSTTL, By: by, Params: raw}, a.now())
+	if err != nil {
+		return 0, err
+	}
+	return rec.ID, nil
 }
 
 func firstOf(l []string) string {

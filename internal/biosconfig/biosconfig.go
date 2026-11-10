@@ -63,12 +63,15 @@ var rules = []Rule{
 		// Dell (docs/bios-config.md, seção 8): AcPwrRcvry, UsbWake, BlockSleep, AutoOn.
 		"acpwrrcvry", "acpowerrecovery", "usbwake", "blocksleep", "autoon",
 	}},
-	{Category: CatBoot, contains: []string{
-		"fastboot", "usbstorageboot", "usbboot", "networkpxeboot", "pxeboot", "networkboot",
-		"startupdelay", "audioalertsduringboot", "numlockonatboot", "promptonmemorysizechange",
-		// Lenovo: QuickBoot, USBBIOSSupport, BootUpNumLockStatus, IPv4NetworkStack; Dell: UefiNwStack.
-		"quickboot", "usbbiossupport", "numlock", "networkstack", "uefinwstack",
-	}},
+	{Category: CatBoot,
+		// Dell UsbEmu: a "Enable USB Boot Support" (o nome inteiro; o padrão da BIOS a usa).
+		exact: []string{"usbemu"},
+		contains: []string{
+			"fastboot", "usbstorageboot", "usbboot", "bootfromusb", "networkpxeboot", "pxeboot", "networkboot",
+			"startupdelay", "audioalertsduringboot", "numlockonatboot", "promptonmemorysizechange",
+			// Lenovo: QuickBoot, USBBIOSSupport, BootUpNumLockStatus, IPv4NetworkStack; Dell: UefiNwStack.
+			"quickboot", "usbbiossupport", "numlock", "networkstack", "uefinwstack",
+		}},
 	{Category: CatVirtSec, Risk: true,
 		Note: "muda o que o TPM mede na partida: o BitLocker é suspenso por um reinício antes da gravação",
 		// Dell: Virtualization (o nome inteiro: um "contains" pegaria "Virtualization Based BIOS

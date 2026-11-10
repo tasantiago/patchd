@@ -19,6 +19,11 @@ func TestLookup(t *testing.T) {
 		{"After Power Loss", CatPower, false},
 		{"Fast Boot", CatBoot, false},
 		{"USB Storage Boot", CatBoot, false},
+		// O padrão da BIOS (seção 9): o boot por USB da Dell e os nomes genéricos.
+		{"UsbEmu", CatBoot, false},
+		{"USB Boot", CatBoot, false},
+		{"Boot from USB", CatBoot, false},
+		{"UsbEmulation", "", false},
 		{"Network (PXE) Boot", CatBoot, false},
 		{"NumLock on at boot", CatBoot, false},
 		// Virtualização e segurança: risco.

@@ -77,6 +77,7 @@ type lotePlan struct {
 	pending   *store.BIOSPassword // a pendente sem job, que a gravação usa (nil: sorteia)
 	Failed    bool                // a última tentativa falhou
 	Failures  int                 // falhas na janela
+	active    *store.BIOSPassword // a senha da guarda que vale na BIOS (só em loteGuard)
 	NeedTyped bool                // padrao: o fabricante não tem senha padrão cadastrada
 }
 
@@ -123,6 +124,7 @@ func classifyBIOS(row store.BIOSFleetRow, escrowID string, fleetVendors map[stri
 	case pending != nil && pending.JobID != 0:
 		return set(loteRunning, fmt.Sprintf("job %d", pending.JobID))
 	case active != nil && active.EscrowKeyID == escrowID:
+		p.active = active
 		return set(loteGuard, fmt.Sprintf("guarda #%d", active.ID))
 	case active != nil:
 		return set(lotePerson, "a senha ativa foi fechada com outra chave de guarda ("+active.EscrowKeyID+")")
@@ -243,12 +245,16 @@ func (a *api) biosFleetPlans(ctx context.Context) ([]lotePlan, map[string]bool, 
 	if err != nil {
 		return nil, nil, err
 	}
+	escrowID := "" // guarda desligada: nenhuma senha guardada serve
+	if a.escrow != nil {
+		escrowID = a.escrow.id
+	}
 	for _, b := range fleet {
-		vendors[b.Vendor] = b.EscrowKeyID == a.escrow.id
+		vendors[b.Vendor] = b.EscrowKeyID == escrowID
 	}
 	plans := make([]lotePlan, len(rows))
 	for i, r := range rows {
-		plans[i] = classifyBIOS(r, a.escrow.id, vendors, a.now())
+		plans[i] = classifyBIOS(r, escrowID, vendors, a.now())
 	}
 	return plans, vendors, nil
 }

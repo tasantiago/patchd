@@ -91,13 +91,14 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 401.
 | GET | `/api/v1/machines/{id}/scan` |
 | GET | `/api/v1/machines` |
 
-## Admin (leitura) (15)
+## Admin (leitura) (16)
 
 Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria.
 
 | Método | Caminho |
 |---|---|
 | GET | `/painel/bios/lote` |
+| GET | `/painel/bios/padrao` |
 | GET | `/painel/configuracao/agente/arquivo/{name}` |
 | GET | `/painel/configuracao/agente/ca.crt` |
 | GET | `/painel/configuracao/auditoria.csv` |
@@ -113,7 +114,7 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/scripts` |
 | GET | `/painel/terminal` |
 
-## Admin (ação) (78)
+## Admin (ação) (79)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -124,6 +125,7 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/autoatendimento/pedidos/{id}/aprovar` |
 | POST | `/painel/autoatendimento/pedidos/{id}/recusar` |
 | POST | `/painel/bios/lote` |
+| POST | `/painel/bios/padrao` |
 | POST | `/painel/campanhas/arquivar-encerradas` |
 | POST | `/painel/campanhas/nova` |
 | POST | `/painel/campanhas/{id}/{op}` |
