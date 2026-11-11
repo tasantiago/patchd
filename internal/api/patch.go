@@ -2,7 +2,6 @@ package api
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -122,21 +121,6 @@ func aggregateItems(list []protocol.MachineItems, approvals []store.PatchApprova
 			cmp.Compare(a.FixedIn, b.FixedIn))
 	})
 	return out
-}
-
-// fleetItems avalia a frota e junta por item, com as aprovações.
-func (a *api) fleetItems(ctx context.Context) ([]patchItem, error) {
-	ctx, cancel := context.WithTimeout(ctx, complianceTimeout)
-	defer cancel()
-	list, err := a.compliance.Items(ctx)
-	if err != nil {
-		return nil, err
-	}
-	approvals, err := a.store.PatchApprovals(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return aggregateItems(list, approvals), nil
 }
 
 func patchItemPath(id, fixed string) string {

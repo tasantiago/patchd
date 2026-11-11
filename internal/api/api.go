@@ -275,6 +275,8 @@ type api struct {
 	health      *srvhealth.Monitor                   // a aba Saúde (docs/saude-servidor.md); nil: desligada
 	limiter     loginLimiter                         // falhas de login por usuário+IP e por IP
 	channel     *canal.Hub                           // canal em tempo real (internal/canal); nil: só o check-in
+	items       itemsCache                           // a lista de pendências do parque, por um minuto (itemscache.go)
+	creds       credCache                            // a credencial de cada máquina, por um minuto (credcache.go)
 	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
 	hashSlots   chan struct{}                        // conferências de senha simultâneas
 	system      *SystemInfo                          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
@@ -301,7 +303,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	// Agente.
 	mux.HandleFunc("POST /api/v1/enroll", a.enroll)
 	mux.Handle("POST /api/v1/agent/checkin", a.machineAuth(a.checkin))
-	mux.Handle("POST "+protocol.ChannelPath, a.machineAuth(a.channelWait)) // canal em tempo real
+	mux.Handle("POST "+protocol.ChannelPath, a.machineAuthCached(a.channelWait)) // canal em tempo real (credencial em cache, credcache.go)
 	mux.Handle("POST /api/v1/agent/standardization", a.machineAuth(a.standardizationUser))
 	mux.Handle("POST /api/v1/agent/standardization/report", a.machineAuth(a.standardizationReport))
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))

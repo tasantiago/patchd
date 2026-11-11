@@ -135,6 +135,7 @@ func (a *api) mergeAction(w http.ResponseWriter, r *http.Request, s panel.Sessio
 	}
 	event := store.AuditEvent{At: a.now(), Username: s.Username, Source: s.Source, Remote: remoteIP(r), RequestID: RequestID(r.Context())}
 	err := a.store.MergeMachines(r.Context(), source, target, reason, event)
+	a.creds.reset() // a credencial da máquina mesclada deixa de valer já
 	if errors.Is(err, store.ErrMergeBusy) {
 		http.Redirect(w, r, back+"&erro=ocupada", http.StatusSeeOther)
 		return

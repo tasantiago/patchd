@@ -224,6 +224,9 @@ func processRows(in srvhealth.Info, pts []srvhealth.Point) []settingRow {
 	if in.HostMemTotal > 0 && in.MemFromCG {
 		mem += " · a máquina tem " + srvhealth.Bytes(in.HostMemTotal)
 	}
+	if in.GoMemLimit > 0 && in.GoMemLimit < math.MaxInt64 {
+		mem += " · limite brando do Go " + srvhealth.Bytes(uint64(in.GoMemLimit)) // #nosec G115 -- positivo
+	}
 	rows = append(rows, settingRow{Label: "Memória", Value: mem})
 	if n := len(pts); n > 0 {
 		p := pts[n-1]
@@ -389,9 +392,12 @@ func hourCharts(hours []srvhealth.Hour, from, to time.Time, loc *time.Location) 
 	return s.charts(chartIn{From: from, To: to, Gap: 2 * time.Hour, Hourly: true, Loc: loc}, withPool, true)
 }
 
-// transferRoutes: as rotas que entregam arquivos grandes (o tempo delas é o da rede de quem
-// baixa, não o do servidor): ficam fora do tempo de resposta da aba Saúde.
+// transferRoutes: as rotas cujo tempo não é o do servidor trabalhando, e que ficam fora do
+// tempo de resposta da aba Saúde (contam só no volume): os arquivos grandes (o tempo é o da
+// rede de quem baixa) e o canal em tempo real, que segura cada pedido até 45 s de propósito
+// (internal/canal) e, sozinho, punha o p95 perto de um minuto.
 var transferRoutes = map[string]bool{
+	"POST " + protocol.ChannelPath:                    true,
 	"GET " + protocol.OfflineCatalogPath + "{sha256}": true,
 	"GET " + protocol.PackagesPath + "{file}":         true,
 	"GET " + protocol.BundlesPath + "{file}":          true,

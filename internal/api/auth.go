@@ -35,6 +35,18 @@ func credentialProblem(header string) string {
 
 // machineAuth exige a credencial da máquina e passa ao handler o ID da dona dela.
 func (a *api) machineAuth(next func(http.ResponseWriter, *http.Request, string)) http.Handler {
+	return a.machineAuthWith(next, false)
+}
+
+// machineAuthCached: a mesma autenticação, com a credencial guardada por um minuto
+// (credcache.go). Só para o canal em tempo real: o pedido mais frequente do agente, que não
+// traz nem leva dados (só "venha agora"). Os outros conferem a credencial no banco sempre, e
+// uma máquina aposentada perde o resto na hora.
+func (a *api) machineAuthCached(next func(http.ResponseWriter, *http.Request, string)) http.Handler {
+	return a.machineAuthWith(next, true)
+}
+
+func (a *api) machineAuthWith(next func(http.ResponseWriter, *http.Request, string), cached bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
 		if problem := credentialProblem(header); problem != "" {
@@ -43,10 +55,22 @@ func (a *api) machineAuth(next func(http.ResponseWriter, *http.Request, string))
 			return
 		}
 		cred, _ := identity.BearerToken(header)
-		id, found, err := a.store.MachineByCredential(r.Context(), identity.Hash(cred))
-		if err != nil {
-			a.internalError(w, r, "autenticar máquina", err)
-			return
+		hash := identity.Hash(cred)
+		var id string
+		found := false
+		if cached {
+			id, found = a.creds.get(hash, a.now())
+		}
+		if !found {
+			var err error
+			id, found, err = a.store.MachineByCredential(r.Context(), hash)
+			if err != nil {
+				a.internalError(w, r, "autenticar máquina", err)
+				return
+			}
+			if found && cached {
+				a.creds.put(hash, id, a.now())
+			}
 		}
 		if !found {
 			a.logger.Warn("envio recusado", "reason", "credencial desconhecida (revogada, de máquina aposentada ou de outro servidor)",
@@ -121,5 +145,6 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	// A credencial só aparece nesta resposta: nenhum cache pode guardá-la.
 	w.Header().Set("Cache-Control", "no-store")
+	a.creds.reset() // um novo registro pode ter trocado a credencial de uma máquina já conhecida
 	writeJSON(w, http.StatusCreated, protocol.EnrollResponse{MachineID: m.ID, Credential: cred, ServerTime: a.now()})
 }

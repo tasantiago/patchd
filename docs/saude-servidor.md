@@ -25,7 +25,7 @@ como estão, para quem já tem um).
 | Memória da máquina | `/proc/meminfo` (`MemAvailable`) | |
 | Carga | `/proc/loadavg` | |
 | Go | `runtime.MemStats` | heap, goroutines, pausas do GC no minuto |
-| Requisições | o registro de acesso (a mesma rota do ServeMux das métricas) | por minuto: volume, das máquinas, lentas (> 1 s), 5xx, média e p95 (histograma de baldes); por rota, desde a partida |
+| Requisições | o registro de acesso (a mesma rota do ServeMux das métricas) | por minuto: volume, das máquinas, lentas (> 1 s), 5xx, média e p95 (histograma de baldes); por rota, desde a partida. Os downloads de arquivo e o **canal em tempo real** (que o servidor segura até 45 s de propósito) contam no volume, não no tempo |
 | Pool do banco | `pgxpool.Stat`, olhado a cada 5 s | pico de conexões em uso no minuto, conexões pedidas e as que esperaram pool vazio |
 | PostgreSQL | `pg_database_size`, `pg_stat_database`, `pg_stat_activity` | tamanho, conexões contra `max_connections`, leituras da memória (cache), arquivos temporários, deadlocks, a consulta ativa mais longa, as maiores tabelas |
 | Disco | `statfs` das pastas de dados | `PATCHD_CONTENT_DIR`, `PATCHD_REPO_CACHE_DIR`, `PATCHD_RELEASES_DIR`; o mesmo volume conta uma vez |
@@ -85,6 +85,35 @@ Antes de aumentar, confira se a versão já traz estes cuidados (desde 09/11/202
   nos dias seguintes.
 - **O motor de campanhas não traz o payload dos jobs** a cada minuto: o programa de cada job
   sai do payload no próprio banco.
+
+Desde 11/11/2026:
+
+- **O canal em tempo real saiu do tempo de resposta.** O agente deixa um pedido aberto e o
+  servidor o segura até 45 s, até ter um job para ele; com o parque inteiro, esses pedidos eram
+  quase todos os do minuto e punham o p95 perto de um minuto ("o servidor está lento"), sem
+  nada estar lento. Eles seguem contando no volume de requisições.
+- **No canal em tempo real, a credencial do agente fica um minuto em memória.** O agente
+  refaz esse pedido a cada 45 s, e cada um consultava o banco só para saber de quem é a
+  credencial: era a maior parte das conexões tiradas do pool. Agora vai ao banco uma vez por
+  minuto por máquina. Os outros pedidos (check-in, relatórios, resultados, downloads) conferem
+  no banco sempre. Aposentar, mesclar ou registrar pelo painel limpa na hora; pela linha de
+  comando (outro processo), a aposentada ainda segura o canal por até um minuto, sem mandar
+  nem receber nada pelas outras rotas.
+- **A lista de pendências do parque é feita uma vez por minuto.** As telas de Patch (Sistema,
+  Visão geral, Terceiros, os lotes) montavam a cada clique a lista de todas as pendências de
+  todas as máquinas; com o Windows atrasado, são milhões de itens e mais de 1 GB por clique, e
+  quem clicava de novo porque a tela "travou" começava outro cálculo por cima, até o servidor
+  parar de responder. Agora há um cálculo por vez, quem chega no meio espera o mesmo, e a
+  lista vale um minuto (aprovar e revogar aparecem na hora: as aprovações são lidas a cada
+  pedido). A lista do Windows também deixou de criar um texto novo por CVE para a correção e
+  o build instalado.
+- **Limite brando de memória do Go.** Sem ele, o coletor do Go deixava o heap chegar ao dobro
+  do que estava vivo antes de limpar, e o processo segurava essa memória, que numa máquina
+  pequena falta ao PostgreSQL e ao cache de disco. O servidor define o limite em 40% da memória
+  da máquina (75% do limite do container, se houver), com piso de 512 MB; o coletor trabalha
+  mais perto dele (um pouco mais de CPU) e devolve a sobra ao sistema. `GOMEMLIMIT` no ambiente
+  (inclusive `off`) vale no lugar do cálculo. A linha Memória do cartão Processo mostra o
+  limite em uso.
 
 ## 4. A tela
 

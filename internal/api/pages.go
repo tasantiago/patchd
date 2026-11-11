@@ -569,6 +569,7 @@ func (a *api) retireAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		a.internalError(w, r, "aposentar máquina", err)
 		return
 	}
+	a.creds.reset() // a credencial da aposentada deixa de valer já
 	if changed {
 		a.logger.Info("máquina aposentada pelo painel", "machine_id", id, "username", s.Username, "reason", reason,
 			"request_id", RequestID(r.Context()))
