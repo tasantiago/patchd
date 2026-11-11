@@ -1,6 +1,9 @@
 # Binários e artefatos de build
 /bin/
 /dist/
+# O "go build ./cmd/..." na raiz deixa o binário com o nome da pasta
+/server
+/agent
 
 # Variáveis locais (UID/GID e, no futuro, segredos de desenvolvimento)
 .env
