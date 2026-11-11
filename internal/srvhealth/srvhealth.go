@@ -550,3 +550,10 @@ func (m *Monitor) AddPoint(p Point) {
 		m.ring = append(m.ring[:0:0], m.ring[len(m.ring)-ringSize:]...)
 	}
 }
+
+// MemoryBudget: a memória que vale para o processo (o limite do cgroup, ou a da máquina) e se
+// ela é do cgroup. 0: não se sabe (fora do Linux).
+func MemoryBudget() (bytes uint64, fromCgroup bool) {
+	in := newSystem().info()
+	return in.MemLimit, in.MemFromCG
+}

@@ -188,7 +188,7 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := a.complianceCtx(r)
 	defer cancel()
-	list, err := a.compliance.Items(ctx)
+	list, err := a.complianceItems(ctx)
 	if a.canceled(r, err) {
 		return
 	}
@@ -322,7 +322,7 @@ func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := a.complianceCtx(r)
 	defer cancel()
-	list, err := a.compliance.Items(ctx)
+	list, err := a.complianceItems(ctx)
 	if a.canceled(r, err) {
 		return
 	}

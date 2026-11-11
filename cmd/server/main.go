@@ -175,6 +175,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	logger = logger.With("app", "patchd-server", "version", info.Version)
 	slog.SetDefault(logger)
+	applySoftMemoryLimit(logger) // memlimit.go: a máquina divide a memória com o PostgreSQL
 
 	// SIGTERM vem do "docker stop"; SIGINT, do Ctrl+C no terminal.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

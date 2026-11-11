@@ -152,7 +152,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evaluatingNotice(&v.pageBase, fleet)
-	items, err := a.compliance.Items(ctx)
+	items, err := a.complianceItems(ctx)
 	if a.canceled(r, err) {
 		return
 	}
@@ -243,7 +243,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Itens do sistema e programas de terceiros.
-	agg := aggregateItems(items, approvals)
+	agg := a.aggregated(items, approvals)
 	expWaiting, waiting := 0, 0
 	for _, p := range agg {
 		if p.Approval == nil {

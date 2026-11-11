@@ -2,13 +2,20 @@ package api_test
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/srvhealth"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 type bancoSaude struct{ horas []srvhealth.Hour }
@@ -77,5 +84,53 @@ func TestSaudeDoServidor(t *testing.T) {
 	b = pagina(h, "GET", aba+"&periodo=90d", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, "Medindo") || strings.Contains(b, "periodo=90d") || !strings.Contains(b, "sem banco") {
 		t.Errorf("sem banco:\n%.3000s", b)
+	}
+}
+
+// contaCredencial conta as idas ao banco para saber de quem é a credencial.
+type contaCredencial struct {
+	*store.Memory
+	n int
+}
+
+func (c *contaCredencial) MachineByCredential(ctx context.Context, h []byte) (string, bool, error) {
+	c.n++
+	return c.Memory.MachineByCredential(ctx, h)
+}
+
+// A credencial do agente vai ao banco uma vez por minuto, não a cada pedido; aposentar a
+// máquina pelo painel corta na hora.
+func TestCredencialEmCache(t *testing.T) {
+	ctx := context.Background()
+	st := &contaCredencial{Memory: store.NewMemory()}
+	agora := time.Now().UTC()
+	abreSessao(t, st.Memory, sessaoTeste, agora)
+	if err := st.CreatePanelSession(ctx, identity.Hash(sessaoAdmin), panel.Session{Username: "thyago", Role: panel.RoleAdmin,
+		Source: panel.SourceAD, CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora}); err != nil {
+		t.Fatal(err)
+	}
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateEnrollmentToken(ctx, hash, "t", agora.Add(time.Hour), 1); err != nil {
+		t.Fatal(err)
+	}
+	maq := registra(t, h, tok)
+	canalPede := func() int {
+		r := envia(h, "POST", protocol.ChannelPath, maq.Credential, []byte("{}"))
+		return r.Code
+	}
+	for i := 0; i < 5; i++ {
+		if c := canalPede(); c != http.StatusOK {
+			t.Fatalf("canal: %d", c)
+		}
+	}
+	if st.n != 1 {
+		t.Errorf("a credencial foi ao banco %d vezes em 5 pedidos", st.n)
+	}
+	if r := pagina(h, "POST", "/painel/maquinas/"+maq.MachineID+"/aposentar", sessaoAdmin, url.Values{"motivo": {"teste de cache"}}); r.Code >= 400 {
+		t.Fatalf("aposentar: %d", r.Code)
+	}
+	if c := canalPede(); c != http.StatusUnauthorized {
+		t.Errorf("aposentada continua entrando: %d", c)
 	}
 }

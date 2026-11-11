@@ -236,7 +236,7 @@ func (a *api) tpBatchAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 	}
 	ctx, cancel := a.complianceCtx(r)
 	defer cancel()
-	list, err := a.compliance.Items(ctx)
+	list, err := a.complianceItems(ctx)
 	if a.canceled(r, err) {
 		return
 	}

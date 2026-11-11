@@ -116,7 +116,7 @@ func classe(g []string) string {
 		return clPublica
 	case "sameOrigin":
 		return clForm
-	case "machineAuth":
+	case "machineAuth", "machineAuthCached": // a credencial do agente (no canal, guardada por um minuto)
 		return clAgente
 	case "panelPage":
 		return clSessao

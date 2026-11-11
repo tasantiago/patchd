@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -511,13 +512,22 @@ func pendingItems(ev machineEval) (string, []protocol.PendingItem) {
 		return "", items
 	case ev.Windows != nil:
 		r := ev.Windows
+		// Uma máquina tem centenas de CVEs e poucas correções (KB) distintas: o build
+		// instalado e o texto de cada correção são feitos uma vez, não um por CVE.
+		installed := r.Build.String()
+		fixes := map[string]string{}
+		items = make([]protocol.PendingItem, 0, len(r.Pending))
 		for _, c := range r.Pending {
 			fixed := ""
 			if c.MinKB != "" {
-				fixed = fmt.Sprintf("%d.%d (KB%s)", c.Min.Major, c.Min.UBR, c.MinKB)
+				k := c.MinKB + "/" + strconv.Itoa(c.Min.Major) + "/" + strconv.Itoa(c.Min.UBR)
+				if fixed = fixes[k]; fixed == "" {
+					fixed = fmt.Sprintf("%d.%d (KB%s)", c.Min.Major, c.Min.UBR, c.MinKB)
+					fixes[k] = fixed
+				}
 			}
 			items = append(items, protocol.PendingItem{ID: c.CVE, Severity: c.Severity, Exploited: c.Explored(),
-				Installed: r.Build.String(), FixedIn: fixed, Note: c.Title})
+				Installed: installed, FixedIn: fixed, Note: c.Title})
 		}
 		target := ""
 		if len(r.Pending) > 0 && r.TargetKB != "" {
@@ -526,6 +536,7 @@ func pendingItems(ev machineEval) (string, []protocol.PendingItem) {
 		return target, items
 	case ev.MacOS != nil:
 		r := ev.MacOS.Result
+		items = make([]protocol.PendingItem, 0, len(r.Pending))
 		for _, c := range r.Pending {
 			items = append(items, protocol.PendingItem{ID: c.CVE, Severity: c.Severity, Exploited: c.Exploited || c.KEV,
 				Installed: r.Version, FixedIn: c.Min})
