@@ -215,3 +215,40 @@ resto por grupo de implantação.
 **O que não está conferido:** os nomes e os valores nos modelos do parque. Um modelo com outro
 nome para o boot por USB aparece em "o modelo não tem a configuração"; a lista da coluna mostra
 quais são, e o nome entra em `internal/biosstd` (e na lista fechada) com o piloto daquele modelo.
+
+## 10. Em linguagem simples
+
+O pedido (12/11/2026): mostrar as configurações da BIOS com menos termo técnico, iguais para
+qualquer marca e modelo.
+
+**O dicionário** (`internal/biosplain`) traduz o nome e o valor de cada configuração para
+português simples. O mesmo assunto ganha o mesmo nome em qualquer fabricante: o `Wake On LAN`
+da HP, o `WakeOnLan` da Dell e o `WakeOnLAN` da Lenovo viram "Ligar pela rede"; `Boot to Hard
+Drive`, `LanOnly` e `ACOnly` viram "Ligado, iniciando o Windows", "Ligado, só pelo cabo" e
+"Ligado, só na tomada". Cada configuração traz uma frase do que ela faz na prática.
+
+A tradução é só para mostrar. O job continua levando o nome e o valor exatos da BIOS, e a tela
+mostra o original em letra pequena ("na BIOS: WakeOnLan", "Disabled") para quem precisa
+conferir no computador. O que não está no dicionário aparece com o nome do fabricante. Duas
+opções com a mesma tradução levam o valor original junto, para não ficarem iguais no seletor.
+
+**A aba BIOS do equipamento** ficou assim:
+
+- **Resumo da BIOS**, com os mesmos itens para qualquer modelo: senha de administrador, ligar
+  pela rede, iniciar por pendrive, inicialização segura (Secure Boot), modo de inicialização,
+  chip de segurança (TPM), virtualização e o que o computador faz quando a energia volta. Cada
+  item diz como está nesta máquina e, nos três do padrão (seção 9), se está conforme. O modelo
+  que não tem a configuração aparece como tal.
+- **Configurações da BIOS**, agrupadas por assunto (Ligar e desligar, Inicialização, Segurança,
+  Portas e dispositivos), com "Como está" e "Mudar para" em português. As de risco alto ganham
+  "cuidado" e o motivo em uma linha.
+- As outras configurações (só consulta) vêm traduzidas primeiro, e as que o dicionário não
+  conhece depois, com o nome do fabricante.
+
+O Padrão da BIOS (seção 9), a lista de alterações pedidas e o cartão de ligar pela rede da aba
+Hardware usam o mesmo dicionário. A trilha de auditoria continua com os nomes e valores
+originais: é o registro técnico do que foi gravado.
+
+**Para acrescentar uma configuração** que apareça com o nome do fabricante: uma entrada em
+`internal/biosplain` (título, frase, assunto e os pedaços do nome normalizado), e o teste do
+pacote confere que o mesmo assunto tem o mesmo nome em cada marca.

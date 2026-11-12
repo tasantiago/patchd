@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/biosconfig"
+	"github.com/tasantiago/patchd/internal/biosplain"
 	"github.com/tasantiago/patchd/internal/biosstd"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
@@ -246,6 +247,8 @@ type stdGoalRow struct {
 type stdMapRow struct {
 	Vendor, Name, From, To string
 	N                      int
+	// Em linguagem simples (internal/biosplain).
+	Title, FromText, ToText string
 }
 
 type stdMachineRow struct {
@@ -372,7 +375,10 @@ func (a *api) biosStdPage(w http.ResponseWriter, r *http.Request, s panel.Sessio
 			}
 			row := machine(p)
 			row.Detail = detail
-			row.Changes = p.findings[goal].Evidence
+			for _, e := range p.findings[goal].Evidence {
+				name, value, _ := strings.Cut(e, ": ")
+				row.Changes = append(row.Changes, biosplain.Change(name, value))
+			}
 			v.ListRows = append(v.ListRows, row)
 		}
 	}
@@ -391,8 +397,9 @@ func (a *api) biosStdPage(w http.ResponseWriter, r *http.Request, s panel.Sessio
 			row := machine(t.plan)
 			for _, c := range t.changes {
 				from := current(t.plan, c.Name)
-				row.Changes = append(row.Changes, fmt.Sprintf("%s: %s → %s", c.Name, from, c.Value))
-				byMap[stdMapRow{Vendor: row.Vendor, Name: c.Name, From: from, To: c.Value}]++
+				row.Changes = append(row.Changes, fmt.Sprintf("%s: %s → %s", biosplain.Title(c.Name), biosplain.Value(c.Name, from), biosplain.Value(c.Name, c.Value)))
+				byMap[stdMapRow{Vendor: row.Vendor, Name: c.Name, From: from, To: c.Value, Title: biosplain.Title(c.Name),
+					FromText: biosplain.Value(c.Name, from), ToText: biosplain.Value(c.Name, c.Value)}]++
 			}
 			if i < lotePreviewRows {
 				v.Preview = append(v.Preview, row)

@@ -104,8 +104,14 @@ func TestConfiguracoesDaBIOS(t *testing.T) {
 	// BIOS sem senha: os seletores das editáveis; TPM e o texto ficam na lista só leitura.
 	firmware(protocol.Firmware{Interface: "hp", AdminPassword: &nao, SureAdmin: &nao, Settings: settings})
 	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
-	for _, want := range []string{`action="/painel/maquinas/` + id + `/bios/configurar"`, `name="v0"`, `name="v2"`, "Energia e Wake on LAN",
-		"risco alto", `name="confirmo"`, "As outras 2 configurações", "TPM State", "PAT-0001", "5 lidas · 3 alteráveis"} {
+	for _, want := range []string{`action="/painel/maquinas/` + id + `/bios/configurar"`, `name="v0"`, `name="v2"`, "Ligar e desligar",
+		"cuidado", `name="confirmo"`, "As outras 2 configurações", "TPM State", "PAT-0001", "5 lidas · 3 que o patchd pode mudar",
+		// Em linguagem simples (docs/bios-config.md, seção 10): o título, a explicação, o valor e as opções.
+		"<b>Ligar pela rede</b>", "na BIOS: Wake On LAN", "Desligado", `<option value="Boot to Hard Drive">Ligado, iniciando o Windows</option>`,
+		"<b>Inicialização rápida</b>", "Moderno, com inicialização segura", "<b>Chip de segurança (TPM)</b>",
+		// O resumo: os mesmos itens para qualquer modelo.
+		"Resumo da BIOS", "<b>Senha de administrador</b>", ">Sem senha<", "<b>Iniciar por pendrive ou HD externo</b>",
+		"Este modelo não tem esta configuração", "HP: Wake On LAN = Disable", "fora do padrão"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("aba BIOS sem %q", want)
 		}
@@ -166,7 +172,7 @@ func TestConfiguracoesDaBIOS(t *testing.T) {
 		t.Errorf("com job aberto: %s", r)
 	}
 	if b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "há uma alteração da BIOS em andamento (job "+itoa(j1.ID)) ||
-		!strings.Contains(b, "Wake On LAN → Boot to Hard Drive") {
+		!strings.Contains(b, "Ligar pela rede: Ligado, iniciando o Windows") {
 		t.Error("job aberto: o motivo e a lista de pedidos")
 	}
 	_, _ = st.FinishJob(ctx, j1.ID, jobs.StateDone, "Wake On LAN: gravada", time.Now())
@@ -217,7 +223,7 @@ func TestConfiguracoesDaBIOS(t *testing.T) {
 	}
 	firmware(protocol.Firmware{Interface: "dell", AdminPassword: &sim, Settings: dell})
 	b = pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, `name="n0" value="WakeOnLan"`) || strings.Contains(b, `name="n1"`) || !strings.Contains(b, "2 lidas · 1 alteráveis") {
+	if !strings.Contains(b, `name="n0" value="WakeOnLan"`) || strings.Contains(b, `name="n1"`) || !strings.Contains(b, "2 lidas · 1 que o patchd pode mudar") {
 		t.Errorf("Dell: só o WakeOnLan editável (a placa cabeada não)")
 	}
 	r = local(pagina(h, "POST", maq+"/bios/configurar", sessaoAdmin, url.Values{"motivo": {"chamado 4516"}, "n0": {"WakeOnLan"}, "v0": {"LanOnly"}}))

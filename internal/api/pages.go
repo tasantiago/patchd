@@ -1292,7 +1292,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Notes}}<dt>Atenção</dt><dd><ul class="usuarios">{{range .Notes}}<li>{{.}}</li>{{end}}</ul></dd>{{end}}
 <dt>Fast Startup</dt><dd>{{.FastStartup}}</dd>
 <dt>BitLocker</dt><dd>{{.BitLocker}}</dd>
-{{if .Settings}}<dt>Na BIOS</dt><dd>{{range $i, $s := .Settings}}{{if $i}}<br>{{end}}{{$s.Name}}: <code>{{$s.Value}}</code>{{end}}</dd>{{end}}
+{{if .Settings}}<dt>Na BIOS</dt><dd>{{range $i, $s := .Settings}}{{if $i}}<br>{{end}}{{$s}}{{end}}</dd>{{end}}
 </dl>
 {{if .Adapters}}<div class="tabela"><table><thead><tr><th>Placa</th><th>MAC</th><th>Cabo</th><th>Magic Packet</th><th>Pode ligar o computador</th></tr></thead>
 <tbody>{{range .Adapters}}<tr><td>{{.Name}}</td><td><code>{{.MAC}}</code></td><td>{{.Wired}}</td><td>{{.Magic}}</td><td>{{.DeviceWake}}</td></tr>{{end}}</tbody></table></div>{{end}}
@@ -1338,30 +1338,38 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{end}}
 
 {{if eq .Tab "bios"}}{{with .BIOSConfig}}
-<div class="card" id="bios-config"><div class="card-cab"><h2>Configurações da BIOS</h2>{{if .Has}}<span class="muted">{{.Total}} lidas · {{.EditableCount}} alteráveis pelo patchd</span>{{end}}</div>
+{{if .Summary}}<div class="card" id="bios-resumo"><div class="card-cab"><h2>Resumo da BIOS</h2><span class="muted">os mesmos itens para qualquer marca e modelo{{if .Vendor}} · {{.Vendor}}{{end}}</span></div>
+<div class="tabela"><table><thead><tr><th>Item</th><th>Nesta máquina</th><th>Padrão da BIOS</th></tr></thead>
+<tbody>{{range .Summary}}<tr><td><b>{{.Item}}</b>{{if .Help}}<br><small class="muted">{{.Help}}</small>{{end}}</td>
+<td><span{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.State}}</span>{{if .Detail}}<br><small class="muted">{{.Detail}}</small>{{end}}</td>
+<td>{{if .Standard}}<span class="nivel-{{.StdLevel}}">{{.Standard}}</span>{{else}}<span class="muted">—</span>{{end}}</td></tr>{{end}}</tbody></table></div>
+{{if $.Admin}}<p class="muted">Para deixar o parque inteiro no padrão (senha, ligar pela rede e bloquear o pendrive), use <a href="/painel/bios/padrao">Configuração › BIOS › Padrão da BIOS</a>.</p>{{end}}
+</div>{{end}}
+<div class="card" id="bios-config"><div class="card-cab"><h2>Configurações da BIOS</h2>{{if .Has}}<span class="muted">{{.Total}} lidas · {{.EditableCount}} que o patchd pode mudar</span>{{end}}</div>
 {{if not .Has}}<p class="muted">{{.Reason}}</p>
 {{else}}
-{{if and .Admin .EditableCount (not .CanEdit)}}<p class="aviso atencao">Alteração indisponível: {{.Blocker}}.</p>{{end}}
+{{if and .Admin .EditableCount (not .CanEdit)}}<p class="aviso atencao">Não dá para mudar agora: {{.Blocker}}.</p>{{end}}
 {{if .Groups}}{{if .CanEdit}}<form method="post" action="/painel/maquinas/{{$.D.MachineID}}/bios/configurar">{{end}}
-{{range .Groups}}<h3>{{.Title}}</h3><div class="tabela"><table>
-<thead><tr><th>Configuração</th><th>Atual</th>{{if $.BIOSConfig.CanEdit}}<th>Novo valor</th>{{end}}<th>Observação</th></tr></thead>
-<tbody>{{range $row := .Rows}}<tr><td>{{$row.Name}}{{if $row.Path}}<br><span class="muted">{{$row.Path}}</span>{{end}}</td><td><code>{{$row.Value}}</code></td>
-{{if $.BIOSConfig.CanEdit}}<td><input type="hidden" name="n{{$row.Index}}" value="{{$row.Name}}"><select name="v{{$row.Index}}" aria-label="novo valor de {{$row.Name}}">{{range $row.Choices}}<option value="{{.}}"{{if eq . $row.Value}} selected{{end}}>{{.}}</option>{{end}}</select></td>{{end}}
-<td>{{if $row.Risk}}<span class="nivel-atencao">risco alto</span>{{if $row.Note}}: {{$row.Note}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td></tr>{{end}}</tbody></table></div>{{end}}
+{{range .Groups}}<h3>{{.Title}}</h3><div class="tabela"><table class="bios-cfg">
+<thead><tr><th class="c-cfg">Configuração</th><th class="c-val">Como está</th>{{if $.BIOSConfig.CanEdit}}<th class="c-new">Mudar para</th>{{end}}<th>Atenção</th></tr></thead>
+<tbody>{{range $row := .Rows}}<tr><td><b>{{$row.Title}}</b>{{if $row.Help}}<br><small class="muted">{{$row.Help}}</small>{{end}}{{if $row.Plain}}<br><small class="muted">na BIOS: {{$row.Name}}</small>{{else if $row.Path}}<br><small class="muted">{{$row.Path}}</small>{{end}}</td>
+<td>{{$row.ValueText}}{{if ne $row.ValueText $row.Value}}<br><small class="muted">{{$row.Value}}</small>{{end}}</td>
+{{if $.BIOSConfig.CanEdit}}<td><input type="hidden" name="n{{$row.Index}}" value="{{$row.Name}}"><select name="v{{$row.Index}}" aria-label="mudar {{$row.Title}} para">{{range $row.Choices}}<option value="{{.Value}}"{{if eq .Value $row.Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></td>{{end}}
+<td>{{if $row.Risk}}<span class="nivel-atencao">cuidado</span>{{if $row.Note}}: {{$row.Note}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td></tr>{{end}}</tbody></table></div>{{end}}
 {{if .CanEdit}}<div class="lote">
 <input name="motivo" required minlength="{{.MinReason}}" maxlength="{{.MaxReason}}" placeholder="Motivo (chamado, OS...)" aria-label="motivo da alteração">
-{{if .HasRisk}}<label><input type="checkbox" name="confirmo" value="1"> confirmo as alterações de risco alto</label>{{end}}
+{{if .HasRisk}}<label><input type="checkbox" name="confirmo" value="1"> confirmo as mudanças marcadas com "cuidado"</label>{{end}}
 <button type="submit">Pedir alteração</button>
-<span class="muted">Só vai o que mudou (até 20 por vez). Vira um job assinado: a máquina confere de novo na BIOS, suspende o BitLocker por um reinício se ele estiver ligado, grava uma configuração por chamada com a senha da guarda e nunca repete uma senha recusada. As mudanças valem no próximo reinício, que não é feito pelo patchd.</span>
+<span class="muted">Só vai o que você mudou (até 20 por vez). A máquina confere de novo na própria BIOS, pausa o BitLocker até o próximo reinício (se ele estiver ligado) e grava com a senha guardada pelo patchd. As mudanças valem quando o computador reiniciar; o patchd não reinicia sozinho.</span>
 </div></form>{{end}}
-{{else}}<p class="muted">Nenhuma configuração desta BIOS está na lista do patchd (energia e Wake on LAN, boot, virtualização e segurança, portas e dispositivos), ou estão todas só leitura.</p>{{end}}
-{{if .Others}}<details><summary>As outras {{len .Others}} configurações (só leitura no patchd)</summary><div class="tabela"><table>
-<thead><tr><th>Configuração</th><th>Valor</th><th>Tipo</th><th>Possíveis</th></tr></thead>
-<tbody>{{range .Others}}<tr><td>{{.Name}}{{if .Path}}<br><span class="muted">{{.Path}}</span>{{end}}{{if .ReadOnly}} <span class="muted">· só leitura na BIOS</span>{{end}}</td><td><code>{{.Value}}</code></td><td>{{.Kind}}</td><td class="muted">{{.Possible}}</td></tr>{{end}}</tbody></table></div></details>{{end}}
+{{else}}<p class="muted">Nenhuma configuração desta BIOS está entre as que o patchd pode mudar (ligar e desligar, inicialização, segurança, portas e dispositivos), ou estão todas bloqueadas na própria BIOS.</p>{{end}}
+{{if .Others}}<details><summary>As outras {{len .Others}} configurações (só para consulta)</summary><div class="tabela"><table>
+<thead><tr><th>Configuração</th><th>Como está</th><th>Opções</th></tr></thead>
+<tbody>{{range .Others}}<tr><td>{{if .Plain}}<b>{{.Title}}</b><br><small class="muted">na BIOS: {{.Name}}</small>{{else}}{{.Name}}{{if .Path}}<br><small class="muted">{{.Path}}</small>{{end}}{{end}}{{if .ReadOnly}}<br><small class="muted">bloqueada na própria BIOS</small>{{end}}</td><td>{{.ValueText}}</td><td class="muted">{{.Possible}}</td></tr>{{end}}</tbody></table></div></details>{{end}}
 {{end}}
 </div>
 {{if .Recent}}<div class="card"><div class="card-cab"><h2>Alterações pedidas</h2><a href="/painel/maquinas/{{$.D.MachineID}}?aba=tarefas">todas as tarefas</a></div><div class="tabela"><table>
-<thead><tr><th>Job</th><th>Estado</th><th>Pedido</th><th>Por</th><th>Alterações</th><th>Resultado</th></tr></thead>
+<thead><tr><th>Tarefa</th><th>Situação</th><th>Pedido</th><th>Por</th><th>O que foi pedido</th><th>Resultado</th></tr></thead>
 <tbody>{{range .Recent}}<tr><td class="num">{{.ID}}</td><td><span class="estado {{.State}}">{{.StateLabel}}</span></td><td>{{.Created}}</td><td>{{.By}}</td><td>{{range $i, $c := .Changes}}{{if $i}}<br>{{end}}{{$c}}{{end}}</td><td class="muted">{{.Detail}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{end}}{{end}}
 
@@ -1943,7 +1951,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Chosen}}<div class="card" id="conferencia"><div class="card-cab"><h2>Conferência</h2><span class="muted">{{.Selected}} máquina(s) neste lote</span></div>
 {{if .Preview}}<h3>O que o padrão vira em cada fabricante</h3>
 <div class="tabela"><table><thead><tr><th>Fabricante</th><th>Configuração</th><th>De</th><th>Para</th><th class="num">Máquinas</th></tr></thead><tbody>
-{{range .Mapping}}<tr><td>{{.Vendor}}</td><td><code>{{.Name}}</code></td><td>{{.From}}</td><td><b>{{.To}}</b></td><td class="num">{{.N}}</td></tr>{{end}}
+{{range .Mapping}}<tr><td>{{.Vendor}}</td><td><b>{{.Title}}</b>{{if ne .Title .Name}}<br><small class="muted">na BIOS: {{.Name}}</small>{{end}}</td><td>{{.FromText}}{{if ne .FromText .From}}<br><small class="muted">{{.From}}</small>{{end}}</td><td><b>{{.ToText}}</b>{{if ne .ToText .To}}<br><small class="muted">{{.To}}</small>{{end}}</td><td class="num">{{.N}}</td></tr>{{end}}
 </tbody></table></div>
 <h3>As máquinas</h3>
 <div class="tabela"><table><thead><tr><th>Máquina</th><th>Fabricante</th><th>Grupo</th><th>Alterações</th></tr></thead><tbody>

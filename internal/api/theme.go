@@ -129,6 +129,8 @@ details.host summary{cursor:pointer;color:var(--azul);font-size:.84rem}details.h
 .lote{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:center}
 th.col-lote,td.col-lote{width:1%;text-align:center}div.acao{display:flex}div.acao input{flex:1 1 20rem}
 /* Lista de escolhas fora do formulário de campanha (a limpeza): uma opção por linha, com a explicação embaixo. */
+table.bios-cfg{table-layout:fixed;width:100%}table.bios-cfg th.c-cfg{width:38%}table.bios-cfg th.c-val{width:18%}table.bios-cfg th.c-new{width:22%}table.bios-cfg select{width:100%}
+@media (max-width:700px){table.bios-cfg{table-layout:auto}}
 fieldset.escolhas{display:flex;flex-direction:column;gap:.35rem;margin:0 0 1rem;padding:0;border:0;max-width:52rem}
 fieldset.escolhas legend{font-weight:600;font-size:.88rem;padding:0;margin-bottom:.45rem}fieldset.escolhas legend small{font-weight:400;color:var(--muted);margin-left:.4rem}
 fieldset.escolhas .opcao{display:flex;align-items:flex-start;gap:.6rem;padding:.55rem .75rem;border:1px solid var(--borda);border-radius:6px;cursor:pointer;background:#fff}

@@ -73,7 +73,7 @@ var rules = []Rule{
 			"quickboot", "usbbiossupport", "numlock", "networkstack", "uefinwstack",
 		}},
 	{Category: CatVirtSec, Risk: true,
-		Note: "muda o que o TPM mede na partida: o BitLocker é suspenso por um reinício antes da gravação",
+		Note: "mexe na segurança da inicialização (o BitLocker fica pausado até reiniciar)",
 		// Dell: Virtualization (o nome inteiro: um "contains" pegaria "Virtualization Based BIOS
 		// Protection") e VtForDirectIo; Lenovo: VirtualizationTechnology e VTdFeature.
 		exact:      []string{"configurelegacysupportandsecureboot", "virtualization"},
@@ -81,7 +81,7 @@ var rules = []Rule{
 		denyValues: []string{"legacysupportenable"},
 	},
 	{Category: CatDevices, Risk: true,
-		Note: "pode tirar a máquina da rede (Wi-Fi) ou desligar teclado e mouse (USB, Bluetooth)",
+		Note: "pode deixar o computador sem rede (Wi-Fi) ou sem teclado e mouse (USB, Bluetooth)",
 		contains: []string{"wirelessnetworkdevice", "wlan", "bluetooth", "usbport",
 			"wirelesslan", "wirelesswan", "wwan"}, // Lenovo WirelessLANAccess, Dell WirelessLan e WirelessWwan
 	},
