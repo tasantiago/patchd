@@ -32,6 +32,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/window"
+	"github.com/tasantiago/patchd/internal/wucache"
 )
 
 // Store é o armazenamento de que a API precisa. Definido aqui, onde é usado: qualquer
@@ -275,6 +276,7 @@ type api struct {
 	health      *srvhealth.Monitor                   // a aba Saúde (docs/saude-servidor.md); nil: desligada
 	limiter     loginLimiter                         // falhas de login por usuário+IP e por IP
 	channel     *canal.Hub                           // canal em tempo real (internal/canal); nil: só o check-in
+	winCache    *wucache.Cache                       // o cache das atualizações do Windows (docs/cache-windows.md); nil: desligado
 	items       itemsCache                           // a lista de pendências do parque, por um minuto (itemscache.go)
 	creds       credCache                            // a credencial de cada máquina, por um minuto (credcache.go)
 	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
@@ -313,6 +315,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET "+protocol.PackagesPath+"{file}", a.machineAuth(a.packageFile))
 	mux.Handle("GET "+protocol.BundlesPath+"{file}", a.machineAuth(a.bundleFile)) // Aula 23.8
 	mux.Handle("POST "+protocol.JobResultPath+"{id}/result", a.machineAuth(a.jobResult))
+	mux.Handle("POST "+protocol.WinCachePath, a.machineAuth(a.winCacheEnsure))       // docs/cache-windows.md
+	mux.Handle("GET "+protocol.WinCachePath+"/{key}", a.machineAuth(a.winCacheFile)) // idem
 	// Autoatendimento (Aula 17.2).
 	mux.Handle("POST "+protocol.SelfServiceCatalogPath, a.machineAuth(a.selfServiceCatalog))
 	mux.Handle("POST "+protocol.SelfServiceRequestPath, a.machineAuth(a.selfServiceRequest))

@@ -1126,6 +1126,13 @@ O perfil leitura vê o cartão (estados, quem sorteou, quantas revelações), se
 senhas guardadas não entram na retenção: valem enquanto a placa existir, inclusive em máquina
 aposentada.
 
+### Cache do Windows Update no servidor (substituto do WSUS)
+
+O servidor baixa da Microsoft os pacotes das atualizações do Windows aprovadas e os entrega às
+máquinas pela rede interna. Ligar em **Configuração › Parâmetros › Agentes › Cache do Windows
+Update no servidor** (comece pelo grupo piloto); acompanhar em **Configuração › Sistema**. O
+passo a passo para desligar o WSUS depois do piloto está em `docs/cache-windows.md`.
+
 ### Gravar a senha na BIOS (Aula 21.5)
 
 Só HP, por enquanto, com o agente v0.18.4 ou mais novo (Windows). Antes da primeira gravação

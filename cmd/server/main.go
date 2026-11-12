@@ -388,6 +388,14 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		go catalogLoop(ctx, logger, pg, srcs, liveCatalogInterval(params), firstCatalogRun(), params.Changed())
 	}
 
+	// O cache do Windows Update (docs/cache-windows.md): na pasta de conteúdo, com limpeza.
+	winCache := newWinCache(look, info.Version, logger)
+	if winCache != nil {
+		apiOpts = append(apiOpts, api.WithWinCache(winCache))
+		go pruneWinCacheLoop(ctx, logger, winCache, params)
+		logger.Info("cache do Windows Update disponível", "pasta", winCache.Dir, "modo", params.Value(api.WinCacheKey))
+	}
+
 	// Campanhas (Aula 8.5): o servidor libera os grupos de implantação sozinho; precisa da chave de jobs.
 	switch pg, ok := st.(*store.Postgres); {
 	case !ok:
@@ -402,6 +410,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			tp = c
 		}
 		eng := newCampaignEngine(pg, jobKey, tp, logger)
+		// docs/cache-windows.md: o job do Windows pelo cache, conforme o parâmetro, a cada máquina.
+		if winCache != nil {
+			eng.WinCache = func(ctx context.Context, id string) (bool, error) {
+				return api.WinCacheFor(ctx, params.Value(api.WinCacheKey), pg, id)
+			}
+		}
 		// A fonte reserva do Windows: lida a cada máquina, a mudança na tela vale na hora.
 		eng.MicrosoftAllowed = func() bool { return params.Value(api.MicrosoftFallbackKey) == "1" }
 		// Fechar o programa com aviso: só para o agente que anunciou que sabe.

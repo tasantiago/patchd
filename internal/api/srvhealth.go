@@ -398,6 +398,7 @@ func hourCharts(hours []srvhealth.Hour, from, to time.Time, loc *time.Location) 
 // (internal/canal) e, sozinho, punha o p95 perto de um minuto.
 var transferRoutes = map[string]bool{
 	"POST " + protocol.ChannelPath:                    true,
+	"GET " + protocol.WinCachePath + "/{key}":         true,
 	"GET " + protocol.OfflineCatalogPath + "{sha256}": true,
 	"GET " + protocol.PackagesPath + "{file}":         true,
 	"GET " + protocol.BundlesPath + "{file}":          true,

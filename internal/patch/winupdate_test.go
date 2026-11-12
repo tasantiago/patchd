@@ -92,3 +92,34 @@ func TestPolicyDidNotDeliver(t *testing.T) {
 		t.Error("a marca mudou a mensagem")
 	}
 }
+
+// O cache do servidor (docs/cache-windows.md): os endereços de todas as partes sem repetir, e
+// os arquivos locais de volta para cada parte, na ordem.
+func TestArquivosDoCache(t *testing.T) {
+	parts := []cachePart{
+		{URLs: []string{"http://d/a.cab", "http://d/b.psf"}},
+		{URLs: []string{"http://d/a.cab"}}, // a mesma parte em duas atualizações
+		{URLs: nil},                        // parte sem arquivo (já no Windows)
+	}
+	all, err := cacheURLs(parts)
+	if err != nil || strings.Join(all, " ") != "http://d/a.cab http://d/b.psf" {
+		t.Fatalf("endereços: %v %v", all, err)
+	}
+	files, err := cacheFiles(parts, map[string]string{"http://d/a.cab": `C:\c\a.cab`, "http://d/b.psf": `C:\c\b.psf`})
+	if err != nil || len(files) != 3 || strings.Join(files[0], ",") != `C:\c\a.cab,C:\c\b.psf` || files[1][0] != `C:\c\a.cab` || len(files[2]) != 0 {
+		t.Errorf("arquivos: %v %v", files, err)
+	}
+	if _, err := cacheFiles(parts, map[string]string{"http://d/a.cab": "x"}); err == nil {
+		t.Error("arquivo faltando aceito")
+	}
+	if _, err := cacheURLs([]cachePart{{}}); err == nil || !strings.Contains(err.Error(), "não informou") {
+		t.Errorf("sem arquivo: %v", err)
+	}
+	var muitos cachePart
+	for i := 0; i < 65; i++ {
+		muitos.URLs = append(muitos.URLs, fmt.Sprintf("http://d/%d.cab", i))
+	}
+	if _, err := cacheURLs([]cachePart{muitos}); err == nil {
+		t.Error("arquivos demais aceitos")
+	}
+}

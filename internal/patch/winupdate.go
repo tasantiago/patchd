@@ -22,6 +22,59 @@ import (
 // O job diz a fonte: a da política (o padrão) ou a Microsoft (a reserva).
 type WinUpdater func(ctx context.Context, jobID int64, p jobs.WinUpdateParams) (detail string, err error)
 
+// WinCache: instalar com os arquivos do cache do servidor (docs/cache-windows.md), no lugar
+// do download do próprio Windows Update (que viria do WSUS ou da Microsoft).
+type WinCache struct {
+	// Fetch traz do servidor os arquivos (endereço que o Windows Update deu → arquivo local
+	// conferido).
+	Fetch func(ctx context.Context, urls []string) (map[string]string, error)
+	// Catalog: o catálogo offline (wsusscn2.cab) conferido; "" se ainda não há, e a busca vai
+	// à Microsoft.
+	Catalog func() string
+}
+
+// cachePlan: os arquivos de cada parte de uma atualização (a cumulativa traz várias), na
+// ordem do Windows Update. Testável fora do Windows.
+type cachePart struct {
+	URLs []string
+}
+
+// cacheURLs: os endereços de todas as partes, sem repetir. Erro: nenhum arquivo (o Windows
+// Update não disse de onde vem a atualização) ou arquivos demais.
+func cacheURLs(parts []cachePart) ([]string, error) {
+	var out []string
+	for _, p := range parts {
+		for _, u := range p.URLs {
+			if u != "" && !slices.Contains(out, u) {
+				out = append(out, u)
+			}
+		}
+	}
+	switch {
+	case len(out) == 0:
+		return nil, errors.New("o Windows Update não informou os arquivos desta atualização")
+	case len(out) > 64:
+		return nil, fmt.Errorf("a atualização tem %d arquivos, mais que os 64 que o cache aceita por vez", len(out))
+	}
+	return out, nil
+}
+
+// cacheFiles: os arquivos locais de cada parte, na ordem; erro se algum endereço ficou sem
+// arquivo.
+func cacheFiles(parts []cachePart, local map[string]string) ([][]string, error) {
+	out := make([][]string, len(parts))
+	for i, p := range parts {
+		for _, u := range p.URLs {
+			f, ok := local[u]
+			if !ok || f == "" {
+				return nil, fmt.Errorf("o arquivo de %s não veio do servidor", u)
+			}
+			out[i] = append(out[i], f)
+		}
+	}
+	return out, nil
+}
+
 // wuaTarget é uma atualização devolvida pela busca do instalador.
 type wuaTarget struct {
 	UpdateID  string

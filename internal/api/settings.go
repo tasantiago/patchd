@@ -100,6 +100,7 @@ type settingsView struct {
 	Fleet       *biosFleetView   // aba BIOS: a senha padrão de cada fabricante (docs/bios-senha.md, seção 10)
 	Health      *healthView      // aba Saúde: o servidor e o que aumentar (docs/saude-servidor.md)
 	HealthOn    bool
+	WinCache    *winCacheView // aba Sistema: o cache do Windows Update (docs/cache-windows.md)
 }
 
 func (a *api) settingsTabs(tab string) string {
@@ -148,6 +149,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		v.NotifyOn = a.notifyOn()
 		if v.System, err = a.systemRows(r); err == nil {
 			v.Appearance, err = a.logoCard(r.Context())
+		}
+		if err == nil {
+			v.WinCache, err = a.winCacheCard()
 		}
 	case "agente":
 		err = a.agentView(r, &v)
