@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/tasantiago/patchd/internal/biosplain"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -26,7 +27,7 @@ type wakeCard struct {
 	Blockers     []string
 	Notes        []string
 	Adapters     []wakeAdapterRow
-	Settings     []protocol.WakeSetting
+	Settings     []string // o que pesou no firmware, em linguagem simples (internal/biosplain)
 	FastStartup  string
 	BitLocker    string
 }
@@ -41,7 +42,10 @@ func wakeView(hw protocol.Hardware) *wakeCard {
 	}
 	w := hw.Wake
 	v := wake.Decide(w, wake.LaptopChassis(hw.ChassisType))
-	c := &wakeCard{State: v.State, Blockers: v.Blockers, Notes: v.Notes, Settings: w.Settings}
+	c := &wakeCard{State: v.State, Blockers: v.Blockers, Notes: v.Notes}
+	for _, st := range w.Settings {
+		c.Settings = append(c.Settings, biosplain.Change(st.Name, st.Value))
+	}
 	switch v.State {
 	case wake.Ready:
 		c.Level = "ok"

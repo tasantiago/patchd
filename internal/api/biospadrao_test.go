@@ -84,7 +84,7 @@ func TestPadraoDaBIOS(t *testing.T) {
 		}
 	}
 	if pg := pagina(h, "GET", padrao+"?ver=wol.fora", sessaoAdmin, nil).Body.String(); !strings.Contains(pg, "pc-c") || !strings.Contains(pg, "passe antes pela senha em lote") ||
-		!strings.Contains(pg, "WakeOnLAN: Disable") {
+		!strings.Contains(pg, "Ligar pela rede: Desligado") {
 		t.Error("a Lenovo com senha fora da guarda: 'não dá agora', com o motivo e o valor atual")
 	}
 	if pg := pagina(h, "GET", padrao+"?ver=usb.sem", sessaoAdmin, nil).Body.String(); !strings.Contains(pg, "pc-d") || !strings.Contains(pg, "não informa uma configuração") {
@@ -109,8 +109,9 @@ func TestPadraoDaBIOS(t *testing.T) {
 		return local(pagina(h, "POST", padrao, sessaoAdmin, g))
 	}
 	pg, lista := confere(tudo)
-	for _, quer := range []string{"2 máquina(s) neste lote", "<code>Wake On LAN</code></td><td>Disable</td><td><b>Boot to Hard Drive</b>", "<code>UsbEmu</code></td><td>Enabled</td><td><b>Disabled</b>",
-		"S5 Maximum Power Savings: Enable → Disable", "USB Storage Boot: Enable → Disable", "Aplicar o padrão em 2 máquina(s)"} {
+	for _, quer := range []string{"2 máquina(s) neste lote", "<b>Ligar pela rede</b><br><small class=\"muted\">na BIOS: Wake On LAN</small></td><td>Desligado<br><small class=\"muted\">Disable</small></td><td><b>Ligado, iniciando o Windows</b>",
+		"<b>Iniciar por pendrive ou HD externo</b><br><small class=\"muted\">na BIOS: UsbEmu</small></td><td>Ligado<br><small class=\"muted\">Enabled</small></td><td><b>Desligado</b>",
+		"Economia máxima com o computador desligado: Ligado → Desligado", "Iniciar por pendrive ou HD externo: Ligado → Desligado", "Aplicar o padrão em 2 máquina(s)"} {
 		if !strings.Contains(pg, quer) {
 			t.Errorf("conferência: faltou %q", quer)
 		}

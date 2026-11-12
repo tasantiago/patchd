@@ -30,7 +30,7 @@ func TestLigarPelaRedeNoPainel(t *testing.T) {
 		Adapters: []protocol.WakeAdapter{{Name: "Ethernet", MAC: "00:11:22:33:44:55", Wired: true, MagicPacket: protocol.WakeOn, DeviceWake: pb(true)}}})
 	for _, quer := range []string{"<h2>Ligar pela rede (Wake on LAN)</h2>", `<dd class="nivel-erro">bloqueada</dd>`,
 		"<li>Wake on LAN desligado na BIOS</li>", "<li>notebook: só acorda na tomada e no cabo (ou na dock)</li>",
-		"S5 Wake On LAN: <code>Disable</code>", "<td>Ethernet</td><td><code>00:11:22:33:44:55</code></td><td>sim</td><td>ligado</td><td>sim</td>",
+		"Ligar pela rede: Desligado", "<td>Ethernet</td><td><code>00:11:22:33:44:55</code></td><td>sim</td><td>ligado</td><td>sim</td>",
 		"<dt>Fast Startup</dt><dd>ligado</dd>"} {
 		if !strings.Contains(b, quer) {
 			t.Errorf("faltou %q", quer)

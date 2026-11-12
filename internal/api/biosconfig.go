@@ -13,7 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/tasantiago/patchd/internal/biosconfig"
+	"github.com/tasantiago/patchd/internal/biosplain"
 	"github.com/tasantiago/patchd/internal/biospw"
+	"github.com/tasantiago/patchd/internal/biosstd"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/machinebox"
 	"github.com/tasantiago/patchd/internal/panel"
@@ -30,6 +32,8 @@ import (
 const biosConfigRecent = 5
 
 type biosConfigCard struct {
+	Summary              []biosSummaryRow // o resumo: os mesmos itens para qualquer modelo
+	Vendor               string
 	Has                  bool   // o inventário trouxe as configurações
 	Reason               string // por que não há configurações
 	Total, EditableCount int
@@ -52,7 +56,23 @@ type biosConfigRow struct {
 	Name, Path, Value    string
 	Kind, Possible, Note string
 	ReadOnly, Risk       bool
-	Choices              []string
+	Choices              []biosChoice
+	// Em linguagem simples (internal/biosplain): o título, a explicação e o valor. Plain falso:
+	// fora do dicionário, a tela mostra o nome do fabricante.
+	Title, Help, ValueText string
+	Plain                  bool
+}
+
+// biosChoice: uma opção do seletor. Value é o valor exato da BIOS (o que o job grava); Label,
+// a tradução.
+type biosChoice struct{ Value, Label string }
+
+// biosSummaryRow: uma linha do resumo da aba BIOS.
+type biosSummaryRow struct {
+	Item, Help, State, Level string
+	Standard                 string // "conforme o padrão", "fora do padrão" ou "" (fora do padrão da BIOS)
+	StdLevel                 string
+	Detail                   string // o que a BIOS escreve, para quem precisar
 }
 
 type biosConfigJob struct {
@@ -84,33 +104,47 @@ func (a *api) biosConfigView(r *http.Request, id string, admin bool) (*biosConfi
 	case fw.Settings == nil:
 		c.Reason = "O inventário não trouxe as configurações da BIOS: o agente é anterior a esta versão (atualize) ou a BIOS não respondeu à leitura (veja os avisos da coleta)."
 	}
+	if fw != nil {
+		c.Vendor = vendorLabel(fw.Interface)
+		summary, err := a.biosSummary(ctx, id, fw)
+		if err != nil {
+			return nil, err
+		}
+		c.Summary = summary
+	}
 	if c.Reason == "" {
 		c.Has, c.Total = true, len(fw.Settings)
 		groups := map[string][]biosConfigRow{}
 		for _, s := range fw.Settings {
-			row := biosConfigRow{Name: s.Name, Path: s.Path, Value: s.Value, Kind: biosKindLabel[s.Kind],
-				Possible: strings.Join(s.Possible, " · "), ReadOnly: s.ReadOnly}
+			row := plainRow(s)
 			if rule, ok := biosconfig.Editable(s); ok {
 				if choices := rule.Choices(s); len(choices) > 1 || (len(choices) == 1 && choices[0] != s.Value) {
-					row.Index, row.Choices, row.Risk, row.Note = c.EditableCount, choices, rule.Risk, rule.Note
-					if !slices.Contains(row.Choices, s.Value) {
+					row.Index, row.Risk, row.Note = c.EditableCount, rule.Risk, rule.Note
+					if !slices.Contains(choices, s.Value) {
 						// O valor atual fora das opções (ex.: suporte legado ligado): o seletor
 						// começa nele, para "nada mudou" não virar uma alteração sem querer.
-						row.Choices = append([]string{s.Value}, row.Choices...)
+						choices = append([]string{s.Value}, choices...)
 					}
+					row.Choices = plainChoices(s.Name, choices)
 					c.EditableCount++
 					c.HasRisk = c.HasRisk || rule.Risk
-					groups[rule.Category] = append(groups[rule.Category], row)
+					topic := categoryTopic[rule.Category]
+					if e, ok := biosplain.Describe(s.Name); ok {
+						topic = e.Topic
+					}
+					groups[topic] = append(groups[topic], row)
 					continue
 				}
 			}
 			c.Others = append(c.Others, row)
 		}
-		for _, cat := range biosconfig.Categories {
-			if rows := groups[cat]; len(rows) > 0 {
-				c.Groups = append(c.Groups, biosConfigGroup{Title: cat, Rows: rows})
+		for _, topic := range biosplain.Topics {
+			if rows := groups[topic]; len(rows) > 0 {
+				c.Groups = append(c.Groups, biosConfigGroup{Title: topic, Rows: rows})
 			}
 		}
+		// As traduzidas primeiro (na ordem da BIOS), as outras depois.
+		slices.SortStableFunc(c.Others, func(x, y biosConfigRow) int { return btoi(y.Plain) - btoi(x.Plain) })
 	}
 	if c.Recent, err = a.biosConfigJobs(ctx, id); err != nil {
 		return nil, err
@@ -141,7 +175,7 @@ func (a *api) biosConfigJobs(ctx context.Context, id string) ([]biosConfigJob, e
 		if full, found, err := a.store.JobForMachine(ctx, id, j.ID); err == nil && found {
 			if p, err := jobPayloadBIOSSettings(full.Payload); err == nil {
 				for _, ch := range p.Changes {
-					v.Changes = append(v.Changes, ch.Name+" → "+ch.Value)
+					v.Changes = append(v.Changes, biosplain.Change(ch.Name, ch.Value))
 				}
 			}
 		}
@@ -405,4 +439,166 @@ func biosConfigFlash(q map[string][]string, v *machineView) bool {
 		v.Error = msg
 	}
 	return ok
+}
+
+// categoryTopic: o assunto simples de cada categoria da lista fechada (para o que não está no
+// dicionário).
+var categoryTopic = map[string]string{
+	biosconfig.CatPower: biosplain.TopicPower, biosconfig.CatBoot: biosplain.TopicBoot,
+	biosconfig.CatVirtSec: biosplain.TopicSecurity, biosconfig.CatDevices: biosplain.TopicDevices,
+}
+
+// plainRow: a configuração com o título, a explicação e o valor em linguagem simples.
+func plainRow(s protocol.BIOSSetting) biosConfigRow {
+	row := biosConfigRow{Name: s.Name, Path: s.Path, Value: s.Value, Kind: biosKindLabel[s.Kind], ReadOnly: s.ReadOnly,
+		Title: s.Name, ValueText: biosplain.Value(s.Name, s.Value)}
+	if e, ok := biosplain.Describe(s.Name); ok {
+		row.Title, row.Help, row.Plain = e.Title, e.Help, true
+	}
+	var possible []string
+	for _, v := range s.Possible {
+		possible = append(possible, biosplain.Value(s.Name, v))
+	}
+	row.Possible = strings.Join(possible, " · ")
+	return row
+}
+
+// plainChoices: as opções do seletor com a tradução. Duas opções com a mesma tradução levam o
+// valor da BIOS junto, para não ficarem iguais na tela.
+func plainChoices(name string, values []string) []biosChoice {
+	count := map[string]int{}
+	out := make([]biosChoice, len(values))
+	for i, v := range values {
+		out[i] = biosChoice{Value: v, Label: biosplain.Value(name, v)}
+		count[out[i].Label]++
+	}
+	for i := range out {
+		if count[out[i].Label] > 1 && out[i].Label != out[i].Value {
+			out[i].Label += " (" + out[i].Value + ")"
+		}
+	}
+	return out
+}
+
+// biosSummary: os mesmos itens para qualquer marca e modelo, em linguagem simples, com o que o
+// padrão da BIOS pede (docs/bios-config.md, seção 9).
+func (a *api) biosSummary(ctx context.Context, id string, fw *protocol.Firmware) ([]biosSummaryRow, error) {
+	var out []biosSummaryRow
+	std := func(ok bool) (string, string) {
+		if ok {
+			return "conforme o padrão", "ok"
+		}
+		return "fora do padrão", "atencao"
+	}
+
+	// A senha de administrador.
+	pw := biosSummaryRow{Item: "Senha de administrador", Help: "Protege a BIOS: sem ela, qualquer pessoa muda as configurações ao ligar o computador."}
+	inGuard := false
+	if a.escrow != nil {
+		list, err := a.store.BIOSPasswords(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range list {
+			inGuard = inGuard || (b.State == store.BIOSActive && b.EscrowKeyID == a.escrow.id)
+		}
+	}
+	switch {
+	case fw.AdminPassword == nil:
+		pw.State = "Não se sabe (o inventário não diz)"
+	case *fw.AdminPassword && inGuard:
+		pw.State, pw.Level = "Definida e guardada pelo patchd", "ok"
+		pw.Standard, pw.StdLevel = std(true)
+	case *fw.AdminPassword:
+		pw.State = "Definida, mas o patchd não a conhece"
+		pw.Standard, pw.StdLevel = std(false)
+	default:
+		pw.State, pw.Level = "Sem senha", "atencao"
+		pw.Standard, pw.StdLevel = std(false)
+	}
+	out = append(out, pw)
+
+	// Os objetivos do padrão, pelas configurações que a BIOS informou.
+	goal := func(item, help, g, okText, fixText string) {
+		r := biosSummaryRow{Item: item, Help: help}
+		if fw.Settings == nil {
+			r.State = "Não se sabe (a BIOS não foi lida)"
+			out = append(out, r)
+			return
+		}
+		f := biosstd.Evaluate(g, fw.Settings)
+		var ev []string
+		for _, e := range f.Evidence {
+			name, value, _ := strings.Cut(e, ": ")
+			ev = append(ev, name+" = "+value)
+		}
+		if len(ev) > 0 {
+			r.Detail = vendorLabel(fw.Interface) + ": " + strings.Join(ev, " · ")
+		}
+		switch f.State {
+		case biosstd.StateOK:
+			r.State, r.Level = okText, "ok"
+			r.Standard, r.StdLevel = std(true)
+		case biosstd.StateFix:
+			r.State, r.Level = fixText, "atencao"
+			r.Standard, r.StdLevel = std(false)
+		case biosstd.StateStuck:
+			r.State = "O patchd não consegue mudar nesta BIOS"
+			r.Standard, r.StdLevel = std(false)
+		default:
+			r.State = "Este modelo não tem esta configuração"
+		}
+		out = append(out, r)
+	}
+	goal("Ligar pela rede", "Permite que a TI ligue o computador à distância para atualizar fora do horário.",
+		biosstd.GoalWake, "Ligado", "Desligado (ou bloqueado pela economia de energia)")
+	goal("Iniciar por pendrive ou HD externo", "Desligado, ninguém inicia outro sistema por um pendrive para burlar o Windows.",
+		biosstd.GoalUSBBoot, "Bloqueado", "Permitido")
+
+	// O resto, informativo.
+	sb := biosSummaryRow{Item: "Inicialização segura (Secure Boot)", Help: "Impede o computador de iniciar um sistema não reconhecido."}
+	switch {
+	case fw.SecureBoot == nil:
+		sb.State = "Não se sabe"
+	case *fw.SecureBoot:
+		sb.State, sb.Level = "Ligada", "ok"
+	default:
+		sb.State, sb.Level = "Desligada", "atencao"
+	}
+	mode := biosSummaryRow{Item: "Modo de inicialização", Help: "O Windows 11 exige o moderno (UEFI)."}
+	switch fw.Mode {
+	case protocol.FirmwareUEFI:
+		mode.State, mode.Level = "Moderno (UEFI)", "ok"
+	case protocol.FirmwareLegacy:
+		mode.State, mode.Level = "Antigo (legado)", "atencao"
+	default:
+		mode.State = "Não se sabe"
+	}
+	tpm := biosSummaryRow{Item: "Chip de segurança (TPM)", Help: "Guarda as chaves do BitLocker e do Windows Hello. O Windows 11 exige a versão 2.0."}
+	switch fw.TPM {
+	case "2.0":
+		tpm.State, tpm.Level = "Versão 2.0", "ok"
+	case "1.2":
+		tpm.State, tpm.Level = "Versão 1.2 (antiga)", "atencao"
+	case protocol.TPMNone:
+		tpm.State, tpm.Level = "Não tem, ou está desligado", "atencao"
+	default:
+		tpm.State = "Não se sabe"
+	}
+	out = append(out, sb, mode, tpm)
+	for _, k := range []struct{ key, item string }{{biosplain.KeyVirt, "Virtualização"}, {biosplain.KeyPowerLoss, "Quando a energia volta depois de uma queda"}} {
+		r := biosSummaryRow{Item: k.item, State: "Este modelo não informa"}
+		for _, st := range fw.Settings {
+			if e, ok := biosplain.Describe(st.Name); ok && e.Key == k.key {
+				r.Help, r.State = e.Help, biosplain.Value(st.Name, st.Value)
+				r.Detail = vendorLabel(fw.Interface) + ": " + st.Name + " = " + st.Value
+				break
+			}
+		}
+		if fw.Settings == nil {
+			r.State = "Não se sabe (a BIOS não foi lida)"
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
