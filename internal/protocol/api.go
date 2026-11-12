@@ -80,6 +80,35 @@ const CapabilityShutdown = "desligar-v1"
 // administrador). Instalado com -no-terminal, não anuncia e recusa.
 const CapabilityTerminal = "terminal-v1"
 
+// CapabilityWinCache (docs/cache-windows.md): o agente instala as atualizações do Windows
+// com os arquivos do cache do servidor (o campo cache do job windows_update).
+const CapabilityWinCache = "wucache-v1"
+
+// WinCachePath: o cache das atualizações do Windows no servidor. POST com os endereços que o
+// Windows Update da máquina deu; GET WinCachePath+"/<chave>" baixa o arquivo pronto.
+const WinCachePath = "/api/v1/agent/wucache"
+
+// WinCacheRequest: os arquivos de uma atualização.
+type WinCacheRequest struct {
+	URLs []string `json:"urls"`
+}
+
+// WinCacheFile: o estado de um arquivo no cache do servidor.
+type WinCacheFile struct {
+	URL    string `json:"url"`
+	Key    string `json:"key,omitempty"`
+	State  string `json:"state"` // pronto, baixando, falhou, recusado (wucache.State*)
+	Size   int64  `json:"size,omitempty"`
+	Done   int64  `json:"done,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// WinCacheResponse: a resposta, na ordem pedida.
+type WinCacheResponse struct {
+	Files []WinCacheFile `json:"files"`
+}
+
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
 

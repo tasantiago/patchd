@@ -305,7 +305,10 @@ type Engine struct {
 	Wake func(ctx context.Context, machineID, by string) (requestID int64, problem string, err error)
 	// CanShutdown: o agente da máquina anunciou o job desligar. nil: ninguém.
 	CanShutdown func(ctx context.Context, machineID string) (bool, error)
-	Logger      *slog.Logger
+	// WinCache: o job do Windows desta máquina vai pelo cache do servidor (docs/cache-windows.md).
+	// nil: nenhuma.
+	WinCache func(ctx context.Context, machineID string) (bool, error)
+	Logger   *slog.Logger
 }
 
 // closeApps põe o "fechar o programa com aviso" no job de terceiros, quando a campanha pede,
@@ -324,7 +327,23 @@ func (e *Engine) closeApps(ctx context.Context, c *Campaign, id string, p *jobs.
 
 // winUpdates monta o job do Windows: pela fonte da política e, se ela não serve por um motivo
 // que a Microsoft resolve e a campanha pede, pela fonte Microsoft.
-func (e *Engine) winUpdates(c *Campaign, rep protocol.PatchScanReport, kbs []string) (jobs.WinUpdateParams, string) {
+func (e *Engine) winUpdates(ctx context.Context, c *Campaign, id string, rep protocol.PatchScanReport, kbs []string) (jobs.WinUpdateParams, string, error) {
+	if e.WinCache != nil {
+		ok, err := e.WinCache(ctx, id)
+		if err != nil {
+			return jobs.WinUpdateParams{}, "", err
+		}
+		if ok {
+			p, skip := jobs.CacheWinUpdates(rep, kbs)
+			return p, skip, nil
+		}
+	}
+	p, skip := e.policyWinUpdates(c, rep, kbs)
+	return p, skip, nil
+}
+
+// policyWinUpdates: o job pela fonte da política, com a reserva da Microsoft se a campanha pede.
+func (e *Engine) policyWinUpdates(c *Campaign, rep protocol.PatchScanReport, kbs []string) (jobs.WinUpdateParams, string) {
 	p, skip := jobs.PolicyWinUpdates(rep, kbs)
 	if skip == "" {
 		// A política oferece hoje; se na hora não entregar (o KB sumiu do WSUS, o download
@@ -601,7 +620,10 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 		if !ok {
 			return false, "sem busca", nil
 		}
-		p, skip := e.winUpdates(c, rep, kbs)
+		p, skip, err := e.winUpdates(ctx, c, id, rep, kbs)
+		if err != nil {
+			return false, "", err
+		}
 		if skip != "" {
 			return false, skip, nil
 		}
@@ -928,7 +950,10 @@ func (e *Engine) issueOSAll(ctx context.Context, c *Campaign, req jobs.Request, 
 	if len(kbs) > jobs.MaxWinUpdates {
 		kbs = kbs[:jobs.MaxWinUpdates]
 	}
-	p, skip := e.winUpdates(c, rep, kbs)
+	p, skip, err := e.winUpdates(ctx, c, id, rep, kbs)
+	if err != nil {
+		return false, "", err
+	}
 	if skip != "" {
 		return false, skip, nil
 	}

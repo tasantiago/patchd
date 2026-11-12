@@ -263,9 +263,15 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}).Execute
 	ag.MicrosoftFallback = msFallback.Store
 	ag.Route = route
-	// Job windows_update (Aula 16.1): só no Windows, pelo WUA.
-	if wu := patch.NewWinUpdater(); wu != nil {
+	// Job windows_update (Aula 16.1): só no Windows, pelo WUA. Com o cache do servidor
+	// (docs/cache-windows.md): a busca pelo catálogo offline e os arquivos do servidor.
+	wc := &patch.WinCache{Fetch: agent.WinCacheFetcher{Client: client, Dir: filepath.Join(opts.DataDir, "wucache")}.Fetch}
+	if cab != nil {
+		wc.Catalog = cab.Path
+	}
+	if wu := patch.NewWinUpdaterWith(wc); wu != nil {
 		ag.WinUpdate = wu
+		client.Capabilities = append(client.Capabilities, protocol.CapabilityWinCache)
 	}
 	// Job reboot (Aula 8.6): o estado de reinício vem do mesmo scanner da busca.
 	if restart := newRestart(platform.ExecRunner{}); restart != nil {

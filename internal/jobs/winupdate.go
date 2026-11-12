@@ -54,10 +54,18 @@ type WinUpdateParams struct {
 	// não aparece, o download falha), o agente refaz o mesmo job direto pela Microsoft. Vai só
 	// para agentes que anunciam (MicrosoftUpdate.InJob): os anteriores recusam o campo.
 	Fallback bool `json:"fallback,omitempty"`
+	// Cache (docs/cache-windows.md): os arquivos vêm do cache do servidor, não do WSUS nem da
+	// Microsoft. O agente procura as atualizações pelo catálogo offline que o servidor
+	// distribui (ou, sem ele, na Microsoft), pede os arquivos ao servidor e os entrega ao
+	// Windows Update. Vai só para agentes que anunciam protocol.CapabilityWinCache.
+	Cache bool `json:"cache,omitempty"`
 }
 
 // SourceLabel: a fonte em palavras.
 func (p WinUpdateParams) SourceLabel() string {
+	if p.Cache {
+		return "cache do patchd (arquivos baixados uma vez pelo servidor)"
+	}
 	if p.Source == WinSourceMicrosoft {
 		return "Microsoft Update (fonte reserva)"
 	}
@@ -95,6 +103,9 @@ func (p WinUpdateParams) Validate() error {
 	}
 	if p.Fallback && p.Source != WinSourcePolicy {
 		return errors.New("a reserva no job (fallback) só vai com a fonte da política")
+	}
+	if p.Cache && (p.Source != WinSourcePolicy || p.Fallback) {
+		return errors.New("o job pelo cache não leva fonte nem reserva: os arquivos vêm do servidor")
 	}
 	seen := map[string]bool{}
 	for _, u := range p.Updates {
@@ -187,6 +198,10 @@ func WinUpdatesForKBs(rep protocol.PatchScanReport, kbs []string) (p WinUpdatePa
 func StillMissing(p WinUpdateParams, rep protocol.PatchScanReport) (still []string, failed string) {
 	want := sourceWUADefault
 	hasMS := slices.ContainsFunc(rep.Scans, func(s protocol.ScanResult) bool { return s.Source == sourceWUAMicrosoft && s.Missing != nil })
+	// Pelo cache, o agente procura pelo catálogo offline: é a busca dele que vale.
+	if p.Cache && slices.ContainsFunc(rep.Scans, func(s protocol.ScanResult) bool { return s.Source == sourceWUAOffline && s.Missing != nil }) {
+		want = sourceWUAOffline
+	}
 	if p.Source == WinSourceMicrosoft && slices.ContainsFunc(rep.Scans, func(s protocol.ScanResult) bool { return s.Source == sourceWUAMicrosoft }) {
 		want = sourceWUAMicrosoft
 	}
@@ -287,6 +302,18 @@ func PolicyWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdatePara
 		return WinUpdateParams{}, SkipNotInScan
 	}
 	p, _, _ := WinUpdatesForKBs(rep, use)
+	return p, ""
+}
+
+// CacheWinUpdates monta o job pelo cache do servidor (docs/cache-windows.md): os KBs que a
+// busca da política ou a do catálogo offline mostra pendentes (o UpdateID é o mesmo nas duas).
+// Não depende do WSUS: o que só o catálogo offline mostra também vai.
+func CacheWinUpdates(rep protocol.PatchScanReport, kbs []string) (WinUpdateParams, string) {
+	p, notFound, _ := WinUpdatesForKBs(rep, kbs)
+	if len(notFound) == len(kbs) || len(p.Updates) == 0 {
+		return WinUpdateParams{}, SkipNotInScan
+	}
+	p.Cache = true
 	return p, ""
 }
 

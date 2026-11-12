@@ -209,3 +209,49 @@ func TestReservaNoJob(t *testing.T) {
 		t.Error("sem a reserva, a política falhando não prova nada")
 	}
 }
+
+// O job pelo cache do servidor (docs/cache-windows.md): o que a política ou o catálogo offline
+// mostram, sem fonte nem reserva; a conferência usa a busca do catálogo offline.
+func TestWinUpdatePeloCache(t *testing.T) {
+	p, skip := CacheWinUpdates(buscaWindows(), []string{"KB5127648", "KB5130001", "KB5999999"})
+	if skip != "" || !p.Cache || len(p.Updates) != 2 || p.Source != WinSourcePolicy || p.Fallback {
+		t.Fatalf("job: %+v %q", p, skip)
+	}
+	if err := p.Validate(); err != nil {
+		t.Errorf("validar: %v", err)
+	}
+	raw, _ := json.Marshal(p)
+	if !strings.Contains(string(raw), `"cache":true`) {
+		t.Errorf("o campo no JSON: %s", raw)
+	}
+	if _, err := ParseWinUpdateParams(raw); err != nil {
+		t.Errorf("ida e volta: %v", err)
+	}
+	if _, skip := CacheWinUpdates(buscaWindows(), []string{"KB5999999"}); skip != SkipNotInScan {
+		t.Errorf("nada na busca: %q", skip)
+	}
+	for nome, muda := range map[string]func(*WinUpdateParams){
+		"com a fonte Microsoft": func(p *WinUpdateParams) { p.Source = WinSourceMicrosoft },
+		"com a reserva":         func(p *WinUpdateParams) { p.Fallback = true },
+	} {
+		q := p
+		muda(&q)
+		if q.Validate() == nil {
+			t.Errorf("%s: aceito", nome)
+		}
+	}
+	if !strings.Contains(p.SourceLabel(), "cache do patchd") {
+		t.Errorf("rótulo: %q", p.SourceLabel())
+	}
+	// A conferência: a busca do catálogo offline, mesmo com a da política falhando.
+	rep := buscaWindows()
+	rep.Scans[0].Missing, rep.Scans[0].Error = nil, "0x8024402C"
+	if still, f := StillMissing(p, rep); f != "" || strings.Join(still, ",") != "KB5127648,KB5130001" {
+		t.Errorf("conferência pelo cache: %v %q", still, f)
+	}
+	// Sem o campo, o job continua como antes (o agente anterior recusaria o campo).
+	q, _ := PolicyWinUpdates(buscaWindows(), []string{"KB5127648"})
+	if raw, _ := json.Marshal(q); strings.Contains(string(raw), "cache") {
+		t.Errorf("o campo vai no job de quem não pediu: %s", raw)
+	}
+}

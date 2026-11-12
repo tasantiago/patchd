@@ -185,6 +185,24 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v, nil
 			}, Show: showChoice(microsoftChoices)},
+		{Key: api.WinCacheKey, Group: "Agentes", Label: "Cache do Windows Update no servidor", Kind: settings.Select, Options: winCacheChoices,
+			Default: api.WinCacheOff, Help: "Ligado: as atualizações do Windows aprovadas no patchd vêm do servidor, não do WSUS nem de cada máquina direto da Microsoft. O servidor baixa cada pacote da Microsoft uma vez e o entrega às máquinas da rede interna; o agente procura a atualização pelo catálogo offline que o servidor já distribui. Comece pelo grupo piloto. Precisa de PATCHD_CONTENT_DIR (os pacotes ficam lá) e de agentes desta versão em diante; os outros seguem como antes.",
+			Effect: "na hora: o próximo job do Windows (painel ou campanha) já sai pelo cache", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v != api.WinCacheOff && v != api.WinCachePilot && v != api.WinCacheAll {
+					return "", errors.New("use 0 (desligado), piloto ou todos")
+				}
+				return v, nil
+			}, Show: showChoice(winCacheChoices)},
+		{Key: api.WinCacheDaysKey, Group: "Agentes", Label: "Limpeza do cache do Windows Update", Kind: settings.Number, Unit: "dias",
+			Default: strconv.Itoa(defaultWinCacheDays), Help: "O pacote que nenhuma máquina pediu nesse prazo sai do disco do servidor. De 7 a 365.",
+			Effect: "na próxima limpeza (de hora em hora)", Check: func(v string) (string, error) {
+				n, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || n < 7 || n > 365 {
+					return "", errors.New("de 7 a 365 dias")
+				}
+				return strconv.Itoa(n), nil
+			}, Show: func(v string) string { return v + " dias" }},
 		{Key: api.TerminalKey, Group: "Agentes", Label: "Terminal do administrador", Kind: settings.Select, Options: terminalChoices,
 			Default: "0", Help: "Ligado: o admin ganha a aba Terminal na página de cada máquina, para rodar um comando por vez com a conta do agente (SYSTEM ou root). Cada sessão pede o motivo, e tudo fica registrado por 365 dias: quem, quando, o texto do comando, o código de saída e a saída. Só agentes desta versão em diante, e não os instalados com -no-terminal.",
 			Effect: "na hora: a aba aparece (ou some) para os administradores", Check: func(v string) (string, error) {
@@ -326,6 +344,12 @@ func settingDefs(look config.Lookup) []settings.Def {
 
 // notifyEffect: quando a mudança nas notificações vale.
 const notifyEffect = "na hora: o próximo e-mail já sai com a configuração nova"
+
+var winCacheChoices = []settings.Option{{Value: api.WinCacheOff, Label: "desligado: como antes (WSUS ou Microsoft)"},
+	{Value: api.WinCachePilot, Label: "só o grupo de implantação piloto"}, {Value: api.WinCacheAll, Label: "todas as máquinas"}}
+
+// defaultWinCacheDays: a limpeza padrão do cache do Windows (dois ciclos mensais e folga).
+const defaultWinCacheDays = 60
 
 var terminalChoices = []settings.Option{{Value: "0", Label: "desligado"}, {Value: "1", Label: "ligado: comandos pelo painel, com motivo e registro"}}
 

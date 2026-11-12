@@ -205,6 +205,11 @@ func (a *api) winUpdateAction(w http.ResponseWriter, r *http.Request, s panel.Se
 		return
 	}
 	params, _, _ := jobs.WinUpdatesForKBs(rep, c.Installable)
+	// docs/cache-windows.md: os arquivos do cache do servidor, se o parâmetro inclui a máquina.
+	if params.Cache, err = a.winCacheFor(ctx, id); err != nil {
+		a.internalError(w, r, "conferir o cache do Windows", err)
+		return
+	}
 	if err := params.Validate(); err != nil {
 		a.logger.Warn("windows_update pelo painel recusado", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
 		http.Redirect(w, r, back+"?erro=windows-muitas", http.StatusSeeOther)

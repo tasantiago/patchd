@@ -879,6 +879,13 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: o que muda pela tela fica em Parâmetros; o resto, no ambiente (.env) e nos arquivos de segredo</span></div>
 <dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
 {{if .NotifyOn}}<form class="lote" method="post" action="/painel/configuracao/notificacoes/teste"><button class="sec" type="submit">Mandar e-mail de teste</button> <span class="muted">uma mensagem para a lista de PATCHD_NOTIFY_TO; fica na auditoria</span></form>{{end}}</div>
+{{with .WinCache}}<div class="card" id="cache-windows"><div class="card-cab"><h2>Cache do Windows Update</h2><span class="muted">{{.Files}} pacote(s) · {{.Size}}</span></div>
+<dl class="dados"><dt>Situação</dt><dd>{{.Mode}} <a href="/painel/configuracao?aba=parametros">(Parâmetros)</a></dd><dt>Pasta</dt><dd><code>{{.Dir}}</code></dd>{{if .Days}}<dt>Limpeza</dt><dd>sai o pacote que nenhuma máquina pediu em {{.Days}} dias</dd>{{end}}</dl>
+<p class="muted">O servidor baixa cada pacote da Microsoft uma vez, quando a primeira máquina precisa, e entrega às outras pela rede interna. Uma atualização cumulativa tem de centenas de MB a alguns GB por versão do Windows.</p>
+{{if .Fetching}}<h3>Baixando agora</h3><div class="tabela"><table><thead><tr><th>Pacote</th><th>Progresso</th></tr></thead><tbody>{{range .Fetching}}<tr><td><code>{{.Name}}</code></td><td>{{.Progress}}</td></tr>{{end}}</tbody></table></div>{{end}}
+{{if .Recent}}<h3>Usados por último</h3><div class="tabela"><table><thead><tr><th>Pacote</th><th class="num">Tamanho</th><th>Último pedido</th></tr></thead><tbody>{{range .Recent}}<tr><td><code>{{.Name}}</code></td><td class="num">{{.Size}}</td><td>{{.When}}</td></tr>{{end}}</tbody></table></div>{{if .More}}<p class="muted">e mais {{.More}} pacote(s).</p>{{end}}
+{{else if not .Fetching}}<p class="muted">Nenhum pacote ainda: o primeiro chega quando uma máquina instalar uma atualização pelo cache.</p>{{end}}
+</div>{{end}}
 {{with .Appearance}}<div class="card"><div class="card-cab"><h2>Aparência</h2><span class="muted">o logotipo do menu lateral e da tela de login</span></div>
 <div class="logo-linha"><div class="logo-previa">{{if .URL}}<img src="{{.URL}}" alt="logotipo atual">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}</div>
 <div class="logo-acoes">{{if .URL}}<p>{{.Type}} · {{.KB}} KB · enviado por {{.UpdatedBy}} em {{.UpdatedAt}}</p>{{else}}<p class="muted">Sem logotipo: o painel usa o ícone padrão.</p>{{end}}
