@@ -268,6 +268,14 @@ Correção: Go 1.27.3 no go.mod e nos dois Dockerfiles (o container de desenvolv
 reconstruído) e a release v0.18.6, de agente e servidor. Como da primeira vez, os agentes só
 recebem a correção pela release.
 
+Terceira ocorrência (12/11/2026): o CI apontou a **GO-2026-6859** no `net/http` do Go
+1.27.3: o servidor HTTP/1 podia cair numa disputa entre o `MaxBytesReader` e a leitura dos
+cabeçalhos. Onde pesa no patchd: o servidor usa o `MaxBytesReader` nos formulários do painel e
+nos envios dos agentes, então um cliente que provocasse a disputa derrubaria o processo (o
+systemd o sobe de novo, mas o painel e os check-ins param no meio); o agente só serve HTTP na
+própria máquina (o aplicativo da sessão), fora do alcance da rede. Correção: Go 1.27.4 no
+go.mod e nos dois Dockerfiles, e uma release nova de servidor e agente.
+
 Regras da casa para exceções:
 
 1. Toda exceção é `// #nosec Gxxx -- motivo` na linha (ou no comando de várias linhas). Sem a

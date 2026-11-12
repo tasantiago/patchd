@@ -6,7 +6,7 @@
 # ---------- Estágio 1: compilação ----------
 # A mesma versão do Dockerfile.dev e do go.mod (Aula 20.2).
 # Nome completo da imagem (Aula 23.1): o Podman do RHEL não completa nomes curtos sem perguntar.
-FROM docker.io/library/golang:1.27.3-trixie AS build
+FROM docker.io/library/golang:1.27.4-trixie AS build
 
 # CA corporativa (opcional): necessária para baixar módulos atrás da inspeção TLS
 # e copiada para a imagem final, para o servidor buscar os catálogos.
