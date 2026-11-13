@@ -68,8 +68,11 @@ a.kpi:hover{border-color:#c4cad3}.kpi.ativo{border-color:var(--azul);box-shadow:
 .vazio strong{display:block;margin-bottom:.2rem;color:var(--texto);font-weight:600;font-size:.95rem}
 table{border-collapse:collapse;width:100%;font-size:.9rem}
 th,td{text-align:left;padding:.55rem .6rem;border-bottom:1px solid var(--borda);vertical-align:top}
-th{font-weight:500;color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.035em;background:#f9fafb}
+th{font-weight:500;color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.035em;background:#f9fafb;vertical-align:bottom}
 tbody tr:hover td{background:#fbfcfd}td.num{text-align:right;font-variant-numeric:tabular-nums}
+/* Linha com botão: o botão é mais alto que o texto, e com tudo no topo o texto das outras
+colunas ficava acima da linha do botão. */
+tbody tr:has(>td>button,>td>form>button,>td>a.btn,>td>form>select)>td{vertical-align:middle}
 .tabela{overflow-x:auto;margin:0 -1.25rem}.card-cab+.tabela,.card-cab+form>.tabela:first-child{margin-top:-1rem}
 .card>.tabela:last-child,section>.tabela:last-child{margin-bottom:-1rem}.tabela tbody tr:last-child td{border-bottom:0}.tabela th:first-child,.tabela td:first-child{padding-left:1.25rem}.tabela th:last-child,.tabela td:last-child{padding-right:1.25rem}
 .estado,.job{display:inline-block;padding:.12rem .55rem;border-radius:999px;font-size:.76rem;font-weight:600;white-space:nowrap;border:1px solid transparent}
@@ -118,7 +121,7 @@ dl.dados{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.45rem
 .roscas{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:1rem 2.2rem}.roscas li{display:flex;align-items:center;gap:.8rem}
 .rosca .fundo{stroke:var(--borda)}.rosca .ok{stroke:var(--verde-ok)}.rosca .alto{stroke:var(--laranja)}.rosca .cheio{stroke:var(--vermelho)}
 .rosca text{font-size:18px;font-weight:600;fill:var(--texto)}.fontes{font-size:.8rem;margin:.9rem 0 0}
-th a{color:inherit;text-decoration:none}th a:hover{color:var(--azul)}h1 .muted{font-weight:400}
+th a{color:inherit;text-decoration:none;white-space:nowrap}th a:hover{color:var(--azul)}h1 .muted{font-weight:400}
 form.busca{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:1rem}form.busca input[type=search]{flex:1 1 16rem}
 .paginas{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:center;margin-top:1rem;font-size:.88rem}.paginas .muted{margin-right:auto}
 .paginas a,.paginas span.atual{padding:.15rem .5rem;border-radius:6px}.paginas span.atual{background:var(--azul);color:#fff}
