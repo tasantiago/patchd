@@ -30,7 +30,7 @@ func TestBuscarAgoraPeloPainel(t *testing.T) {
 		!strings.Contains(b, "Nenhum job para esta máquina") {
 		t.Errorf("admin:\n%s", b)
 	}
-	if b := pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String(); strings.Contains(b, "/buscar") {
+	if b := pagina(h, "GET", maq+"?aba=tarefas", sessaoTeste, nil).Body.String(); strings.Contains(b, maq+"/buscar") {
 		t.Error("o perfil leitura não vê o botão")
 	}
 
@@ -132,7 +132,7 @@ func TestPainelSemChaveDeJobs(t *testing.T) {
 	h, st, _ := ambientePaginas(t)
 	maq := "/painel/maquinas/60ef97e4-0001"
 	b := pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String()
-	if strings.Contains(b, "/buscar") || !strings.Contains(b, "PATCHD_JOB_SIGNING_KEY_FILE") {
+	if strings.Contains(b, maq+"/buscar") || !strings.Contains(b, "PATCHD_JOB_SIGNING_KEY_FILE") {
 		t.Errorf("sem chave, sem botão e com a explicação:\n%s", b)
 	}
 	if r := pagina(h, "POST", maq+"/buscar", sessaoAdmin, url.Values{}); local(r) != maq+"?erro=sem-chave" {
@@ -357,7 +357,7 @@ func TestPassarParaHTTPSPeloPainel(t *testing.T) {
 	}
 
 	h, st, _ = ambientePaginas(t, api.WithJobKey(priv), api.WithPublicURL("https://patchd.exemplo:8443"))
-	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "nenhum check-in desde a Aula 9.2") || !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/https"`) {
+	if b := pagina(h, "GET", maq, sessaoAdmin, nil).Body.String() + pagina(h, "GET", maq+"?aba=tarefas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "o agente ainda não fez contato") || !strings.Contains(b, `action="/painel/maquinas/60ef97e4-0001/https"`) {
 		t.Errorf("sem check-in ainda, o botão aparece:\n%s", b)
 	}
 	_, _ = st.CheckIn(ctx, "60ef97e4-0001", "v", "", false)

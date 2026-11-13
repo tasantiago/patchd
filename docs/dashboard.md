@@ -6,7 +6,8 @@ exportação. Links antigos como `/painel/?estado=faltando` continuam funcionand
 
 A página usa as mesmas fontes do inventário, da conformidade e da operação.
 Não cria uma pontuação de risco nem uma tendência histórica. O botão **Atualizar
-visão** refaz a consulta e a página informa seu horário em UTC.
+visão** refaz a consulta e a página informa seu horário no fuso do painel
+(`PATCHD_TIMEZONE`; sem fuso configurado, em UTC).
 
 ## Escolher os gráficos
 

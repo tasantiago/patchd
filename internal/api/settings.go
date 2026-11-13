@@ -186,7 +186,7 @@ func (a *api) systemRows(r *http.Request) ([]settingRow, error) {
 	now := a.now()
 	if si := a.system; si != nil {
 		add("Servidor", fmt.Sprintf("%s · commit %s · %s", si.Version, shortCommit(si.Commit), si.GoVersion), "")
-		add("Em execução desde", si.StartedAt.UTC().Format("02/01/2006 15:04")+" UTC ("+ago(now.Sub(si.StartedAt))+")", "")
+		add("Em execução desde", a.stamp(si.StartedAt)+" ("+ago(now.Sub(si.StartedAt))+")", "")
 		if si.Database {
 			add("Banco", fmt.Sprintf("PostgreSQL · migração %d", si.Schema), "")
 		} else {
@@ -334,7 +334,7 @@ func (a *api) agentView(r *http.Request, v *settingsView) error {
 	for _, t := range list {
 		st := t.Status(now)
 		v.Tokens = append(v.Tokens, tokenRow{ID: t.ID, Note: dash(t.Note), Created: a.stamp(t.CreatedAt),
-			Expires: tokenExpiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido", Relay: t.Relay})
+			Expires: a.expiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido", Relay: t.Relay})
 	}
 	slices.SortFunc(v.Tokens, func(x, y tokenRow) int { return int(y.ID - x.ID) })
 	return nil
@@ -465,7 +465,7 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	}
 	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), detail)
 	v := tokenCreatedView{pageBase: a.baseFor(r.Context(), s, "Token de registro", "configuracao"), ID: id, Token: plain,
-		Expires: tokenExpiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0, Relay: relayAddr}
+		Expires: a.expiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0, Relay: relayAddr}
 	v.Server = a.publicURL
 	if v.Server == "" {
 		v.Server = "https://<endereço-do-servidor>"
@@ -530,6 +530,15 @@ func (a *api) revokeTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	a.logger.Info("token de registro revogado pelo painel", "token_id", id, "username", s.Username, "request_id", RequestID(r.Context()))
 	a.audit(r, s, "token.revogar", fmt.Sprintf("token %d", id), "")
 	http.Redirect(w, r, fmt.Sprintf("/painel/configuracao?aba=agente&revogado=%d", id), http.StatusSeeOther)
+}
+
+// expiry: a validade de um token como a tela mostra, no fuso do painel. A auditoria
+// continua com tokenExpiry, em UTC: é um registro, e não muda com a configuração.
+func (a *api) expiry(t time.Time) string {
+	if t.IsZero() {
+		return "sem vencimento"
+	}
+	return a.stamp(t)
 }
 
 func tokenExpiry(t time.Time) string {

@@ -135,7 +135,7 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 		count[g]++
 		user := strings.TrimPrefix(j.CreatedBy, store.SelfServiceAuthorPrefix)
 		users[strings.ToLower(user)] = true
-		app, what := ssWhat(j, appNames)
+		app, what := ssWhat(j, appNames, a.panelLocation())
 		if app != "" {
 			top[app]++
 		}
@@ -284,7 +284,7 @@ func (a *api) refuseSelfServiceAction(w http.ResponseWriter, r *http.Request, s 
 
 // ssWhat descreve o pedido pelos parâmetros assinados: o programa ("7-Zip"; vazio no
 // reinício) e o texto da linha ("7-Zip 26.04", "reinício às 18:00").
-func ssWhat(j store.JobRow, appNames map[string]string) (app, what string) {
+func ssWhat(j store.JobRow, appNames map[string]string, loc *time.Location) (app, what string) {
 	var payload jobs.Job
 	_ = json.Unmarshal([]byte(j.Payload), &payload)
 	switch j.Type {
@@ -301,7 +301,7 @@ func ssWhat(j store.JobRow, appNames map[string]string) (app, what string) {
 	case jobs.TypeReboot:
 		p, err := jobs.ParseRebootParams(payload.Params)
 		if err == nil && p.At != nil {
-			return "", "reinício às " + p.At.Local().Format("15:04")
+			return "", "reinício às " + p.At.In(loc).Format("15:04")
 		}
 		return "", "reinício agora"
 	}
@@ -313,7 +313,7 @@ var _ = template.Must(pages.New("autoatendimento-painel").Parse(`{{template "top
 {{template "automacao-abas" "autoatendimento"}}
 <p class="muted">O que os usuários pediram pela Central de software. A oferta (quem pode pedir o quê) fica em Configuração › Autoatendimento.
 Período: {{range .Periods}}{{if eq . $.Days}}<b>{{.}} dias</b>{{else}}<a href="?dias={{.}}{{if $.Filter}}&amp;estado={{$.Filter}}{{end}}">{{.}} dias</a>{{end}} {{end}}</p>
-<ul class="kpis">{{range .KPIs}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{if eq .Filter "#aprovacao"}}#aprovacao{{else}}?dias={{$.Days}}{{if .Filter}}&amp;estado={{.Filter}}{{end}}{{end}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
+<ul class="kpis">{{range .KPIs}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{if eq .Filter "#aprovacao"}}#aprovacao{{else}}?dias={{$.Days}}{{if .Filter}}&amp;estado={{.Filter}}{{end}}{{end}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Color .N}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
 <li><div class="kpi"><span class="kpi-rot">Recusados</span><span class="kpi-val v-cinza">{{len .Refusals}}{{if ge (len .Refusals) 30}}+{{end}}</span><span class="kpi-sub">pedidos fora da oferta ou da regra</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Usuários</span><span class="kpi-val">{{.Users}}</span><span class="kpi-sub">com algum pedido atendido</span></div></li></ul>
 {{if .Waiting}}<div class="card" id="aprovacao"><div class="card-cab"><h2>Aguardando a TI</h2><span class="muted">pedidos de programas com aprovação; sem decisão em 7 dias, expiram</span></div>

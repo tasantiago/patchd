@@ -33,7 +33,7 @@ func (a *api) channelView(r *http.Request, id string, v *machineView) error {
 	}
 	switch {
 	case tls == nil:
-		v.Channel = "— (nenhum check-in desde a Aula 9.2)"
+		v.Channel = "— (o agente ainda não fez contato)"
 	case *tls:
 		v.Channel = "HTTPS"
 	default:

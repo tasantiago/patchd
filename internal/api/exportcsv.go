@@ -54,6 +54,15 @@ func (a *api) fleetCSV(w http.ResponseWriter, r *http.Request) {
 		}
 		fleet.Machines, suffix = kept, "-"+string(f)
 	}
+	if _, needle := fleetNeedle(r.URL.Query()); needle != "" { // a mesma busca da tela
+		kept := fleet.Machines[:0:0]
+		for _, m := range fleet.Machines {
+			if fleetMatch(m, needle) {
+				kept = append(kept, m)
+			}
+		}
+		fleet.Machines, suffix = kept, suffix+"-busca"
+	}
 	name := fmt.Sprintf("patchd-parque%s-%s.csv", suffix, fleet.EvaluatedAt.UTC().Format("20060102-1504"))
 	a.sendCSV(w, r, name, len(fleet.Machines), func(b *bytes.Buffer) error { return export.Fleet(b, fleet) })
 }

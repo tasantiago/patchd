@@ -103,8 +103,26 @@ func TestPaginaDaFrota(t *testing.T) {
 	// Filtro: só as do estado; filtro desconhecido é ignorado.
 	b = pagina(h, "GET", "/painel/?estado=faltando", sessaoTeste, nil).Body.String()
 	if !strings.Contains(b, "60ef97e4") || strings.Contains(b, "92fc3b93") || !strings.Contains(b, `class="kpi ativo" href="/painel/parque?estado=faltando"`) ||
-		!strings.Contains(b, "<h2>Máquinas · faltando</h2>") {
+		!strings.Contains(b, `<h2>Máquinas · faltando <span class="muted">(1)</span></h2>`) || !strings.Contains(b, `href="/painel/parque.csv?estado=faltando"`) {
 		t.Errorf("filtro:\n%s", b)
+	}
+	// A busca da lista: nome, começo do ID ou sistema, junto com o estado; o CSV leva a mesma.
+	b = pagina(h, "GET", "/painel/parque?q=UBUNTU", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "60ef97e4") || strings.Contains(b, "92fc3b93") || !strings.Contains(b, `href="/painel/parque.csv?q=UBUNTU"`) ||
+		!strings.Contains(b, `value="UBUNTU"`) || !strings.Contains(b, `<a href="/painel/parque">Limpar</a>`) {
+		t.Errorf("busca no parque:\n%s", b)
+	}
+	if b := pagina(h, "GET", "/painel/parque?q=92fc", sessaoTeste, nil).Body.String(); !strings.Contains(b, "92fc3b93") || strings.Contains(b, "60ef97e4-0001") {
+		t.Error("busca pelo começo do ID")
+	}
+	b = pagina(h, "GET", "/painel/parque?estado=faltando&q=%3Cnada%3E", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, `Nenhuma máquina com "&lt;nada&gt;" no estado faltando.`) || strings.Contains(b, "<nada>") ||
+		!strings.Contains(b, `<a href="/painel/parque?estado=faltando">Limpar a busca</a>`) {
+		t.Errorf("busca sem resultado:\n%s", b)
+	}
+	if csv := pagina(h, "GET", "/painel/parque.csv?q=ubuntu", sessaoTeste, nil); !strings.Contains(csv.Body.String(), "vm-ubuntu") ||
+		strings.Contains(csv.Body.String(), "92fc3b93") || !strings.Contains(csv.Header().Get("Content-Disposition"), "-busca-") {
+		t.Errorf("CSV com a busca: %q\n%s", csv.Header().Get("Content-Disposition"), csv.Body.String())
 	}
 	if b := pagina(h, "GET", "/painel/?estado=%3Cx%3E", sessaoTeste, nil).Body.String(); !strings.Contains(b, "92fc3b93") || strings.Contains(b, "<x>") {
 		t.Error("filtro inválido: mostra tudo e não reflete o valor")

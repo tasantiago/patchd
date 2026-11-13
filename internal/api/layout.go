@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -268,7 +269,7 @@ func (a *api) logoCard(ctx context.Context) (*logoView, error) {
 	v.URL = "/painel/logo?v=" + l.SHA256[:16]
 	v.Type = strings.ToUpper(strings.TrimPrefix(l.ContentType, "image/"))
 	v.KB = (len(l.Data) + 1023) / 1024
-	v.UpdatedAt = l.UpdatedAt.UTC().Format("02/01/2006 15:04") + " UTC"
+	v.UpdatedAt = a.stamp(l.UpdatedAt)
 	v.UpdatedBy = l.UpdatedBy
 	return v, nil
 }
@@ -285,19 +286,71 @@ func logoFlash(q url.Values, v *pageBase) {
 	}
 }
 
-// Section: o grupo do menu da página, para a trilha da barra superior.
+// Section: o grupo do menu da página, para a trilha da barra superior. As páginas do
+// primeiro grupo ("Início", "Parque"...) não têm grupo a mostrar: o nome delas basta.
 func (b pageBase) Section() string {
 	switch b.Nav {
-	case "inicio", "frota", "inventario", "aposentadas":
-		return "Navegação"
 	case "patch":
 		return "Patch"
-	case "campanhas", "jobs", "aneis", "autoatendimento", "padronizacao":
+	case "campanhas", "jobs", "aneis", "autoatendimento", "padronizacao", "scripts":
 		return "Automação"
-	case "configuracao":
+	case "configuracao", "descoberta":
 		return "Administração"
 	}
 	return ""
+}
+
+// crumb: um degrau da trilha que leva de volta à lista de onde a página saiu.
+type crumb struct{ Label, Href string }
+
+// navHome: a página de entrada de cada item do menu, com os títulos que ela usa. Quem
+// tem outro título é uma tela de dentro (uma máquina, uma campanha, uma conferência) e
+// ganha na trilha o link de volta.
+var navHome = map[string]struct {
+	crumb
+	roots []string
+}{
+	"frota":           {crumb{"Parque", "/painel/parque"}, nil},
+	"inventario":      {crumb{"Inventário", "/painel/inventario"}, []string{"Equipamentos"}},
+	"aposentadas":     {crumb{"Aposentadas", "/painel/aposentadas"}, []string{"Máquinas aposentadas"}},
+	"alertas":         {crumb{"Alertas", "/painel/alertas"}, nil},
+	"patch":           {crumb{"Patch", "/painel/patch?aba=geral"}, []string{"Patch · Terceiros"}},
+	"campanhas":       {crumb{"Campanhas", "/painel/campanhas"}, []string{"Perguntas ao parque"}},
+	"jobs":            {crumb{"Jobs", "/painel/jobs"}, nil},
+	"aneis":           {crumb{"Grupos de implantação", "/painel/grupos-implantacao"}, []string{"Grupos de implantação e janelas"}},
+	"autoatendimento": {crumb{"Autoatendimento", "/painel/autoatendimento"}, nil},
+	"padronizacao":    {crumb{"Padronização", "/painel/padronizacao"}, nil},
+	"scripts":         {crumb{"Scripts", "/painel/scripts"}, nil},
+	"descoberta":      {crumb{"Descoberta", "/painel/descoberta"}, []string{"Descoberta de rede"}},
+	"configuracao":    {crumb{"Configuração", "/painel/configuracao"}, nil},
+}
+
+// Parent: o degrau de volta, nas telas de dentro. Vazio na página de entrada do menu.
+func (b pageBase) Parent() *crumb {
+	h, ok := navHome[b.Nav]
+	if !ok || b.Title == h.Label || slices.Contains(h.roots, b.Title) {
+		return nil
+	}
+	// O grupo "Patch" já é o degrau: repetir daria "Patch › Patch › Item".
+	if h.Label == b.Section() {
+		return nil
+	}
+	return &h.crumb
+}
+
+// Leaf: o nome da página na trilha. As três telas do Patch têm o mesmo título e se
+// distinguem pela aba, como no menu.
+func (b pageBase) Leaf() string {
+	if b.Nav == "patch" && (b.Title == "Patch" || b.Title == "Patch · Terceiros") {
+		switch b.Sub {
+		case "geral":
+			return "Visão geral"
+		case "terceiros":
+			return "Programas de terceiros"
+		}
+		return "Sistema operacional"
+	}
+	return b.Title
 }
 
 // Initials: as iniciais do nome, no lugar da foto (o painel não guarda foto).
@@ -325,3 +378,26 @@ func (b pageBase) RoleLabel() string {
 	}
 	return "Leitura"
 }
+
+// kpiColor: a cor do número de um indicador. Zero não é problema nem conquista: sai neutro,
+// para a cor chamar a atenção só onde há o que ver.
+func kpiColor(class string, n any) string {
+	switch v := n.(type) {
+	case int:
+		if v == 0 {
+			return "v-zero"
+		}
+	case int64:
+		if v == 0 {
+			return "v-zero"
+		}
+	case string:
+		if v == "0" {
+			return "v-zero"
+		}
+	}
+	return class
+}
+
+// MoreUsers: quantos usuários conectados além do primeiro, para o cabeçalho da máquina.
+func (v machineView) MoreUsers() int { return max(len(v.Host.Users)-1, 0) }

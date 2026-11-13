@@ -772,7 +772,11 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // stamp: a hora no fuso do painel (PATCHD_TIMEZONE, Aula 11.1); sem fuso, em UTC e dito.
+// Uma data que não existe (o valor zero) sai como traço, não como "01/01/0001".
 func (a *api) stamp(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
 	if tz := a.tz(); tz != "" {
 		if loc, err := time.LoadLocation(tz); err == nil {
 			return t.In(loc).Format("02/01/2006 15:04")

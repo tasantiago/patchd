@@ -666,7 +666,7 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	v.Sources, v.Observe = dash(c.Target()), hoursLabel(int(c.Observe.Hours()))
-	v.Created = c.CreatedAt.Format("02/01/2006 15:04") + " UTC"
+	v.Created = a.stamp(c.CreatedAt)
 	if v.Admin {
 		v.CanPause = c.State == campaign.StateRunning
 		v.CanResume = c.State == campaign.StatePaused
