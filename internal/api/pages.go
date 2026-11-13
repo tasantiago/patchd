@@ -758,7 +758,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{if $.Admin}}<td><input type="checkbox" name="maquina" value="{{.ID}}" aria-label="marcar {{.Short}}"></td>{{end}}
 <td><span class="estado {{.State}}">{{.Label}}</span>{{if .Reasons}}<ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}</td>
 <td><a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a></td>
-<td>{{.Name}}</td><td>{{.OS}}</td><td class="num">{{.Ring}}</td><td>{{.Pending}}</td>
+<td class="nowrap">{{.Name}}</td><td class="nowrap">{{.OS}}</td><td class="num">{{.Ring}}</td><td class="nowrap">{{.Pending}}</td>
 <td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td>{{.Seen}}</td></tr>
 {{end}}</tbody></table></div>
 {{if .Range}}<nav class="paginas" aria-label="páginas"><span class="muted">{{.Range}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>{{end}}
@@ -797,14 +797,14 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr>{{range .Cols}}<th{{if .Sort}} aria-sort="{{.Sort}}"{{end}}><a href="{{.Href}}">{{.Label}}{{if .Arrow}} {{.Arrow}}{{end}}</a></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr>
-<td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td>
+<td class="nowrap"><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td>
 <td>{{if .Tombo}}<code>{{.Tombo}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
 <td{{if .AssetHint}} title="{{.AssetHint}}"{{end}}>{{if .Building}}{{.Building}}{{if .Room}}<div class="muted nota">{{.Room}}</div>{{end}}{{else if .Room}}{{.Room}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if .Online}}<span class="estado em_dia">online</span>{{else}}<span class="estado sem_dado_recente">offline</span>{{end}}</td>
 <td>{{.Agent}}</td>
 <td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
 <td{{if .UserAll}} title="{{.UserAll}}"{{end}}>{{.User}}{{if .UserMore}} <span class="muted">+{{.UserMore}}</span>{{end}}</td>
-<td class="nowrap">{{.Collected}}</td><td class="nowrap">{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td{{if .BIOSMissing}} class="nivel-erro"{{end}}>{{.BIOS}}</td><td class="num">{{.Ring}}</td>
+<td class="nowrap">{{.Collected}}</td><td class="nowrap">{{.Seen}}</td><td>{{.Channel}}</td><td class="nowrap">{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td{{if .BIOSMissing}} class="nivel-erro"{{end}}>{{.BIOS}}</td><td class="num">{{.Ring}}</td>
 </tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>
 {{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}

@@ -16,7 +16,7 @@ import (
 // versão nova do servidor muda o endereço.
 
 // panelCSS: o tema (layout das aplicações, theme.go) e o que antes ficava em cada tela.
-var panelCSS = themeCSS + loginCSS + paramCSS + selfServiceCSS + dashboardCSS + standardizationCSS + widthCSS()
+var panelCSS = themeCSS + loginCSS + paramCSS + selfServiceCSS + dashboardCSS + standardizationCSS + widthCSS() + numHeadCSS()
 
 // cssVersion: os primeiros 16 hexadecimais do SHA-256 do CSS.
 var cssVersion = func() string {
@@ -52,6 +52,23 @@ func widthCSS() string {
 		fmt.Fprintf(&b, ".w%d{width:%d%%}", i, i)
 	}
 	return b.String() + "\n"
+}
+
+// numHeadCols: até que coluna o título acompanha o alinhamento dos números (a tabela mais
+// larga do painel, a de Equipamentos, tem 15).
+const numHeadCols = 24
+
+// numHeadCSS: o título de uma coluna de números fica à direita, em cima dos números. As
+// células de número são td.num (à direita, com algarismos da mesma largura); o título era
+// sempre à esquerda, e numa coluna larga ficava longe do valor, parecendo de outra coluna. A
+// regra olha a tabela como ela saiu (:has), uma por posição de coluna: vale para toda tabela,
+// com ou sem as colunas que só o admin vê, sem marcar título por título nos modelos.
+func numHeadCSS() string {
+	var sel []string
+	for i := 1; i <= numHeadCols; i++ {
+		sel = append(sel, fmt.Sprintf("table:has(tbody td.num:nth-child(%d)) thead th:nth-child(%d)", i, i))
+	}
+	return strings.Join(sel, ",") + "{text-align:right}\n"
 }
 
 // loginCSS: a tela de login e a de volta do RHBK (Aula 11.3; era o pageStyle).

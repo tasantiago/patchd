@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +30,26 @@ func TestHoraNoFusoDoPainel(t *testing.T) {
 	for n, quer := range map[any]string{0: "v-zero", int64(0): "v-zero", "0": "v-zero", 3: "v-vermelho", "0%": "v-vermelho", "12": "v-vermelho"} {
 		if got := kpiColor("v-vermelho", n); got != quer {
 			t.Errorf("cor de %v: %q, esperava %q", n, got, quer)
+		}
+	}
+}
+
+// A folha de estilo põe o título das colunas de número à direita, em cima dos números, por
+// posição de coluna (até a tabela mais larga do painel), e alinha os títulos pela base.
+func TestTituloDasColunasDeNumero(t *testing.T) {
+	css := numHeadCSS()
+	for _, n := range []int{1, 9, 15, numHeadCols} {
+		sel := fmt.Sprintf("table:has(tbody td.num:nth-child(%d)) thead th:nth-child(%d)", n, n)
+		if !strings.Contains(css, sel) {
+			t.Errorf("faltou a regra da coluna %d", n)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(css), "{text-align:right}") || strings.Count(css, "{") != 1 {
+		t.Errorf("uma regra só, à direita: %q", css[len(css)-40:])
+	}
+	for _, tr := range []string{"td.num{text-align:right", "vertical-align:bottom}", numHeadCSS()} {
+		if !strings.Contains(panelCSS, tr) {
+			t.Errorf("a folha do painel não tem %q", tr[:min(len(tr), 40)])
 		}
 	}
 }

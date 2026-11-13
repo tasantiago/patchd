@@ -733,6 +733,10 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
 - **Horários**: todas as telas mostram a hora no fuso do painel (`PATCHD_TIMEZONE`, em
   Configuração › Parâmetros). Sem fuso configurado, a hora sai em UTC e a tela diz "UTC". A
   auditoria, os e-mails e o detalhe gravado nos jobs continuam em UTC: são registros.
+- **Tabelas**: o título de uma coluna de números fica à direita, em cima dos números (era à
+  esquerda, longe do valor); os títulos de mais de uma linha se alinham pela base; o nome da
+  máquina e o sistema não quebram de linha; numa linha com botão, o texto das outras colunas
+  fica na altura do botão.
 - **Indicadores**: um número zero sai em cinza. A cor (vermelho, laranja, verde) aparece só
   onde há o que ver.
 - **Teclado e leitor de tela**: o primeiro Tab de cada página oferece "Pular para o
