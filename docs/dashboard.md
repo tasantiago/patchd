@@ -1,7 +1,7 @@
 # Página inicial e indicadores para decisão
 
 Depois do login, `/painel/` abre a visão geral do ambiente. **Início** reúne os
-indicadores; **Parque** (`/painel/parque`) mantém a lista completa, os filtros e a
+indicadores; **Parque** (`/painel/parque`) mantém a lista completa (100 por página), os filtros e a
 exportação. Links antigos como `/painel/?estado=faltando` continuam funcionando.
 
 A página usa as mesmas fontes do inventário, da conformidade e da operação.

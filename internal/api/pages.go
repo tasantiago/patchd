@@ -137,7 +137,14 @@ type fleetView struct {
 	Shown       int    // linhas na tela, depois do estado e da busca
 	Query       string // o filtro como parâmetros, para o CSV e os links
 	Clear       string // a lista sem a busca (mantém o estado)
+	Range       string // "101–200 de 4000", quando a lista passa de uma página
+	Prev, Next  string
 }
+
+// fleetPerPage: máquinas por página do Parque. A lista inteira de um parque de 4.000 máquinas
+// eram 1,8 MB de HTML e uma tabela que o navegador demorava a desenhar; o filtro e a busca
+// rápida acham a máquina, e o CSV continua trazendo todas.
+const fleetPerPage = 100
 
 // fleetMatch: se a máquina casa com a busca do Parque (nome, começo do ID, sistema).
 func fleetMatch(m protocol.ComplianceStatus, needle string) bool {
@@ -244,6 +251,33 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 			Seen: ago(fleet.EvaluatedAt.Sub(m.LastSeenAt)), Reasons: m.Reasons, Ring: ringText(ringOf, m.MachineID)})
 	}
 	v.Shown = len(v.Rows)
+	if page, pages := pageOf(r.URL.Query().Get("pagina"), len(v.Rows), fleetPerPage); pages > 1 {
+		from, to := (page-1)*fleetPerPage, min(page*fleetPerPage, len(v.Rows))
+		at := func(n int) string {
+			p := url.Values{}
+			if v.Filter != "" {
+				p.Set("estado", v.Filter)
+			}
+			if v.Q != "" {
+				p.Set("q", v.Q)
+			}
+			if n > 1 {
+				p.Set("pagina", strconv.Itoa(n))
+			}
+			if len(p) == 0 {
+				return "/painel/parque"
+			}
+			return "/painel/parque?" + p.Encode()
+		}
+		v.Range = fmt.Sprintf("%d–%d de %d", from+1, to, len(v.Rows))
+		if page > 1 {
+			v.Prev = at(page - 1)
+		}
+		if page < pages {
+			v.Next = at(page + 1)
+		}
+		v.Rows = v.Rows[from:to]
+	}
 	a.render(w, r, http.StatusOK, "frota", v)
 }
 
@@ -727,6 +761,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <td>{{.Name}}</td><td>{{.OS}}</td><td class="num">{{.Ring}}</td><td>{{.Pending}}</td>
 <td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td>{{.Seen}}</td></tr>
 {{end}}</tbody></table></div>
+{{if .Range}}<nav class="paginas" aria-label="páginas"><span class="muted">{{.Range}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>{{end}}
 {{if .Admin}}<div class="lote"><label>Pôr as marcadas no grupo de implantação <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
 <button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas ficam em <a href="/painel/grupos-implantacao">Grupos de implantação</a>.</span></div></form>{{end}}
 {{else if .Q}}<p class="vazio"><strong>Nenhuma máquina com "{{.Q}}"{{if .Filter}} no estado {{.FilterLabel}}{{end}}.</strong> A busca olha o nome, o começo do ID e o sistema. <a href="{{.Clear}}">Limpar a busca</a> ou procurar por IP, usuário e série no <a href="/painel/inventario">Inventário</a>.</p>

@@ -396,15 +396,28 @@ func evaluateWindows(ctx context.Context, st complianceStore, info protocol.OSIn
 		return nil
 	}
 	build, _ := compliance.ParseWindowsBuild(info.Build) // já validado por WindowsProductFor
-	rows, err := st.WindowsFixes(ctx, t.IDs)
+	compute := func() (*compliance.WindowsResult, error) {
+		rows, err := st.WindowsFixes(ctx, t.IDs)
+		if err != nil || len(rows) == 0 {
+			return nil, err
+		}
+		r := compliance.EvaluateWindows(build, rows)
+		return &r, nil
+	}
+	var r *compliance.WindowsResult
+	if m, ok := st.(windowsMemo); ok {
+		// No parque, uma avaliação por (produto, build), compartilhada (memo.go): só leitura.
+		r, err = m.windowsResult(ctx, t.IDs, info.Build, compute)
+	} else {
+		r, err = compute()
+	}
 	if err != nil {
 		return err
 	}
-	if len(rows) == 0 {
+	if r == nil {
 		ev.Note = fmt.Sprintf("o catálogo do MSRC não tem CVEs para %s (rode catalog sync -source msrc)", t.Name)
 		return nil
 	}
-	r := compliance.EvaluateWindows(build, rows)
 	if r.Foreign {
 		majors := joinInts(r.Majors)
 		switch {
@@ -418,7 +431,7 @@ func evaluateWindows(ctx context.Context, st complianceStore, info protocol.OSIn
 			return nil
 		}
 	}
-	ev.Catalog, ev.Windows, ev.WinTarget = t.Name, &r, t
+	ev.Catalog, ev.Windows, ev.WinTarget = t.Name, r, t
 	return nil
 }
 

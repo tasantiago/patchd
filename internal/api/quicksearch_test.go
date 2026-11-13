@@ -1,8 +1,16 @@
 package api_test
 
 import (
+	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // A busca rápida do topo: um resultado só abre a máquina; vários ou nenhum caem na lista
@@ -57,5 +65,58 @@ func TestTrilhaDaBarraSuperior(t *testing.T) {
 			}
 			t.Errorf("%s: trilha %q", path, b[i:min(i+320, len(b))])
 		}
+	}
+}
+
+// O Parque em páginas de 100: a lista inteira de um parque grande eram megabytes de HTML. O
+// estado e a busca seguem nos links; o CSV continua com todas as máquinas.
+func TestParqueEmPaginas(t *testing.T) {
+	agora := time.Now().UTC()
+	st := store.NewMemory()
+	abreSessao(t, st, sessaoTeste, agora)
+	fleet := protocol.ComplianceFleet{EvaluatedAt: agora, Counts: map[string]int{"faltando": 130, "em_dia": 120}}
+	for i := range 250 {
+		estado := "faltando"
+		if i >= 130 {
+			estado = "em_dia"
+		}
+		fleet.Machines = append(fleet.Machines, protocol.ComplianceStatus{MachineID: fmt.Sprintf("%08d-0001", i), Hostname: fmt.Sprintf("pc-%04d", i),
+			OS: "Windows 11 Pro 25H2", State: estado, LastSeenAt: agora, EvaluatedAt: agora})
+	}
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(&complianceFalso{fleet: fleet}))
+	conta := func(b string) int { return strings.Count(b, `<td><a href="/painel/maquinas/`) }
+
+	b := pagina(h, "GET", "/painel/parque", sessaoTeste, nil).Body.String()
+	if conta(b) != 100 || !strings.Contains(b, "1–100 de 250") || !strings.Contains(b, `<a href="/painel/parque?pagina=2">próxima ›</a>`) ||
+		strings.Contains(b, "‹ anterior") || !strings.Contains(b, `<span class="muted">(250)</span>`) || !strings.Contains(b, "pc-0099") || strings.Contains(b, "pc-0100") {
+		t.Errorf("primeira página: %d linhas", conta(b))
+	}
+	b = pagina(h, "GET", "/painel/parque?pagina=3", sessaoTeste, nil).Body.String()
+	if conta(b) != 50 || !strings.Contains(b, "201–250 de 250") || !strings.Contains(b, `<a href="/painel/parque?pagina=2">‹ anterior</a>`) || strings.Contains(b, "próxima ›") {
+		t.Errorf("última página: %d linhas", conta(b))
+	}
+	// Além da última, ou lixo: a última e a primeira.
+	if b := pagina(h, "GET", "/painel/parque?pagina=99", sessaoTeste, nil).Body.String(); !strings.Contains(b, "201–250 de 250") {
+		t.Error("página além da última")
+	}
+	if b := pagina(h, "GET", "/painel/parque?pagina=abc", sessaoTeste, nil).Body.String(); !strings.Contains(b, "1–100 de 250") {
+		t.Error("página ilegível")
+	}
+	// O estado e a busca seguem nos links.
+	b = pagina(h, "GET", "/painel/parque?estado=faltando&pagina=2", sessaoTeste, nil).Body.String()
+	if conta(b) != 30 || !strings.Contains(b, "101–130 de 130") || !strings.Contains(b, `<a href="/painel/parque?estado=faltando">‹ anterior</a>`) {
+		t.Errorf("estado nas páginas: %d linhas", conta(b))
+	}
+	b = pagina(h, "GET", "/painel/parque?q=pc-0", sessaoTeste, nil).Body.String()
+	if conta(b) != 100 || !strings.Contains(b, `<a href="/painel/parque?pagina=2&amp;q=pc-0">próxima ›</a>`) {
+		t.Errorf("busca nas páginas: %d linhas", conta(b))
+	}
+	// Uma página só: sem a navegação.
+	if b := pagina(h, "GET", "/painel/parque?q=pc-000", sessaoTeste, nil).Body.String(); conta(b) != 10 || strings.Contains(b, `class="paginas"`) {
+		t.Errorf("lista curta: %d linhas", conta(b))
+	}
+	// O CSV traz todas.
+	if csv := pagina(h, "GET", "/painel/parque.csv", sessaoTeste, nil).Body.String(); strings.Count(csv, "\n") < 251 {
+		t.Errorf("CSV: %d linhas", strings.Count(csv, "\n"))
 	}
 }

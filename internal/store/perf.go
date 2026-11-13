@@ -104,6 +104,16 @@ func (p *Postgres) SavePerf(ctx context.Context, machineID string, samples []pro
 		ON CONFLICT DO NOTHING`, machineID, ats, cpus, mems, disks); err != nil {
 		return nil, err
 	}
+	// Amostra de uma hora que a passada de hora em hora já montou: a hora fica marcada para
+	// ser refeita (RollupLatePerf), em vez de a passada refazer 48 horas do parque inteiro.
+	if late := now.UTC().Truncate(time.Hour).Add(-PerfLateAfter); slices.ContainsFunc(ats, func(t time.Time) bool { return t.Before(late) }) {
+		if _, err := tx.Exec(ctx, `INSERT INTO perf_late (machine_id, hour)
+			SELECT DISTINCT $1, date_trunc('hour', t AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+			FROM unnest($2::timestamptz[]) AS u(t) WHERE t < $3
+			ON CONFLICT DO NOTHING`, machineID, ats, late); err != nil {
+			return nil, err
+		}
+	}
 	var changes []perfeval.Change
 	for _, s := range newSamples(st, samples) {
 		for _, c := range st.Step(policy, s) {
@@ -327,6 +337,40 @@ func (p *Postgres) RollupPerf(ctx context.Context, from, to time.Time) (int64, e
 	return tag.RowsAffected(), err
 }
 
+// PerfLateAfter: a amostra que chega com a hora dela mais velha que isso (contado do começo
+// da hora atual) é "atrasada": a passada regular, que refaz PerfLateAfter mais uma hora, pode
+// já não alcançá-la, e a hora dela vai para perf_late.
+const PerfLateAfter = 2 * time.Hour
+
+// RollupLatePerf refaz as horas marcadas por amostras atrasadas e tira a marca, num comando
+// só: a marca que chegar durante a conta fica para a próxima passada.
+func (p *Postgres) RollupLatePerf(ctx context.Context) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `WITH l AS (DELETE FROM perf_late RETURNING machine_id, hour)
+		INSERT INTO perf_hourly (machine_id, hour, cpu_avg, cpu_max, mem_avg, mem_max, disk_min, samples)
+		SELECT s.machine_id, l.hour, avg(s.cpu), max(s.cpu), avg(s.mem), max(s.mem),
+			min((SELECT min(value::real) FROM jsonb_each_text(s.disks))), count(*)
+		FROM l JOIN perf_samples s ON s.machine_id = l.machine_id AND s.at >= l.hour AND s.at < l.hour + interval '1 hour'
+		GROUP BY 1, 2
+		ON CONFLICT (machine_id, hour) DO UPDATE SET cpu_avg = EXCLUDED.cpu_avg, cpu_max = EXCLUDED.cpu_max,
+			mem_avg = EXCLUDED.mem_avg, mem_max = EXCLUDED.mem_max, disk_min = EXCLUDED.disk_min, samples = EXCLUDED.samples`)
+	return tag.RowsAffected(), err
+}
+
+// RollupLatePerf na memória.
+func (m *Memory) RollupLatePerf(ctx context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d := m.perf()
+	var n int64
+	for id, hours := range d.late {
+		for h := range hours {
+			n += m.rollupPerf(h, h.Add(time.Hour), id)
+		}
+	}
+	d.late = nil
+	return n, nil
+}
+
 // PrunePerf apaga as amostras, as horas e os alertas fechados mais velhos que os cortes.
 func (p *Postgres) PrunePerf(ctx context.Context, samplesBefore, hoursBefore, alertsBefore time.Time) (int64, error) {
 	var total int64
@@ -353,7 +397,8 @@ type memPerf struct {
 	samples map[string][]protocol.PerfSample // por máquina, em ordem
 	hours   map[string][]PerfHour
 	eval    map[string]perfeval.State
-	alerts  []PerfAlert // ID = posição + 1
+	alerts  []PerfAlert                   // ID = posição + 1
+	late    map[string]map[time.Time]bool // horas com amostra atrasada, por máquina
 }
 
 func (m *Memory) perf() *memPerf {
@@ -380,6 +425,17 @@ func (m *Memory) SavePerf(ctx context.Context, machineID string, samples []proto
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].At.Before(list[j].At) })
 	d.samples[machineID] = list
+	for _, s := range samples {
+		if s.At.Before(now.UTC().Truncate(time.Hour).Add(-PerfLateAfter)) {
+			if d.late == nil {
+				d.late = map[string]map[time.Time]bool{}
+			}
+			if d.late[machineID] == nil {
+				d.late[machineID] = map[time.Time]bool{}
+			}
+			d.late[machineID][s.At.UTC().Truncate(time.Hour)] = true
+		}
+	}
 	st := d.eval[machineID]
 	if st == nil {
 		st = perfeval.State{}
@@ -535,9 +591,17 @@ func (m *Memory) PerfAlertCounts(ctx context.Context) (open, unacked int, err er
 func (m *Memory) RollupPerf(ctx context.Context, from, to time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.rollupPerf(from, to, ""), nil
+}
+
+// rollupPerf monta as horas de [from, to), de todas as máquinas ou só de uma (com m.mu).
+func (m *Memory) rollupPerf(from, to time.Time, only string) int64 {
 	d := m.perf()
 	var n int64
 	for id, list := range d.samples {
+		if only != "" && id != only {
+			continue
+		}
 		byHour := map[time.Time][]protocol.PerfSample{}
 		for _, s := range list {
 			if !s.At.Before(from) && s.At.Before(to) {
@@ -565,7 +629,7 @@ func (m *Memory) RollupPerf(ctx context.Context, from, to time.Time) (int64, err
 			n++
 		}
 	}
-	return n, nil
+	return n
 }
 
 // PrunePerf na memória (os alertas apagados ficam como buracos de ID: o ID é a posição).

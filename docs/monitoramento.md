@@ -113,7 +113,9 @@ Agente anterior: rejeita o job (tipo desconhecido) e o job aparece como falho co
 ## 5. Guardar e mostrar
 
 - **Banco:** `perf_samples` (máquina, minuto, CPU, memória, disco livre por volume) por 48 horas;
-  `perf_hourly` (média e pico por hora) por 90 dias, montada pela passada da retenção;
+  `perf_hourly` (média e pico por hora) por 90 dias, montada pela passada da retenção: as 3
+  últimas horas a cada passada, mais as horas que receberam amostra atrasada (`perf_late`); a
+  primeira passada depois da partida refaz as 48 horas;
   `perf_alerts` (abertos e os fechados dos últimos 90 dias).
 - **Painel:** a tela **Alertas** (abertos primeiro, depois os fechados, com o filtro por medida)
   e o contador no menu; a aba **Desempenho** do equipamento com as curvas de 24 horas (por

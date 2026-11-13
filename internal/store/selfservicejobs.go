@@ -16,8 +16,8 @@ const SelfServiceAuthorPrefix = "autoatendimento: "
 func (p *Postgres) SelfServiceJobs(ctx context.Context, since time.Time, limit int) ([]JobRow, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT id, machine_id, type, state, created_by, created_at, not_before, not_after, delivered_at, finished_at, detail, payload
-		FROM jobs WHERE created_at >= $1 AND starts_with(created_by, $2) ORDER BY id DESC LIMIT $3`,
-		since, SelfServiceAuthorPrefix, limit)
+		FROM jobs WHERE created_at >= $1 AND starts_with(created_by, '`+SelfServiceAuthorPrefix+`') ORDER BY id DESC LIMIT $2`,
+		since, limit) // o prefixo vai escrito na consulta: é o que deixa o índice parcial (0071) servir
 	if err != nil {
 		return nil, err
 	}

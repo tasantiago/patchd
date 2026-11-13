@@ -48,6 +48,10 @@ type complianceService struct {
 	// kick acorda o Warm: a página achou avaliações vencidas demais para refazer na hora.
 	kick chan struct{}
 	once sync.Once // cria fill e kick (o serviço também é montado sem o construtor, nos testes)
+
+	// memo: as respostas do catálogo que valem para o parque inteiro (memo.go).
+	memoMu sync.Mutex
+	memo   *evalMemo
 }
 
 func (s *complianceService) chans() {
@@ -314,7 +318,12 @@ func (s *complianceService) evaluateMissing(ctx context.Context, missing []proto
 // evaluateOne avalia uma máquina e guarda (só o que deu certo e não foi interrompido).
 func (s *complianceService) evaluateOne(ctx context.Context, m protocol.MachineSummary, catalog string, now time.Time) (*machineEval, error) {
 	start := time.Now()
-	ev, err := evaluateID(ctx, s.st, m.ID, evalOptions{Now: now, Manifest: s.manifest})
+	ev, err := evaluateID(ctx, memoStore{s.st, s.memoFor(catalog, now)}, m.ID, evalOptions{Now: now, Manifest: s.manifest})
+	// Os programas sem regra (quase todo o inventário) só servem ao "compliance -v" da linha
+	// de comando; guardados por máquina, eram a maior parte da memória do servidor.
+	if ev.Third != nil {
+		ev.Third.Unmatched = nil
+	}
 	if d := time.Since(start); d > slowEvaluation && err == nil {
 		s.logger.Warn("avaliação de compliance lenta", "machine_id", m.ID, "duration_ms", d.Milliseconds(),
 			"dica", "patchd-server compliance -machine ID -tempos mostra a consulta responsável")
@@ -439,12 +448,25 @@ func (s *complianceService) Items(ctx context.Context) ([]protocol.MachineItems,
 		return nil, err
 	}
 	out := make([]protocol.MachineItems, 0, len(list))
+	// As máquinas com o mesmo produto e o mesmo build do Windows apontam para a mesma
+	// avaliação (memo.go): a lista de itens delas é montada uma vez e compartilhada, só de
+	// leitura. Uma lista por máquina eram mais de um milhão de itens num parque de 4.000.
+	shared := map[*compliance.WindowsResult][]protocol.PendingItem{}
 	for _, m := range list {
 		cs, ev := s.statusOf(m, now, evals[m.ID])
 		mi := protocol.MachineItems{MachineID: m.ID, Hostname: m.Hostname, OS: cs.OS, Catalog: cs.Catalog, Unit: cs.PendingUnit,
 			Items: []protocol.PendingItem{}}
 		if ev != nil {
-			_, mi.Items = pendingItems(*ev)
+			if w := ev.Windows; w != nil && ev.Note == "" && ev.Linux == nil {
+				items, ok := shared[w]
+				if !ok {
+					_, items = pendingItems(*ev)
+					shared[w] = items
+				}
+				mi.Items = items
+			} else {
+				_, mi.Items = pendingItems(*ev)
+			}
 			mi.ThirdParty = thirdPartyItems(*ev, now)
 		}
 		out = append(out, mi)

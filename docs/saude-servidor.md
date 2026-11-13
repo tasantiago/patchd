@@ -115,6 +115,64 @@ Desde 11/11/2026:
   (inclusive `off`) vale no lugar do cálculo. A linha Memória do cartão Processo mostra o
   limite em uso.
 
+Desde 13/11/2026, medido com um parque simulado de 4.000 máquinas Windows (230 programas
+cada), 400 mil jobs, 300 mil eventos de auditoria, 4,5 milhões de amostras de desempenho e 90
+dias de horas (banco de 2,4 GB):
+
+| O que | Antes | Depois |
+| --- | --- | --- |
+| Avaliar o parque inteiro (partida, catálogo novo, de hora em hora) | 104 s | 9 s |
+| Memória do processo com o parque avaliado | ~990 MB | ~110 MB (até ~240 MB com as telas de Patch em uso) |
+| Montar as horas do desempenho, a cada hora | 19 s, 80 mil linhas regravadas | 1,8 s, 8 mil linhas |
+| Início | 420 a 890 ms | ~110 ms |
+| Página de uma máquina (qualquer aba) | 140 a 280 ms | 50 a 90 ms |
+| Padrão da BIOS e senha em lote | 550 a 700 ms | ~80 ms |
+| Parque | 1,8 MB de HTML numa tabela só | 66 KB por página |
+| Visão geral do Patch (primeira abertura no minuto / as seguintes) | 1,2 s / 190 a 250 ms | 0,4 s / ~120 ms |
+
+- **O catálogo é consultado uma vez por passada, não uma vez por máquina.** Os produtos do
+  Windows, as CVEs do produto, as versões de referência dos terceiros e a situação das fontes
+  são os mesmos para o parque inteiro; cada máquina refazia as mesmas consultas (com o
+  catálogo real do MSRC, a das CVEs é a mais cara do sistema). A avaliação do Windows é feita
+  uma vez por produto e build, e todas as máquinas com esse build apontam para a mesma lista
+  de CVEs pendentes: um parque tem dezenas de builds, não milhares. As respostas valem
+  enquanto o catálogo não sincroniza de novo, e no máximo 5 minutos.
+- **A lista dos programas sem regra não fica na memória.** Ela é quase o inventário inteiro
+  de cada máquina e só serve ao `patchd-server compliance -v`; guardada com a avaliação, era
+  metade da memória do servidor.
+- **O JIT do PostgreSQL fica desligado nas conexões do patchd.** O PostgreSQL compila as
+  consultas de custo estimado alto; as listas do parque com uma subconsulta por máquina passam
+  do limite na estimativa e levam dezenas de milissegundos na execução, e a compilação custava
+  300 a 400 ms a cada chamada (a lista das fontes falhando, que alimenta o contador do menu a
+  cada 20 s: de 437 ms para 23 ms). `jit=on` na `PATCHD_DATABASE_URL` liga de volta. Quem põe
+  um PgBouncer na frente do banco precisa de `ignore_startup_parameters = jit` nele.
+- **As horas do desempenho são montadas aos poucos.** A passada de hora em hora refazia as
+  últimas 48 horas de todas as máquinas, para não perder a amostra que chega atrasada (o
+  notebook que ficou fora da rede). Agora refaz as 3 últimas horas, e a amostra atrasada marca
+  a hora dela (`perf_late`) para a passada seguinte. A primeira passada depois da partida
+  ainda refaz as 48 horas, para cobrir o tempo em que o servidor ficou parado.
+- **Índices para os jobs** (migração 71): por máquina (a aba Tarefas, a padronização a cada
+  pedido do agente e a mesclagem varriam a tabela inteira), por término, por data com tipo e
+  estado (as contagens do Início não visitam a tabela), e dois parciais (os pedidos do
+  autoatendimento e o último job de configuração da BIOS de cada máquina).
+- **O firmware numa coluna só dele** (`inventory_reports.fw_detail`): as telas de BIOS em lote
+  liam o relatório inteiro de cada máquina, com a lista de programas, para tirar dele as
+  configurações da BIOS.
+- **O Parque em páginas de 100**, com o filtro e a busca nos links; o CSV traz todas.
+- **A junção por item nas telas de Patch** resolve cada item uma vez por lista compartilhada
+  e ordena o parque uma vez, em vez de ordenar as máquinas de cada item; o resumo "correções
+  aguardando" conta as máquinas por posição, não por nome em mapa.
+
+O que foi medido e ficou como está: o check-in (60 ms no p50 com 32 agentes ao mesmo tempo,
+cerca de 500 por segundo: um parque de 4.000 máquinas com check-in a cada 5 minutos pede 13
+por segundo); o inventário (15 ms), a busca (8 ms) e o registro (5 ms); a auditoria com filtro
+(rápida quando o filtro acha eventos recentes; um filtro que não acha nada percorre a tabela,
+~50 ms por 300 mil eventos).
+
+A migração 71 levou cerca de 2 s nesse banco: cria os índices com a tabela de jobs travada
+para escrita (1,1 s com 400 mil jobs) e copia o firmware do inventário atual de cada máquina
+(1 s para 4.000). O servidor demora esse tanto a mais para subir na primeira vez.
+
 ## 4. A tela
 
 - O veredito e as recomendações (o porquê, com os números, e o que fazer).

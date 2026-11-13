@@ -20,6 +20,7 @@ type contratoDesempenho interface {
 	AckPerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error)
 	ClosePerfAlerts(ctx context.Context, ids []int64, by, note string, at time.Time) (int, error)
 	RollupPerf(ctx context.Context, from, to time.Time) (int64, error)
+	RollupLatePerf(ctx context.Context) (int64, error)
 	PrunePerf(ctx context.Context, samplesBefore, hoursBefore, alertsBefore time.Time) (int64, error)
 }
 
@@ -82,10 +83,28 @@ func testarDesempenho(t *testing.T, st contratoDesempenho) {
 	if len(hs) != 1 || !hs[0].Hour.Equal(t0) || hs[0].Samples != 7 || hs[0].CPUMax != 99 || hs[0].DiskMin == nil || *hs[0].DiskMin != 30 {
 		t.Fatalf("horas: %+v", hs)
 	}
+	// Amostra atrasada (a hora dela já passou da janela da passada regular): só a hora dela
+	// é marcada e refeita (as amostras da hora corrente, acima, não marcaram nada), e a marca
+	// some depois de usada.
+	velha := t0.Add(-20 * time.Hour)
+	if _, err := st.SavePerf(ctx, id, []protocol.PerfSample{{At: velha.Add(5 * time.Minute), CPU: 10, Mem: 20}, {At: velha.Add(6 * time.Minute), CPU: 30, Mem: 40}},
+		p, t0.Add(31*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := st.RollupLatePerf(ctx); err != nil || n != 1 {
+		t.Fatalf("horas atrasadas montadas: %d %v", n, err)
+	}
+	hs, _ = st.PerfHourly(ctx, id, t0.Add(-24*time.Hour))
+	if len(hs) != 2 || !hs[0].Hour.Equal(velha) || hs[0].Samples != 2 || hs[0].CPUAvg != 20 || hs[0].CPUMax != 30 || hs[1].Samples != 7 {
+		t.Fatalf("a hora atrasada entra, a recente fica para a passada regular: %+v", hs)
+	}
+	if n, err := st.RollupLatePerf(ctx); err != nil || n != 0 {
+		t.Fatalf("a marca some depois de usada: %d %v", n, err)
+	}
 	if _, err := st.PrunePerf(ctx, t0.Add(time.Hour), t0, t0.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if ss, _ := st.PerfSamples(ctx, id, t0.Add(-time.Hour)); len(ss) != 0 {
+	if ss, _ := st.PerfSamples(ctx, id, t0.Add(-48*time.Hour)); len(ss) != 0 {
 		t.Errorf("amostras depois da retenção: %d", len(ss))
 	}
 	if hs, _ := st.PerfHourly(ctx, id, t0.Add(-time.Hour)); len(hs) != 1 {
