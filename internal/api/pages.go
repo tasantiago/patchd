@@ -17,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/ui"
 )
 
@@ -130,8 +131,24 @@ type fleetView struct {
 	EvaluatedAt string
 	Rings       []int // grupos de implantação oferecidos no lote (admin, Aula 11.1)
 	FilterLabel string
-	Exploited   int // máquinas com alguma pendência explorada (Aula 11.3)
-	HTTP        int // máquinas cujo último check-in veio sem TLS
+	Exploited   int    // máquinas com alguma pendência explorada (Aula 11.3)
+	HTTP        int    // máquinas cujo último check-in veio sem TLS
+	Q           string // a busca da lista: nome, começo do ID ou sistema
+	Shown       int    // linhas na tela, depois do estado e da busca
+	Query       string // o filtro como parâmetros, para o CSV e os links
+	Clear       string // a lista sem a busca (mantém o estado)
+}
+
+// fleetMatch: se a máquina casa com a busca do Parque (nome, começo do ID, sistema).
+func fleetMatch(m protocol.ComplianceStatus, needle string) bool {
+	return needle == "" || strings.Contains(strings.ToLower(m.Hostname), needle) ||
+		strings.HasPrefix(strings.ToLower(m.MachineID), needle) || strings.Contains(strings.ToLower(m.OS), needle)
+}
+
+// fleetNeedle: a busca do Parque como veio na URL, aparada e em minúsculas.
+func fleetNeedle(q url.Values) (shown, needle string) {
+	shown = texto.Clip(strings.TrimSpace(q.Get("q")), maxSearchLen)
+	return shown, strings.ToLower(shown)
 }
 
 // stateColor: a cor do número no cartão de cada estado.
@@ -155,6 +172,22 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 	if filter.Rank() < len(compliance.States) {
 		v.Filter = string(filter)
 	}
+	var needle string
+	v.Q, needle = fleetNeedle(r.URL.Query())
+	params := url.Values{}
+	if v.Filter != "" {
+		params.Set("estado", v.Filter)
+	}
+	v.Clear = "/painel/parque"
+	if len(params) > 0 {
+		v.Clear += "?" + params.Encode()
+	}
+	if v.Q != "" {
+		params.Set("q", v.Q)
+	}
+	if len(params) > 0 {
+		v.Query = "?" + params.Encode()
+	}
 	if a.compliance == nil {
 		v.Unavailable = "O estado de compliance exige o PostgreSQL com o catálogo."
 		a.render(w, r, http.StatusOK, "frota", v)
@@ -173,7 +206,7 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evaluatingNotice(&v.pageBase, fleet)
-	v.Total, v.EvaluatedAt = len(fleet.Machines), fleet.EvaluatedAt.Format("02/01/2006 15:04")+" UTC"
+	v.Total, v.EvaluatedAt = len(fleet.Machines), a.stamp(fleet.EvaluatedAt)
 	// O grupo de implantação de cada máquina (Aula 11.1): a avaliação não traz, a lista de máquinas traz.
 	summaries, err := a.store.Machines(r.Context())
 	if err != nil {
@@ -199,7 +232,7 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for _, m := range fleet.Machines {
-		if v.Filter != "" && m.State != v.Filter {
+		if v.Filter != "" && m.State != v.Filter || !fleetMatch(m, needle) {
 			continue
 		}
 		pend := "—"
@@ -210,6 +243,7 @@ func (a *api) fleetPage(w http.ResponseWriter, r *http.Request) {
 			State: m.State, Label: compliance.State(m.State).Label(), Pending: pend, Exploited: m.Exploited,
 			Seen: ago(fleet.EvaluatedAt.Sub(m.LastSeenAt)), Reasons: m.Reasons, Ring: ringText(ringOf, m.MachineID)})
 	}
+	v.Shown = len(v.Rows)
 	a.render(w, r, http.StatusOK, "frota", v)
 }
 
@@ -232,6 +266,7 @@ type machineView struct {
 	pageBase
 	D                                    protocol.ComplianceDetail
 	Name, Label, Seen, Collected, Reboot string
+	SeenAgo, ShortID                     string // o cabeçalho: "há 12 min" e o começo do ID
 	Pending                              string
 	Links                                []linkView
 	Items                                []pendingRow // com a aprovação de cada uma (Aula 13.2)
@@ -339,10 +374,11 @@ func (a *api) machinePage(w http.ResponseWriter, r *http.Request) {
 	if d.Hostname != "" {
 		v.Title = d.Hostname
 	}
-	v.Seen = ago(d.EvaluatedAt.Sub(d.LastSeenAt)) + " (" + d.LastSeenAt.Format("02/01/2006 15:04") + " UTC)"
+	v.SeenAgo, v.ShortID = ago(d.EvaluatedAt.Sub(d.LastSeenAt)), short(d.MachineID)
+	v.Seen = v.SeenAgo + " (" + a.stamp(d.LastSeenAt) + ")"
 	v.Collected = "—"
 	if d.InventoryCollectedAt != nil {
-		v.Collected = d.InventoryCollectedAt.Format("02/01/2006 15:04") + " UTC"
+		v.Collected = a.stamp(*d.InventoryCollectedAt)
 	}
 	if d.Pending > 0 {
 		v.Pending = fmt.Sprintf("%d %s (%d com exploração conhecida)", d.Pending, compliance.Unit(d.Pending, d.PendingUnit), d.Exploited)
@@ -512,7 +548,7 @@ func (a *api) retiredPage(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(list, func(i, j int) bool { return list[i].RetiredAt.After(list[j].RetiredAt) })
 	for _, m := range list {
 		v.Rows = append(v.Rows, retiredRow{ID: m.ID, Short: short(m.ID), Name: dash(m.Hostname),
-			OS: dash(strings.TrimSpace(m.OSName + " " + m.OSVersion)), When: m.RetiredAt.Format("02/01/2006 15:04") + " UTC",
+			OS: dash(strings.TrimSpace(m.OSName + " " + m.OSVersion)), When: a.stamp(m.RetiredAt),
 			By: dash(m.RetiredBy), Reason: m.Reason})
 	}
 	a.render(w, r, http.StatusOK, "aposentadas", v)
@@ -601,16 +637,18 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 
 // --- Modelos -----------------------------------------------------------------------
 
-var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMais}).Parse(`
+var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMais, "cor": kpiColor}).Parse(`
 {{define "leia-mais"}}{{if .Long}}<details class="leia-mais"><summary><span class="curto">{{.Short}}</span> <span class="mais">leia mais</span><span class="menos">mostrar menos</span></summary><div class="todo">{{.Full}}</div></details>{{else}}{{.Full}}{{end}}{{end}}
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}} · {{.Brand}}</title>{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}` + faviconLink + `
 ` + styleLink + `</head><body>
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
 <input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
 <aside class="lado" aria-label="menu lateral">
 <a class="marca" href="/painel/" title="{{.Brand}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + shieldSVG + `</span>{{end}}<span class="rot">{{.Brand}}</span></a>
 <div class="usuario" title="{{.Session.Greeting}} · {{.RoleLabel}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot"><strong>{{.Session.Greeting}}</strong><small>{{.RoleLabel}} · {{.Session.SourceLabel}}</small></span></div>
+<form class="busca-lado" method="get" action="/painel/buscar" role="search"><label for="busca-lado" class="sr">Buscar máquina</label>` + ui.IcBusca + `<input id="busca-lado" type="search" name="q" placeholder="Buscar máquina" maxlength="100" autocomplete="off"></form>
 <nav aria-label="principal">
 <p class="grupo"><span class="rot">Navegação</span></p>
 <a href="/painel/" title="Início" {{if eq .Nav "inicio"}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Início</span></a>
@@ -639,13 +677,14 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <div class="area">
 <header class="barra-topo">
 <label for="menu" class="hamb" title="Recolher ou abrir o menu">` + ui.IcMenu + `<span class="sr">menu</span></label>
-<span class="trilha">{{with .Section}}<span class="secao">{{.}}</span><span class="sep" aria-hidden="true">›</span>{{end}}<span class="titulo">{{.Title}}</span></span>
+<nav class="trilha" aria-label="onde você está">{{with .Section}}<span class="secao">{{.}}</span><span class="sep" aria-hidden="true">›</span>{{end}}{{with .Parent}}<a class="secao" href="{{.Href}}">{{.Label}}</a><span class="sep" aria-hidden="true">›</span>{{end}}<span class="titulo">{{.Leaf}}</span></nav>
+<form class="busca-topo" method="get" action="/painel/buscar" role="search"><label for="busca-topo" class="sr">Buscar máquina por nome, IP, usuário, série, tombo ou ID</label>` + ui.IcBusca + `<input id="busca-topo" type="search" name="q" placeholder="Buscar máquina: nome, IP, usuário, série…" maxlength="100" autocomplete="off" accesskey="k" title="Nome, IP, usuário conectado, número de série, tombo ou começo do ID. Um resultado só abre a máquina direto."><button type="submit" class="sr">Buscar</button></form>
 <span class="selos">{{if .ServerVersion}}<span class="selo" title="versão do servidor">Servidor <b>{{.ServerVersion}}</b></span>{{end}}{{if .AgentVersion}}<span class="selo" title="versão do agente publicada para as máquinas">Agente <b>{{.AgentVersion}}</b></span>{{end}}</span>
 <details class="conta"><summary title="{{.Session.Username}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="nome">{{.Session.Greeting}}</span>` + ui.IcAbaixo + `</summary>
 <div class="conta-menu"><p><strong>{{.Session.Greeting}}</strong><span>{{.Session.Username}} · {{.Session.SourceLabel}} · {{.Session.Role}}</span></p>
 <form method="post" action="/painel/sair"><button type="submit" class="sair">` + ui.IcSair + `Sair</button></form></div></details>
 </header>
-<main>
+<main id="conteudo" tabindex="-1">
 {{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}{{if .Evaluating}}<p class="aviso atencao" role="status">{{.Evaluating}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
 {{end}}
@@ -671,12 +710,14 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
 <li><a class="kpi{{if not .Filter}} ativo{{end}}" href="/painel/parque"><span class="kpi-rot">Máquinas ativas</span><span class="kpi-val">{{.Total}}</span></a></li>
-{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/parque?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.N}}</span></a></li>{{end}}
-<li><div class="kpi"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">{{.Exploited}}</span><span class="kpi-sub">máquinas com CVE explorada pendente</span></div></li>
-<li><div class="kpi"><span class="kpi-rot">Ainda por HTTP</span><span class="kpi-val v-laranja">{{.HTTP}}</span><span class="kpi-sub">último check-in sem TLS</span></div></li>
+{{range .Counts}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="/painel/parque?estado={{.State}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Color .N}}">{{.N}}</span></a></li>{{end}}
+<li><div class="kpi"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val {{cor "v-vermelho" .Exploited}}">{{.Exploited}}</span><span class="kpi-sub">máquinas com CVE explorada pendente</span></div></li>
+<li><div class="kpi"><span class="kpi-rot">Ainda por HTTP</span><span class="kpi-val {{cor "v-laranja" .HTTP}}">{{.HTTP}}</span><span class="kpi-sub">último check-in sem TLS</span></div></li>
 </ul>
-<div class="card"><div class="card-cab"><h2>Máquinas{{if .Filter}} · {{.FilterLabel}}{{end}}</h2>
-<span><span class="muted">Avaliado em {{.EvaluatedAt}}</span> <span class="grupo-btn"><a class="btn" href="/painel/parque.csv{{if .Filter}}?estado={{.Filter}}{{end}}">CSV</a><a class="btn" href="/api/v1/compliance">JSON</a></span></span></div>
+<div class="card"><div class="card-cab"><h2>Máquinas{{if .Filter}} · {{.FilterLabel}}{{end}} <span class="muted">({{.Shown}})</span></h2>
+<span><span class="muted">Avaliado em {{.EvaluatedAt}}</span> <span class="grupo-btn"><a class="btn" href="/painel/parque.csv{{.Query}}">CSV</a><a class="btn" href="/api/v1/compliance">JSON</a></span></span></div>
+<form class="busca" method="get" action="/painel/parque" role="search">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Nome, começo do ID ou sistema" aria-label="filtrar as máquinas da lista"><button type="submit">Filtrar</button>{{if .Q}}<a href="{{.Clear}}">Limpar</a>{{end}}</form>
 {{if .Rows}}{{if .Admin}}<form method="post" action="/painel/grupos-implantacao/maquinas">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}{{end}}<div class="tabela"><table>
 <thead><tr>{{if .Admin}}<th></th>{{end}}<th>Estado</th><th>Máquina</th><th>Nome</th><th>SO</th><th>Grupo de implantação</th><th>Pendentes</th><th>Exploradas</th><th>Último contato</th></tr></thead>
 <tbody>{{range .Rows}}<tr>
@@ -688,7 +729,9 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{end}}</tbody></table></div>
 {{if .Admin}}<div class="lote"><label>Pôr as marcadas no grupo de implantação <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
 <button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas ficam em <a href="/painel/grupos-implantacao">Grupos de implantação</a>.</span></div></form>{{end}}
-{{else}}<p class="muted">Nenhuma máquina{{if .Filter}} neste estado{{end}}.</p>{{end}}
+{{else if .Q}}<p class="vazio"><strong>Nenhuma máquina com "{{.Q}}"{{if .Filter}} no estado {{.FilterLabel}}{{end}}.</strong> A busca olha o nome, o começo do ID e o sistema. <a href="{{.Clear}}">Limpar a busca</a> ou procurar por IP, usuário e série no <a href="/painel/inventario">Inventário</a>.</p>
+{{else if .Filter}}<p class="vazio"><strong>Nenhuma máquina neste estado.</strong> <a href="/painel/parque">Ver todas as máquinas</a></p>
+{{else}}<p class="vazio"><strong>Nenhuma máquina no parque ainda.</strong> A primeira aparece aqui quando um agente se registrar.{{if .Admin}} O token de registro e o comando de instalação ficam em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a>.{{end}}</p>{{end}}
 </div>
 {{end}}
 {{template "fim"}}{{end}}
@@ -697,11 +740,11 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <h1>Inventário <span class="muted">› Equipamentos</span></h1>
 <ul class="kpis">
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Equipamentos</span><span class="kpi-val">{{.Total}}</span></a></li>
-<li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val v-verde">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
-<li><a class="kpi{{if eq .Status "offline"}} ativo{{end}}" href="{{.KPIOff}}"><span class="kpi-rot">Offline</span><span class="kpi-val v-laranja">{{.Offline}}</span><span class="kpi-sub">sem check-in há mais de 2 h</span></a></li>
+<li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val {{cor "v-verde" .Online}}">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
+<li><a class="kpi{{if eq .Status "offline"}} ativo{{end}}" href="{{.KPIOff}}"><span class="kpi-rot">Offline</span><span class="kpi-val {{cor "v-laranja" .Offline}}">{{.Offline}}</span><span class="kpi-sub">sem check-in há mais de 2 h</span></a></li>
 </ul>
 <ul class="kpis" aria-label="firmware">{{range .FWCards}}
-<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val{{if .Class}} {{.Class}}{{end}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
+<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Class .N}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
 </ul>
 <div class="card"><div class="card-cab"><h2>Equipamentos</h2><span class="grupo-btn"><a class="btn" href="{{.CSV}}">CSV</a></span></div>
 <form class="busca" method="get" action="/painel/inventario">
@@ -726,13 +769,14 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <td>{{.Agent}}</td>
 <td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
 <td{{if .UserAll}} title="{{.UserAll}}"{{end}}>{{.User}}{{if .UserMore}} <span class="muted">+{{.UserMore}}</span>{{end}}</td>
-<td>{{.Collected}}</td><td>{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td{{if .BIOSMissing}} class="nivel-erro"{{end}}>{{.BIOS}}</td><td class="num">{{.Ring}}</td>
+<td class="nowrap">{{.Collected}}</td><td class="nowrap">{{.Seen}}</td><td>{{.Channel}}</td><td>{{.OS}}</td><td>{{.Category}}</td><td><code>{{.Serial}}</code></td><td{{if .BIOSMissing}} class="nivel-erro"{{end}}>{{.BIOS}}</td><td class="num">{{.Ring}}</td>
 </tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>
 {{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}
 {{range .Pages}}{{if .Gap}}<span>…</span>{{else if .Current}}<span class="atual" aria-current="page">{{.N}}</span>{{else}}<a href="{{.Href}}">{{.N}}</a>{{end}}{{end}}
 {{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum equipamento{{if .HasFilter}} com esse filtro{{end}}.</p>{{end}}
+{{else if .HasFilter}}<p class="vazio"><strong>Nenhum equipamento com esse filtro.</strong> Confira a grafia ou troque o campo da busca. <a href="/painel/inventario">Limpar os filtros</a></p>
+{{else}}<p class="vazio"><strong>Nenhum equipamento ainda.</strong> O inventário chega no primeiro contato de cada agente.{{if .Admin}} O token de registro fica em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a>.{{end}}</p>{{end}}
 </div>
 {{template "fim"}}{{end}}
 
@@ -851,7 +895,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <span class="muted">vale por cima do que está na tela; o que não estiver em "manter" substitui</span></fieldset>
 </form></div>
 <div class="card"><div class="card-cab"><h2>Prévia da loja</h2></div>
-<p class="muted">O que um usuário destes grupos veria nesta máquina agora, com o último inventário dela. No app do usuário (Aula 17.4), os grupos vêm do AD.</p>
+<p class="muted">O que um usuário destes grupos veria nesta máquina agora, com o último inventário dela. Na Central do usuário, os grupos vêm do AD.</p>
 <form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="autoatendimento">
 <select name="maquina" aria-label="máquina"><option value="">Máquina Windows…</option>{{range .Machines}}<option value="{{.ID}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
 <input type="text" name="grupos" maxlength="2000" value="{{.Groups}}" placeholder="grupos do usuário, separados por vírgula" aria-label="grupos do usuário">
@@ -910,7 +954,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Tokens}}<div class="tabela"><table><thead><tr><th>ID</th><th>Descrição</th><th>Criado</th><th>Vence</th><th>Usos</th><th>Estado</th><th></th></tr></thead>
 <tbody>{{range .Tokens}}<tr><td class="num">{{.ID}}</td><td>{{.Note}}</td><td>{{.Created}}</td><td>{{.Expires}}</td><td class="num">{{.Uses}} de {{if .MaxUses}}{{.MaxUses}}{{else}}ilimitados{{end}}</td><td>{{.Status}}{{if .Relay}} · <span class="muted">pelo relé</span>{{end}}</td>
 <td>{{if .CanRevoke}}<form class="inline" method="post" action="/painel/configuracao/agente/token/{{.ID}}/revogar"><button class="perigo" type="submit">Revogar</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhum token criado.</p>{{end}}</div>{{end}}
+{{else}}<p class="vazio"><strong>Nenhum token criado.</strong> Crie um acima para registrar o primeiro agente: o token aparece uma vez só, junto com o comando de instalação.</p>{{end}}</div>{{end}}
 {{if eq .Tab "acesso"}}{{with .Access}}
 <div class="card"><div class="card-cab"><h2>Sessões abertas</h2><span class="muted">tirar alguém de um grupo do AD ou do RHBK não derruba a sessão que já está aberta: encerre aqui</span></div>
 {{if .Sessions}}<div class="tabela"><table><thead><tr><th>Usuário</th><th>Origem</th><th>Perfil</th><th>Entrou</th><th>Último uso</th><th>Vence</th><th></th></tr></thead>
@@ -975,7 +1019,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .FleetSize}}<div class="card conformidade"><div class="card-cab"><h2>Conformidade do parque</h2></div>
 <div class="conf-corpo"><a class="conf-num" href="/painel/parque?estado=em_dia"><span class="hero">{{.FleetPct}}%</span><span class="muted">em dia · {{.FleetOK}} de {{.FleetSize}} máquinas</span></a>
 <div class="conf-barra">{{template "segbar" .Fleet}}{{template "estados-legenda"}}</div></div></div>{{end}}
-<ul class="kpis">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>
+<ul class="kpis">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Color .Value}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>
 <div class="card"><div class="card-cab"><h2>Precisa de atenção</h2><span class="muted">avaliado em {{.EvaluatedAt}}</span></div>
 {{if .Attention}}<ul class="atencao-lista">{{range .Attention}}<li class="{{.Level}}"><a href="{{.Href}}">{{.Text}}</a></li>{{end}}</ul>
 {{else}}<p class="muted">Nada pede atenção agora.</p>{{end}}</div>
@@ -1020,9 +1064,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
 <li><div class="kpi"><span class="kpi-rot">Programas com problema</span><span class="kpi-val">{{.Programs}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></div></li>
-<li><div class="kpi"><span class="kpi-rot">Instalações desatualizadas</span><span class="kpi-val v-laranja">{{.Outdated}}</span><span class="kpi-sub">abaixo da referência ou do mínimo</span></div></li>
-<li><div class="kpi"><span class="kpi-rot">Instalações fora de suporte</span><span class="kpi-val v-vermelho">{{.EOL}}</span><span class="kpi-sub">sem correção do fabricante</span></div></li>
-<li><a class="kpi{{if eq .Inst "aguardando"}} ativo{{end}}" href="{{.WaitingHref}}"><span class="kpi-rot">Instaladores aguardando aprovação</span><span class="kpi-val v-laranja">{{.Waiting}}</span><span class="kpi-sub">versão guardada mais nova</span></a></li>
+<li><div class="kpi"><span class="kpi-rot">Instalações desatualizadas</span><span class="kpi-val {{cor "v-laranja" .Outdated}}">{{.Outdated}}</span><span class="kpi-sub">abaixo da referência ou do mínimo</span></div></li>
+<li><div class="kpi"><span class="kpi-rot">Instalações fora de suporte</span><span class="kpi-val {{cor "v-vermelho" .EOL}}">{{.EOL}}</span><span class="kpi-sub">sem correção do fabricante</span></div></li>
+<li><a class="kpi{{if eq .Inst "aguardando"}} ativo{{end}}" href="{{.WaitingHref}}"><span class="kpi-rot">Instaladores aguardando aprovação</span><span class="kpi-val {{cor "v-laranja" .Waiting}}">{{.Waiting}}</span><span class="kpi-sub">versão guardada mais nova</span></a></li>
 </ul>
 <div class="card"><div class="card-cab"><h2>Programas{{if not .All}} com problema{{end}}</h2><span class="muted">{{if .All}}<a href="{{.ProblemsHref}}">só os com problema</a>{{else}}<a href="{{.AllHref}}">mostrar todos os identificados</a>{{end}}</span></div>
 <p class="muted">Os programas com regra de instalação o patchd atualiza: baixe a versão na página do programa, aprove (aqui em lote, ou lá) e crie a campanha ou o job. Os outros, a lista diz o que distribuir e onde. A referência vem do catálogo de terceiros (winget e feeds dos fabricantes).</p>
@@ -1101,9 +1145,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Itens pendentes</span><span class="kpi-val">{{.Total}}</span><span class="kpi-sub">em {{.Hosts}} sistemas</span></a></li>
-<li><a class="kpi{{if eq .Status "exploradas"}} ativo{{end}}" href="{{.KPIExpl}}"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val v-vermelho">{{.Exploited}}</span></a></li>
-<li><a class="kpi{{if eq .Status "aguardando"}} ativo{{end}}" href="{{.KPIWait}}"><span class="kpi-rot">Aguardando aprovação</span><span class="kpi-val v-laranja">{{.Waiting}}</span></a></li>
-<li><a class="kpi{{if eq .Status "aprovados"}} ativo{{end}}" href="{{.KPIApproved}}"><span class="kpi-rot">Aprovados</span><span class="kpi-val v-verde">{{.Approved}}</span></a></li>
+<li><a class="kpi{{if eq .Status "exploradas"}} ativo{{end}}" href="{{.KPIExpl}}"><span class="kpi-rot">Com exploração conhecida</span><span class="kpi-val {{cor "v-vermelho" .Exploited}}">{{.Exploited}}</span></a></li>
+<li><a class="kpi{{if eq .Status "aguardando"}} ativo{{end}}" href="{{.KPIWait}}"><span class="kpi-rot">Aguardando aprovação</span><span class="kpi-val {{cor "v-laranja" .Waiting}}">{{.Waiting}}</span></a></li>
+<li><a class="kpi{{if eq .Status "aprovados"}} ativo{{end}}" href="{{.KPIApproved}}"><span class="kpi-rot">Aprovados</span><span class="kpi-val {{cor "v-verde" .Approved}}">{{.Approved}}</span></a></li>
 </ul>
 <div class="card"><div class="card-cab"><h2>{{if eq .View "correcao"}}Correções pendentes{{else}}Itens pendentes{{end}}</h2><span class="muted">avaliação de agora, contra o catálogo</span></div>
 <nav class="abas" aria-label="visão da lista"><a href="{{.ViewItem}}"{{if ne .View "correcao"}} class="ativa" aria-current="page"{{end}}>Por item (pacote ou CVE)</a><a href="{{.ViewFix}}"{{if eq .View "correcao"}} class="ativa" aria-current="page"{{end}}>Por correção (KB, versão, pacote)</a></nav>
@@ -1125,7 +1169,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <button class="sec" type="submit" name="filtro" value="1">Conferir todos os {{.FilterWaiting}} aguardando{{if .HasFilter}} deste filtro{{end}}</button>
 <span class="muted">Nada é aprovado antes da conferência. Todos do filtro vão num lote só, sem limite.</span></div></form>{{end}}
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhum item{{if .HasFilter}} com esse filtro{{else}} pendente no parque{{end}}.</p>{{end}}{{end}}
+{{else if .HasFilter}}<p class="vazio"><strong>Nenhum item com esse filtro.</strong> <a href="/painel/patch">Limpar o filtro</a></p>{{else}}<p class="vazio"><strong>Nenhum item pendente no parque.</strong> Tudo o que a última avaliação achou já está instalado.</p>{{end}}{{end}}
 </div>{{end}}
 {{template "fim"}}{{end}}
 
@@ -1208,7 +1252,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><div class="card-cab"><h2>Aprovação</h2></div>
 {{if .Item.Approval}}<dl class="dados"><dt>Aprovado por</dt><dd>{{.Item.Approval.ApprovedBy}}</dd><dt>Em</dt><dd>{{.ApprovedAt}}</dd>{{if .Item.Approval.Note}}<dt>Observação</dt><dd>{{.Item.Approval.Note}}</dd>{{end}}</dl>
 {{if .CanRevoke}}<form class="acao" method="post" action="/painel/patch/revogar"><input type="hidden" name="id" value="{{.Item.ID}}"><input type="hidden" name="fix" value="{{.Item.FixedIn}}"><button class="perigo" type="submit">Revogar aprovação</button></form>{{end}}
-{{else}}<p class="muted">Ainda não aprovado. A partir da Aula 13.2, só item aprovado entra em atualização e em campanha.</p>
+{{else}}<p class="muted">Ainda não aprovado: só item aprovado entra em atualização e em campanha.</p>
 {{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/aprovar"><input type="hidden" name="id" value="{{.Item.ID}}"><input type="hidden" name="fix" value="{{.Item.FixedIn}}">
 <input name="nota" maxlength="{{.MaxNote}}" placeholder="Observação (opcional), ex.: testado no grupo de implantação piloto"><button type="submit">Aprovar</button></form>
 {{else if not .Admin}}<p class="muted">Aprovar exige o perfil admin.</p>{{end}}{{end}}
@@ -1225,11 +1269,11 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "maquina"}}{{template "topo" .}}
-<p><a href="/painel/inventario">← Inventário</a> · <a href="/painel/parque">Parque</a></p>
-<h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
-{{if .Admin}}<div class="descoberta-acoes"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/mesclar">Mesclar registro duplicado</a><a class="btn sec" href="/painel/maquinas/{{.D.MachineID}}/historico">Histórico e registros incorporados</a></div>{{end}}
+<header class="maq-cab"><div class="maq-id"><h1>{{.Title}} <span class="estado {{.D.State}}">{{.Label}}</span></h1>
+<ul class="maq-fatos" aria-label="resumo do equipamento">{{if .D.OS}}<li>{{.D.OS}}</li>{{end}}{{if .Host.Has}}<li><span class="muted">IP</span> {{.Host.Primary}}</li>{{end}}{{if .Host.UsersKnown}}<li><span class="muted">Usuário</span> {{if .Host.Users}}{{with index .Host.Users 0}}{{if .Name}}{{.Name}}{{else}}{{.Account}}{{end}}{{end}}{{if gt (len .Host.Users) 1}} <span class="muted">+{{.MoreUsers}}</span>{{end}}{{else}}ninguém{{end}}</li>{{end}}<li><span class="muted">Último contato</span> {{.SeenAgo}}</li><li><span class="muted">ID</span> <code>{{.ShortID}}</code></li></ul></div>
+{{if .Admin}}<div class="maq-acoes"><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/historico">Histórico</a><a class="btn" href="/painel/maquinas/{{.D.MachineID}}/mesclar" title="Junta nesta página um registro duplicado do mesmo equipamento">Mesclar duplicado</a></div>{{end}}</header>
 {{if and .Admin .MergedRecords}}<p class="aviso atencao">{{.MergedRecords}} registro(s) anterior(es) incorporado(s), com {{.MergedBIOS}} senha(s) de BIOS preservada(s). <a href="/painel/maquinas/{{.D.MachineID}}/historico">Consultar histórico e senhas anteriores</a>.</p>{{end}}
-{{if .D.Reasons}}<ul class="motivos">{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .D.Reasons}}<ul class="motivos maq-motivos {{.D.State}}" aria-label="por que a máquina está neste estado">{{range .D.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
 {{range .SourceAlerts}}<p class="aviso {{.Level}}" role="alert">{{.Text}}</p>{{end}}
 <nav class="abas" aria-label="abas do equipamento">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="cont">{{.Count}}</span>{{end}}</a>{{end}}</nav>
 
@@ -1272,7 +1316,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <text x="50" y="56" text-anchor="middle">{{.Pct}}%</text></svg>
 <span><code>{{.Mount}}</code><br><span class="muted">{{.Free}} livres de {{.Total}}</span></span></li>{{end}}</ul>
 {{else if .Host.Has}}<p class="muted">Nenhum volume local informado.</p>
-{{else}}<p class="muted">O agente desta máquina ainda não manda rede e discos: a coleta chegou na Aula 12.1. Atualize o agente.</p>{{end}}
+{{else}}<p class="muted">O agente desta máquina é antigo e ainda não informa rede e discos. Atualize o agente para ver estes dados.</p>{{end}}
 </div>
 {{if .Links}}<div class="card"><div class="card-cab"><h2>Alertas de identidade</h2></div><ul>
 {{range .Links}}<li>{{.Relation}}: {{if .Retired}}<code>{{.Short}}</code> (aposentada){{else}}<a href="/painel/maquinas/{{.ID}}"><code>{{.Short}}</code></a>{{end}}</li>{{end}}
@@ -1340,7 +1384,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <td><code>{{.MAC}}</code>{{if .LocalMAC}} <span class="muted" title="MAC administrado localmente: bridge, VPN, container ou Wi-Fi com endereço aleatório">local</span>{{end}}</td><td>{{.IPv4}}</td><td>{{.IPv6}}</td></tr>{{end}}</tbody></table></div>{{end}}
 {{range .Host.Errors}}<p class="aviso atencao">{{.}}</p>{{end}}
 {{else}}<dl class="dados"><dt>Check-in vindo de</dt><dd>{{.Host.Addr}}</dd></dl>
-<p class="muted">O agente desta máquina ainda não manda rede e discos: a coleta chegou na Aula 12.1. Atualize o agente.</p>{{end}}
+<p class="muted">O agente desta máquina é antigo e ainda não informa rede e discos. Atualize o agente para ver estes dados.</p>{{end}}
 </div>
 {{end}}
 
@@ -1530,7 +1574,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <h1>Automação <span class="muted">› Jobs</span></h1>
 {{template "automacao-abas" "jobs"}}
 <div class="card"><div class="card-cab"><h2>Mais recentes</h2><span class="muted">Os {{.N}} mais recentes do parque. Para pedir uma busca, abra a máquina no Parque.</span></div>
-{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="muted">Nenhum job ainda.</p>{{end}}</div>
+{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="vazio"><strong>Nenhum job ainda.</strong> Um job nasce de uma ação na página de uma máquina (buscar agora, atualizar, reiniciar) ou de uma <a href="/painel/campanhas">campanha</a>.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "campanhas"}}{{template "topo" .}}
@@ -1542,7 +1586,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Grupos de implantação</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td><td class="nowrap">{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">{{if .Archived}}Nenhuma campanha arquivada.{{else}}Nenhuma campanha ainda.{{end}}</p>{{end}}</div>
+{{else if .Archived}}<p class="vazio"><strong>Nenhuma campanha arquivada.</strong> <a href="/painel/campanhas">Voltar às campanhas</a></p>
+{{else}}<p class="vazio"><strong>Nenhuma campanha ainda.</strong> Uma campanha leva a mesma atualização a todo o parque, um grupo de implantação por vez.{{if .CanNew}} <a href="#nova">Criar a primeira</a>{{end}}</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
@@ -1839,7 +1884,8 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <input name="nota" maxlength="{{.MaxNote}}" placeholder="nota (opcional)" aria-label="nota do lote">
 <button type="submit" name="acao" value="fechar">Fechar</button> <button class="sec" type="submit" name="acao" value="reconhecer">Reconhecer</button> <button class="sec" type="submit" name="acao" value="limpar" title="só os alertas de disco">Limpar temporários</button>
 <span class="muted">Nada muda antes da conferência.</span></form>{{end}}
-{{if .Rows}}{{template "alertas-tabela" .}}{{else}}<p class="muted">{{if .All}}Nenhum alerta nos últimos 90 dias.{{else}}Nenhum alerta aberto.{{end}}</p>{{end}}
+{{if .Rows}}{{template "alertas-tabela" .}}{{else if .All}}<p class="vazio"><strong>Nenhum alerta nos últimos 90 dias.</strong> Os alertas nascem das medidas de processador, memória e disco que os agentes mandam.</p>
+{{else}}<p class="vazio"><strong>Nenhum alerta aberto.</strong> Nenhuma máquina passa dos limites agora. <a href="/painel/alertas?estado=todos">Ver os últimos 90 dias</a></p>{{end}}
 <p class="muted">Abre com: {{.Policy}}. Fecha quando a medida fica dentro do limite pelo mesmo tempo. Reconhecer tira do contador do menu, sem fechar. Fechar à mão (em lote) zera a contagem da medida: se o problema continuar, um alerta novo abre depois dos minutos seguidos.</p>
 </div>
 {{template "fim"}}{{end}}
@@ -1886,7 +1932,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><div class="card-cab"><h2>Perguntas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Sensor</th><th>Pergunta</th><th>Para</th><th>Respostas</th><th>Por</th><th>Quando</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/perguntas/{{.ID}}">{{.ID}}</a></td><td>{{.Sensor}}</td><td><a href="/painel/perguntas/{{.ID}}"><code>{{.Question}}</code></a></td><td>{{.Target}}</td><td class="num">{{.Answered}} de {{.Machines}}</td><td>{{.By}}</td><td>{{.When}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhuma pergunta ainda.</p>{{end}}</div>
+{{else}}<p class="vazio"><strong>Nenhuma pergunta ainda.</strong>{{if .CanAsk}} Escolha um sensor acima e pergunte: as respostas chegam aqui, agrupadas.{{else}} As perguntas feitas ao parque aparecem aqui, com as respostas agrupadas.{{end}}</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "pergunta"}}{{template "topo" .}}
@@ -2032,7 +2078,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <tbody>{{range .Rows}}<tr><td><code>{{.Short}}</code></td><td>{{.Name}}</td><td>{{.OS}}</td><td>{{.When}}</td><td>{{.By}}</td><td>{{.Reason}}</td>
 {{if $.Admin}}<td><form method="post" action="/painel/maquinas/{{.ID}}/restaurar"><button class="sec" type="submit">Restaurar</button></form></td>{{end}}</tr>{{end}}
 </tbody></table></div>
-{{else}}<p class="muted">Nenhuma máquina aposentada.</p>{{end}}</div>
+{{else}}<p class="vazio"><strong>Nenhuma máquina aposentada.</strong> Para tirar do parque uma máquina que saiu de uso, abra a página dela e use "Aposentar": nada é apagado, e dá para restaurar aqui.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "bios-revelada"}}{{template "topo" .}}

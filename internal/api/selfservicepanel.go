@@ -228,7 +228,7 @@ func yesNo(b bool) string {
 func selfServiceFlash(q url.Values, b *pageBase) {
 	switch {
 	case q.Get("salvo") != "":
-		b.Flash = fmt.Sprintf("Oferta de %s gravada. Vale a partir do próximo pedido de um usuário (Aula 17.2).", q.Get("salvo"))
+		b.Flash = fmt.Sprintf("Oferta de %s gravada. Vale a partir do próximo pedido de um usuário.", q.Get("salvo"))
 	case q.Has("lote") && q.Get("lote") == "":
 		b.Flash = "Nada mudou: as ofertas já estavam assim."
 	case q.Get("lote") != "":

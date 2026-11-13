@@ -523,7 +523,7 @@ func TestEvaluateMachineCatalogoAtrasado(t *testing.T) {
 	printEval(ev, false, agora, &out)
 	for _, trecho := range []string{
 		"ATENÇÃO: catálogo msrc sincronizado com sucesso pela última vez há 3 dias",
-		"ATENÇÃO: catálogo terceiros sem sincronização bem-sucedida registrada",
+		"ATENÇÃO: catálogo terceiros ainda sem nenhuma sincronização bem-sucedida",
 	} {
 		if !strings.Contains(out.String(), trecho) {
 			t.Errorf("faltou %q em:\n%s", trecho, out.String())

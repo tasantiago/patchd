@@ -700,7 +700,7 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
 - O painel segue o padrão das aplicações do tribunal: barra lateral azul-marinho com o
   logotipo, o usuário (nome, perfil e origem; sem foto) e os grupos NAVEGAÇÃO, PATCH,
   AUTOMAÇÃO e ADMINISTRAÇÃO (este só para admin). A barra superior traz o botão de recolher,
-  a trilha (grupo › página), as versões do servidor e do agente publicado e o menu da conta,
+  a trilha (grupo › página), a busca rápida, as versões do servidor e do agente publicado e o menu da conta,
   com o Sair.
 - Contadores no menu: pedidos do autoatendimento esperando a TI (Autoatendimento), campanhas
   pausadas (Campanhas) e máquinas com a fonte de busca falhando, sem o catálogo offline
@@ -716,6 +716,29 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   `/painel/logo` com `nosniff`, CSP `sandbox` e cache pela versão do arquivo. Trocar e remover
   vão para a auditoria (`aparencia.logo`, `aparencia.logo_remover`). Sem logotipo, o ícone
   padrão. O patchd não traz o logotipo de nenhuma instituição: quem instala envia o seu.
+
+### Busca rápida, trilha e uso pelo teclado
+
+- **Busca rápida**: a caixa da barra superior existe em todas as telas (na tela estreita ela
+  fica dentro da gaveta do menu). Aceita o nome da máquina, o IP, o usuário conectado, o
+  número de série, o tombo ou o começo do ID. Um resultado só abre a máquina direto; vários
+  ou nenhum caem em Inventário já com o filtro, para refinar. O nome inteiro vence o pedaço:
+  buscar o nome exato de uma máquina abre essa máquina mesmo havendo outras que o contêm. O
+  atalho é a tecla de acesso `K` (Alt+K no Chrome e no Edge, Alt+Shift+K no Firefox). A busca
+  é `GET /painel/buscar`, só leitura, com sessão.
+- **Parque**: a lista ganhou um filtro próprio (nome, começo do ID ou sistema), que soma com
+  o estado escolhido nos indicadores; o CSV sai com o mesmo filtro.
+- **Trilha**: a barra superior mostra o grupo do menu e a página. Nas telas de dentro (uma
+  máquina, uma campanha, uma conferência) aparece o link de volta para a lista de origem.
+- **Horários**: todas as telas mostram a hora no fuso do painel (`PATCHD_TIMEZONE`, em
+  Configuração › Parâmetros). Sem fuso configurado, a hora sai em UTC e a tela diz "UTC". A
+  auditoria, os e-mails e o detalhe gravado nos jobs continuam em UTC: são registros.
+- **Indicadores**: um número zero sai em cinza. A cor (vermelho, laranja, verde) aparece só
+  onde há o que ver.
+- **Teclado e leitor de tela**: o primeiro Tab de cada página oferece "Pular para o
+  conteúdo"; todo link e botão mostra o contorno do foco.
+- **Celular**: os indicadores ficam em duas colunas, os dados da máquina em uma, e nenhuma
+  tela rola para o lado (as tabelas largas rolam dentro do próprio cartão).
 
 ### A Central de software no mesmo layout (Aula 19.1b)
 

@@ -176,7 +176,7 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := a.now()
-	v.EvaluatedAt = fleet.EvaluatedAt.Format("02/01/2006 15:04") + " UTC"
+	v.EvaluatedAt = a.stamp(fleet.EvaluatedAt)
 
 	// Frota: por grupo de implantação e por sistema.
 	ringOf := map[string]int{}

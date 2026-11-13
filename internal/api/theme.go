@@ -62,7 +62,10 @@ a.kpi:hover{border-color:#c4cad3}.kpi.ativo{border-color:var(--azul);box-shadow:
 .kpi-rot{display:block;font-size:.74rem;font-weight:500;letter-spacing:.035em;text-transform:uppercase;color:var(--muted)}
 .kpi-val{display:block;font-size:1.65rem;font-weight:600;line-height:1.25;margin-top:.2rem}
 .kpi-sub{display:block;font-size:.8rem;color:var(--muted)}
-.v-vermelho{color:var(--vermelho)}.v-laranja{color:var(--laranja)}.v-verde{color:var(--verde-ok)}.v-cinza{color:var(--muted)}
+.v-vermelho{color:var(--vermelho)}.v-laranja{color:var(--laranja)}.v-verde{color:var(--verde-ok)}.v-cinza{color:var(--muted)}.v-zero{color:#8a919e}
+/* Lista vazia: diz o que não há e o que fazer em seguida. */
+.vazio{margin:.25rem 0;padding:1.5rem 1rem;border:1px dashed #d5dae1;border-radius:var(--raio);background:#fafbfc;color:var(--muted);text-align:center}
+.vazio strong{display:block;margin-bottom:.2rem;color:var(--texto);font-weight:600;font-size:.95rem}
 table{border-collapse:collapse;width:100%;font-size:.9rem}
 th,td{text-align:left;padding:.55rem .6rem;border-bottom:1px solid var(--borda);vertical-align:top}
 th{font-weight:500;color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.035em;background:#f9fafb}
@@ -91,6 +94,16 @@ pre.comando{margin:0;padding:.75rem 1rem;background:#0f172a;color:#e2e8f0;border
 dd.nivel-atencao,td.nivel-atencao,span.nivel-atencao{color:#8a5a00}dd.nivel-erro,td.nivel-erro,span.nivel-erro{color:var(--vermelho)}dd.nivel-ok{color:var(--verde-ok)}.senha-bios{font-size:1.5rem;letter-spacing:.12em;padding:.2rem .6rem}
 .duas-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(28rem,100%),1fr));gap:0 1.25rem}tr.total td{font-weight:600}
 .motivos{margin:.15rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.84rem}
+/* Cabeçalho da máquina: quem é, como está e por quê, antes das abas. */
+.maq-cab{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.6rem 1.5rem;margin:.25rem 0 1rem}
+.maq-cab h1{margin:0 0 .35rem;overflow-wrap:anywhere}.maq-id{min-width:0}
+.maq-fatos{display:flex;flex-wrap:wrap;gap:.2rem 0;margin:0;padding:0;list-style:none;font-size:.9rem}
+.maq-fatos li{padding-right:.85rem;margin-right:.85rem;border-right:1px solid var(--borda)}.maq-fatos li:last-child{border:0;margin:0;padding:0}
+.maq-acoes{display:flex;flex-wrap:wrap;gap:.5rem}
+.motivos.maq-motivos{margin:0 0 1.1rem;padding:.65rem .9rem .65rem 2rem;border:1px solid var(--borda);border-left:3px solid var(--laranja);border-radius:var(--raio);background:#fff;color:var(--texto);font-size:.9rem}
+.motivos.maq-motivos.faltando{border-left-color:var(--vermelho)}.motivos.maq-motivos.em_dia{border-left-color:var(--verde-ok)}
+@media (max-width:600px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem;margin-bottom:1rem}.kpi{padding:.75rem .85rem .7rem}.kpi-val{font-size:1.35rem}.kpi-rot{font-size:.68rem;letter-spacing:.02em}.kpi-sub{font-size:.74rem}
+.maq-fatos{flex-direction:column;gap:.15rem}.maq-fatos li{border:0;margin:0;padding:0}}
 .aviso{padding:.7rem .9rem;border-radius:var(--raio);margin:0 0 1rem;border:1px solid transparent}
 .ok{background:#e7f6ec;border-color:#b4e1c1;color:#14532d}.erro{background:#fbe9e9;border-color:#f3c4c4;color:#8a1c1c}.atencao{background:#fff4dc;border-color:#f6d68f;color:#7a4a00}
 dl.dados{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.45rem 1.4rem;margin:0}dl.dados dt{color:var(--muted)}dl.dados dd{margin:0;min-width:0;overflow-wrap:anywhere}
@@ -199,4 +212,9 @@ form.formulario>p{margin:0}
 .camp-estados .chip.ativo{border-color:var(--azul);background:#eef5fd}
 /* Ligar agora (docs/wake-on-lan.md, Aula 22.2). */
 #ligar form{margin:0 0 1rem}td.nivel-ok{color:#0a7d0a}
+/* Celular: fica por último para valer sobre as regras de base acima. Os dados em duas
+colunas viram uma, o botão comprido quebra a linha em vez de alargar a página. */
+@media (max-width:600px){dl.dados{grid-template-columns:minmax(0,1fr);gap:.1rem}dl.dados dt{margin-top:.55rem;font-size:.8rem}dl.dados dt:first-child{margin-top:0}
+button{white-space:normal}form.inline{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:.4rem 0 0}
+form.busca input[type=search]{flex:1 1 9rem;min-width:0}}
 `

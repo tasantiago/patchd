@@ -97,10 +97,10 @@ func (a *api) biosView(r *http.Request, id string, admin bool) (*biosCard, error
 	}
 	for _, b := range list {
 		st := biosStateLabel[b.State]
-		row := biosRow{ID: b.ID, State: st.label, Level: st.level, Created: b.CreatedAt.Format("02/01/2006 15:04") + " UTC", By: b.CreatedBy,
+		row := biosRow{ID: b.ID, State: st.label, Level: st.level, Created: a.stamp(b.CreatedAt), By: b.CreatedBy,
 			Reveals: "nenhuma"}
 		if b.Reveals > 0 && b.LastRevealedAt != nil {
-			row.Reveals = fmt.Sprintf("%d (a última por %s, %s UTC)", b.Reveals, b.LastRevealedBy, b.LastRevealedAt.Format("02/01/2006 15:04"))
+			row.Reveals = fmt.Sprintf("%d (a última por %s, %s)", b.Reveals, b.LastRevealedBy, a.stamp(*b.LastRevealedAt))
 		}
 		switch {
 		case c.On && b.EscrowKeyID != c.KeyID:
@@ -319,7 +319,7 @@ func biosFlash(q map[string][]string, v *machineView) bool {
 	}
 	switch get("bios") {
 	case "preparada":
-		v.Flash = "Senha da BIOS sorteada e guardada (pendente). Nada mudou na máquina: a gravação vem na Aula 21.5."
+		v.Flash = "Senha da BIOS sorteada e guardada (pendente). Nada mudou na máquina ainda: a senha só passa a valer depois de gravada na BIOS."
 		return true
 	case "existente":
 		v.Flash = "Esta máquina já tem uma senha pendente; ela é a que será gravada. Nenhuma senha nova foi sorteada."

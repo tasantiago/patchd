@@ -63,7 +63,7 @@ func (a *api) homePage(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) dashboardPage(w http.ResponseWriter, r *http.Request) {
 	now := a.now()
-	v := dashboardView{pageBase: a.base(r, "Início", "inicio"), AsOf: now.UTC().Format("02/01/2006 15:04") + " UTC"}
+	v := dashboardView{pageBase: a.base(r, "Início", "inicio"), AsOf: a.stamp(now)}
 	a.dashboardPreferences(w, r, &v)
 	ctx, cancel := context.WithTimeout(r.Context(), complianceTimeout)
 	defer cancel()
@@ -204,7 +204,7 @@ func (a *api) dashboardPage(w http.ResponseWriter, r *http.Request) {
 		} else {
 			v.ComplianceOn = true
 			evaluatingNotice(&v.pageBase, fleet)
-			v.EvaluatedAt = fleet.EvaluatedAt.UTC().Format("02/01/2006 15:04") + " UTC"
+			v.EvaluatedAt = a.stamp(fleet.EvaluatedAt)
 			v.dashboardFleet(fleet)
 		}
 	}

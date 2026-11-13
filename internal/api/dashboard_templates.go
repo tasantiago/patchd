@@ -11,7 +11,7 @@ const dashboardTemplates = `
 {{if .EmptySelection}}<p class="aviso atencao">Todos os gráficos estão ocultos. Abra <strong>Personalizar gráficos</strong> para escolher os que deseja acompanhar.</p>{{end}}
 {{if .Issues}}<div class="aviso atencao" role="status"><strong>Há dados que precisam de atenção</strong><ul>{{range .Issues}}<li>{{.}}</li>{{end}}</ul><span>Os indicadores indisponíveis aparecem como —, sem assumir valor zero.</span></div>{{end}}
 {{if and .InventoryOn (eq .Total 0)}}<div class="aviso atencao"><strong>Nenhum equipamento ativo cadastrado.</strong> Registre um agente e aguarde o primeiro inventário.{{if .Admin}} <a href="/painel/configuracao?aba=agente">Preparar o primeiro agente</a>.{{end}}</div>{{end}}
-{{if .Show.indicadores}}<ul class="kpis dash-kpis" aria-label="Indicadores para decisão">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{.Color}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>{{end}}
+{{if .Show.indicadores}}<ul class="kpis dash-kpis" aria-label="Indicadores para decisão">{{range .KPIs}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Color .Value}}">{{.Value}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}</ul>{{end}}
 <div class="dash-grade">
 {{if .Show.conformidade}}<section class="dash-conformidade" aria-labelledby="dash-conformidade"><div class="card-cab"><h2 id="dash-conformidade">Conformidade do parque</h2><a href="/painel/parque">Ver parque →</a></div>
 {{if .ComplianceOn}}{{if .FleetTotal}}<p class="dash-numero"><strong>{{.OK}}</strong> de {{.FleetTotal}} equipamentos em dia</p>

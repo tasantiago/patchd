@@ -513,7 +513,7 @@ func catalogWarnings(ss []store.CatalogSourceStatus, now time.Time) []string {
 	for _, s := range ss {
 		switch {
 		case s.LastOK.IsZero():
-			out = append(out, fmt.Sprintf("catálogo %s sem sincronização bem-sucedida registrada (o registro começou na Aula 6.6)", s.Source))
+			out = append(out, fmt.Sprintf("catálogo %s ainda sem nenhuma sincronização bem-sucedida", s.Source))
 		case now.Sub(s.LastOK) > catalogStale:
 			out = append(out, fmt.Sprintf("catálogo %s sincronizado com sucesso pela última vez %s; a avaliação pode estar perdendo correções novas",
 				s.Source, ago(now.Sub(s.LastOK))))

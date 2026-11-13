@@ -56,8 +56,28 @@ border-bottom:1px solid var(--borda);box-shadow:var(--sombra)}
 .hamb:hover{background:#f1f3f7}.hamb svg{width:22px;height:22px}
 .menu-chk:focus-visible~.area .hamb{outline:2px solid var(--destaque);outline-offset:2px}
 .trilha{display:flex;align-items:center;gap:.45rem;min-width:0;font-size:.95rem;white-space:nowrap}
-.trilha .secao{color:var(--muted)}.trilha .sep{color:#b5bac4}.trilha .titulo{font-weight:600;overflow:hidden;text-overflow:ellipsis}
-.selos{display:flex;gap:.4rem;margin-left:auto}
+.trilha .secao{color:var(--muted)}.trilha a.secao{text-decoration:none}.trilha a.secao:hover{color:var(--azul);text-decoration:underline}.trilha .sep{color:#b5bac4}.trilha .titulo{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.trilha{flex:0 1 auto}
+/* Busca rápida: uma caixa em toda tela leva direto à máquina. Na tela estreita ela mora na gaveta. */
+.busca-topo{position:relative;flex:1 1 13rem;min-width:9rem;max-width:26rem;margin:0 0 0 auto}
+.busca-topo .ic,.busca-lado .ic{position:absolute;left:.7rem;top:50%;width:16px;height:16px;transform:translateY(-50%);pointer-events:none}
+.busca-topo .ic{color:var(--muted)}
+.busca-topo input{width:100%;height:2.2rem;padding:0 .8rem 0 2.15rem;border:1px solid var(--borda);border-radius:999px;background:#f7f8fb;font:inherit;font-size:.88rem;color:var(--texto)}
+.busca-topo input::placeholder{color:#8a919e}
+.busca-topo input:hover{border-color:#c9ced8}
+.busca-topo input:focus{background:#fff;border-color:var(--azul);outline:0;box-shadow:0 0 0 3px rgba(6,111,209,.16)}
+.busca-lado{display:none;position:relative;margin:.9rem .8rem .1rem}
+.busca-lado .ic{color:var(--lado-texto)}
+.busca-lado input{width:100%;height:2.3rem;padding:0 .7rem 0 2.15rem;border:1px solid rgba(255,255,255,.14);border-radius:6px;background:var(--marinho-2);font:inherit;font-size:.9rem;color:#fff}
+.busca-lado input::placeholder{color:var(--lado-texto)}
+.busca-lado input:focus{border-color:var(--lilas);outline:0;box-shadow:0 0 0 3px rgba(168,165,240,.25)}
+.selos{display:flex;gap:.4rem;margin-left:auto}.busca-topo~.selos{margin-left:.2rem}
+/* Teclado: o primeiro Tab oferece pular o menu, e todo link e botão mostra onde o foco está. */
+.pular{position:absolute;left:.75rem;top:-5rem;z-index:60;padding:.55rem .95rem;border-radius:6px;background:var(--marinho);color:#fff;font-weight:600;text-decoration:none;box-shadow:0 6px 18px rgba(17,24,39,.25)}
+.pular:focus{top:.6rem}
+main:focus{outline:0}
+a:focus-visible,button:focus-visible,summary:focus-visible,label.hamb:focus-visible{outline:2px solid var(--destaque);outline-offset:2px;border-radius:4px}
+.lado a:focus-visible{outline-color:var(--lilas);outline-offset:-2px}
 .selo{padding:.18rem .6rem;border-radius:999px;border:1px solid var(--borda);background:#f7f8fb;color:var(--muted);font-size:.74rem;white-space:nowrap}
 .selo b{color:var(--texto);font-weight:600}
 .conta{position:relative}
@@ -87,7 +107,7 @@ box-shadow:0 8px 24px rgba(17,24,39,.12);padding:.4rem;z-index:40}
 .area{margin-left:0}
 .menu-chk:checked~.lado{transform:none;box-shadow:0 0 40px rgba(0,0,0,.35)}
 .menu-chk:checked~.veu{display:block;position:fixed;inset:0;z-index:25;background:rgba(15,23,42,.45)}
-.selos{display:none}.conta{margin-left:auto}.conta .nome{display:none}
+.trilha span.secao,.trilha span.secao+.sep{display:none}.selos,.busca-topo{display:none}.busca-lado{display:block}.conta{margin-left:auto}.conta .nome{display:none}
 }
 `
 
@@ -158,6 +178,7 @@ var (
 	IcAlertas     = Icon(`<path d="M3 12h4l3-8 4 16 3-8h4"/>`)
 	IcDescoberta  = Icon(`<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8v6M8 11h6"/>`)
 	IcMenu        = Icon(`<path d="M4 6h16M4 12h16M4 18h16"/>`)
+	IcBusca       = Icon(`<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>`)
 	IcSair        = Icon(`<path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5M21 12H9"/>`)
 	IcAtualizar   = Icon(`<path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 21v-5h-5"/>`)
 	IcPedidos     = Icon(`<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>`)

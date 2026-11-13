@@ -96,7 +96,7 @@ func (a *api) hostView(r *http.Request, id string, v *machineView) error {
 	}
 	s := *h.State
 	hv.Has = true
-	hv.Age = ago(a.now().Sub(h.ReceivedAt)) + " (" + h.ReceivedAt.Format("02/01/2006 15:04") + " UTC)"
+	hv.Age = ago(a.now().Sub(h.ReceivedAt)) + " (" + a.stamp(h.ReceivedAt) + ")"
 	hv.Primary = dash(s.PrimaryIPv4(h.CheckinAddr))
 	switch {
 	case h.CheckinAddr == "":

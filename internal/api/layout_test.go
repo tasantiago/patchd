@@ -38,7 +38,9 @@ func TestLayoutDoTribunal(t *testing.T) {
 		`<p class="grupo"><span class="rot">Automação</span></p>`, `<p class="grupo"><span class="rot">Administração</span></p>`,
 		`<a href="/painel/configuracao?aba=auditoria" title="Auditoria"`, `<a href="/painel/autoatendimento" title="Autoatendimento"`,
 		`<span class="avatar" aria-hidden="true">T</span>`, `<small>Administrador · AD</small>`,
-		`<span class="secao">Navegação</span>`, `<span class="titulo">Início</span>`, `Servidor <b>v0.19.1</b>`,
+		`<nav class="trilha" aria-label="onde você está"><span class="titulo">Início</span></nav>`, `Servidor <b>v0.19.1</b>`,
+		`<a class="pular" href="#conteudo">Pular para o conteúdo</a>`, `<main id="conteudo" tabindex="-1">`,
+		`<form class="busca-topo" method="get" action="/painel/buscar" role="search">`, `<form class="busca-lado" method="get" action="/painel/buscar"`,
 		`<details class="conta">`, `<form method="post" action="/painel/sair">`, `<span class="escudo">`,
 	} {
 		if !strings.Contains(adm, tr) {

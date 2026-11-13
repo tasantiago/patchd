@@ -76,7 +76,7 @@ func TestCheckinGravaEstado(t *testing.T) {
 func TestPaginaDaMaquinaRedeEDiscos(t *testing.T) {
 	h, st, _ := ambientePaginas(t)
 	b := pagina(h, "GET", "/painel/maquinas/60ef97e4-0001?aba=hardware", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "<h2>Rede e discos</h2>") || !strings.Contains(b, "ainda não manda rede e discos") {
+	if !strings.Contains(b, "<h2>Rede e discos</h2>") || !strings.Contains(b, "ainda não informa rede e discos") {
 		t.Errorf("sem estado: a página diz que falta atualizar o agente")
 	}
 
