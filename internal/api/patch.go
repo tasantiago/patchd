@@ -34,6 +34,9 @@ const (
 type patchMachine struct {
 	ID, Name, OS, Catalog, Installed string
 	Exploited                        bool
+	// idx: a posição da máquina na lista do parque de onde a junção saiu. Os resumos que
+	// contam máquinas por correção usam o número no lugar do ID como chave (waitingFixes).
+	idx int
 }
 
 // patchItem: um item pendente na frota, com as máquinas que ele afeta.
@@ -80,8 +83,30 @@ func aggregateItems(list []protocol.MachineItems, approvals []store.PatchApprova
 	}
 	byKey := map[string]*patchItem{}
 	var order []string
-	for _, m := range list {
-		for _, it := range m.Items {
+	// Máquinas com a mesma avaliação (o mesmo produto e o mesmo build do Windows) trazem a
+	// MESMA lista de itens, compartilhada: a chave de cada item e o que é do item (severidade,
+	// exploração, catálogo) são resolvidos uma vez por lista, não uma vez por máquina. Num
+	// parque de 4.000 máquinas eram mais de um milhão de chaves montadas a cada passada.
+	type listKey struct {
+		first         *protocol.PendingItem
+		n             int
+		unit, catalog string
+	}
+	resolved := map[listKey][]*patchItem{}
+	keyOf := func(m *protocol.MachineItems) listKey {
+		return listKey{&m.Items[0], len(m.Items), m.Unit, m.Catalog}
+	}
+	for i := range list {
+		m := &list[i]
+		if len(m.Items) == 0 {
+			continue
+		}
+		lk := keyOf(m)
+		if _, done := resolved[lk]; done {
+			continue
+		}
+		ptrs := make([]*patchItem, len(m.Items))
+		for j, it := range m.Items {
 			k := store.ApprovalKey(it.ID, it.FixedIn)
 			p := byKey[k]
 			if p == nil {
@@ -96,20 +121,38 @@ func aggregateItems(list []protocol.MachineItems, approvals []store.PatchApprova
 				p.Severity = it.Severity
 			}
 			p.Exploited = p.Exploited || it.Exploited
-			p.Machines = append(p.Machines, patchMachine{ID: m.MachineID, Name: m.Hostname, OS: m.OS, Catalog: m.Catalog,
-				Installed: it.Installed, Exploited: it.Exploited})
 			if m.Catalog != "" && !slices.Contains(p.Catalogs, m.Catalog) {
 				p.Catalogs = append(p.Catalogs, m.Catalog)
 			}
+			ptrs[j] = p
+		}
+		resolved[lk] = ptrs
+	}
+	// As máquinas entram em cada item já na ordem do nome: ordenar o parque uma vez custa
+	// menos que ordenar a lista de máquinas de cada um dos milhares de itens.
+	byName := make([]int, 0, len(list))
+	lower := make([]string, len(list))
+	for i := range list {
+		if len(list[i].Items) > 0 {
+			byName = append(byName, i)
+			lower[i] = strings.ToLower(list[i].Hostname)
+		}
+	}
+	slices.SortFunc(byName, func(a, b int) int {
+		return cmp.Or(cmp.Compare(lower[a], lower[b]), cmp.Compare(list[a].MachineID, list[b].MachineID))
+	})
+	for _, i := range byName {
+		m := &list[i]
+		for j, p := range resolved[keyOf(m)] {
+			it := &m.Items[j]
+			p.Machines = append(p.Machines, patchMachine{ID: m.MachineID, Name: m.Hostname, OS: m.OS, Catalog: m.Catalog,
+				Installed: it.Installed, Exploited: it.Exploited, idx: i})
 		}
 	}
 	out := make([]patchItem, 0, len(order))
 	for _, k := range order {
 		p := byKey[k]
 		slices.Sort(p.Catalogs)
-		slices.SortFunc(p.Machines, func(a, b patchMachine) int {
-			return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.ID, b.ID))
-		})
 		out = append(out, *p)
 	}
 	slices.SortStableFunc(out, func(a, b patchItem) int {

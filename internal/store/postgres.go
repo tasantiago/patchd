@@ -27,6 +27,23 @@ func Connect(ctx context.Context, url string, wait time.Duration) (*pgxpool.Pool
 	return ConnectNotify(ctx, url, wait, nil)
 }
 
+// sessionDefaults ajusta as conexões do patchd, sem passar por cima do que a URL já diz.
+//
+// jit=off: o PostgreSQL compila (JIT) as consultas de custo estimado alto. As do patchd que
+// passam do limite são as listas do parque com uma subconsulta por máquina: a estimativa é
+// alta, a execução é de dezenas de milissegundos, e a compilação custava 300 a 400 ms a cada
+// chamada (medido com 4.000 máquinas: a lista das fontes falhando, de 437 ms para 23 ms).
+// Nenhuma consulta daqui é analítica a ponto de o JIT se pagar. Quem quiser de volta põe
+// "jit=on" na URL do banco.
+func sessionDefaults(cfg *pgxpool.Config) {
+	if cfg.ConnConfig.RuntimeParams == nil {
+		cfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	if _, set := cfg.ConnConfig.RuntimeParams["jit"]; !set {
+		cfg.ConnConfig.RuntimeParams["jit"] = "off"
+	}
+}
+
 // ConnectNotify é o Connect com aviso (Aula 9.1b): waiting, se não for nil, é chamada uma
 // vez, na primeira falha do ping, com o erro. Sem isso, a partida do servidor ficava muda
 // por até wait com o banco fora (nome que não resolve, container parado).
@@ -36,6 +53,7 @@ func ConnectNotify(ctx context.Context, url string, wait time.Duration, waiting 
 		// A mensagem do pgx pode conter a URL inteira, com a senha: não repassar.
 		return nil, errors.New("URL do banco inválida")
 	}
+	sessionDefaults(cfg)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("pool do banco: %w", err)
@@ -121,18 +139,26 @@ func (p *Postgres) SaveInventory(ctx context.Context, id string, rep protocol.In
 	if hw.Firmware != nil {
 		fw = *hw.Firmware
 	}
+	// O firmware inteiro (com as configurações da BIOS) numa coluna só dele: as telas de
+	// BIOS em lote não releem o relatório, com a lista de programas, de cada máquina.
+	var fwDetail []byte // NULL: o agente não informou
+	if hw.Firmware != nil {
+		if fwDetail, err = json.Marshal(hw.Firmware); err != nil {
+			return false, err
+		}
+	}
 	var reportID int64
 	err = tx.QueryRow(ctx, `
 		INSERT INTO inventory_reports
 			(machine_id, hash, schema_version, agent_version, collected_at, hostname, os_family, os_name, os_version, report,
 			 hw_manufacturer, hw_model, hw_serial, hw_chassis,
-			 fw_mode, fw_secure_boot, fw_tpm, fw_interface, fw_admin_password)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			 fw_mode, fw_secure_boot, fw_tpm, fw_interface, fw_admin_password, fw_detail)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		RETURNING id`,
 		id, rep.Hash, rep.SchemaVersion, rep.AgentVersion, rep.CollectedAt,
 		rep.OS.Hostname, rep.OS.Family, rep.OS.Name, rep.OS.Version, body,
 		hw.Manufacturer, hw.Model, hw.SerialNumber, hw.ChassisType,
-		fw.Mode, fw.SecureBoot, fw.TPM, fw.Interface, fw.AdminPassword,
+		fw.Mode, fw.SecureBoot, fw.TPM, fw.Interface, fw.AdminPassword, fwDetail,
 	).Scan(&reportID)
 	if err != nil {
 		return false, fmt.Errorf("inventário: %w", err)

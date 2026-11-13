@@ -402,10 +402,18 @@ type machineCount struct {
 // pelo próprio pacote e versão. Ordem: as que fecham mais itens, depois as exploradas.
 func waitingFixes(agg []patchItem) fixSummary {
 	fs := fixSummary{machines: map[string]*machineCount{}}
-	byKey := map[string]*ovFix{}
-	machinesOf := map[string]map[string]bool{}
-	systemsOf := map[string]map[string]bool{}
-	var order []string
+	// Um parque de 4.000 máquinas com dois anos de CVEs pendentes são mais de um milhão de
+	// pares item × máquina, percorridos a cada abertura da Visão geral. A máquina entra pelo
+	// número dela na lista (patchMachine.idx), em vetores, em vez de pelo ID, em mapas; e a
+	// família do sistema é lida uma vez por máquina e por correção, não uma vez por par.
+	type fixAcc struct {
+		fix     *ovFix
+		seen    []uint64 // as máquinas desta correção, um bit por máquina
+		systems map[string]bool
+	}
+	byKey := map[string]*fixAcc{}
+	var order []*fixAcc
+	var counts []*machineCount // por idx
 	for _, p := range agg {
 		if p.Approval != nil {
 			continue
@@ -419,37 +427,47 @@ func waitingFixes(agg []patchItem) fixSummary {
 		} else {
 			fs.pkg++
 		}
-		f := byKey[key]
-		if f == nil {
-			f = &ovFix{FixedIn: p.FixedIn, Kind: fixKind(p), Href: (patchQuery{Status: "aguardando", Q: p.FixedIn}).href(),
+		acc := byKey[key]
+		if acc == nil {
+			f := &ovFix{FixedIn: p.FixedIn, Kind: fixKind(p), Href: (patchQuery{Status: "aguardando", Q: p.FixedIn}).href(),
 				Whole: p.Kind == "CVE" && p.FixedIn != ""}
 			if p.FixedIn == "" {
 				f.Href = (patchQuery{Status: "aguardando"}).href()
 			}
-			byKey[key] = f
-			machinesOf[key], systemsOf[key] = map[string]bool{}, map[string]bool{}
-			order = append(order, key)
+			acc = &fixAcc{fix: f, systems: map[string]bool{}}
+			byKey[key] = acc
+			order = append(order, acc)
 		}
-		f.Items++
+		acc.fix.Items++
 		if p.Exploited {
-			f.Exploited++
+			acc.fix.Exploited++
 		}
-		for _, m := range p.Machines {
-			machinesOf[key][m.ID] = true
-			systemsOf[key][osFamily(m.OS)] = true
-			mc := fs.machines[m.ID]
+		for i := range p.Machines {
+			m := &p.Machines[i]
+			for m.idx >= len(counts) {
+				counts = append(counts, nil)
+			}
+			mc := counts[m.idx]
 			if mc == nil {
 				mc = &machineCount{ID: m.ID, Name: m.Name}
+				counts[m.idx] = mc
 				fs.machines[m.ID] = mc
 			}
 			mc.N++
+			word, bit := m.idx>>6, uint64(1)<<(m.idx&63)
+			for word >= len(acc.seen) {
+				acc.seen = append(acc.seen, 0)
+			}
+			if acc.seen[word]&bit == 0 {
+				acc.seen[word] |= bit
+				acc.fix.Machines++
+				acc.systems[osFamily(m.OS)] = true
+			}
 		}
 	}
-	for _, k := range order {
-		f := byKey[k]
-		f.Machines = len(machinesOf[k])
-		f.Systems = strings.Join(slices.Sorted(maps.Keys(systemsOf[k])), ", ")
-		fs.list = append(fs.list, *f)
+	for _, acc := range order {
+		acc.fix.Systems = strings.Join(slices.Sorted(maps.Keys(acc.systems)), ", ")
+		fs.list = append(fs.list, *acc.fix)
 	}
 	slices.SortStableFunc(fs.list, func(a, b ovFix) int {
 		if a.Items != b.Items {

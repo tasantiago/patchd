@@ -32,7 +32,7 @@ type BIOSFleetRow struct {
 func (p *Postgres) BIOSFleet(ctx context.Context) ([]BIOSFleetRow, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT m.id, coalesce(i.hostname, ''), m.ring, coalesce(i.fw_interface, ''), i.fw_admin_password,
-		       (i.report #>> '{hardware,firmware,sure_admin}')::boolean,
+		       (i.fw_detail ->> 'sure_admin')::boolean,
 		       coalesce(m.state ->> 'box_key', ''), coalesce((m.state ->> 'bios_legacy')::boolean, false),
 		       coalesce((m.state ->> 'bios_copy')::boolean, false)
 		FROM machines m
@@ -133,10 +133,10 @@ type BIOSFleetSettings struct {
 // último job bios_settings.
 func (p *Postgres) BIOSFleetSettings(ctx context.Context, pattern, strip string) (map[string]BIOSFleetSettings, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT m.id, coalesce(jsonb_typeof(i.report #> '{hardware,firmware,settings}') = 'array', false),
+		SELECT m.id, coalesce(jsonb_typeof(i.fw_detail -> 'settings') = 'array', false),
 		       (SELECT coalesce(jsonb_agg(e.item ORDER BY e.ord), '[]'::jsonb)
-		        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(i.report #> '{hardware,firmware,settings}') = 'array'
-		                                       THEN i.report #> '{hardware,firmware,settings}' ELSE '[]'::jsonb END)
+		        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(i.fw_detail -> 'settings') = 'array'
+		                                       THEN i.fw_detail -> 'settings' ELSE '[]'::jsonb END)
 		             WITH ORDINALITY AS e(item, ord)
 		        WHERE translate(lower(e.item ->> 'name'), $2, '') ~ $1)
 		FROM machines m
