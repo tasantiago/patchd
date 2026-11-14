@@ -173,6 +173,53 @@ A migração 71 levou cerca de 2 s nesse banco: cria os índices com a tabela de
 para escrita (1,1 s com 400 mil jobs) e copia o firmware do inventário atual de cada máquina
 (1 s para 4.000). O servidor demora esse tanto a mais para subir na primeira vez.
 
+### Dimensionamento: 7.000 máquinas
+
+Medido em 14/11/2026 com o mesmo parque simulado, levado a 7.000 máquinas (banco de 4,5 GB:
+8,4 milhões de amostras de desempenho, 4,5 milhões de horas, 700 mil jobs):
+
+| O que | Com 7.000 máquinas |
+| --- | --- |
+| Avaliar o parque inteiro | 13 s |
+| Memória do servidor: parque avaliado / com as telas de Patch em uso | 150 MB / 365 MB |
+| Canal em tempo real: 7.000 conexões TLS em espera | mais 350 MB (uns 50 KB por máquina), 8% de um núcleo, nenhuma falha |
+| Telas do painel | até 160 ms |
+| Montar as horas do desempenho na partida (as 48 horas, uma vez) | 37 s |
+
+O servidor do patchd, então, pede perto de 1 GB de memória com tudo ligado. O que cresce
+com o parque e precisa ser conferido:
+
+- **Memória da máquina: 8 GB** (16 GB se o banco e os arquivos de atualização ficam nela e
+  o banco passa de 10 GB). O servidor usa pouco; quem precisa é o PostgreSQL e o cache de
+  disco do sistema, que servem o banco e os instaladores.
+- **`shared_buffers` do PostgreSQL: 25% da memória** (2 GB com 8 GB). A imagem do PostgreSQL
+  vem com 128 MB, pouco para um banco de vários GB: a linha "Leituras da memória do banco" da
+  aba Saúde cai abaixo de 97%. `ALTER SYSTEM SET shared_buffers = '2GB'` no banco e reinício
+  do PostgreSQL e do servidor.
+- **Pool do banco: `pool_max_conns=16`** na URL do banco (o padrão é 4, ou o número de
+  núcleos). A avaliação do parque usa um quarto do pool.
+- **CPU: 4 núcleos**, mais pelo PostgreSQL (a passada de hora em hora, a retenção, as cópias)
+  do que pelo servidor.
+- **Arquivos abertos**: cada máquina no canal em tempo real segura uma conexão. O limite de
+  arquivos abertos do processo tem de passar, com folga, do número de máquinas:
+  `grep "open files" /proc/$(pgrep -f patchd-server | head -1)/limits` deve mostrar bem mais
+  que 7.000 (o Go já sobe o limite brando até o rígido). Com o limite em 1.024 ou 4.096, as
+  conexões acima dele são recusadas, e o sintoma é o agente dizendo que a conexão foi
+  fechada. O encaminhamento de porta do container e qualquer proxy na frente (o HAProxy do
+  relé vem com `maxconn 4000`) têm o próprio limite.
+- **Disco**: o banco cresce com o parque na mesma proporção (a aba Saúde mostra o tamanho e
+  o crescimento por dia: multiplique pela razão entre os parques). Os arquivos pesam mais: o
+  cache do Windows Update, de 5 a 10 GB por mês, não depende do número de máquinas, mas as
+  cópias do banco e os instaladores guardados, sim.
+- **Rede nas campanhas**: é o limite de verdade. Uma atualização cumulativa de 500 MB para
+  7.000 máquinas são 3,5 TB saindo do servidor (ou do WSUS) num ciclo; num enlace de 1 Gbit/s,
+  8 horas no máximo teórico. Divida em mais grupos de implantação (por prédio) e use a janela
+  ou o horário fixo, para cada onda ficar em mil máquinas ou menos.
+
+O intervalo de check-in pode ficar em 1 hora (2 check-ins por segundo com 7.000 máquinas; o
+servidor mediu 500 por segundo): quem dá a resposta rápida é o canal em tempo real, não o
+check-in mais frequente.
+
 ## 4. A tela
 
 - O veredito e as recomendações (o porquê, com os números, e o que fazer).
