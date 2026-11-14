@@ -58,6 +58,9 @@ func (e *TransientError) Error() string {
 
 func (e *TransientError) Unwrap() error { return e.Err }
 
+// Temporary: é o que jobs.Transient procura para responder "adiado" em vez de "falhou".
+func (e *TransientError) Temporary() bool { return true }
+
 // Client envia os relatórios com a credencial da máquina, sempre comprimidos em gzip.
 type Client struct {
 	BaseURL      string

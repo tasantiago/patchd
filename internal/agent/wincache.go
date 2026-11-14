@@ -158,6 +158,9 @@ func (f WinCacheFetcher) download(ctx context.Context, file protocol.WinCacheFil
 	}
 	if err != nil {
 		_ = os.Remove(part)
+		if jobs.Transient(err) && ctx.Err() == nil {
+			return "", fmt.Errorf("%w: download do servidor: %w", jobs.ErrRetry, err)
+		}
 		return "", fmt.Errorf("download do servidor: %w", err)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); n != file.Size || got != file.SHA256 {

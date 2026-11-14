@@ -67,6 +67,15 @@ const (
 // agente responder "adiado" em vez de "falhou").
 var ErrRetry = errors.New("tentar depois")
 
+// Transient diz se o erro é da rede ou do servidor naquele momento (a conexão caiu, o
+// servidor respondeu 5xx), e não do pedido: o download que falha assim, depois das
+// tentativas do próprio download, volta "adiado" (a campanha tenta de novo mais tarde) em vez
+// de "falhou" (que pausa a campanha por algo que nada tem a ver com a máquina).
+func Transient(err error) bool {
+	var t interface{ Temporary() bool }
+	return errors.As(err, &t) && t.Temporary()
+}
+
 // ErrProgramOpen: o adiado foi por programa aberto (não por outro instalador rodando). O
 // agente vigia o programa e avisa o servidor quando ele fechar ("tentar assim que fechar").
 var ErrProgramOpen = errors.New("programa aberto")
