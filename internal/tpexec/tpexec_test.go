@@ -434,3 +434,42 @@ func TestLimpezaDosLogsDeInstalacao(t *testing.T) {
 		t.Error("os 50 mais novos ficam, os outros saem")
 	}
 }
+
+// redeFora imita o erro de rede do cliente do agente (agent.TransientError).
+type redeFora struct{}
+
+func (redeFora) Error() string   { return "read tcp: connection reset by peer" }
+func (redeFora) Temporary() bool { return true }
+
+// O download que cai pela rede (depois das tentativas do próprio download) volta adiado, sem
+// executar nada: a campanha tenta de novo mais tarde, em vez de pausar por uma falha que não
+// é da máquina. O que não é da rede (o servidor recusou) continua falha.
+func TestDownloadDoInstaladorCaiPelaRede(t *testing.T) {
+	inst := []byte("instalador")
+	run := &runnerFalso{}
+	e, _ := executor(t, inst, run, google, nil)
+	e.Download = func(context.Context, string, io.Writer, int64) (int64, error) {
+		return 0, fmt.Errorf("Get: %w", redeFora{})
+	}
+	_, err := e.Install(context.Background(), 1, params(inst, "nullsoft", "/S"))
+	if !errors.Is(err, jobs.ErrRetry) || !errors.Is(err, jobs.ErrNotStarted) || errors.Is(err, jobs.ErrRefused) || run.prog != "" ||
+		!strings.Contains(err.Error(), "download do instalador") || !strings.Contains(err.Error(), "connection reset") {
+		t.Errorf("rede: %v (executou %q)", err, run.prog)
+	}
+	e.Download = func(context.Context, string, io.Writer, int64) (int64, error) {
+		return 0, errors.New("o servidor recusou o envio: 404")
+	}
+	_, err = e.Install(context.Background(), 1, params(inst, "nullsoft", "/S"))
+	if errors.Is(err, jobs.ErrRetry) || !errors.Is(err, jobs.ErrNotStarted) || run.prog != "" {
+		t.Errorf("recusa do servidor continua falha: %v", err)
+	}
+	// O job cancelado (o agente parando) não vira "adiado por rede".
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	e.Download = func(context.Context, string, io.Writer, int64) (int64, error) {
+		return 0, fmt.Errorf("Get: %w", redeFora{})
+	}
+	if _, err = e.Install(ctx, 1, params(inst, "nullsoft", "/S")); errors.Is(err, jobs.ErrRetry) {
+		t.Errorf("contexto cancelado: %v", err)
+	}
+}

@@ -301,6 +301,10 @@ func (e *Executor) fetch(ctx context.Context, file string, p jobs.ThirdPartyPara
 		err = cerr
 	}
 	if err != nil {
+		if jobs.Transient(err) && ctx.Err() == nil {
+			// A rede ou o servidor, não a máquina: adiado, para tentar de novo mais tarde.
+			return fmt.Errorf("%w: %w (download do instalador: %v)", jobs.ErrNotStarted, ErrRetry, err)
+		}
 		return fmt.Errorf("%w (download do instalador: %v)", jobs.ErrNotStarted, err)
 	}
 	if n != p.Size {

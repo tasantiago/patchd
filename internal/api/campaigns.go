@@ -19,6 +19,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/window"
+	"github.com/tasantiago/patchd/internal/wuerr"
 )
 
 // As campanhas no painel. Aula 8.5: a lista, só leitura. Aula 11.2: o admin cria (com uma
@@ -788,7 +789,7 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, j := range found[from:to] {
 			rv.Jobs = append(rv.Jobs, campaignJobRow{ID: j.ID, MachineID: j.MachineID, Short: short(j.MachineID),
-				Name: dash(names[j.MachineID]), State: j.State, Label: stateLabel(j.State), Detail: dash(j.Detail), Slot: dash(j.Slot)})
+				Name: dash(names[j.MachineID]), State: j.State, Label: stateLabel(j.State), Detail: dash(wuerr.Annotate(j.Detail)), Slot: dash(j.Slot)})
 		}
 		v.Rings = append(v.Rings, rv)
 	}

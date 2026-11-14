@@ -15,7 +15,7 @@ type info struct{ name, hint string }
 var known = map[uint32]info{
 	0x80240016: {"WU_E_INSTALL_NOT_ALLOWED", "outra instalação em andamento, ou reinício pendente"},
 	0x80240017: {"WU_E_NOT_APPLICABLE", ""},
-	0x8024001E: {"WU_E_SERVICE_STOP", ""},
+	0x8024001E: {"WU_E_SERVICE_STOP", "o serviço do Windows Update parou no meio da operação: a máquina desligando ou reiniciando, ou o serviço reiniciado; costuma passar sozinho"},
 	0x80240022: {"WU_E_ALL_UPDATES_FAILED", ""},
 	0x80244007: {"WU_E_PT_SOAPCLIENT_SOAPFAULT", "o servidor (WSUS) recusou a sincronização; o motivo está no WindowsUpdate.log (ErrorCode do SOAP)"},
 	0x80244010: {"WU_E_PT_EXCEEDED_MAX_SERVER_TRIPS", "idas e voltas demais ao servidor: comum na primeira sincronização, ou com catálogo grande no WSUS"},
@@ -28,7 +28,7 @@ var known = map[uint32]info{
 	0x80244022: {"WU_E_PT_HTTP_STATUS_SERVICE_UNAVAIL", ""},
 	0x80072EE2: {"ERROR_INTERNET_TIMEOUT", ""},
 	0x80072EFD: {"ERROR_INTERNET_CANNOT_CONNECT", "sem conexão com o servidor de atualizações"},
-	0x80070070: {"ERROR_DISK_FULL", ""},
+	0x80070070: {"ERROR_DISK_FULL", "sem espaço em disco na máquina: libere espaço (Alertas › Limpar temporários) e mande o job de novo"},
 	0x800F0922: {"CBS_E_INSTALLERS_FAILED", ""},
 }
 
@@ -47,8 +47,8 @@ var hexCode = regexp.MustCompile(`0[xX][0-9A-Fa-f]{8}`)
 
 // Annotate acrescenta, a um texto de erro, o nome do primeiro HRESULT conhecido e a dica,
 // se houver: "busca no WUA: Search: HRESULT 0x80244007" → "… 0x80244007
-// (WU_E_PT_SOAPCLIENT_SOAPFAULT: o servidor (WSUS) recusou …)". Texto sem código conhecido
-// volta igual.
+// (WU_E_PT_SOAPCLIENT_SOAPFAULT: o servidor (WSUS) recusou …)". Com o nome já no texto, entra
+// só a dica. Texto sem código conhecido volta igual.
 func Annotate(s string) string {
 	for _, m := range hexCode.FindAllString(s, -1) {
 		v, err := strconv.ParseUint(m[2:], 16, 32)
@@ -56,8 +56,15 @@ func Annotate(s string) string {
 			continue
 		}
 		i, ok := known[uint32(v)]
-		if !ok || strings.Contains(s, i.name) {
+		if !ok {
 			continue
+		}
+		if strings.Contains(s, i.name) {
+			// O agente já pôs o nome ("0x8024001E WU_E_SERVICE_STOP"): falta só a dica.
+			if i.hint == "" || strings.Contains(s, i.hint) {
+				continue
+			}
+			return strings.Replace(s, i.name, i.name+" ("+i.hint+")", 1)
 		}
 		extra := i.name
 		if i.hint != "" {

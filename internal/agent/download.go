@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"time"
 
@@ -16,7 +17,9 @@ import (
 // de centenas de MB numa rede lenta (Wi-Fi, VPN, relé) leva bem mais que o prazo total de 2
 // minutos do cliente dos relatórios. Aqui não há prazo total: vale o tempo sem nenhum byte
 // (downloadIdle), e uma conexão que cai no meio retoma do ponto onde parou (Range), até
-// downloadAttempts vezes. Quem chama confere o tamanho e o SHA-256 do que chegou.
+// downloadAttempts vezes. A que cai antes do primeiro byte (a conexão recusada ou derrubada
+// por um firewall, um proxy ou o servidor reiniciando, um 5xx) começa de novo: nada foi
+// escrito ainda. Quem chama confere o tamanho e o SHA-256 do que chegou.
 const (
 	downloadIdle       = 2 * time.Minute // sem nenhum byte por esse tempo, a tentativa para
 	downloadHeaderWait = time.Minute     // até a resposta começar
@@ -40,11 +43,17 @@ func (c *Client) Download(ctx context.Context, path string, w io.Writer, limit i
 		got, version, err = c.downloadFrom(ctx, path, w, limit, n, version)
 		n += got
 		var te *TransientError
-		// Só a queda no meio do corpo retoma: um erro antes do primeiro byte é do pedido.
-		if err == nil || !errors.As(err, &te) || attempt >= downloadAttempts || ctx.Err() != nil || n == 0 || version == "" {
+		// Com bytes já escritos, só dá para retomar sabendo que o arquivo é o mesmo (version).
+		// Sem nenhum, a tentativa seguinte começa do zero. Antes, a queda antes do primeiro
+		// byte não era repetida, e uma conexão derrubada virava "o instalador não chegou a
+		// rodar" na primeira vez.
+		if err == nil || !errors.As(err, &te) || attempt >= downloadAttempts || ctx.Err() != nil || (n > 0 && version == "") {
 			return n, err
 		}
-		t := time.NewTimer(wait)
+		// A espera varia de máquina para máquina: numa campanha, as que caíram juntas não
+		// voltam todas no mesmo instante.
+		// #nosec G404 -- espalhar as tentativas não precisa de aleatório criptográfico
+		t := time.NewTimer(wait + time.Duration(rand.Int64N(int64(wait)/2+1)))
 		select {
 		case <-ctx.Done():
 			t.Stop()

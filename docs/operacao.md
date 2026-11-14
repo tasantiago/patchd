@@ -351,6 +351,24 @@ com o reinício escolhido.
   valendo para os outros jobs "na janela"). Cada grupo, quando é liberado, recebe os jobs com
   início no próximo horário; o job vence no fim dele. `campaign show` mostra o horário.
 
+### O download do instalador caiu
+
+O agente baixa o instalador do servidor com retomada: a conexão que cai no meio continua do
+ponto onde parou. Desde 14/11/2026 (agente novo), a que cai **antes do primeiro byte** (um
+firewall ou proxy que derruba a conexão, o servidor reiniciando numa atualização, um 5xx)
+também é repetida, até 5 tentativas com espera crescente, diferente de máquina para máquina.
+Antes, a primeira queda virava "o instalador não chegou a rodar" e contava como falha.
+
+Se depois das tentativas a rede ainda não deixa, o job volta **adiado** ("tentar depois (download
+do instalador: ...)"), não falho: a campanha tenta de novo de hora em hora (até 24) e não
+pausa por um problema que não é da máquina. O que não é da rede continua falha ou recusa: o
+servidor não tem o arquivo, o tamanho ou o SHA-256 não confere. O mesmo vale para os pacotes
+do cache do Windows Update.
+
+Para saber onde a conexão caiu, procure o `request_id` da mensagem no log do servidor. Se
+ele não aparece, o pedido não chegou ao patchd: caiu no caminho (firewall, NAT, proxy, o
+encaminhamento de porta do container). Se aparece, a linha diz o que o servidor respondeu.
+
 ### Programa aberto na instalação de terceiros
 
 Com o programa aberto em qualquer sessão (o `soffice.exe` do Iniciador rápido do LibreOffice,
