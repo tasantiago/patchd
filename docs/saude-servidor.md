@@ -76,7 +76,7 @@ Antes de aumentar, confira se a versão já traz estes cuidados (desde 09/11/202
   PostgreSQL (até 4 a mais), não no `pool_max_conns`.
 - **A avaliação do parque usa um quarto do pool** (1 conexão no pool padrão de 4; no máximo
   4), em vez de 4 em paralelo, que ocupavam o pool inteiro por quase um minuto a cada 5.
-- **A avaliação guardada vale 1 hora** sem mudança (era 15 minutos). Inventário, busca ou
+- **A avaliação guardada vale 1 hora** sem mudança (era 15 minutos; desde 14/11/2026, 6 horas). Inventário, busca ou
   catálogo novos refazem a máquina na hora, como antes.
 - **As amostras de minuto do desempenho ficam 48 horas** (eram 7 dias, ~3,6 GB num parque de
   2.000 máquinas): só a curva de 24 horas e a montagem das horas as leem. O espaço apagado é
@@ -172,6 +172,44 @@ por segundo); o inventário (15 ms), a busca (8 ms) e o registro (5 ms); a audit
 A migração 71 levou cerca de 2 s nesse banco: cria os índices com a tabela de jobs travada
 para escrita (1,1 s com 400 mil jobs) e copia o firmware do inventário atual de cada máquina
 (1 s para 4.000). O servidor demora esse tanto a mais para subir na primeira vez.
+
+Desde 14/11/2026 (segunda rodada, medida com 7.000 máquinas):
+
+| O que | Antes | Depois |
+| --- | --- | --- |
+| Um check-in: idas ao banco | 13 | 7 |
+| 7.000 check-ins, 32 de cada vez | 9 a 11 s | 7,2 s |
+| Montar as horas do desempenho na partida do servidor | 38 s (as 48 horas) | 6 s (desde a última hora montada) |
+| Alertas (400 abertos), pela rede | 388 KB | 29 KB |
+| Pendências de uma máquina, pela rede | 116 KB | 9 KB |
+| CSV do inventário / JSON do parque, pela rede | 1,7 MB / 3,5 MB | 262 KB / 334 KB |
+| Aba Autoatendimento da Configuração | 519 KB | sem a lista de máquinas |
+
+- **O check-in grava a linha da máquina uma vez.** Eram quatro comandos regravando a mesma
+  linha (o contato, o estado, o relé, as capacidades: quatro versões da linha a cada
+  check-in, com o estado dentro, para o PostgreSQL limpar depois) e mais um para a resposta
+  ao "ligar pela rede"; agora vão num envio só. As amostras de desempenho, que eram de seis
+  idas ao banco, são quatro, com as gravações juntas. A conexão do pool fica ocupada por
+  menos tempo a cada check-in.
+- **O painel comprime as respostas** (gzip) quando o navegador aceita: as tabelas em HTML
+  encolhem de oito a treze vezes. Só as respostas de GET, de texto, com mais de 1 KB; nunca
+  as de POST nem as rotas do agente (o porquê está em `docs/seguranca.md`).
+- **A partida do servidor monta as horas do desempenho desde a última hora montada**, não as
+  48 horas: quem só reiniciou (uma atualização) refaz poucas horas. As 48 inteiras ficam para
+  a instalação nova e para a parada longa.
+- **A limpeza das horas de mais de 90 dias roda uma vez por dia.** Ela varre a tabela inteira
+  (milhões de linhas) e rodava a cada hora.
+- **A avaliação guardada vale 6 horas** sem mudança (era 1 hora). Refazer o parque sem nada
+  ter mudado é ler o inventário completo de cada máquina; o que depende só do relógio (catálogo
+  atrasado, fim de suporte) muda de um dia para o outro. Inventário, busca ou catálogo novos
+  continuam refazendo a máquina na hora.
+- **A prévia da loja** (Configuração › Autoatendimento) recebe a máquina digitada, pelo nome
+  ou pelo ID, em vez de uma caixa de seleção com o parque inteiro.
+
+O que ficou medido e sem mexer: a tela Padronização ainda traz todas as máquinas numa lista
+de seleção múltipla (950 KB com 7.000; 213 KB comprimida) e pede outro desenho de escolha; as
+listas do parque são relidas do banco a cada página (25 a 50 ms com 7.000), o que só pesaria
+com muita gente no painel ao mesmo tempo.
 
 ### Dimensionamento: 7.000 máquinas
 

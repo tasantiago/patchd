@@ -6,6 +6,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
 )
 
@@ -21,20 +22,17 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_hash", "inventory_hash fora do formato sha256:<64 hex>")
 		return
 	}
-	known, err := a.store.CheckIn(r.Context(), id, req.AgentVersion, req.InventoryHash, r.TLS != nil)
+	// O contato, o canal, por onde a máquina falou (dentro da rede ou pelo relé, docs/rele.md),
+	// as capacidades, o estado (rede e discos, Aula 12.1) e a resposta ao "ligar pela rede"
+	// (Aula 22.2: o check-in depois do pacote é a resposta da máquina) vão numa ida ao banco.
+	known, err := a.store.CheckInAll(r.Context(), id, store.Checkin{
+		AgentVersion: req.AgentVersion, InventoryHash: req.InventoryHash, TLS: r.TLS != nil, Relay: viaRelay(r.Context()),
+		Capabilities: agentCaps(req.Capabilities), State: a.checkedState(r, id, req.State), Addr: remoteIP(r), At: a.now()})
 	if err != nil {
 		a.internalError(w, r, "registrar check-in", err)
 		return
 	}
 	a.checkClock(r, id, req.SentAt)
-	a.saveHostState(r, id, req.State)
-	// docs/rele.md: por onde a máquina falou (dentro da rede ou pelo relé, de fora).
-	if err := a.store.SetCheckinRelay(r.Context(), id, viaRelay(r.Context())); err != nil {
-		a.logger.Error("guardar por onde chegou o check-in", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
-	}
-	if err := a.store.SetMachineCapabilities(r.Context(), id, agentCaps(req.Capabilities)); err != nil {
-		a.logger.Error("guardar as capacidades do agente", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
-	}
 	// Tentar assim que fechar: o programa que adiou estes jobs fechou.
 	if n := len(req.Unblocked); n > 0 && n <= protocol.MaxUnblocked {
 		if k, err := a.store.MarkJobsUnblocked(r.Context(), id, req.Unblocked, a.now()); err != nil {
@@ -42,10 +40,6 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 		} else if k > 0 {
 			a.logger.Info("programa fechado: jobs adiados liberados", "machine_id", id, "jobs", k, "request_id", RequestID(r.Context()))
 		}
-	}
-	// Ligar pela rede (Aula 22.2): o check-in depois do pacote é a resposta da máquina.
-	if err := a.store.MarkWakeAnswered(r.Context(), id, a.now()); err != nil {
-		a.logger.Error("ligar pela rede: anotar a resposta", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
 	}
 	policy := a.monitorPolicy()
 	a.savePerf(r, id, req.Perf, policy)
@@ -88,20 +82,18 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// saveHostState grava rede e discos (Aula 12.1) e o endereço de onde veio o check-in. É
-// dado de conveniência: um estado fora do formato é descartado com um aviso no log, e uma
-// falha ao gravar também não derruba o check-in, que é o que mantém a máquina viva.
-func (a *api) saveHostState(r *http.Request, id string, st *protocol.MachineState) {
+// checkedState: o estado (rede e discos, Aula 12.1) que o check-in grava. É dado de
+// conveniência: fora do formato, é descartado com um aviso no log (o anterior fica), e o
+// check-in, que é o que mantém a máquina viva, segue.
+func (a *api) checkedState(r *http.Request, id string, st *protocol.MachineState) *protocol.MachineState {
 	if st != nil {
 		if err := st.Check(); err != nil {
 			a.logger.Warn("estado da máquina descartado", "machine_id", id, "reason", err.Error(),
 				"request_id", RequestID(r.Context()))
-			st = nil
+			return nil
 		}
 	}
-	if err := a.store.SaveHostState(r.Context(), id, st, remoteIP(r)); err != nil {
-		a.logger.Error("gravar estado da máquina", "machine_id", id, "error", err, "request_id", RequestID(r.Context()))
-	}
+	return st
 }
 
 // agentCaps: as capacidades anunciadas, como vão para o banco: no máximo 16, cada uma com

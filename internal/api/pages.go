@@ -932,7 +932,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="card"><div class="card-cab"><h2>Prévia da loja</h2></div>
 <p class="muted">O que um usuário destes grupos veria nesta máquina agora, com o último inventário dela. Na Central do usuário, os grupos vêm do AD.</p>
 <form class="busca" method="get" action="/painel/configuracao"><input type="hidden" name="aba" value="autoatendimento">
-<select name="maquina" aria-label="máquina"><option value="">Máquina Windows…</option>{{range .Machines}}<option value="{{.ID}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="search" name="maquina" maxlength="100" value="{{.Machine}}" placeholder="máquina Windows: nome ou ID" aria-label="máquina Windows: nome ou ID">
 <input type="text" name="grupos" maxlength="2000" value="{{.Groups}}" placeholder="grupos do usuário, separados por vírgula" aria-label="grupos do usuário">
 <button type="submit">Ver a loja</button></form>
 {{if .Note}}<p class="aviso atencao">{{.Note}}</p>{{end}}

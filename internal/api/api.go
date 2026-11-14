@@ -107,6 +107,9 @@ type Store interface {
 	// CheckIn registra o contato periódico (e o canal: TLS ou não, Aula 9.2) e diz se o
 	// inventário atual tem o hash informado.
 	CheckIn(ctx context.Context, machineID, agentVersion, inventoryHash string, viaTLS bool) (inventoryKnown bool, err error)
+	// CheckInAll: o check-in inteiro (contato, canal, relé, capacidades, estado, endereço e a
+	// resposta ao "ligar pela rede") numa ida ao banco.
+	CheckInAll(ctx context.Context, machineID string, c store.Checkin) (inventoryKnown bool, err error)
 	// Perguntas ao parque (jobs.TypeQuery).
 	CreateQuestion(ctx context.Context, q store.Question) (int64, error)
 	SetQuestionMachines(ctx context.Context, id int64, n int) error
@@ -460,7 +463,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /api/v1/compliance", a.sessionAuth(a.fleetCompliance))
 
 	// Ordem: o ID existe antes do log; o log enxerga o 500 produzido pela recuperação.
-	return withRequestID(withAccessLog(logger, a.observe, withRecover(logger, SecurityHeaders(mux))))
+	return withRequestID(withAccessLog(logger, a.observe, withRecover(logger, SecurityHeaders(withGzip(mux)))))
 }
 
 // machineID lê e valida o {id} da URL nas rotas de leitura. Em caso de erro, já respondeu.

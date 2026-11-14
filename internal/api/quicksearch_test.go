@@ -1,9 +1,11 @@
 package api_test
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -118,5 +120,34 @@ func TestParqueEmPaginas(t *testing.T) {
 	// O CSV traz todas.
 	if csv := pagina(h, "GET", "/painel/parque.csv", sessaoTeste, nil).Body.String(); strings.Count(csv, "\n") < 251 {
 		t.Errorf("CSV: %d linhas", strings.Count(csv, "\n"))
+	}
+}
+
+// No painel de verdade: a mesma página, pedida com e sem gzip, tem o mesmo conteúdo; a
+// resposta de um POST (onde ficam os segredos mostrados uma vez) nunca sai comprimida.
+func TestPainelComprimeAsPaginas(t *testing.T) {
+	h, st, _ := ambientePaginas(t)
+	semeiaEquipamentos(t, st, 40)
+	pura := pagina(h, "GET", "/painel/inventario?por=50", sessaoTeste, nil)
+	comp := pagina(h, "GET", "/painel/inventario?por=50", sessaoTeste, nil, "Accept-Encoding", "gzip")
+	if comp.Header().Get("Content-Encoding") != "gzip" || comp.Body.Len() >= pura.Body.Len()/3 {
+		t.Fatalf("inventário: %q, %d bytes (pura: %d)", comp.Header().Get("Content-Encoding"), comp.Body.Len(), pura.Body.Len())
+	}
+	zr, err := gzip.NewReader(comp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aberta, _ := io.ReadAll(zr)
+	if string(aberta) != pura.Body.String() {
+		t.Error("a página comprimida não é a mesma")
+	}
+	if comp.Header().Get("Content-Security-Policy") == "" || comp.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("os cabeçalhos de segurança continuam: %v", comp.Header())
+	}
+	if w := pagina(h, "POST", "/painel/sair", sessaoTeste, url.Values{}, "Accept-Encoding", "gzip"); w.Header().Get("Content-Encoding") != "" {
+		t.Error("resposta de POST comprimida")
+	}
+	if w := pagina(h, "GET", "/painel/estilo.css", "", nil, "Accept-Encoding", "gzip"); w.Header().Get("Content-Encoding") != "gzip" {
+		t.Error("a folha de estilo sai comprimida")
 	}
 }
