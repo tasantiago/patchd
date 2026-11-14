@@ -76,12 +76,19 @@ func (p *Postgres) SavePerf(ctx context.Context, machineID string, samples []pro
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `INSERT INTO perf_eval (machine_id, state, updated_at) VALUES ($1, '{}', $2) ON CONFLICT DO NOTHING`,
-		machineID, now); err != nil {
-		return nil, err
-	}
+	// A linha do estado da regra trava a máquina (dois check-ins dela não contam a mesma
+	// amostra duas vezes). Ela quase sempre já existe: criar antes, a cada check-in, era uma
+	// ida ao banco para nada.
+	const lock = `SELECT state FROM perf_eval WHERE machine_id = $1 FOR UPDATE`
 	var raw []byte
-	if err := tx.QueryRow(ctx, `SELECT state FROM perf_eval WHERE machine_id = $1 FOR UPDATE`, machineID).Scan(&raw); err != nil {
+	err = tx.QueryRow(ctx, lock, machineID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if _, err = tx.Exec(ctx, `INSERT INTO perf_eval (machine_id, state, updated_at) VALUES ($1, '{}', $2) ON CONFLICT DO NOTHING`,
+			machineID, now); err == nil {
+			err = tx.QueryRow(ctx, lock, machineID).Scan(&raw)
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	st := perfeval.State{}
@@ -99,37 +106,34 @@ func (p *Postgres) SavePerf(ctx context.Context, machineID string, samples []pro
 		}
 		ats[i], cpus[i], mems[i], disks[i] = s.At.UTC(), s.CPU, s.Mem, string(d)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO perf_samples (machine_id, at, cpu, mem, disks)
+	// As gravações vão juntas, num envio só (eram de quatro a mais idas ao banco, com a
+	// conexão do pool presa entre uma e outra): as amostras, a marca de hora atrasada, os
+	// alertas que a regra abriu ou fechou e o estado novo da regra.
+	w := &pgx.Batch{}
+	w.Queue(`INSERT INTO perf_samples (machine_id, at, cpu, mem, disks)
 		SELECT $1, t, c, m, d::jsonb FROM unnest($2::timestamptz[], $3::float8[], $4::float8[], $5::text[]) AS u(t, c, m, d)
-		ON CONFLICT DO NOTHING`, machineID, ats, cpus, mems, disks); err != nil {
-		return nil, err
-	}
+		ON CONFLICT DO NOTHING`, machineID, ats, cpus, mems, disks)
 	// Amostra de uma hora que a passada de hora em hora já montou: a hora fica marcada para
 	// ser refeita (RollupLatePerf), em vez de a passada refazer 48 horas do parque inteiro.
 	if late := now.UTC().Truncate(time.Hour).Add(-PerfLateAfter); slices.ContainsFunc(ats, func(t time.Time) bool { return t.Before(late) }) {
-		if _, err := tx.Exec(ctx, `INSERT INTO perf_late (machine_id, hour)
+		w.Queue(`INSERT INTO perf_late (machine_id, hour)
 			SELECT DISTINCT $1, date_trunc('hour', t AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 			FROM unnest($2::timestamptz[]) AS u(t) WHERE t < $3
-			ON CONFLICT DO NOTHING`, machineID, ats, late); err != nil {
-			return nil, err
-		}
+			ON CONFLICT DO NOTHING`, machineID, ats, late)
 	}
 	var changes []perfeval.Change
 	for _, s := range newSamples(st, samples) {
 		for _, c := range st.Step(policy, s) {
 			changes = append(changes, c)
 			if c.Opened {
-				_, err = tx.Exec(ctx, `INSERT INTO perf_alerts (machine_id, metric, target, opened_at, open_value, peak, last_value)
+				w.Queue(`INSERT INTO perf_alerts (machine_id, metric, target, opened_at, open_value, peak, last_value)
 					VALUES ($1, $2, $3, $4, $5, $5, $5)
 					ON CONFLICT (machine_id, metric, target) WHERE closed_at IS NULL DO NOTHING`,
 					machineID, c.Key.Metric, c.Key.Target, c.At, c.Value)
 			} else {
-				_, err = tx.Exec(ctx, `UPDATE perf_alerts SET closed_at = $4, peak = $5, last_value = $6
+				w.Queue(`UPDATE perf_alerts SET closed_at = $4, peak = $5, last_value = $6
 					WHERE machine_id = $1 AND metric = $2 AND target = $3 AND closed_at IS NULL`,
 					machineID, c.Key.Metric, c.Key.Target, c.At, c.Peak, c.Value)
-			}
-			if err != nil {
-				return nil, err
 			}
 		}
 	}
@@ -138,17 +142,25 @@ func (p *Postgres) SavePerf(ctx context.Context, machineID string, samples []pro
 			continue
 		}
 		k := perfeval.KeyOf(id)
-		if _, err := tx.Exec(ctx, `UPDATE perf_alerts SET peak = $4, last_value = $5
+		w.Queue(`UPDATE perf_alerts SET peak = $4, last_value = $5
 			WHERE machine_id = $1 AND metric = $2 AND target = $3 AND closed_at IS NULL`,
-			machineID, k.Metric, k.Target, t.Peak, t.Last); err != nil {
-			return nil, err
-		}
+			machineID, k.Metric, k.Target, t.Peak, t.Last)
 	}
 	b, err := json.Marshal(st)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE perf_eval SET state = $2, updated_at = $3 WHERE machine_id = $1`, machineID, b, now); err != nil {
+	w.Queue(`UPDATE perf_eval SET state = $2, updated_at = $3 WHERE machine_id = $1`, machineID, b, now)
+	res := tx.SendBatch(ctx, w)
+	for range w.Len() {
+		if _, err = res.Exec(); err != nil {
+			break
+		}
+	}
+	if cerr := res.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return nil, err
 	}
 	return changes, tx.Commit(ctx)
@@ -371,7 +383,36 @@ func (m *Memory) RollupLatePerf(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// PrunePerf apaga as amostras, as horas e os alertas fechados mais velhos que os cortes.
+// PerfLastHour: a hora mais nova já montada (zero sem nenhuma). A passada da partida começa
+// dela, em vez de refazer as 48 horas a cada reinício.
+func (p *Postgres) PerfLastHour(ctx context.Context) (time.Time, error) {
+	var last *time.Time
+	if err := p.pool.QueryRow(ctx, `SELECT max(hour) FROM perf_hourly`).Scan(&last); err != nil || last == nil {
+		return time.Time{}, err
+	}
+	return last.UTC(), nil
+}
+
+// PerfLastHour na memória.
+func (m *Memory) PerfLastHour(ctx context.Context) (time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var last time.Time
+	if m.perfData == nil {
+		return last, nil
+	}
+	for _, list := range m.perfData.hours {
+		for _, h := range list {
+			if h.Hour.After(last) {
+				last = h.Hour
+			}
+		}
+	}
+	return last, nil
+}
+
+// PrunePerf apaga as amostras, as horas e os alertas fechados mais velhos que os cortes. Um
+// corte zero pula a tabela dele (as horas são limpas uma vez por dia, não a cada passada).
 func (p *Postgres) PrunePerf(ctx context.Context, samplesBefore, hoursBefore, alertsBefore time.Time) (int64, error) {
 	var total int64
 	for _, q := range []struct {
@@ -382,6 +423,9 @@ func (p *Postgres) PrunePerf(ctx context.Context, samplesBefore, hoursBefore, al
 		{`DELETE FROM perf_hourly WHERE hour < $1`, hoursBefore},
 		{`DELETE FROM perf_alerts WHERE closed_at IS NOT NULL AND closed_at < $1`, alertsBefore},
 	} {
+		if q.at.IsZero() {
+			continue
+		}
 		tag, err := p.pool.Exec(ctx, q.sql, q.at)
 		if err != nil {
 			return total, err

@@ -66,13 +66,25 @@ func TestAbaAutoatendimento(t *testing.T) {
 
 	// Prévia: sem o grupo, só a atualização do 7-Zip; com o grupo, também instalar o Notepad++.
 	b = pagina(h, "GET", aba+"&maquina="+pc, sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, `<option value="`+pc+`" selected>pc-loja</option>`) ||
+	if !strings.Contains(b, `name="maquina" maxlength="100" value="`+pc+`"`) || strings.Contains(b, "<option value=\""+pc) ||
 		!strings.Contains(b, "<td>7-Zip</td><td><code>26.01</code></td><td>Atualizar</td><td><code>26.04</code></td>") || strings.Contains(b, "<td>Notepad&#43;&#43;</td>") {
 		t.Errorf("prévia sem grupo:\n%s", b)
 	}
 	b = pagina(h, "GET", aba+"&maquina="+pc+"&grupos=gg-ti", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, "<td>Notepad&#43;&#43;</td><td>—</td><td>Instalar</td><td><code>8.9.8.1</code></td>") {
 		t.Errorf("prévia com grupo:\n%s", b)
+	}
+	// A máquina também vem pelo nome (inteiro, sem olhar a caixa, ou o começo, se só uma casa);
+	// sem nenhuma, a nota diz o que digitar.
+	for _, digitado := range []string{"PC-LOJA", "pc-lo"} {
+		if b := pagina(h, "GET", aba+"&maquina="+digitado, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "<td>7-Zip</td><td><code>26.01</code></td><td>Atualizar</td>") ||
+			!strings.Contains(b, `value="`+digitado+`"`) {
+			t.Errorf("prévia pela máquina %q", digitado)
+		}
+	}
+	if b := pagina(h, "GET", aba+"&maquina=nao-existe", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Nenhuma máquina Windows com esse nome ou ID") ||
+		strings.Contains(b, "<td>7-Zip</td><td><code>26.01</code>") {
+		t.Error("máquina que não existe")
 	}
 	// Desmarcar os dois tira da loja.
 	if loc := salvar(url.Values{"app": {"7zip"}}); !strings.HasSuffix(loc, "removido=7zip") {

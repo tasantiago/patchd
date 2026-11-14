@@ -136,3 +136,35 @@ func TestAgregacaoComListasCompartilhadas(t *testing.T) {
 		t.Errorf("resumo sem o aprovado: %+v", fs)
 	}
 }
+
+// A máquina da prévia do autoatendimento vem digitada: o ID inteiro, o nome inteiro, ou o
+// começo de um dos dois quando só uma casa; com várias, a nota lista as primeiras.
+func TestMaquinaDigitadaNaPrevia(t *testing.T) {
+	var parque []protocol.MachineSummary
+	for i, n := range []string{"PC-0001", "PC-0010", "PC-0011", "pc-0100", "NB-0001", "NB-0002", "NB-0003", "NB-0004", "NB-0005", "NB-0006"} {
+		parque = append(parque, protocol.MachineSummary{ID: string(rune('a'+i)) + "bcd1234-0001", Hostname: n, OSName: "Windows 11 Pro"})
+	}
+	parque = append(parque, protocol.MachineSummary{ID: "zzzz9999-0001", Hostname: "srv-linux", OSName: "Ubuntu"})
+	for digitado, quer := range map[string]string{
+		"abcd1234-0001": "abcd1234-0001", // o ID inteiro
+		"pc-0001":       "abcd1234-0001", // o nome inteiro, sem olhar a caixa
+		"PC-0010":       "bbcd1234-0001",
+		"pc-01":         "dbcd1234-0001", // o começo do nome, uma só
+		"cbcd":          "cbcd1234-0001", // o começo do ID (4 ou mais)
+	} {
+		if id, nota := pickWindowsMachine(parque, digitado); id != quer || nota != "" {
+			t.Errorf("%q: %q %q, esperava %q", digitado, id, nota, quer)
+		}
+	}
+	for digitado, trecho := range map[string]string{
+		"pc-00":     `3 máquinas Windows casam com "pc-00": PC-0001`,
+		"nb-":       "e mais 1",
+		"srv-linux": "Nenhuma máquina Windows",
+		"zzzz9999":  "Nenhuma máquina Windows",
+		"abc":       "Nenhuma máquina Windows", // começo de ID curto demais
+	} {
+		if id, nota := pickWindowsMachine(parque, digitado); id != "" || !strings.Contains(nota, trecho) {
+			t.Errorf("%q: %q %q, esperava a nota com %q", digitado, id, nota, trecho)
+		}
+	}
+}

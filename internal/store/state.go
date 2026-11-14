@@ -28,7 +28,9 @@ func cleanAddr(addr string) string {
 	if err != nil {
 		return ""
 	}
-	return ip.Unmap().String()
+	// Sem a zona ("fe80::1%eth0"): o inet do PostgreSQL não a aceita, e o endereço vai no mesmo
+	// comando do check-in.
+	return ip.Unmap().WithZone("").String()
 }
 
 // SaveHostState grava o endereço do check-in e, se veio, o estado. state nil mantém o

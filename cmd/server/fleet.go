@@ -78,8 +78,10 @@ const (
 	// evalTTL: uma avaliação guardada vale no máximo isso, mesmo sem mudança (os avisos de
 	// catálogo atrasado e o suporte do macOS dependem do relógio, numa escala de dias). Com
 	// inventário, busca ou catálogo novos, a chave muda e a máquina é refeita na hora. Era 15
-	// min: o parque inteiro refeito a cada 15 min, sem mudança nenhuma, pesava no banco.
-	evalTTL = time.Hour
+	// min, depois 1 hora: refazer o parque inteiro sem mudança nenhuma é ler o inventário
+	// completo de cada máquina (com 7.000, uns 280 MB do banco e 13 s de avaliação por vez). O
+	// que depende do relógio muda de um dia para o outro, não de uma hora para a outra.
+	evalTTL = 6 * time.Hour
 	// evalWorkers: o máximo de avaliações em paralelo; o de fato é um quarto do pool do banco
 	// (evalWorkersFor), para os check-ins não esperarem conexão enquanto o parque é avaliado.
 	evalWorkers = 4

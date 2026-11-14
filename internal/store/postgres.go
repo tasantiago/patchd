@@ -313,6 +313,87 @@ func (p *Postgres) CheckIn(ctx context.Context, id, agentVersion, inventoryHash 
 	return current != nil && *current == inventoryHash, nil
 }
 
+// Checkin é tudo o que um check-in grava: o contato, o canal, por onde veio, o que o agente
+// sabe fazer, o estado (rede, discos, usuários) e o endereço de onde chegou.
+type Checkin struct {
+	AgentVersion  string
+	InventoryHash string
+	TLS           bool                   // chegou por HTTPS
+	Relay         bool                   // chegou pela porta do relé (docs/rele.md)
+	Capabilities  []string               // como vão para o banco (já limpas e em ordem)
+	State         *protocol.MachineState // nil mantém o anterior (agente antigo, estado recusado)
+	Addr          string                 // de onde veio; vazio ou ilegível mantém o anterior
+	At            time.Time              // a hora do servidor: a resposta a um "ligar pela rede"
+}
+
+// CheckInAll grava o check-in inteiro numa ida ao banco, e diz se o inventário atual da
+// máquina tem o hash informado. Eram cinco comandos, quatro deles regravando a mesma linha
+// da máquina a cada check-in (quatro versões da linha, com o estado dentro, e quatro idas ao
+// banco com a conexão do pool ocupada); agora a linha é regravada uma vez, e a resposta ao
+// "ligar pela rede" (docs/wake-on-lan.md) vai no mesmo envio.
+func (p *Postgres) CheckInAll(ctx context.Context, id string, c Checkin) (bool, error) {
+	var body []byte
+	if c.State != nil {
+		var err error
+		if body, err = json.Marshal(c.State); err != nil {
+			return false, err
+		}
+	}
+	var addr *string
+	if a := cleanAddr(c.Addr); a != "" {
+		addr = &a
+	}
+	caps := c.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
+	b := &pgx.Batch{}
+	b.Queue(`
+		UPDATE machines m SET last_seen_at = now(), agent_version = $2, last_checkin_tls = $3,
+			last_checkin_relay = $4, capabilities = $5,
+			last_checkin_addr = coalesce($6::inet, last_checkin_addr),
+			state    = coalesce($7::jsonb, state),
+			state_at = CASE WHEN $7::jsonb IS NULL THEN state_at ELSE now() END
+		WHERE m.id = $1
+		RETURNING (SELECT r.hash FROM inventory_reports r WHERE r.id = m.current_inventory_id)`,
+		id, c.AgentVersion, c.TLS, c.Relay, caps, addr, body)
+	b.Queue(`
+		UPDATE wake_requests SET answered_at = $2
+		WHERE machine_id = $1 AND answered_at IS NULL AND sent_at IS NOT NULL AND sent_at <= $2 AND sent_at >= $3`,
+		id, c.At.UTC(), c.At.Add(-WakeAnswerWindow).UTC())
+	res := p.pool.SendBatch(ctx, b)
+	var current *string
+	err := res.QueryRow().Scan(&current)
+	if err == nil {
+		_, err = res.Exec()
+	}
+	if cerr := res.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return false, err
+	}
+	return current != nil && *current == c.InventoryHash, nil
+}
+
+// CheckInAll na memória: os mesmos passos, um a um.
+func (m *Memory) CheckInAll(ctx context.Context, id string, c Checkin) (bool, error) {
+	known, err := m.CheckIn(ctx, id, c.AgentVersion, c.InventoryHash, c.TLS)
+	if err != nil {
+		return false, err
+	}
+	if err := m.SaveHostState(ctx, id, c.State, c.Addr); err != nil {
+		return false, err
+	}
+	if err := m.SetCheckinRelay(ctx, id, c.Relay); err != nil {
+		return false, err
+	}
+	if err := m.SetMachineCapabilities(ctx, id, c.Capabilities); err != nil {
+		return false, err
+	}
+	return known, m.MarkWakeAnswered(ctx, id, c.At)
+}
+
 // CheckinTLS diz por qual canal chegou o último check-in da máquina (Aula 9.2): nil se
 // nenhum desde a 0021 ou máquina desconhecida.
 func (p *Postgres) CheckinTLS(ctx context.Context, id string) (*bool, error) {

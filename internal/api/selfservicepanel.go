@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/selfservice"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
@@ -32,11 +33,6 @@ type ssOfferRow struct {
 	Problem               string // Aula 18.8: o problema desta linha, quando nada foi gravado
 }
 
-type ssMachineOption struct {
-	ID, Label string
-	Selected  bool
-}
-
 type ssItem struct {
 	selfservice.Item
 	Label string
@@ -45,7 +41,7 @@ type ssItem struct {
 type selfServiceView struct {
 	NoManifest bool
 	Rows       []ssOfferRow
-	Machines   []ssMachineOption
+	Machine    string // a máquina da prévia, como foi digitada (nome ou ID)
 	Groups     string
 	Ran        bool
 	Items      []ssItem
@@ -96,23 +92,19 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 	chosen, groups := q.Get("maquina"), strings.TrimSpace(q.Get("grupos"))
 	groups = texto.Clip(groups, 2000)
 	sv.Groups = groups
+	// A máquina vem digitada (o nome ou o ID): a caixa de seleção com o parque inteiro eram
+	// milhares de opções, meio megabyte de página a cada abertura da aba.
+	chosen = texto.Clip(strings.TrimSpace(chosen), maxSearchLen)
+	sv.Machine = chosen
+	if chosen == "" {
+		return nil
+	}
 	machines, err := a.store.Machines(ctx)
 	if err != nil {
 		return err
 	}
-	valid := false
-	for _, m := range machines {
-		if !strings.Contains(strings.ToLower(m.OSName), "windows") {
-			continue
-		}
-		label := m.Hostname
-		if label == "" {
-			label = short(m.ID)
-		}
-		sv.Machines = append(sv.Machines, ssMachineOption{ID: m.ID, Label: label, Selected: m.ID == chosen})
-		valid = valid || m.ID == chosen
-	}
-	if !valid {
+	chosen, sv.Note = pickWindowsMachine(machines, chosen)
+	if chosen == "" {
 		return nil
 	}
 	inv, found, err := a.store.LatestInventory(ctx, chosen)
@@ -240,4 +232,45 @@ func selfServiceFlash(q url.Values, b *pageBase) {
 	case q.Get("erro") == "grupos":
 		b.Error = fmt.Sprintf("Grupos: até %d, cada um pelo sAMAccountName (GG-Exemplo ou DOMINIO\\GG-Exemplo), separados por vírgula. Nada mudou.", store.MaxOfferGroups)
 	}
+}
+
+// pickWindowsMachine acha a máquina Windows pelo que foi digitado: o ID inteiro, o nome
+// inteiro (sem olhar a caixa) ou, se só uma casa, o começo do ID ou do nome. Sem uma só, o
+// ID volta vazio e a nota diz por quê.
+func pickWindowsMachine(machines []protocol.MachineSummary, typed string) (id, note string) {
+	needle := strings.ToLower(typed)
+	var exact, prefix []protocol.MachineSummary
+	for _, m := range machines {
+		if !strings.Contains(strings.ToLower(m.OSName), "windows") {
+			continue
+		}
+		name := strings.ToLower(m.Hostname)
+		switch {
+		case m.ID == typed:
+			return m.ID, ""
+		case name == needle:
+			exact = append(exact, m)
+		case strings.HasPrefix(name, needle) || (len(needle) >= 4 && strings.HasPrefix(strings.ToLower(m.ID), needle)):
+			prefix = append(prefix, m)
+		}
+	}
+	found := exact
+	if len(found) == 0 {
+		found = prefix
+	}
+	switch len(found) {
+	case 0:
+		return "", "Nenhuma máquina Windows com esse nome ou ID. Digite o nome inteiro, o começo dele ou o começo do ID."
+	case 1:
+		return found[0].ID, ""
+	}
+	names := make([]string, 0, 5)
+	for _, m := range found[:min(len(found), 5)] {
+		names = append(names, dash(m.Hostname)+" ("+short(m.ID)+")")
+	}
+	more := ""
+	if len(found) > 5 {
+		more = fmt.Sprintf(" e mais %d", len(found)-5)
+	}
+	return "", fmt.Sprintf("%d máquinas Windows casam com %q: %s%s. Digite o nome inteiro ou o começo do ID.", len(found), typed, strings.Join(names, ", "), more)
 }
