@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -84,7 +85,7 @@ func TestPerguntaAoParqueNoAgente(t *testing.T) {
 	job := criaJob(t, srv, priv, id, func(j *jobs.Job) { j.Type, j.Params = jobs.TypeQuery, raw })
 	a.CheckIn(ctx)
 	row, _, _ := srv.st.JobForMachine(ctx, id, job)
-	if len(pedidas) != 1 || row.State != jobs.StateDone || jobs.ParseAnswer(row.Detail) != (jobs.QueryAnswer{Value: "rodando", Extra: "2 processo(s)"}) {
+	if len(pedidas) != 1 || row.State != jobs.StateDone || !reflect.DeepEqual(jobs.ParseAnswer(row.Detail), jobs.QueryAnswer{Value: "rodando", Extra: "2 processo(s)"}) {
 		t.Fatalf("resposta: %+v %s %q", pedidas, row.State, row.Detail)
 	}
 	a.Query = nil

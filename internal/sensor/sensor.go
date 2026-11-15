@@ -1,5 +1,6 @@
 // Package sensor responde as perguntas ao parque (jobs.TypeQuery) no agente: um catálogo
-// fechado de leituras (arquivo, processo, serviço, registro, programa). Nada aqui escreve,
+// fechado de leituras (arquivo, processo, serviço, registro, programa e, em cada usuário da
+// máquina, as extensões dos navegadores e um arquivo do perfil: users.go). Nada aqui escreve,
 // executa programa do job ou sai da máquina; o argumento já veio conferido (jobs.QueryParams).
 package sensor
 
@@ -46,6 +47,10 @@ type Sensors struct {
 	Expand func(path string) string
 	// CaseInsensitive: nomes de processo sem diferença de maiúsculas (Windows).
 	CaseInsensitive bool
+	// Profiles: as pastas dos usuários da máquina (as perguntas por usuário, users.go).
+	Profiles func() ([]Profile, error)
+	// OS: o sistema, para os caminhos dos navegadores ("windows", "linux", "darwin").
+	OS string
 }
 
 // Answer responde a pergunta.
@@ -62,6 +67,10 @@ func (s Sensors) Answer(ctx context.Context, p jobs.QueryParams) jobs.QueryAnswe
 		a = s.registry(p.Arg, p.Name)
 	case jobs.SensorProgram:
 		a = s.program(ctx, p.Arg)
+	case jobs.SensorExtensions:
+		a = s.extensions(ctx, p.Arg)
+	case jobs.SensorUserFile:
+		a = s.userFile(ctx, p.Arg)
 	default:
 		a = jobs.QueryAnswer{Value: "sensor desconhecido"}
 	}

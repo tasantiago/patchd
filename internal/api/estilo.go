@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/tasantiago/patchd/internal/jobs"
 )
 
 // Folha de estilo do painel num arquivo só (Aula 20.4). Até a 20.3 o CSS ia dentro de cada
@@ -16,7 +18,7 @@ import (
 // versão nova do servidor muda o endereço.
 
 // panelCSS: o tema (layout das aplicações, theme.go) e o que antes ficava em cada tela.
-var panelCSS = themeCSS + loginCSS + paramCSS + selfServiceCSS + dashboardCSS + standardizationCSS + widthCSS() + numHeadCSS()
+var panelCSS = themeCSS + loginCSS + paramCSS + selfServiceCSS + dashboardCSS + standardizationCSS + widthCSS() + numHeadCSS() + questionCSS()
 
 // cssVersion: os primeiros 16 hexadecimais do SHA-256 do CSS.
 var cssVersion = func() string {
@@ -69,6 +71,37 @@ func numHeadCSS() string {
 		sel = append(sel, fmt.Sprintf("table:has(tbody td.num:nth-child(%d)) thead th:nth-child(%d)", i, i))
 	}
 	return strings.Join(sel, ",") + "{text-align:right}\n"
+}
+
+// questionCSS: o formulário de Perguntas ao parque. A dica embaixo do campo é a da pergunta
+// escolhida, e o "nome do valor" só aparece na de registro: sem JavaScript, a regra olha a
+// opção marcada (:has). Num navegador sem :has, todas as dicas ficam à vista, como antes.
+func questionCSS() string {
+	sel := func(sensor string) string {
+		return fmt.Sprintf(`form.pergunta:has(#sensor option[value="%s"]:checked)`, sensor)
+	}
+	var hints []string
+	for _, s := range jobs.Sensors {
+		hints = append(hints, sel(s)+" .dica-"+s)
+	}
+	var perUser []string
+	for _, s := range jobs.Sensors {
+		if jobs.ListSensor(s) {
+			perUser = append(perUser, sel(s)+" .so-usuario")
+		}
+	}
+	return `
+form.pergunta .dica{display:block}form.pergunta .dica b{color:var(--texto);font-weight:600}form.pergunta .dica code{overflow-wrap:anywhere}
+form.pergunta p.acoes{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .75rem}form.pergunta p.acoes .muted{flex:1 1 16rem;min-width:0;font-size:.82rem}
+form.pergunta .so-usuario{max-width:46rem;font-size:.82rem}
+code.quebra{overflow-wrap:anywhere;word-break:break-all}
+td.item-nome{min-width:12rem}td.item-nome code.item-id{display:block;margin-top:.15rem;font-size:.74rem;color:var(--muted);overflow-wrap:anywhere;word-break:break-all;background:none;padding:0}
+p.vazio+h2,div.card+h2{margin-top:1.6rem}
+@supports selector(:has(a)){form.pergunta .dica,form.pergunta .so-registro,form.pergunta .so-usuario{display:none}
+` + strings.Join(hints, ",") + `{display:block}
+` + sel(jobs.SensorRegistry) + ` .so-registro{display:flex}
+` + strings.Join(perUser, ",") + `{display:block}}
+`
 }
 
 // loginCSS: a tela de login e a de volta do RHBK (Aula 11.3; era o pageStyle).

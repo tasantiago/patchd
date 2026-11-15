@@ -634,8 +634,10 @@ func (a *Agent) runQueries(ctx context.Context, list []acceptedQuery) []PendingJ
 		if err != nil {
 			status, raw = protocol.JobResultFailed, []byte(err.Error())
 		}
-		a.Logger.Info("pergunta respondida", "job_id", q.id, "sensor", q.p.Sensor, "resposta", ans.Value)
-		out = append(out, PendingJobResult{ID: q.id, Result: protocol.JobResult{Status: status, Detail: string(raw), FinishedAt: a.now().UTC()}})
+		a.Logger.Info("pergunta respondida", "job_id", q.id, "sensor", q.p.Sensor, "resposta", ans.Value, "itens", len(ans.Items))
+		// Os itens (perguntas por usuário) vão ao lado do detalhe: não cabem nele.
+		out = append(out, PendingJobResult{ID: q.id, Result: protocol.JobResult{Status: status, Detail: string(raw), FinishedAt: a.now().UTC(),
+			Items: ans.Items}})
 	}
 	return out
 }

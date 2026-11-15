@@ -124,5 +124,27 @@ func Table(w io.Writer, header []string, rows [][]string) error {
 	return cw.Error()
 }
 
+// TableWriter escreve uma tabela linha a linha (NewTable), para as exportações grandes
+// demais para montar na memória; mesmo BOM, separador e proteção contra fórmulas.
+type TableWriter struct{ cw *csv.Writer }
+
+// NewTable começa a tabela pelo cabeçalho.
+func NewTable(w io.Writer, header []string) (*TableWriter, error) {
+	cw, err := newWriter(w)
+	if err != nil {
+		return nil, err
+	}
+	return &TableWriter{cw: cw}, writeRow(cw, append([]string(nil), header...)...)
+}
+
+// Row escreve uma linha.
+func (t *TableWriter) Row(fields ...string) error { return writeRow(t.cw, fields...) }
+
+// Close termina a tabela.
+func (t *TableWriter) Close() error {
+	t.cw.Flush()
+	return t.cw.Error()
+}
+
 // When é a data no formato das exportações (UTC, "2006-01-02 15:04:05"); "" se zero.
 func When(t time.Time) string { return when(t) }

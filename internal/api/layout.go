@@ -327,6 +327,13 @@ var navHome = map[string]struct {
 
 // Parent: o degrau de volta, nas telas de dentro. Vazio na página de entrada do menu.
 func (b pageBase) Parent() *crumb {
+	// As perguntas ao parque moram sob Automação, na aba delas: a volta é para a lista de perguntas.
+	if b.Nav == "campanhas" && b.Sub == "perguntas" {
+		if b.Title == "Perguntas ao parque" {
+			return nil
+		}
+		return &crumb{Label: "Perguntas ao parque", Href: "/painel/perguntas"}
+	}
 	h, ok := navHome[b.Nav]
 	if !ok || b.Title == h.Label || slices.Contains(h.roots, b.Title) {
 		return nil

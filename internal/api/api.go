@@ -116,6 +116,13 @@ type Store interface {
 	Questions(ctx context.Context, limit int) ([]store.Question, error)
 	Question(ctx context.Context, id int64) (store.Question, bool, error)
 	QuestionJobs(ctx context.Context, id int64) ([]store.QuestionJob, error)
+	// Perguntas em lista (as que olham cada usuário da máquina): os itens de cada resposta.
+	MachinesWithCapability(ctx context.Context, capability string) ([]string, error)
+	SaveQuestionItems(ctx context.Context, jobID int64, machineID string, items []protocol.AnswerItem) error
+	QuestionItemGroups(ctx context.Context, id int64, q store.QuestionItemQuery) ([]store.QuestionItemGroup, int, error)
+	QuestionItemTotals(ctx context.Context, id int64) (store.QuestionItemTotals, error)
+	QuestionItems(ctx context.Context, id int64, key string, limit int) ([]store.QuestionItem, int, error)
+	EachQuestionItem(ctx context.Context, id int64, fn func(store.QuestionItem) error) error
 	RingMachines(ctx context.Context, ring int) ([]string, error)
 	SetCheckinRelay(ctx context.Context, id string, relay bool) error // docs/rele.md
 	CheckinRelay(ctx context.Context, id string) (*bool, error)
@@ -376,6 +383,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/perguntas", a.sameOrigin(a.adminAction(a.askAction)))                                                         // perguntas ao parque
 	mux.Handle("GET /painel/perguntas/{id}", a.adminAction(a.questionPage))                                                                // perguntas ao parque
 	mux.Handle("GET /painel/perguntas/{id}/csv", a.adminAction(a.questionCSV))                                                             // perguntas ao parque
+	mux.Handle("GET /painel/perguntas/{id}/item", a.adminAction(a.questionItemPage))                                                       // perguntas por usuário: quem tem o item
 	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
 	mux.Handle("POST /painel/alertas/lote", a.sameOrigin(a.adminAction(a.staleAfter(a.alertBatchAction))))                                 // fechar ou reconhecer em lote
 	mux.Handle("POST /painel/alertas/{id}/reconhecer", a.sameOrigin(a.adminAction(a.staleAfter(a.ackAlertAction))))                        // docs/monitoramento.md

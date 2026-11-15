@@ -35,7 +35,9 @@ type Memory struct {
 	jobHook func(machineID string)
 	// questions: as perguntas ao parque (ID = posição + 1).
 	questions []Question
-	jobSeq    int64
+	// questionItems: os itens das perguntas em lista, pela pergunta.
+	questionItems map[int64][]QuestionItem
+	jobSeq        int64
 
 	windows       map[int]RingWindow      // janelas de manutenção por grupo de implantação (Aula 8.3)
 	buildingRings map[string]BuildingRing // grupo de implantação pelo prédio
