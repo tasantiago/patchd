@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"unsafe"
 
@@ -29,8 +31,51 @@ func For(software func(ctx context.Context) ([]protocol.Software, error)) Sensor
 			return out, err
 		},
 		Software: software, Service: service, Registry: readRegistry, FileVersion: fileVersion, Expand: expand,
-		CaseInsensitive: true,
+		CaseInsensitive: true, Profiles: profiles, OS: "windows",
 	}
+}
+
+const profileListKey = `SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList`
+
+// profiles lista as pastas dos usuários pela ProfileList do registro: os perfis de contas de
+// verdade (locais, do domínio e do Entra ID), com sessão aberta ou não. O nome é o da pasta:
+// traduzir o SID consultaria o domínio, e o agente não sai da máquina para responder.
+func profiles() ([]Profile, error) {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, profileListKey, registry.ENUMERATE_SUB_KEYS|registry.WOW64_64KEY)
+	if err != nil {
+		return nil, err
+	}
+	defer k.Close()
+	sids, err := k.ReadSubKeyNames(-1)
+	if err != nil {
+		return nil, err
+	}
+	var out []Profile
+	for _, sid := range sids {
+		// S-1-5-21: contas locais e do domínio; S-1-12-1: Entra ID. Fora: SYSTEM e os serviços.
+		if !strings.HasPrefix(sid, "S-1-5-21-") && !strings.HasPrefix(sid, "S-1-12-1-") {
+			continue
+		}
+		pk, err := registry.OpenKey(registry.LOCAL_MACHINE, profileListKey+`\`+sid, registry.QUERY_VALUE|registry.WOW64_64KEY)
+		if err != nil {
+			continue
+		}
+		path, _, err := pk.GetStringValue("ProfileImagePath")
+		pk.Close()
+		if err != nil || path == "" {
+			continue
+		}
+		if expanded, err := registry.ExpandString(path); err == nil {
+			path = expanded
+		}
+		// Só pasta local (C:\Users\nome): perfil em \\servidor não se lê daqui.
+		if len(path) < 3 || path[1] != ':' || strings.HasPrefix(path, `\\`) {
+			continue
+		}
+		out = append(out, Profile{User: filepath.Base(path), Home: path})
+	}
+	sort.Slice(out, func(a, b int) bool { return strings.ToLower(out[a].User) < strings.ToLower(out[b].User) })
+	return out, nil
 }
 
 // expand troca as pastas conhecidas (só as da lista do jobs.QueryParams).

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/tasantiago/patchd/internal/bioslegacy"
+	"github.com/tasantiago/patchd/internal/protocol"
 )
 
 // TypeQuery (perguntas ao parque): o agente responde a uma pergunta de um catálogo fechado de
@@ -25,10 +27,19 @@ const (
 	SensorService  = "servico"  // estado e início (Windows; systemd no Linux)
 	SensorRegistry = "registro" // valor de uma chave do HKLM (Windows)
 	SensorProgram  = "programa" // instalado? versões (a lista de software do inventário)
+	// Em cada usuário da máquina (resposta em lista, QueryAnswer.Items); só para agentes com
+	// protocol.CapabilityUserQueries.
+	SensorExtensions = "extensoes"       // extensões dos navegadores, em todos os perfis
+	SensorUserFile   = "arquivo-usuario" // um arquivo (ou pasta) dentro da pasta de cada usuário
 )
 
 // Sensors: o catálogo, na ordem da tela.
-var Sensors = []string{SensorFile, SensorProcess, SensorService, SensorRegistry, SensorProgram}
+var Sensors = []string{SensorFile, SensorProcess, SensorService, SensorRegistry, SensorProgram, SensorExtensions, SensorUserFile}
+
+// ListSensor: a pergunta olha cada usuário da máquina e responde em lista (itens).
+func ListSensor(sensor string) bool {
+	return sensor == SensorExtensions || sensor == SensorUserFile
+}
 
 // QueryParams: a pergunta.
 type QueryParams struct {
@@ -38,10 +49,12 @@ type QueryParams struct {
 }
 
 // QueryAnswer: a resposta, no detalhe do resultado (JSON). Value agrupa as máquinas na tela
-// ("2.1.3", "não existe", "rodando"); Extra é o detalhe da máquina.
+// ("2.1.3", "não existe", "rodando"); Extra é o detalhe da máquina. Items (só das perguntas
+// em lista) vai à parte, no JobResult.Items: não cabe no detalhe do job.
 type QueryAnswer struct {
-	Value string `json:"value"`
-	Extra string `json:"extra,omitempty"`
+	Value string                `json:"value"`
+	Extra string                `json:"extra,omitempty"`
+	Items []protocol.AnswerItem `json:"-"`
 }
 
 // Limites da resposta (o detalhe do job tem 2000 caracteres).
@@ -58,6 +71,8 @@ var (
 	// curingas, nem "..".
 	queryFileWin  = regexp.MustCompile(`^[A-Za-z]:\\`)
 	queryFileVars = []string{`%ProgramFiles%\`, `%ProgramFiles(x86)%\`, `%ProgramData%\`, `%SystemRoot%\`, `%SystemDrive%\`}
+	// Arquivo na pasta de cada usuário: sempre relativo ao perfil ("~/" vale em todo sistema).
+	UserFileVars = []string{`~/`, `~\`, `%USERPROFILE%\`, `%APPDATA%\`, `%LOCALAPPDATA%\`}
 	// Registro: só o HKLM, e fora do SAM e do SECURITY (o agente é SYSTEM e leria segredos).
 	queryRegPrefix = regexp.MustCompile(`(?i)^(HKLM|HKEY_LOCAL_MACHINE)\\`)
 	queryRegDenied = regexp.MustCompile(`(?i)^(HKLM|HKEY_LOCAL_MACHINE)\\(SAM|SECURITY)(\\|$)`)
@@ -97,6 +112,9 @@ func ParseQueryParams(raw json.RawMessage) (QueryParams, error) {
 // Validate confere a pergunta.
 func (p QueryParams) Validate() error {
 	arg := p.Arg
+	if arg == "" && p.Sensor == SensorExtensions {
+		arg = "*" // sem filtro: todas as extensões
+	}
 	if arg == "" || strings.TrimSpace(arg) != arg || !printable(arg) || !printable(p.Name) {
 		return errors.New("o argumento da pergunta é obrigatório, sem espaços nas pontas nem caracteres de controle")
 	}
@@ -144,15 +162,48 @@ func (p QueryParams) Validate() error {
 		if len(arg) < 2 || len(arg) > 100 {
 			return errors.New("o programa é um pedaço do nome como aparece em Software (2 a 100 caracteres)")
 		}
+	case SensorExtensions:
+		if len(p.Arg) > 100 {
+			return errors.New("o filtro das extensões é um pedaço do nome ou o ID (até 100 caracteres); vazio: todas")
+		}
+	case SensorUserFile:
+		rel, ok := UserFileRel(arg)
+		switch {
+		case !ok || rel == "" || len(arg) > 260 || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`):
+			return errors.New(`o caminho começa na pasta do usuário: ~/..., %USERPROFILE%\..., %APPDATA%\... ou %LOCALAPPDATA%\... (até 260 caracteres)`)
+		case strings.ContainsAny(arg, "*?\"<>|") || strings.Contains(rel, ":") || strings.Contains(rel, "%"):
+			return errors.New("o caminho não leva curingas, aspas, dois-pontos nem outra variável")
+		case slices.Contains(strings.Split(strings.ReplaceAll(rel, `\`, "/"), "/"), "..") || strings.Contains(strings.ReplaceAll(rel, `\`, "/"), "//"):
+			return errors.New(`o caminho não leva ".." nem barras repetidas`)
+		}
 	default:
 		return fmt.Errorf("sensor desconhecido %q", p.Sensor)
 	}
 	return nil
 }
 
+// UserFileRel separa o caminho de SensorUserFile: o que vem depois da pasta do usuário, e se
+// o começo é um dos aceitos (UserFileVars).
+func UserFileRel(arg string) (rel string, ok bool) {
+	for _, v := range UserFileVars {
+		if len(arg) >= len(v) && strings.EqualFold(arg[:len(v)], v) {
+			return arg[len(v):], true
+		}
+	}
+	return "", false
+}
+
 // Clip encurta a resposta aos limites.
 func (a QueryAnswer) Clip() QueryAnswer {
-	return QueryAnswer{Value: clipRunes(a.Value, MaxAnswerValue), Extra: clipRunes(a.Extra, MaxAnswerExtra)}
+	items, cut := protocol.ClipAnswerItems(a.Items)
+	if len(a.Items) == 0 {
+		items = nil
+	}
+	extra := a.Extra
+	if cut {
+		extra = strings.TrimPrefix(extra+"; lista cortada em "+fmt.Sprint(protocol.MaxAnswerItems)+" itens", "; ")
+	}
+	return QueryAnswer{Value: clipRunes(a.Value, MaxAnswerValue), Extra: clipRunes(extra, MaxAnswerExtra), Items: items}
 }
 
 func clipRunes(s string, n int) string {

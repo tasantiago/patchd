@@ -1956,31 +1956,61 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "automacao-abas" "perguntas"}}
 <p class="muted">Uma pergunta de um catálogo fechado (só leitura) a todas as máquinas, ou a um grupo de implantação; as respostas chegam agrupadas. {{if .ChannelOn}}<strong>{{.Connected}}</strong> máquina(s) no canal em tempo real agora: essas respondem em segundos; as outras, no próximo check-in (a pergunta vale 1 h).{{else}}O canal em tempo real está desligado (Configuração › Parâmetros › Agentes): as máquinas respondem no próximo check-in (a pergunta vale 1 h).{{end}}</p>
 {{if .CanAsk}}<section class="card"><div class="card-cab"><h2>Nova pergunta</h2></div>
-<form class="grade" method="post" action="/painel/perguntas">
-<div class="campo"><label for="sensor">Pergunta</label><select id="sensor" name="sensor">{{range .Sensors}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></div>
-<div class="campo"><label for="arg">Sobre o quê</label><input id="arg" name="arg" type="text" required maxlength="300" value="{{.Arg}}" placeholder="caminho, processo, serviço, chave ou programa">
-<small class="muted">{{range .Sensors}}<b>{{.Label}}</b> {{.Hint}}. {{end}}</small></div>
-<div class="campo"><label for="nome">Nome do valor <span class="muted">(só registro)</span></label><input id="nome" name="nome" type="text" maxlength="128" value="{{.Name}}" placeholder="vazio: o valor padrão"></div>
+<form class="formulario pergunta" method="post" action="/painel/perguntas">
+<div class="campo"><label for="sensor">O que perguntar</label><select id="sensor" name="sensor">{{range .Groups}}<optgroup label="{{.Label}}">{{range .Options}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</optgroup>{{end}}</select></div>
+<div class="campo"><label for="arg">Sobre o quê</label><input id="arg" name="arg" type="text" maxlength="300" value="{{.Arg}}" autocomplete="off" spellcheck="false">
+{{range .Sensors}}<small class="muted dica dica-{{.Value}}"><b>{{.Label}}</b> {{.Hint}}{{if .Examples}} Ex.: {{range $i, $e := .Examples}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}.{{end}}</small>{{end}}</div>
+<div class="campo so-registro"><label for="nome">Nome do valor <span class="muted">(só na pergunta de registro)</span></label><input id="nome" name="nome" type="text" maxlength="128" value="{{.Name}}" autocomplete="off" spellcheck="false"><small class="muted">Vazio: o valor padrão da chave.</small></div>
 <div class="campo"><label for="alvo">Para</label><select id="alvo" name="alvo"><option value="todas">todas as máquinas</option>{{range .Rings}}{{if .Machines}}<option value="{{.Ring}}">{{.Label}} · {{.Machines}} máq.</option>{{end}}{{end}}</select></div>
-<div class="acoes"><button type="submit">Perguntar</button> <span class="muted">Só leitura: nada muda nas máquinas. Valores de registro com nome de senha voltam ocultos.</span></div>
+<p class="acoes"><button type="submit">Perguntar</button> <span class="muted">Só leitura: nada muda nas máquinas. Valores de registro com nome de senha voltam ocultos.</span></p>
+<p class="muted nota so-usuario">As perguntas sobre cada usuário mostram o que as pessoas instalaram ou guardaram no perfil delas: faça com um motivo (um pedido da segurança, uma auditoria) e guarde o resultado com o mesmo cuidado. A pergunta e a exportação ficam na trilha de auditoria.</p>
 </form></section>{{else}}<p class="aviso atencao">O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE): as perguntas vão assinadas, como os jobs.</p>{{end}}
 <div class="card"><div class="card-cab"><h2>Perguntas recentes</h2></div>{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>ID</th><th>Sensor</th><th>Pergunta</th><th>Para</th><th>Respostas</th><th>Por</th><th>Quando</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/perguntas/{{.ID}}">{{.ID}}</a></td><td>{{.Sensor}}</td><td><a href="/painel/perguntas/{{.ID}}"><code>{{.Question}}</code></a></td><td>{{.Target}}</td><td class="num">{{.Answered}} de {{.Machines}}</td><td>{{.By}}</td><td>{{.When}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="vazio"><strong>Nenhuma pergunta ainda.</strong>{{if .CanAsk}} Escolha um sensor acima e pergunte: as respostas chegam aqui, agrupadas.{{else}} As perguntas feitas ao parque aparecem aqui, com as respostas agrupadas.{{end}}</p>{{end}}</div>
+<thead><tr><th>ID</th><th>Pergunta</th><th>Sobre o quê</th><th>Para</th><th>Respostas</th><th>Por</th><th>Quando</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/perguntas/{{.ID}}">{{.ID}}</a></td><td>{{.Sensor}}</td><td><a href="/painel/perguntas/{{.ID}}"><code>{{.Question}}</code></a></td><td>{{.Target}}</td><td class="num">{{.Answered}} de {{.Machines}}</td><td>{{.By}}</td><td class="nowrap">{{.When}}</td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="vazio"><strong>Nenhuma pergunta ainda.</strong>{{if .CanAsk}} Escolha acima o que perguntar: as respostas chegam aqui, agrupadas.{{else}} As perguntas feitas ao parque aparecem aqui, com as respostas agrupadas.{{end}}</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "pergunta"}}{{template "topo" .}}
 <p><a href="/painel/perguntas">← Perguntas ao parque</a></p>
 <h1>{{.Title}}: {{.Sensor}} <code>{{.Question}}</code></h1>
 <div class="card"><dl class="dados">
-<dt>Para</dt><dd>{{.Q.Target}} · {{.Q.Machines}} máquina(s)</dd>
+<dt>Para</dt><dd>{{.Q.Target}} · {{.Q.Machines}} máquina(s){{if .Q.Skipped}} <span class="nivel-atencao">· {{.Q.Skipped}} de fora: o agente delas é anterior a esta pergunta (atualize o agente)</span>{{end}}</dd>
 <dt>Respostas</dt><dd>{{.Answered}} de {{.Q.Machines}}{{if .Waiting}} · {{.Waiting}} aguardando{{if .Live}} <span class="muted">(a página se atualiza sozinha)</span>{{end}}{{end}}</dd>
+{{if .List}}<dt>Achados</dt><dd>{{.Totals.Keys}} {{if .Extensions}}extensão(ões) diferente(s){{else}}resposta(s) diferente(s){{end}}, em {{.Totals.Users}} usuário(s) de {{.Totals.Machines}} máquina(s)</dd>{{end}}
 <dt>Por</dt><dd>{{.Q.CreatedBy}} · {{.When}}</dd>
-</dl><p><a href="/painel/perguntas/{{.Q.ID}}/csv">Baixar CSV</a> (uma linha por máquina)</p></div>
+</dl><p><a href="/painel/perguntas/{{.Q.ID}}/csv">Baixar CSV</a> ({{if .List}}uma linha por {{if .Extensions}}extensão de cada usuário{{else}}arquivo de cada usuário{{end}}{{else}}uma linha por máquina{{end}})</p></div>
+{{if .List}}<div class="card"><div class="card-cab"><h2>{{if .Extensions}}Extensões encontradas{{else}}O que foi encontrado{{end}}</h2>{{if .Text}}<span class="muted">{{.Found}} com “{{.Text}}”</span>{{end}}</div>
+{{if or .Items .Text}}<form class="busca" method="get" action="/painel/perguntas/{{.Q.ID}}" role="search">
+<input type="search" name="q" value="{{.Text}}" maxlength="100" placeholder="{{if .Extensions}}nome, ID, usuário, navegador ou observação (ex.: desenvolvedor){{else}}resposta ou usuário{{end}}" aria-label="filtrar os achados">
+<select name="ordem" aria-label="ordem">{{range .Sorts}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+<button type="submit">Filtrar</button>{{if .Text}} <a href="/painel/perguntas/{{.Q.ID}}">limpar</a>{{end}}</form>{{end}}
+{{if .Items}}<div class="tabela"><table>
+<thead><tr>{{if .Extensions}}<th>Extensão</th><th>Navegador</th><th>Versões</th><th>Observação mais comum</th>{{else}}<th>Resposta</th>{{end}}<th>Máquinas</th><th>Usuários</th></tr></thead>
+<tbody>{{range .Items}}<tr><td class="item-nome"><a href="{{.Href}}">{{.Name}}</a>{{if $.Extensions}}<code class="item-id">{{.Key}}</code>{{end}}</td>{{if $.Extensions}}<td>{{.Sources}}</td><td>{{.Versions}}</td><td class="muted">{{.Note}}</td>{{end}}<td class="num">{{.Machines}}</td><td class="num">{{.Users}}</td></tr>{{end}}</tbody></table></div>
+{{if .Range}}<nav class="paginas" aria-label="páginas"><span class="muted">{{.Range}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>{{end}}
+{{if .Extensions}}<p class="muted nota">Clique no nome para ver em quais máquinas e de quais usuários. “Em menos máquinas primeiro” traz para cima o que só uma ou duas pessoas têm. Procure por <code>desenvolvedor</code> para ver as carregadas de uma pasta, sem passar pela loja; por <code>fora da loja</code>, as instaladas por arquivo; por <code>todos os sites</code>, as que leem todas as páginas.</p>{{end}}
+{{else if .Text}}<p class="vazio"><strong>Nada com “{{.Text}}”.</strong> <a href="/painel/perguntas/{{.Q.ID}}">Ver tudo</a>.</p>
+{{else if .Waiting}}<p class="vazio"><strong>Ainda sem achados.</strong> As respostas entram aqui conforme as máquinas respondem.</p>
+{{else}}<p class="vazio"><strong>Nenhuma máquina encontrou nada.</strong> As respostas de cada uma estão logo abaixo.</p>{{end}}</div>
+<h2>Máquinas, pela resposta</h2>{{end}}
 {{range .Groups}}<div class="card"><div class="card-cab"><h2><span class="nivel-{{.Level}}">{{.Value}}</span></h2><span class="muted"><span class="barra" title="{{.Pct}}%"><span class="w{{.Pct}}"></span></span> {{.Count}} máquina(s) · {{.Pct}}%</span></div>
 <details><summary>Ver as máquinas</summary><div class="tabela"><table><thead><tr><th>Máquina</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td class="muted">{{.Extra}}</td></tr>{{end}}</tbody></table></div>{{if .More}}<p class="muted">e mais {{.More}} (no CSV).</p>{{end}}</details></div>{{else}}<p class="muted">Nenhuma máquina no alvo.</p>{{end}}
+{{template "fim"}}{{end}}
+
+{{define "pergunta-item"}}{{template "topo" .}}
+<p><a href="/painel/perguntas/{{.Q.ID}}">← {{.Title}}: {{.Sensor}}</a></p>
+<h1>{{.Name}}</h1>
+<div class="card"><dl class="dados">
+{{if .Extensions}}<dt>ID</dt><dd><code class="quebra">{{.Key}}</code></dd>
+<dt>Conferir na loja</dt><dd>{{if .StoreChrome}}<a href="{{.StoreChrome}}" rel="noopener noreferrer" target="_blank">Chrome Web Store</a> · <a href="{{.StoreEdge}}" rel="noopener noreferrer" target="_blank">Complementos do Edge</a> <span class="muted">(se a página não existir, a extensão não está, ou não está mais, nessa loja)</span>{{else}}<a href="{{.StoreFirefox}}" rel="noopener noreferrer" target="_blank">Complementos do Firefox</a> <span class="muted">(se a página não existir, a extensão não veio da loja da Mozilla)</span>{{end}}</dd>{{end}}
+<dt>Onde</dt><dd>{{.Users}} usuário(s) em {{.Machines}} máquina(s){{if .More}} <span class="muted">(nas {{len .Rows}} primeiras linhas; todas no CSV da pergunta)</span>{{end}}</dd>
+</dl></div>
+<div class="card"><div class="tabela"><table>
+<thead><tr><th>Máquina</th><th>Usuário</th>{{if .Extensions}}<th>Navegador</th><th>Perfil</th><th>Versão</th><th>Observação</th>{{else}}<th>Caminho</th><th>Detalhe</th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td class="nowrap"><a href="/painel/maquinas/{{.ID}}">{{.Machine}}</a></td><td>{{.User}}</td>{{if $.Extensions}}<td>{{.Source}}</td><td>{{.Where}}</td><td>{{.Version}}</td><td class="muted">{{.Note}}</td>{{else}}<td><code class="quebra">{{.Where}}</code></td><td class="muted">{{.Note}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{if .More}}<p class="muted">e mais {{.More}} linha(s): <a href="/painel/perguntas/{{.Q.ID}}/csv">baixe o CSV</a> da pergunta.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "alertas-limpeza"}}{{template "topo" .}}

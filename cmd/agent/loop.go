@@ -195,6 +195,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}
 	// Perguntas ao parque: o catálogo fechado de leituras (internal/sensor), em todo sistema.
 	ag.Query = sensor.For(collector.Software).Answer
+	// As perguntas por usuário (extensões dos navegadores, arquivo no perfil) só vão a quem as anuncia.
+	client.Capabilities = append(client.Capabilities, protocol.CapabilityUserQueries)
 	// Limpeza de temporários (internal/cleanup): a lista fechada de cada sistema.
 	ag.Cleanup = cleanup.New(opts.DataDir, platform.SilentRunner{Timeout: 3 * time.Hour}).Clean
 	if cab != nil {

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // SubmitResponse é a resposta do servidor ao receber um relatório.
@@ -108,6 +110,11 @@ type WinCacheFile struct {
 type WinCacheResponse struct {
 	Files []WinCacheFile `json:"files"`
 }
+
+// CapabilityUserQueries: o agente responde as perguntas ao parque que olham cada usuário da
+// máquina (extensões dos navegadores, arquivo no perfil) e devolve a lista em JobResult.Items.
+// Os anteriores recusariam o sensor; o servidor não manda a pergunta a eles.
+const CapabilityUserQueries = "perguntas-usuario-v1"
 
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
@@ -338,6 +345,75 @@ type JobResult struct {
 	// fim da saída (até 64 KiB) e o código de saída. O servidor os guarda no registro do terminal.
 	Output   string `json:"output,omitempty"`
 	ExitCode *int   `json:"exit_code,omitempty"`
+	// Items: só das perguntas ao parque em lista (as que olham cada usuário da máquina): um
+	// item por achado. O servidor confere os limites (ClipAnswerItems) antes de guardar.
+	Items []AnswerItem `json:"items,omitempty"`
+}
+
+// AnswerItem é um achado de uma pergunta em lista: uma extensão de navegador num perfil, um
+// arquivo na pasta de um usuário.
+type AnswerItem struct {
+	Key     string `json:"key,omitempty"` // o que junta o item no parque (o ID da extensão); vazio: o nome
+	Name    string `json:"name"`          // o nome da extensão; a versão do arquivo ou "existe"
+	Version string `json:"version,omitempty"`
+	User    string `json:"user,omitempty"`   // o usuário da máquina (o nome da pasta do perfil)
+	Source  string `json:"source,omitempty"` // o navegador
+	Where   string `json:"where,omitempty"`  // o perfil do navegador; o caminho do arquivo
+	Note    string `json:"note,omitempty"`   // desativada, fora da loja, acesso a todos os sites...
+}
+
+// Limites dos itens de uma resposta em lista.
+const (
+	MaxAnswerItems    = 2000
+	maxAnswerKey      = 100
+	maxAnswerName     = 150
+	maxAnswerVersion  = 60
+	maxAnswerUser     = 100
+	maxAnswerSource   = 40
+	maxAnswerWhere    = 300
+	maxAnswerNote     = 300
+	answerItemCleaner = "\x00"
+)
+
+// ClipAnswerItems aplica os limites: no máximo MaxAnswerItems itens, cada campo no seu
+// tamanho, sem caracteres de controle. Diz se cortou a lista.
+func ClipAnswerItems(items []AnswerItem) ([]AnswerItem, bool) {
+	cut := len(items) > MaxAnswerItems
+	if cut {
+		items = items[:MaxAnswerItems]
+	}
+	out := make([]AnswerItem, 0, len(items))
+	for _, it := range items {
+		it = AnswerItem{Key: clipField(it.Key, maxAnswerKey), Name: clipField(it.Name, maxAnswerName),
+			Version: clipField(it.Version, maxAnswerVersion), User: clipField(it.User, maxAnswerUser),
+			Source: clipField(it.Source, maxAnswerSource), Where: clipField(it.Where, maxAnswerWhere),
+			Note: clipField(it.Note, maxAnswerNote)}
+		if it.Name == "" {
+			it.Name = it.Key
+		}
+		if it.Key == "" {
+			it.Key = it.Name
+		}
+		if it.Key == "" {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out, cut
+}
+
+// clipField: sem caracteres de controle nem UTF-8 inválido, sem espaço nas pontas, até n runas.
+func clipField(s string, n int) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == utf8.RuneError || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-1]) + "…"
+	}
+	return s
 }
 
 // JobResultPath é o caminho do resultado: JobResultPath + ID do job + "/result".

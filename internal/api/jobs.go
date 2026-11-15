@@ -68,6 +68,15 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 	}
 
 	state, detail := a.judge(r, job, res)
+	// Pergunta em lista: os itens entram antes de o job fechar (a tela não mostra "respondeu"
+	// sem a resposta); se a gravação falhar, o agente manda o resultado de novo.
+	if job.Type == jobs.TypeQuery && state == jobs.StateDone && len(res.Items) > 0 && listQuestion(job) {
+		items, _ := protocol.ClipAnswerItems(res.Items)
+		if err := a.store.SaveQuestionItems(r.Context(), id, machineID, items); err != nil {
+			a.internalError(w, r, "gravar os itens da pergunta", err)
+			return
+		}
+	}
 	changed, err := a.store.FinishJob(r.Context(), id, state, detail, a.now())
 	if err != nil {
 		a.internalError(w, r, "gravar resultado do job", err)
@@ -98,6 +107,16 @@ func (a *api) jobResult(w http.ResponseWriter, r *http.Request, machineID string
 		status = "unchanged"
 	}
 	writeJSON(w, http.StatusOK, protocol.SubmitResponse{Status: status, ServerTime: a.now()})
+}
+
+// listQuestion: o job é de uma pergunta em lista (só essas guardam itens).
+func listQuestion(job store.JobRow) bool {
+	var payload jobs.Job
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+		return false
+	}
+	p, err := jobs.ParseQueryParams(payload.Params)
+	return err == nil && jobs.ListSensor(p.Sensor)
 }
 
 // judge decide o estado final a partir do que o agente informou e do efeito conferido.

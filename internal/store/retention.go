@@ -74,6 +74,13 @@ func (p *Postgres) Prune(ctx context.Context, r Retention, now time.Time, dry bo
 			        SELECT 1 FROM campaigns c WHERE c.id = j.campaign_id AND c.state IN ('concluida', 'cancelada')))`, jobs); err != nil {
 			return res, err
 		}
+		// Os itens das perguntas em lista seguem os jobs delas (a pergunta fica, sem a resposta).
+		var items int64
+		if err := exec(&items, "itens das perguntas", `
+			DELETE FROM question_items qi USING questions q
+			WHERE q.id = qi.question_id AND q.created_at < $1`, jobs); err != nil {
+			return res, err
+		}
 		if err := exec(&res.Campaigns, "campanhas", `
 			DELETE FROM campaigns c
 			WHERE c.state IN ('concluida', 'cancelada')

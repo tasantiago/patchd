@@ -94,7 +94,7 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 401.
 | GET | `/api/v1/machines/{id}/scan` |
 | GET | `/api/v1/machines` |
 
-## Admin (leitura) (16)
+## Admin (leitura) (17)
 
 Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria.
 
@@ -112,6 +112,7 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/maquinas/{id}/mesclar` |
 | GET | `/painel/padronizacao` |
 | GET | `/painel/perguntas/{id}/csv` |
+| GET | `/painel/perguntas/{id}/item` |
 | GET | `/painel/perguntas/{id}` |
 | GET | `/painel/perguntas` |
 | GET | `/painel/scripts` |

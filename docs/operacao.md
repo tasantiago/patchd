@@ -835,6 +835,8 @@ fechado, **só de leitura**, a todas as máquinas ou a um grupo de implantação
 | Serviço | `Spooler` (Linux: a unidade do systemd) | rodando, parado..., com o tipo de início; "não existe" |
 | Registro (Windows) | `HKLM\...` e o nome do valor | o valor; "chave não existe", "valor não existe" |
 | Programa | um pedaço do nome | as versões instaladas, ou "não instalado" |
+| **Extensões dos navegadores** (cada usuário) | vazio (todas), ou um pedaço do nome ou o ID | a lista: extensão, ID, versão, usuário, navegador, perfil e observações |
+| **Arquivo na pasta do usuário** (cada usuário) | `~/Downloads/x.exe`, `%USERPROFILE%\...`, `%APPDATA%\...`, `%LOCALAPPDATA%\...` | a lista: em quais usuários existe, com versão, tamanho, data e SHA-256 |
 
 - Cada máquina recebe um job `pergunta` assinado, que vale 1 h. As conectadas ao canal respondem
   em segundos; as outras, no próximo check-in. A página agrupa as respostas ("2.1.3: 412
@@ -845,6 +847,51 @@ fechado, **só de leitura**, a todas as máquinas ou a um grupo de implantação
   "existe (conteúdo oculto)". Só o perfil admin pergunta e vê as respostas; cada pergunta vai para
   a auditoria (`pergunta.criar`).
 - Agente antigo responde "agente sem as perguntas (atualize o agente)".
+
+**Perguntas sobre cada usuário da máquina** (desde 15/11/2026, agente com a capacidade
+`perguntas-usuario-v1`). O agente roda como SYSTEM (ou root) e lê a pasta de **todos** os
+perfis da máquina, com sessão aberta ou não: no Windows, os perfis da `ProfileList` do registro
+(contas locais, do domínio e do Entra ID; o nome mostrado é o da pasta, sem consultar o
+domínio); no Linux, as pastas de `/home`, as contas de pessoa do `/etc/passwd` e o `root`; no
+macOS, as de `/Users`.
+
+- **Extensões dos navegadores.** Chrome, Edge, Brave, Vivaldi, Chromium, Opera e Opera GX (todos
+  os perfis de cada um: `Default`, `Profile 1`...) e Firefox (inclusive snap e flatpak no
+  Linux). De cada extensão: o nome (traduzido pelo `_locales` quando o manifesto usa
+  `__MSG_...__`), o ID, a versão, o usuário, o navegador, o perfil e as observações:
+  - **sem compactação (modo de desenvolvedor)**: carregada de uma pasta qualquer, sem passar
+    pela loja; aparece com a pasta. É a forma mais comum de extensão maliciosa "instalada à
+    mão";
+  - **fora da loja**: instalada por arquivo `.crx`; **instalada por outro programa** ou **por
+    política**;
+  - **sem assinatura da Mozilla** (Firefox); **desativada**;
+  - **acesso a todos os sites**: o manifesto pede `<all_urls>` (ou equivalente): lê e altera
+    toda página aberta, inclusive as de login.
+  As partes do próprio navegador (componentes do Chrome, extensões embutidas do Firefox) e os
+  temas ficam de fora.
+- **A tela.** A pergunta junta o parque por extensão (pelo ID): em quantas máquinas e usuários,
+  as versões e os navegadores. O filtro procura no nome, no ID, no usuário, no navegador e na
+  observação (`desenvolvedor`, `fora da loja`, `todos os sites`); "em menos máquinas primeiro"
+  traz para cima o que só uma ou duas pessoas têm. O nome abre a lista de quem tem (máquina,
+  usuário, navegador, perfil, versão) e os links para conferir a extensão nas lojas. O CSV traz
+  uma linha por extensão de cada usuário (e uma linha para a máquina sem nenhuma).
+- **Para a equipe de segurança** (ex.: "quem tem uma extensão proibida ou com falha grave?"):
+  pergunte **Extensões dos navegadores** com o ID da extensão (o ID é o mesmo em todas as
+  máquinas; o nome pode mudar com o idioma) ou deixe vazio e filtre na tela. Para uma lista de
+  IDs, pergunte sem filtro e procure cada ID na tela, ou no CSV.
+- **Limites e cuidados.** Até 2.000 itens por máquina e 500 perfis de usuário; 90 segundos por
+  pergunta. Nada do que está na pasta do usuário é seguido: link simbólico, junção, atalho para
+  a rede e arquivo só na nuvem (OneDrive "sob demanda") não são abertos; o item aparece como
+  "link ou arquivo só na nuvem (não seguido)". Perfil em pasta de rede (perfil móvel sem cópia
+  local) não é lido. O agente não sai da máquina, não abre os bancos dos navegadores (senhas,
+  histórico, cookies) e lê só `manifest.json`, `messages.json`, `Preferences`, `Secure
+  Preferences` e `extensions.json`.
+- **Agente antigo.** A pergunta só vai às máquinas cujo agente anuncia a capacidade; as outras
+  ficam "de fora", e a página da pergunta diz quantas. Atualize o agente e pergunte de novo.
+- **Privacidade.** A resposta mostra o que cada pessoa instalou no perfil dela. Pergunte com um
+  motivo (pedido da segurança, auditoria) e trate o CSV como dado pessoal. A pergunta
+  (`pergunta.criar`) e cada exportação (`exportar.csv`) ficam na trilha de auditoria. Os itens
+  são apagados pela retenção dos jobs, junto com as respostas.
 
 ### Intervalo de check-in pela tela
 
