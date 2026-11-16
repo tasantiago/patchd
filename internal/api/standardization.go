@@ -18,8 +18,38 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 )
 
+// stdPolicyTTL: quanto as políticas ficam em cache (gravar pelo painel renova na hora).
+const stdPolicyTTL = 30 * time.Second
+
+// stdCheckinGap: o check-in não reavalia a máquina avaliada há menos que isso. Com usuário
+// conectado, o app dele já pede a avaliação a cada 5 minutos; sem ninguém, vale o check-in.
+const stdCheckinGap = 10 * time.Minute
+
+// stdTouch anota a avaliação da máquina; due diz se a última foi há mais de gap.
+func (a *api) stdTouch(id string, gap time.Duration) (due bool) {
+	now := a.now()
+	a.stdMu.Lock()
+	defer a.stdMu.Unlock()
+	if last, ok := a.stdRecent[id]; ok && now.Sub(last) < gap && !now.Before(last) {
+		return false
+	}
+	if len(a.stdRecent) > 100000 { // teto da memória: o mapa recomeça
+		clear(a.stdRecent)
+	}
+	a.stdRecent[id] = now
+	return true
+}
+
+// stdReset: as políticas mudaram; a próxima avaliação de cada máquina lê de novo.
+func (a *api) stdReset() {
+	a.stdPolicies.Reset()
+	a.stdMu.Lock()
+	clear(a.stdRecent)
+	a.stdMu.Unlock()
+}
+
 func (a *api) standardizationService(r *http.Request) *standardization.Service {
-	return &standardization.Service{Store: a.store, Manifest: a.tpManifest, Key: a.jobKey, PackagesDir: a.packagesDir(), BundlesDir: a.bundlesDir(), Now: a.now,
+	return &standardization.Service{Store: a.store, Policies: a.stdPolicies, Manifest: a.tpManifest, Key: a.jobKey, PackagesDir: a.packagesDir(), BundlesDir: a.bundlesDir(), Now: a.now,
 		OnCreated: func(rec jobs.Record, app, version string) {
 			a.logger.Info("padronização: instalação agendada", "machine_id", rec.MachineID, "job_id", rec.ID, "app", app, "version", version, "request_id", RequestID(r.Context()))
 			a.auditAs(r, store.StandardizationAuthor, "agente", "padronizacao.instalacao", rec.MachineID, fmt.Sprintf("job %d · %s %s", rec.ID, app, version))
@@ -35,6 +65,7 @@ func (a *api) standardizationUser(w http.ResponseWriter, r *http.Request, id str
 		writeError(w, 400, "invalid_user", err.Error())
 		return
 	}
+	a.stdTouch(id, 0)
 	plan, err := a.standardizationService(r).Reconcile(r.Context(), id, user)
 	if a.canceled(r, err) {
 		return
@@ -72,6 +103,9 @@ func (a *api) standardizationReport(w http.ResponseWriter, r *http.Request, id s
 }
 
 func (a *api) standardizeCheckin(r *http.Request, id string) {
+	if !a.stdTouch(id, stdCheckinGap) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 	if _, err := a.standardizationService(r).Reconcile(ctx, id, protocol.SelfServiceUser{}); err != nil && !a.canceled(r, err) {
@@ -372,6 +406,7 @@ func (a *api) saveStandardization(w http.ResponseWriter, r *http.Request, s pane
 		a.internalError(w, r, "salvar grupo de padronização", err)
 		return
 	}
+	a.stdReset()
 	a.audit(r, s, "padronizacao.salvar", strconv.FormatInt(id, 10), fmt.Sprintf("%s · ativo=%t · %d aplicativos · %d atalhos", p.Name, p.Enabled, len(p.Apps)+len(p.Installers), len(p.Shortcuts)))
 	http.Redirect(w, r, fmt.Sprintf("/painel/padronizacao?grupo=%d&salvo=1", id), http.StatusSeeOther)
 }
@@ -397,6 +432,7 @@ func (a *api) deleteStandardization(w http.ResponseWriter, r *http.Request, s pa
 		a.internalError(w, r, "excluir grupo de padronização", err)
 		return
 	}
+	a.stdReset()
 	a.audit(r, s, "padronizacao.excluir", strconv.FormatInt(id, 10), "grupo excluído")
 	http.Redirect(w, r, "/painel/padronizacao?excluido=1", http.StatusSeeOther)
 }

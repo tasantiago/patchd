@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 )
@@ -241,10 +243,15 @@ func (p *Postgres) SaveStandardizationState(ctx context.Context, s Standardizati
 	if err != nil {
 		return err
 	}
+	// O mesmo plano (sem contar a hora em que foi gerado) não regrava a linha: a avaliação
+	// roda a cada check-in e a cada 5 minutos por usuário conectado, e cada gravação igual era
+	// uma linha nova no PostgreSQL (WAL, limpeza). A hora da avaliação é renovada de hora em hora.
 	_, err = p.pool.Exec(ctx, `INSERT INTO standardization_states(machine_id,account,plan,evaluated_at) VALUES($1,$2,$3,$4)
 	 ON CONFLICT(machine_id,account) DO UPDATE SET plan=$3,evaluated_at=$4,
 	 shortcut_result=CASE WHEN standardization_states.plan->>'revision'=$5 THEN standardization_states.shortcut_result ELSE NULL END,
-	 shortcuts_at=CASE WHEN standardization_states.plan->>'revision'=$5 THEN standardization_states.shortcuts_at ELSE NULL END`, s.MachineID, strings.ToLower(s.Account), b, s.EvaluatedAt, s.Plan.Revision)
+	 shortcuts_at=CASE WHEN standardization_states.plan->>'revision'=$5 THEN standardization_states.shortcuts_at ELSE NULL END
+	 WHERE (standardization_states.plan - 'generated_at') IS DISTINCT FROM (EXCLUDED.plan - 'generated_at')
+	    OR standardization_states.evaluated_at < EXCLUDED.evaluated_at - interval '1 hour'`, s.MachineID, strings.ToLower(s.Account), b, s.EvaluatedAt, s.Plan.Revision)
 	return err
 }
 
@@ -256,11 +263,46 @@ func (p *Postgres) ReportStandardization(ctx context.Context, machine, account s
 	if err != nil {
 		return err
 	}
-	tag, err := p.pool.Exec(ctx, `UPDATE standardization_states SET shortcut_result=$3,shortcuts_at=$4 WHERE machine_id=$1 AND account=$2 AND plan->>'revision'=$5`, machine, strings.ToLower(account), b, at, result.Revision)
-	if err == nil && tag.RowsAffected() == 0 {
+	// O relato igual ao guardado não regrava a linha (o app do usuário relata a cada 5 minutos);
+	// a hora do relato é renovada de hora em hora.
+	tag, err := p.pool.Exec(ctx, `UPDATE standardization_states SET shortcut_result=$3,shortcuts_at=$4
+	 WHERE machine_id=$1 AND account=$2 AND plan->>'revision'=$5
+	   AND (shortcut_result IS DISTINCT FROM $3::jsonb OR shortcuts_at IS NULL OR shortcuts_at < $4::timestamptz - interval '1 hour')`,
+		machine, strings.ToLower(account), b, at, result.Revision)
+	if err != nil || tag.RowsAffected() > 0 {
+		return err
+	}
+	var current bool
+	if err := p.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM standardization_states WHERE machine_id=$1 AND account=$2 AND plan->>'revision'=$3)`,
+		machine, strings.ToLower(account), result.Revision).Scan(&current); err != nil {
+		return err
+	}
+	if !current {
 		return ErrStandardizationStale
 	}
-	return err
+	return nil
+}
+
+// MachinePlatform: o sistema (GOOS) do inventário atual, da coluna à parte (sem ler o JSON do
+// relatório). known false: sem inventário; vazio: inventário de agente que não mandava o sistema.
+func (p *Postgres) MachinePlatform(ctx context.Context, machine string) (string, bool, error) {
+	var family string
+	err := p.pool.QueryRow(ctx, `SELECT r.os_family FROM machines m JOIN inventory_reports r ON r.id = m.current_inventory_id WHERE m.id = $1`, machine).Scan(&family)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	return family, err == nil, err
+}
+
+// MachinePlatform na memória.
+func (m *Memory) MachinePlatform(ctx context.Context, machine string) (string, bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mm := m.machines[machine]
+	if mm == nil || mm.inventory == nil {
+		return "", false, nil
+	}
+	return mm.inventory.OS.Family, true, nil
 }
 
 func (p *Postgres) StandardizationStates(ctx context.Context) ([]StandardizationState, error) {

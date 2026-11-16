@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/bioslegacy"
@@ -30,6 +31,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/srvhealth"
+	"github.com/tasantiago/patchd/internal/standardization"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/window"
@@ -53,6 +55,8 @@ type Store interface {
 	MachineReportByID(context.Context, string, string, int64) (json.RawMessage, error)
 	SaveInventory(ctx context.Context, machineID string, rep protocol.InventoryReport) (stored bool, err error)
 	LatestInventory(ctx context.Context, machineID string) (protocol.InventoryReport, bool, error)
+	// MachinePlatform: o sistema do inventário atual, sem ler o relatório (a padronização).
+	MachinePlatform(ctx context.Context, machineID string) (string, bool, error)
 	SaveScan(ctx context.Context, machineID string, rep protocol.PatchScanReport) error
 	LatestScan(ctx context.Context, machineID string) (protocol.PatchScanReport, bool, error)
 	// Autoatendimento (Aula 17.1).
@@ -263,6 +267,11 @@ type api struct {
 	serverVersion string
 
 	contentDir string // vazio: o servidor não distribui o catálogo offline
+	// A padronização (internal/standardization): as políticas em cache e, por máquina, a hora
+	// da última avaliação (o check-in pula a máquina avaliada há pouco).
+	stdPolicies *standardization.PolicyCache
+	stdMu       sync.Mutex
+	stdRecent   map[string]time.Time
 	// installomator: a versão do script dos Macs; nil: o painel não pede instalação no Mac.
 	installomator *installomator.Script
 	content       ContentSource // a versão atual de cada arquivo distribuído
@@ -306,7 +315,8 @@ type api struct {
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.
 func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	a := &api{store: st, logger: logger, now: func() time.Time { return time.Now().UTC() }, brand: "patchd",
-		hashSlots: make(chan struct{}, loginConcurrent), discovery: &scanState{}}
+		hashSlots: make(chan struct{}, loginConcurrent), discovery: &scanState{},
+		stdPolicies: &standardization.PolicyCache{TTL: stdPolicyTTL}, stdRecent: map[string]time.Time{}}
 	for _, o := range opts {
 		o(a)
 	}

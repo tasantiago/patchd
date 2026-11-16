@@ -25,3 +25,28 @@ func TestPadroesDaSessaoDoBanco(t *testing.T) {
 		}
 	}
 }
+
+// O pool: 4 conexões por núcleo, de 8 a 16, a menos que a URL diga o número.
+func TestPoolPadrao(t *testing.T) {
+	for _, c := range []struct {
+		url  string
+		cpus int
+		quer int32
+	}{
+		{"postgres://u@h/patchd", 1, 8},
+		{"postgres://u@h/patchd", 2, 8},
+		{"postgres://u@h/patchd", 3, 12},
+		{"postgres://u@h/patchd", 6, 16},
+		{"postgres://u@h/patchd?pool_max_conns=4", 6, 4},
+		{"postgres://u@h/patchd?sslmode=disable&pool_max_conns=30", 2, 30},
+	} {
+		cfg, err := pgxpool.ParseConfig(c.url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessionDefaultsFor(cfg, c.cpus, c.url)
+		if cfg.MaxConns != c.quer {
+			t.Errorf("%s com %d núcleos: %d, esperava %d", c.url, c.cpus, cfg.MaxConns, c.quer)
+		}
+	}
+}
