@@ -150,11 +150,27 @@ func (a *api) healthDBRows(db srvhealth.DBStats, pool srvhealth.PoolStat, growth
 		}
 		rows = append(rows, settingRow{Label: "Consulta ativa mais longa", Value: db.LongestQuery.Round(time.Second).String(), Level: lvl})
 	}
-	rows = append(rows, settingRow{Label: "Arquivos temporários", Value: srvhealth.Bytes(uint64(max(0, db.TempBytes))) + " desde a última limpeza das estatísticas (consultas que não couberam no work_mem)"}) // #nosec G115 -- não negativo
+	rows = append(rows, settingRow{Label: "Arquivos temporários", Value: tempLabel(db, a.now(), a.stamp)})
 	if db.Deadlocks > 0 {
 		rows = append(rows, settingRow{Label: "Deadlocks", Value: strconv.FormatInt(db.Deadlocks, 10), Level: "atencao"})
 	}
 	return rows
+}
+
+// tempLabel: o temp_bytes do PostgreSQL é um contador que só cresce, desde a última limpeza
+// das estatísticas. Cada arquivo temporário é apagado quando a consulta que o criou termina:
+// o número é volume escrito, não espaço ocupado, e o que diz algo é o ritmo por dia.
+func tempLabel(db srvhealth.DBStats, now time.Time, stamp func(time.Time) string) string {
+	v := srvhealth.Bytes(uint64(max(0, db.TempBytes))) + " escritos" // #nosec G115 -- não negativo
+	if db.StatsReset.IsZero() {
+		v += " desde a última limpeza das estatísticas"
+	} else {
+		v += " desde " + stamp(db.StatsReset)
+		if days := now.Sub(db.StatsReset).Hours() / 24; days >= 1 && db.TempBytes > 0 {
+			v += fmt.Sprintf(" (cerca de %s por dia)", srvhealth.Bytes(uint64(float64(db.TempBytes)/days))) // #nosec G115 -- não negativo
+		}
+	}
+	return v + ". É um total acumulado, não espaço ocupado: cada arquivo some quando a consulta termina. Mede consultas que não couberam no work_mem"
 }
 
 func routeRows(all []srvhealth.RouteStat) ([]healthRoute, int) {

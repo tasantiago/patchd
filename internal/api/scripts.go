@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/bundle"
+	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/pkgcache"
@@ -519,7 +520,7 @@ func (a *api) bundleFile(w http.ResponseWriter, r *http.Request, id string) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("ETag", `"`+strings.TrimSuffix(name, ".zip")+`"`)
 	a.logger.Info("download de bundle", "machine_id", id, "file", name[:16], "request_id", RequestID(r.Context()))
-	http.ServeContent(w, r, "", fi.ModTime(), f)
+	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }
 
 // scriptsFlash traduz os parâmetros de volta em mensagem.

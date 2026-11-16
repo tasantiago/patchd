@@ -356,6 +356,33 @@ func TestCampanhaFiltroEPaginas(t *testing.T) {
 	if strings.Contains(b, "1–100 de 180") || !strings.Contains(b, "ver os jobs") {
 		t.Error("o grupo 0 escolhido não mostra os jobs do 1")
 	}
+	// O CSV: a campanha inteira (uma linha por job, mais o cabeçalho) e o de um grupo com o
+	// filtro da tela, que a tabela oferece no link.
+	b = pagina(h, "GET", base+"?grupo=1&estado=concluido", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "/resultado.csv?estado=concluido&amp;grupo=1") || !strings.Contains(b, "Baixar CSV com este filtro") {
+		t.Error("a tabela filtrada não oferece o CSV com o filtro")
+	}
+	r := pagina(h, "GET", base+"/resultado.csv", sessaoTeste, nil)
+	linhas := strings.Split(strings.TrimSpace(r.Body.String()), "\n")
+	if r.Code != http.StatusOK || len(linhas) != 181 || !strings.Contains(r.Header().Get("Content-Disposition"), fmt.Sprintf("patchd-campanha-%d.csv", id)) ||
+		!strings.Contains(linhas[0], "grupo_de_implantacao;job;maquina;nome;programa;estado;detalhe") {
+		t.Fatalf("CSV da campanha: %d, %d linhas, %q", r.Code, len(linhas), linhas[0])
+	}
+	if !strings.Contains(r.Body.String(), ";1;") || !strings.Contains(r.Body.String(), ";concluído;ok;") {
+		t.Errorf("CSV da campanha: linhas %q", linhas[1:3])
+	}
+	r = pagina(h, "GET", base+"/resultado.csv?grupo=1&estado=concluido&q=7aa6", sessaoTeste, nil)
+	if n := strings.Count(strings.TrimSpace(r.Body.String()), "\n"); r.Code != http.StatusOK || n != 1 { // só o job 162 é da 7aa6 e concluído
+		t.Errorf("CSV filtrado: %d, %d linha(s) de job", r.Code, n)
+	}
+	for _, ruim := range []string{"?grupo=2", "?grupo=x"} {
+		if r := pagina(h, "GET", base+"/resultado.csv"+ruim, sessaoTeste, nil); r.Code != http.StatusNotFound {
+			t.Errorf("grupo %s: %d", ruim, r.Code)
+		}
+	}
+	if r := pagina(h, "GET", "/painel/campanhas/999999/resultado.csv", sessaoTeste, nil); r.Code != http.StatusNotFound {
+		t.Errorf("campanha que não existe: %d", r.Code)
+	}
 }
 
 // Reenviar o que não deu certo: o cartão aparece na campanha pausada com falhas no grupo atual,

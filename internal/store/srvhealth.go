@@ -29,15 +29,16 @@ func (p *Postgres) DBStats(ctx context.Context) (srvhealth.DBStats, error) {
 	var st srvhealth.DBStats
 	var hit, read int64
 	var longest float64
+	var reset *time.Time
 	err := p.pool.QueryRow(ctx, `
 		SELECT pg_database_size(current_database()),
 		       (SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'),
 		       current_setting('max_connections')::int,
-		       COALESCE(d.blks_hit, 0), COALESCE(d.blks_read, 0), COALESCE(d.deadlocks, 0), COALESCE(d.temp_bytes, 0),
+		       COALESCE(d.blks_hit, 0), COALESCE(d.blks_read, 0), COALESCE(d.deadlocks, 0), COALESCE(d.temp_bytes, 0), d.stats_reset,
 		       COALESCE((SELECT EXTRACT(EPOCH FROM max(now() - query_start)) FROM pg_stat_activity
 		                 WHERE state = 'active' AND pid <> pg_backend_pid() AND backend_type = 'client backend'), 0)
 		FROM pg_stat_database d WHERE d.datname = current_database()`).
-		Scan(&st.Bytes, &st.Connections, &st.MaxConnections, &hit, &read, &st.Deadlocks, &st.TempBytes, &longest)
+		Scan(&st.Bytes, &st.Connections, &st.MaxConnections, &hit, &read, &st.Deadlocks, &st.TempBytes, &reset, &longest)
 	if err != nil {
 		return st, err
 	}
@@ -47,6 +48,9 @@ func (p *Postgres) DBStats(ctx context.Context) (srvhealth.DBStats, error) {
 		st.CacheHitPct = 100 * float64(hit) / float64(hit+read)
 	}
 	st.LongestQuery = time.Duration(longest * float64(time.Second))
+	if reset != nil {
+		st.StatsReset = *reset
+	}
 	rows, err := p.pool.Query(ctx, `
 		SELECT relname, pg_total_relation_size(relid) AS n
 		FROM pg_stat_user_tables WHERE schemaname = current_schema()

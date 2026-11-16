@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/export"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
@@ -593,6 +595,7 @@ type campaignRingView struct {
 	Slots      []optView
 	Idx        int
 	CampaignID int64
+	CSV        string // o CSV deste grupo, com o filtro da tela
 }
 
 type campaignCount struct {
@@ -766,15 +769,12 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		}
 		var found []campaign.JobState
 		for _, j := range list {
-			switch {
-			case filter != "" && j.State != filter:
-			case slot != "" && j.Slot != slot:
-			case needle != "" && !strings.Contains(strings.ToLower(names[j.MachineID]), needle) && !strings.HasPrefix(j.MachineID, needle):
-			default:
+			if campaignJobMatch(j, filter, slot, needle, names) {
 				found = append(found, j)
 			}
 		}
 		rv.Found = len(found)
+		rv.CSV = campaignCSVHref(c.ID, idx, filter, needle, slot)
 		pages := max(1, (len(found)+campaignJobsPerPage-1)/campaignJobsPerPage)
 		pg := min(page, pages)
 		from, to := (pg-1)*campaignJobsPerPage, min(pg*campaignJobsPerPage, len(found))
@@ -794,6 +794,100 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		v.Rings = append(v.Rings, rv)
 	}
 	a.render(w, r, http.StatusOK, "campanha", v)
+}
+
+// campaignJobMatch: o filtro da tabela de um grupo (estado, programa, máquina por nome ou
+// começo do ID), o mesmo na tela e no CSV.
+func campaignJobMatch(j campaign.JobState, filter, slot, needle string, names map[string]string) bool {
+	switch {
+	case filter != "" && j.State != filter:
+		return false
+	case slot != "" && j.Slot != slot:
+		return false
+	case needle != "" && !strings.Contains(strings.ToLower(names[j.MachineID]), needle) && !strings.HasPrefix(j.MachineID, needle):
+		return false
+	}
+	return true
+}
+
+// campaignCSVHref: o CSV de um grupo com o filtro da tela.
+func campaignCSVHref(id int64, idx int, estado, busca, prog string) string {
+	u := url.Values{"grupo": {strconv.Itoa(idx)}}
+	for k, v := range map[string]string{"estado": estado, "q": busca, "programa": prog} {
+		if v != "" {
+			u.Set(k, v)
+		}
+	}
+	return fmt.Sprintf("/painel/campanhas/%d/resultado.csv?%s", id, u.Encode())
+}
+
+// campaignCSV: GET /painel/campanhas/{id}/resultado.csv, o resultado da campanha, uma linha
+// por job. Sem ?grupo=, todos os grupos de implantação; com ele, só aquele, com o mesmo
+// filtro da tabela da tela (estado, q, programa).
+func (a *api) campaignCSV(w http.ResponseWriter, r *http.Request) {
+	id, ok := campaignID(r)
+	var c campaign.Campaign
+	var err error
+	if ok {
+		c, ok, err = a.store.Campaign(r.Context(), id)
+		if err != nil {
+			a.internalError(w, r, "ler campanha", err)
+			return
+		}
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	q := r.URL.Query()
+	idxs := make([]int, 0, len(c.Rings))
+	for i := range c.Rings {
+		idxs = append(idxs, i)
+	}
+	name := fmt.Sprintf("patchd-campanha-%d.csv", c.ID)
+	if q.Has("grupo") {
+		n, err := strconv.Atoi(q.Get("grupo"))
+		if err != nil || n < 0 || n >= len(c.Rings) {
+			http.NotFound(w, r)
+			return
+		}
+		idxs, name = []int{n}, fmt.Sprintf("patchd-campanha-%d-grupo-%d.csv", c.ID, c.Rings[n])
+	}
+	filter, needle, slot := q.Get("estado"), strings.ToLower(strings.TrimSpace(texto.Clip(q.Get("q"), 100))), texto.Clip(q.Get("programa"), 64)
+	names := map[string]string{}
+	ms, err := a.store.Machines(r.Context())
+	if err != nil {
+		a.internalError(w, r, "listar máquinas", err)
+		return
+	}
+	for _, m := range ms {
+		names[m.ID] = m.Hostname
+	}
+	header := []string{"campanha", "grupo_de_implantacao", "job", "maquina", "nome", "programa", "estado", "detalhe",
+		"janela_utc", "encerrado_utc"}
+	var rows [][]string
+	for _, idx := range idxs {
+		list, err := a.store.CampaignJobs(r.Context(), c.ID, idx)
+		if err != nil {
+			a.internalError(w, r, "listar jobs da campanha", err)
+			return
+		}
+		for _, j := range list {
+			if !campaignJobMatch(j, filter, slot, needle, names) {
+				continue
+			}
+			window, finished := "", ""
+			if j.NotBefore != nil {
+				window = export.When(*j.NotBefore)
+			}
+			if j.FinishedAt != nil {
+				finished = export.When(*j.FinishedAt)
+			}
+			rows = append(rows, []string{strconv.FormatInt(c.ID, 10), ringLabel(c.Rings[idx]), strconv.FormatInt(j.ID, 10),
+				j.MachineID, names[j.MachineID], j.Slot, stateLabel(j.State), wuerr.Annotate(j.Detail), window, finished})
+		}
+	}
+	a.sendCSV(w, r, name, len(rows), func(b *bytes.Buffer) error { return export.Table(b, header, rows) })
 }
 
 func campaignFlash(r *http.Request, b *pageBase) {

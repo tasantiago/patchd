@@ -289,6 +289,17 @@ núcleos dão folga para o pico da manhã. Se a aba ainda mostrar "Arquivos temp
 (41 GB naquele parque), suba o `work_mem` do PostgreSQL para 16 MB e veja as consultas mais caras
 em `pg_stat_statements`.
 
+**"Arquivos temporários" não é espaço em disco.** O número vem de `pg_stat_database.temp_bytes`:
+o total já escrito em arquivos temporários desde a última limpeza das estatísticas. Cada
+arquivo é apagado quando a consulta que o criou termina; não há nada a limpar no disco. A
+linha mostra a data da limpeza e o ritmo por dia, que é o que importa: depois da atualização,
+o ritmo deve cair. Para zerar o contador e medir do zero (opcional; zera também as outras
+contagens do banco, como leituras da memória e deadlocks):
+
+```bash
+podman exec -it patchd-postgres psql -U patchd -d patchd -c 'SELECT pg_stat_reset()'
+```
+
 ## 4. A tela
 
 - O veredito e as recomendações (o porquê, com os números, e o que fazer).

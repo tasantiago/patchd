@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/wucache"
@@ -50,7 +51,9 @@ func (a *api) winCacheEnsure(w http.ResponseWriter, r *http.Request, id string) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// winCacheFile: GET WinCachePath/{key}, com retomada (Range).
+// winCacheFile: GET WinCachePath/{key}, com retomada (Range). Os arquivos passam de 1 GB (os
+// .wim das edições e dos recursos sob demanda): sem estender o prazo de escrita, o WriteTimeout
+// de 60 s do servidor cortava cada tentativa no meio ("unexpected EOF" no agente).
 func (a *api) winCacheFile(w http.ResponseWriter, r *http.Request, id string) {
 	key := r.PathValue("key")
 	if a.winCache == nil || !wucache.ValidKey(key) {
@@ -69,7 +72,7 @@ func (a *api) winCacheFile(w http.ResponseWriter, r *http.Request, id string) {
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Patchd-SHA256", m.SHA256)
-	http.ServeContent(w, r, key, m.Fetched, io.ReadSeeker(f))
+	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, key, m.Fetched, io.ReadSeeker(f))
 }
 
 // WinCacheKey: quem instala as atualizações do Windows pelo cache do servidor.
