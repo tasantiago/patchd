@@ -253,6 +253,8 @@ type Monitor struct {
 	prevPool PoolStat
 	prevGC   uint32
 	prevGCNs uint64
+
+	activity activityLog // o que o banco executa (activity.go)
 }
 
 // New cria o monitor. keeper pode ser nil (sem banco); paths são as pastas de dados.
@@ -318,6 +320,9 @@ func (m *Monitor) Run(ctx context.Context) {
 			return
 		case <-pool.C:
 			m.watchPool()
+			if m.keeper != nil {
+				m.sampleActivity(ctx)
+			}
 		case <-timer.C:
 			hour, done := m.tick(next)
 			if done != nil {

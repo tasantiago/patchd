@@ -839,6 +839,11 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{if .Routes}}<div class="tabela"><table><thead><tr><th>Rota</th><th class="num">Requisições</th><th class="num">Média</th><th class="num">Maior</th><th class="num">Acima de 1 s</th><th class="num">Erros 5xx</th><th class="num">Do tempo total</th></tr></thead>
 <tbody>{{range .Routes}}<tr><td><code>{{.Route}}</code></td><td class="num">{{.Count}}</td><td class="num{{if .Level}} nivel-{{.Level}}{{end}}">{{.Avg}}</td><td class="num">{{.Max}}</td><td class="num">{{.Slow}}</td><td class="num">{{.Errors}}</td><td class="num">{{.Share}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma requisição desde a partida.</p>{{end}}</div>
+{{if .QueriesNote}}<div class="card" id="consultas"><div class="card-cab"><h2>O que o banco está executando</h2><span class="muted">{{.QueriesNote}}</span></div>
+{{if .Queries}}<div class="tabela"><table><thead><tr><th>Consulta (o começo)</th><th class="num">Em execução, em média</th><th class="num">Do total</th><th>Onde mais fica</th></tr></thead>
+<tbody>{{range .Queries}}<tr><td class="detalhe"><code>{{.Query}}</code></td><td class="num">{{.Avg}}</td><td class="num">{{.Share}}</td><td>{{.Wait}}</td></tr>{{end}}</tbody></table></div>
+<p class="muted">Cada linha é uma consulta do patchd, vista de 5 em 5 segundos. "Em execução, em média" de 1,00 é uma conexão do banco ocupada o tempo todo por ela: as do topo são onde o banco gasta o tempo. Os valores não aparecem (só $1, $2).</p>
+{{else}}<p class="muted">Nenhuma consulta foi vista em execução nas amostras: o banco está folgado.</p>{{end}}</div>{{end}}
 <div class="duas-col">
 {{if .DB}}<div class="card"><div class="card-cab"><h2>Banco</h2><span class="muted">PostgreSQL</span></div>
 <dl class="dados">{{range .DB}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>

@@ -284,6 +284,7 @@ type api struct {
 	tpFetch     PackageFetcher                       // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
 	fetches     tpFetchBoard                         // Aula 23.3: o download em andamento e o último de cada programa
 	assets      assetCache                           // Aula 23.6: o patrimônio, pelo tombo
+	invList     listCache                            // a lista do Inventário por alguns segundos (listcache.go)
 	discovery   *scanState                           // Aula 23.7: a varredura em andamento
 	netDial     descoberta.Dial                      // Aula 23.7: a sondagem TCP; nil: o dialer padrão
 	netLookup   func(context.Context, string) string // Aula 23.7: reverse-DNS; nil: o DNS do sistema
@@ -301,6 +302,7 @@ type api struct {
 	winCache    *wucache.Cache                       // o cache das atualizações do Windows (docs/cache-windows.md); nil: desligado
 	items       itemsCache                           // a lista de pendências do parque, por um minuto (itemscache.go)
 	creds       credCache                            // a credencial de cada máquina, por um minuto (credcache.go)
+	gate        *agentGate                           // a fila dos agentes (agentgate.go); nil: sem fila
 	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
 	hashSlots   chan struct{}                        // conferências de senha simultâneas
 	system      *SystemInfo                          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
@@ -333,17 +335,17 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /api/v1/agent/standardization/report", a.machineAuth(a.standardizationReport))
 	mux.Handle("POST /api/v1/agent/inventory", a.machineAuth(a.submitInventory))
 	mux.Handle("POST /api/v1/agent/scan", a.machineAuth(a.submitScan))
-	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuth(a.releaseFile))
-	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuth(a.offlineCatalogFile))
-	mux.Handle("GET "+protocol.PackagesPath+"{file}", a.machineAuth(a.packageFile))
-	mux.Handle("GET "+protocol.BundlesPath+"{file}", a.machineAuth(a.bundleFile)) // Aula 23.8
+	mux.Handle("GET /api/v1/agent/releases/{version}/{file}", a.machineAuthDownload(a.releaseFile))
+	mux.Handle("GET "+protocol.OfflineCatalogPath+"{sha256}", a.machineAuthDownload(a.offlineCatalogFile))
+	mux.Handle("GET "+protocol.PackagesPath+"{file}", a.machineAuthDownload(a.packageFile))
+	mux.Handle("GET "+protocol.BundlesPath+"{file}", a.machineAuthDownload(a.bundleFile)) // Aula 23.8
 	mux.Handle("POST "+protocol.JobResultPath+"{id}/result", a.machineAuth(a.jobResult))
-	mux.Handle("POST "+protocol.WinCachePath, a.machineAuth(a.winCacheEnsure))       // docs/cache-windows.md
-	mux.Handle("GET "+protocol.WinCachePath+"/{key}", a.machineAuth(a.winCacheFile)) // idem
+	mux.Handle("POST "+protocol.WinCachePath, a.machineAuth(a.winCacheEnsure))               // docs/cache-windows.md
+	mux.Handle("GET "+protocol.WinCachePath+"/{key}", a.machineAuthDownload(a.winCacheFile)) // idem
 	// Autoatendimento (Aula 17.2).
 	mux.Handle("POST "+protocol.SelfServiceCatalogPath, a.machineAuth(a.selfServiceCatalog))
 	mux.Handle("POST "+protocol.SelfServiceRequestPath, a.machineAuth(a.selfServiceRequest))
-	mux.Handle("GET "+protocol.SelfServiceLogoPath, a.machineAuth(a.selfServiceLogo)) // Aula 19.1b
+	mux.Handle("GET "+protocol.SelfServiceLogoPath, a.machineAuthDownload(a.selfServiceLogo)) // Aula 19.1b
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/favicon.svg", favicon)
 	mux.HandleFunc("GET /painel/estilo.css", styleFile) // Aula 20.4: sem sessão, a tela de login também usa

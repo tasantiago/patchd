@@ -25,6 +25,22 @@ func TestSaudeServidorPostgres(t *testing.T) {
 	if db.Bytes <= 0 || db.MaxConnections <= 0 || db.Connections <= 0 || len(db.Tables) == 0 {
 		t.Fatalf("banco %+v", db)
 	}
+	// O que o banco executa: outra conexão dormindo aparece; esta consulta, não.
+	feito := make(chan error, 1)
+	go func() { _, err := pool.Exec(ctx, "SELECT pg_sleep(1.5), $1::int", 7); feito <- err }()
+	var vista []srvhealth.Activity
+	for i := 0; i < 100 && len(vista) == 0; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if vista, err = pg.DBActivity(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(vista) != 1 || vista[0].Query != "SELECT pg_sleep(1.5), $1::int" {
+		t.Errorf("consultas em execução: %+v", vista)
+	}
+	if err := <-feito; err != nil {
+		t.Fatal(err)
+	}
 	hour := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
 	h := srvhealth.Hour{Hour: hour, Samples: 30, CPUAvg: 10, CPUMax: 40, HostCPUAvg: srvhealth.Unknown, HostCPUMax: srvhealth.Unknown,
 		MemAvg: 20, MemMax: 25, MemBytesMax: 100 << 20, HostMemMax: 50, Requests: 100, LatAvgMs: 10, LatP95Max: 90,
