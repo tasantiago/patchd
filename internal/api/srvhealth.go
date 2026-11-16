@@ -36,7 +36,18 @@ type healthView struct {
 	Tables    []healthTable
 	Disks     []healthDisk
 	Process   []settingRow
+	// O que o banco executa (srvhealth.Activity): as consultas mais vistas em execução.
+	Queries     []healthQuery
+	QueriesNote string
 }
+
+// healthQuery: uma consulta do quadro "O que o banco está executando".
+type healthQuery struct {
+	Query, Avg, Share, Wait string
+}
+
+// healthQueries: quantas consultas o quadro mostra.
+const healthQueries = 12
 
 type healthRoute struct {
 	Route, Count, Avg, Max, Share string
@@ -122,6 +133,7 @@ func (a *api) healthTab(r *http.Request) (*healthView, error) {
 		v.Charts = hourCharts(hours, now.Add(-back), now, loc)
 	}
 	v.Routes, v.RoutesAll = routeRows(m.Routes())
+	v.Queries, v.QueriesNote = queryRows(m.Activity(healthQueries))
 	v.Disks = diskRows(in.Disks)
 	v.Process = processRows(in.Info, pts)
 	return v, nil
@@ -133,6 +145,14 @@ func (a *api) healthDBRows(db srvhealth.DBStats, pool srvhealth.PoolStat, growth
 		rows[0].Value += " · " + growth
 	}
 	rows = append(rows, settingRow{Label: "Pool deste servidor", Value: fmt.Sprintf("%d em uso de %d (%d abertas) · %d esperas por conexão desde a partida", pool.InUse, pool.Max, pool.Total, pool.Waits)})
+	if g, ok := a.gate.stats(); ok {
+		row := settingRow{Label: "Fila dos agentes", Value: fmt.Sprintf("%d de %d vagas em uso; o resto do pool fica para o painel · %d esperaram vaga (em média %s) · %d receberam \"ocupado\" e tentam de novo",
+			g.InUse, g.Slots, g.Waited, g.AvgWait.Round(100*time.Millisecond), g.Rejected)}
+		if g.Rejected > 0 {
+			row.Level = "atencao"
+		}
+		rows = append(rows, row)
+	}
 	if db.MaxConnections > 0 {
 		rows = append(rows, settingRow{Label: "Conexões no PostgreSQL", Value: fmt.Sprintf("%d de %d (max_connections), de todos os clientes", db.Connections, db.MaxConnections)})
 	}
@@ -171,6 +191,33 @@ func tempLabel(db srvhealth.DBStats, now time.Time, stamp func(time.Time) string
 		}
 	}
 	return v + ". É um total acumulado, não espaço ocupado: cada arquivo some quando a consulta termina. Mede consultas que não couberam no work_mem"
+}
+
+// queryRows: as consultas mais vistas em execução. "Em média" é quantas conexões a consulta
+// ocupa o tempo todo (vista em metade das amostras: 0,5); a espera é onde ela mais ficou.
+func queryRows(top []srvhealth.QueryLoad, ticks, active int) ([]healthQuery, string) {
+	if ticks == 0 {
+		return nil, ""
+	}
+	var out []healthQuery
+	for _, q := range top {
+		if q.Samples == 0 {
+			continue
+		}
+		wait, n := "processando (CPU)", q.CPU
+		for _, w := range []struct {
+			label string
+			n     int
+		}{{"lendo ou gravando no disco", q.IO}, {"esperando trava", q.Lock}, {"entregando o resultado ao patchd", q.Client}} {
+			if w.n > n {
+				wait, n = w.label, w.n
+			}
+		}
+		out = append(out, healthQuery{Query: q.Query, Avg: decimal(float64(q.Samples)/float64(ticks), 2),
+			Share: fmt.Sprintf("%d%%", int(math.Round(100*float64(q.Samples)/float64(max(active, 1))))),
+			Wait:  fmt.Sprintf("%s (%d%%)", wait, int(math.Round(100*float64(n)/float64(q.Samples))))})
+	}
+	return out, fmt.Sprintf("%d amostras desde a partida (uma a cada 5 s) · em média %s consulta(s) em execução", ticks, decimal(float64(active)/float64(ticks), 1))
 }
 
 func routeRows(all []srvhealth.RouteStat) ([]healthRoute, int) {

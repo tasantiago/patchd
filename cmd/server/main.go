@@ -376,6 +376,14 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	// Saúde do servidor (docs/saude-servidor.md): mede a si mesmo a cada minuto; com o banco,
 	// guarda as horas por 90 dias. A aba Saúde da Configuração mostra e diz o que aumentar.
 	apiOpts = append(apiOpts, api.WithServerHealth(startServerHealth(ctx, logger, st, cfg, look)))
+	// A fila dos agentes (internal/api/agentgate.go): parte do pool do banco fica para o painel
+	// e para os trabalhos do servidor, e a tela não espera atrás dos check-ins.
+	if pg, ok := st.(*store.Postgres); ok {
+		if max := int(pg.PoolStat().Max); api.AgentGateSlots(max) > 0 {
+			apiOpts = append(apiOpts, api.WithAgentGate(api.AgentGateSlots(max)), api.WithListCache(api.DefaultListCacheTTL))
+			logger.Info("fila dos agentes ligada", "pool", max, "agentes", api.AgentGateSlots(max))
+		}
+	}
 	retention := liveRetention(params, cfg.Retention)
 	if p, ok := st.(pruner); ok {
 		logger.Info("retenção: " + describeRetention(retention()) + "; aplicada de hora em hora (patchd-server retention mostra antes)")

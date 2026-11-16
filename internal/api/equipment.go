@@ -623,7 +623,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 	if q.Desc {
 		v.Dir = "desc"
 	}
-	rows, err := a.store.InventoryList(r.Context())
+	rows, err := a.inventoryList(r.Context())
 	if err != nil {
 		a.internalError(w, r, "listar o inventário", err)
 		return
@@ -788,7 +788,7 @@ func (a *api) stamp(t time.Time) string {
 // equipmentCSV: a mesma busca e a mesma ordem da página, sem páginas.
 func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
 	q := parseEquipQuery(r.URL.Query())
-	rows, err := a.store.InventoryList(r.Context())
+	rows, err := a.inventoryList(r.Context())
 	if err != nil {
 		a.internalError(w, r, "listar o inventário", err)
 		return

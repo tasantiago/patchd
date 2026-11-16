@@ -195,6 +195,7 @@ func (a *api) sameOrigin(next http.HandlerFunc) http.Handler {
 			return
 		}
 		next(w, r)
+		a.listChanged() // o formulário pode ter mudado a lista do Inventário (listcache.go)
 	})
 }
 

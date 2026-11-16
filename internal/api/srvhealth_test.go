@@ -54,7 +54,13 @@ func TestSaudeDoServidor(t *testing.T) {
 		}
 		m.AddPoint(p)
 	}
-	h, _, _ = ambientePaginas(t, api.WithServerHealth(m))
+	// O que o banco executa: duas amostras, uma consulta lendo o disco nas duas.
+	for range 2 {
+		m.AddActivity([]srvhealth.Activity{{Query: "SELECT payload FROM inventory_reports WHERE id = $1", Wait: "IO"}})
+	}
+	m.AddActivity([]srvhealth.Activity{{Query: "UPDATE machines SET last_seen_at = $1 WHERE id = $2"}})
+	m.AddActivity(nil)
+	h, _, _ = ambientePaginas(t, api.WithServerHealth(m), api.WithAgentGate(5))
 	if r := pagina(h, "GET", aba, sessaoTeste, nil); r.Code != http.StatusForbidden {
 		t.Fatalf("leitura vê a saúde: %d", r.Code)
 	}
@@ -67,6 +73,10 @@ func TestSaudeDoServidor(t *testing.T) {
 		"Onde o servidor gasta tempo", "GET /painel/configuracao", // a própria requisição da tela anterior
 		"inventory_history", "3,0 GB", "9 de 100",
 		"O banco cresce cerca de",
+		"O que o banco está executando", "4 amostras desde a partida", "em média 0,8 consulta(s)",
+		"<code>SELECT payload FROM inventory_reports WHERE id = $1</code>", ">0,50<", ">67%<", "lendo ou gravando no disco (100%)",
+		"processando (CPU) (100%)",
+		"Fila dos agentes", "0 de 5 vagas em uso",
 	} {
 		if !strings.Contains(b, quer) {
 			t.Errorf("a aba não tem %q", quer)

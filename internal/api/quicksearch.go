@@ -20,7 +20,7 @@ func (a *api) quickSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list := "/painel/inventario?" + url.Values{"q": {q}}.Encode()
-	rows, err := a.store.InventoryList(r.Context())
+	rows, err := a.inventoryList(r.Context())
 	if err != nil {
 		a.internalError(w, r, "listar o inventário", err)
 		return

@@ -69,6 +69,32 @@ func (p *Postgres) DBStats(ctx context.Context) (srvhealth.DBStats, error) {
 	return st, rows.Err()
 }
 
+var _ srvhealth.ActivityReader = (*Postgres)(nil)
+
+// DBActivity: as consultas em execução agora neste banco, fora esta. O texto é o do comando
+// (com $1, $2: os valores não aparecem). Quem não é superusuário vê só as do próprio papel,
+// que são as do patchd.
+func (p *Postgres) DBActivity(ctx context.Context) ([]srvhealth.Activity, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT coalesce(wait_event_type, ''), left(query, 600)
+		FROM pg_stat_activity
+		WHERE state = 'active' AND pid <> pg_backend_pid() AND backend_type = 'client backend'
+		  AND datname = current_database() AND query <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []srvhealth.Activity
+	for rows.Next() {
+		var a srvhealth.Activity
+		if err := rows.Scan(&a.Wait, &a.Query); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func unknownToNull(v float64) *float64 {
 	if v == srvhealth.Unknown {
 		return nil

@@ -300,6 +300,35 @@ contagens do banco, como leituras da memória e deadlocks):
 podman exec -it patchd-postgres psql -U patchd -d patchd -c 'SELECT pg_stat_reset()'
 ```
 
+### Quarta rodada (16/11/2026): o painel não espera atrás dos agentes
+
+Com a terceira rodada no ar (a padronização caiu de 23 s para 2,5 s e o check-in de 25 s para
+4 s), a máquina seguia com 2 núcleos e 3,6 GB, e os downloads do cache do Windows, agora
+inteiros, somaram mais de cem transferências simultâneas de arquivos de 1 GB. O pool (8)
+ficou cheio em 78% dos minutos, e abrir uma máquina no Inventário levava dezenas de segundos:
+cada tela faz várias consultas, e cada uma esperava conexão na mesma fila dos check-ins.
+
+| O que | Antes | Agora |
+|---|---|---|
+| Conexões do banco | uma fila só, para agentes e painel | **fila dos agentes**: as rotas dos agentes que usam o banco entram, no máximo, três quartos do pool menos uma de cada vez (5 de 8, 11 de 16); o resto fica para o painel e para os trabalhos do servidor |
+| Agente sem vaga | esperava conexão sem prazo; passados 60 s, o servidor fazia o trabalho e a resposta já não chegava | espera até 30 s e recebe `503 busy` com `Retry-After`: tenta de novo depois, como em qualquer falha passageira |
+| Downloads (versões do agente, pacotes, cache do Windows) | | a vaga cobre só a conferência da credencial: a transferência não segura conexão do banco |
+| Canal em tempo real | | fora da fila (não usa o banco) |
+| Busca do topo e lista do Inventário | a lista inteira lida do banco na busca e de novo na tela seguinte, e a cada clique | guardada por 15 s; qualquer formulário do painel zera a cópia |
+
+A linha **Fila dos agentes** do quadro Banco mostra as vagas em uso, quantos esperaram e
+quantos receberam "ocupado". "Ocupado" de vez em quando é a fila funcionando; o tempo todo, a
+máquina está pequena para o parque (CPU e memória, ver o dimensionamento acima): a fila
+protege o painel, não cria capacidade.
+
+**O que o banco está executando.** O `pg_stat_statements` pede mudar a configuração e
+reiniciar o PostgreSQL. O quadro novo da aba Saúde não pede nada: a cada 5 segundos o servidor
+lê o `pg_stat_activity` e soma, por consulta, quantas vezes ela foi vista em execução e onde
+estava (processando, lendo o disco, esperando trava, entregando o resultado). "Em execução, em
+média" de 1,00 é uma conexão ocupada o tempo todo por aquela consulta. As do topo são onde o
+banco gasta o tempo: é por elas que a próxima otimização começa. O texto é o do comando, com
+`$1`, `$2` no lugar dos valores.
+
 ## 4. A tela
 
 - O veredito e as recomendações (o porquê, com os números, e o que fazer).
@@ -308,6 +337,7 @@ podman exec -it patchd-postgres psql -U patchd -d patchd -c 'SELECT pg_stat_rese
 - Os gráficos (o mesmo desenho da aba Desempenho, em SVG, sem JavaScript): 24 horas por
   minuto; 7, 30 e 90 dias por hora, com o tamanho do banco e o disco livre.
 - Onde o servidor gasta tempo: as rotas que mais somam tempo desde a partida.
+- O que o banco está executando: as consultas mais vistas em execução desde a partida.
 - Banco (pool, conexões, cache, temporários, maiores tabelas), processo e as pastas de dados.
 
 ## 5. Fora desta versão

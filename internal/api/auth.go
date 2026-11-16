@@ -35,7 +35,14 @@ func credentialProblem(header string) string {
 
 // machineAuth exige a credencial da máquina e passa ao handler o ID da dona dela.
 func (a *api) machineAuth(next func(http.ResponseWriter, *http.Request, string)) http.Handler {
-	return a.machineAuthWith(next, false)
+	return a.machineAuthWith(next, false, gateFull)
+}
+
+// machineAuthDownload: a autenticação das rotas que entregam arquivos. A vaga na fila dos
+// agentes (agentgate.go) cobre só a conferência da credencial: a transferência leva minutos e
+// não usa o banco.
+func (a *api) machineAuthDownload(next func(http.ResponseWriter, *http.Request, string)) http.Handler {
+	return a.machineAuthWith(next, false, gateAuth)
 }
 
 // machineAuthCached: a mesma autenticação, com a credencial guardada por um minuto
@@ -43,10 +50,10 @@ func (a *api) machineAuth(next func(http.ResponseWriter, *http.Request, string))
 // traz nem leva dados (só "venha agora"). Os outros conferem a credencial no banco sempre, e
 // uma máquina aposentada perde o resto na hora.
 func (a *api) machineAuthCached(next func(http.ResponseWriter, *http.Request, string)) http.Handler {
-	return a.machineAuthWith(next, true)
+	return a.machineAuthWith(next, true, gateNone)
 }
 
-func (a *api) machineAuthWith(next func(http.ResponseWriter, *http.Request, string), cached bool) http.Handler {
+func (a *api) machineAuthWith(next func(http.ResponseWriter, *http.Request, string), cached bool, mode gateMode) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
 		if problem := credentialProblem(header); problem != "" {
@@ -56,6 +63,24 @@ func (a *api) machineAuthWith(next func(http.ResponseWriter, *http.Request, stri
 		}
 		cred, _ := identity.BearerToken(header)
 		hash := identity.Hash(cred)
+		// A fila dos agentes: a vaga é pega depois de conferir o formato da credencial (um
+		// pedido sem credencial não ocupa fila) e antes da primeira ida ao banco.
+		release := func() {}
+		if mode != gateNone {
+			var ok bool
+			if release, ok = a.gate.acquire(r.Context()); !ok {
+				busy(w)
+				return
+			}
+		}
+		released := false
+		done := func() {
+			if !released {
+				released = true
+				release()
+			}
+		}
+		defer done()
 		var id string
 		found := false
 		if cached {
@@ -80,6 +105,9 @@ func (a *api) machineAuthWith(next func(http.ResponseWriter, *http.Request, stri
 		}
 		if !a.checkAgentLimit(w, r, id) {
 			return
+		}
+		if mode == gateAuth {
+			done() // o download não segura a vaga
 		}
 		next(w, r, id)
 	})
