@@ -16,6 +16,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/installomator"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
@@ -194,6 +195,11 @@ func newCampaigner(st tpinstall.CampaignStore, look config.Lookup) (*tpinstall.C
 	if dir != "" {
 		c.Dir = packagesDir(dir)
 	}
+	script, err := installomator.Pinned(look)
+	if err != nil {
+		return nil, err
+	}
+	c.Installomator = &script
 	return c, nil
 }
 

@@ -144,3 +144,31 @@ func TestPackageInstall(t *testing.T) {
 		t.Errorf("revoke de novo: %d %s", code, errb.String())
 	}
 }
+
+// Um programa que só tem regra do Mac (Installomator) é aprovado sem instalador guardado: a
+// versão é a mínima que o job confere.
+func TestAprovarSoMac(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	m, _ := thirdparty.Default()
+	local, err := thirdparty.Parse([]byte(`{"version": 1, "apps": [{"id": "zoom", "os": "macos", "category": "feed", "match": "^zoom\\.us$",
+	  "source": {"type": "homebrew", "id": "zoom"}, "install": {"installomator": "zoom"}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = m.Merge(local)
+	approve := func(args ...string) (int, string) {
+		var out, errb bytes.Buffer
+		code := packageApprove(ctx, st, m, args, "linha de comando", &out, &errb)
+		return code, out.String() + errb.String()
+	}
+	if code, out := approve("-app", "zoom", "-version", "6.6.1"); code != exitOK || !strings.Contains(out, "aprovado (linha de comando) para os Macs") {
+		t.Errorf("só Mac: %d %s", code, out)
+	}
+	if code, out := approve("-app", "zoom", "-version", "versão nova"); code != exitConfig || !strings.Contains(out, "não se compara") {
+		t.Errorf("versão ruim: %d %s", code, out)
+	}
+	if l, _ := st.ThirdPartyApprovals(ctx); len(l) != 1 || l[0].AppID != "zoom" {
+		t.Errorf("aprovações: %+v", l)
+	}
+}

@@ -22,6 +22,8 @@ import (
 	"github.com/tasantiago/patchd/internal/catalog/retry"
 	"github.com/tasantiago/patchd/internal/catalog/wsusscan"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/installomator"
+	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
@@ -83,6 +85,11 @@ type catalogSources struct {
 	WSUS          wsusscanSource
 	ContentDir    string
 	ContentDirErr error
+	// Installomator baixa (ou confere) o script dos Macs na pasta de pacotes; nil nos testes
+	// que não o usam. InstallomatorErr: a versão configurada é inválida.
+	Installomator    func(ctx context.Context, dir string) (size int64, cached bool, err error)
+	InstallomatorErr error
+	InstallomatorVer string
 }
 
 func (s catalogSources) retries() int64 {
@@ -138,6 +145,19 @@ func newCatalogSources(look config.Lookup) catalogSources {
 	}
 	path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
 	s.Manifest, s.ManifestErr = thirdparty.Load(path)
+	if script, err := installomator.Pinned(look); err != nil {
+		s.InstallomatorErr = err
+	} else {
+		base := installomator.BaseURL
+		if u, ok := env("PATCHD_INSTALLOMATOR_URL"); ok {
+			base = u
+		}
+		hc := &http.Client{Timeout: 5 * time.Minute, CheckRedirect: pkgcache.HTTPSOnly}
+		s.InstallomatorVer = script.Version
+		s.Installomator = func(ctx context.Context, dir string) (int64, bool, error) {
+			return installomator.Fetch(ctx, hc, ua, base, dir, script)
+		}
+	}
 	t := thirdparty.NewClient(ua)
 	t.HTTP = retry.Wrap(t.HTTP, count)
 	s.MSRC, s.Ubuntu, s.Fedora, s.KEV, s.Third = m, o, b, k, t
@@ -284,6 +304,9 @@ func syncOneSource(ctx context.Context, name string, srcs catalogSources, st cat
 		saved, tfail, err := syncThirdParty(ctx, srcs.Manifest, srcs.Third, st, out)
 		if err != nil {
 			return failure(err)
+		}
+		if !syncInstallomator(ctx, srcs, out) {
+			tfail++
 		}
 		return tfail == 0, fmt.Sprintf("%d versão(ões) gravada(s), %d com falha", saved, tfail)
 	case "wsusscn2":

@@ -94,6 +94,18 @@ var msiForbidden = map[string]bool{"TRANSFORMS": true, "PATCH": true}
 // MSIInstaller: o msiexec executa (msi e wix).
 func MSIInstaller(t string) bool { return t == "msi" || t == "wix" }
 
+// InstallerInstallomator (macOS): o arquivo do job é o Installomator.sh (preso pelo SHA-256 e
+// pelo tamanho, como um instalador), e o único argumento é o rótulo do programa
+// (googlechromepkg). O Installomator baixa do fabricante e confere o Team ID da assinatura da
+// Apple; o agente o roda como root, sem aviso na tela e sem fechar programa aberto. Só vai a
+// agentes que anunciam protocol.CapabilityInstallomator.
+const InstallerInstallomator = "installomator"
+
+var installomatorLabel = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+// ValidInstallomatorLabel: o nome de um rótulo do Installomator (minúsculas, dígitos, - e _).
+func ValidInstallomatorLabel(l string) bool { return installomatorLabel.MatchString(l) }
+
 // ParseThirdPartyParams lê e confere os parâmetros.
 func ParseThirdPartyParams(raw json.RawMessage) (ThirdPartyParams, error) {
 	var p ThirdPartyParams
@@ -116,8 +128,13 @@ func (p ThirdPartyParams) Validate() error {
 		return errors.New("sha256 inválido (64 dígitos hexadecimais minúsculos)")
 	case p.Size <= 0 || p.Size > maxInstallerSize:
 		return fmt.Errorf("tamanho %d fora de 1 byte a 2 GiB", p.Size)
-	case !MSIInstaller(p.Installer) && p.Installer != "nullsoft" && p.Installer != "inno" && p.Installer != "burn" && p.Installer != "exe":
-		return fmt.Errorf("tipo de instalador %q (use msi, wix, nullsoft, inno, burn ou exe)", p.Installer)
+	case !MSIInstaller(p.Installer) && p.Installer != "nullsoft" && p.Installer != "inno" && p.Installer != "burn" && p.Installer != "exe" &&
+		p.Installer != InstallerInstallomator:
+		return fmt.Errorf("tipo de instalador %q (use msi, wix, nullsoft, inno, burn, exe ou installomator)", p.Installer)
+	case p.Installer == InstallerInstallomator && (len(p.Args) != 1 || !ValidInstallomatorLabel(p.Args[0])):
+		return errors.New("o installomator leva um argumento só: o rótulo do programa (googlechromepkg)")
+	case p.Installer == InstallerInstallomator && (len(p.ReturnCodes) > 0 || p.Signer != "" || len(p.Processes) > 0 || p.Close != nil):
+		return errors.New("o installomator não leva códigos de saída, assinante, processos nem o fechar com aviso: ele confere o Team ID e adia com o programa aberto")
 	case len(p.Args) > maxArgs:
 		return fmt.Errorf("mais de %d argumentos", maxArgs)
 	case len(p.ReturnCodes) > maxReturnCodes:
@@ -137,6 +154,9 @@ func (p ThirdPartyParams) Validate() error {
 		}
 	}
 	for _, a := range p.Args {
+		if p.Installer == InstallerInstallomator {
+			break // o rótulo já foi conferido
+		}
 		if err := checkArg(p.Installer, a); err != nil {
 			return err
 		}

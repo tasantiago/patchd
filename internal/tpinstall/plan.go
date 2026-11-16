@@ -43,6 +43,7 @@ const (
 	KindMSI    = "msi"
 	KindBundle = "bundle"
 	KindExe    = "exe"
+	KindApp    = "app" // macOS
 )
 
 // Kind classifica a entrada: MSI (product_code), bundle (bundle_upgrade_code) ou exe.
@@ -114,6 +115,17 @@ type Decision struct {
 	Reason    string
 	Package   *store.ThirdPartyPackage // atualizar: o instalador; em dia: o mais novo guardado
 	Installed string
+	// Target (macOS): a versão a alcançar pelo Installomator (a aprovada); no Windows, a do
+	// instalador (Package).
+	Target string
+}
+
+// TargetVersion: a versão que o job leva.
+func (d Decision) TargetVersion() string {
+	if d.Package != nil {
+		return d.Package.Version
+	}
+	return d.Target
 }
 
 // Plan decide cada programa com "install" encontrado no inventário. arch é a da máquina
@@ -134,7 +146,12 @@ func Plan(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdParty
 // group reconhece as instalações de cada programa com "install", na ordem do inventário.
 // Entradas SystemComponent (o MSI escondido de um bundle) e atualizações não contam.
 func group(sw []protocol.Software, m thirdparty.Manifest) []*Decision {
-	rules := m.For("windows")
+	return groupFor("windows", sw, m)
+}
+
+// groupFor é o group de um sistema (windows ou macos).
+func groupFor(osID string, sw []protocol.Software, m thirdparty.Manifest) []*Decision {
+	rules := m.For(osID)
 	byApp := map[string]*Decision{}
 	var out []*Decision
 	for _, s := range sw {
@@ -153,6 +170,9 @@ func group(sw []protocol.Software, m thirdparty.Manifest) []*Decision {
 			out = append(out, d)
 		}
 		e := Entry{Software: s, Kind: Kind(s)}
+		if osID == "macos" {
+			e.Kind = KindApp // o .app; o Installomator não distingue tipo de instalação
+		}
 		if v, ok := a.InstalledVersion(s.Name, s.Version); ok {
 			e.Installed = v
 		}
@@ -165,10 +185,11 @@ func group(sw []protocol.Software, m thirdparty.Manifest) []*Decision {
 	return out
 }
 
-// Entries devolve as instalações de um programa: as de máquina (visíveis) e as de usuário.
-// O servidor confere o job thirdparty por elas (Aula 14.4), com o mesmo reconhecimento do plano.
-func Entries(sw []protocol.Software, m thirdparty.Manifest, app string) (machine, user []Entry) {
-	for _, d := range group(sw, m) {
+// Entries devolve as instalações de um programa num sistema: as de máquina (visíveis) e as de
+// usuário. O servidor confere o job thirdparty por elas (Aula 14.4), com o mesmo
+// reconhecimento do plano.
+func Entries(osID string, sw []protocol.Software, m thirdparty.Manifest, app string) (machine, user []Entry) {
+	for _, d := range groupFor(osID, sw, m) {
 		if d.App.ID == app {
 			return d.Entries, d.User
 		}

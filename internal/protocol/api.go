@@ -116,6 +116,11 @@ type WinCacheResponse struct {
 // Os anteriores recusariam o sensor; o servidor não manda a pergunta a eles.
 const CapabilityUserQueries = "perguntas-usuario-v1"
 
+// CapabilityInstallomator: o agente do macOS instala e atualiza programas de terceiros pelo
+// Installomator (o job thirdparty com o instalador "installomator"). Os anteriores recusam o
+// job thirdparty no macOS; o servidor não o manda a eles.
+const CapabilityInstallomator = "installomator-v1"
+
 // CapabilityJobs: o agente recebe, confere e executa jobs assinados (Aula 8.1).
 const CapabilityJobs = "jobs-v1"
 

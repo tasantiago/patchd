@@ -26,6 +26,17 @@ func TestDownloadDeInstalador(t *testing.T) {
 	if r.Code != http.StatusOK || r.Body.String() != string(inst) || r.Header().Get("ETag") != `"`+strings.TrimSuffix(nome, ".exe")+`"` {
 		t.Fatalf("download: %d %q %q", r.Code, r.Body, r.Header().Get("ETag"))
 	}
+	// O Installomator dos Macs vem pela mesma rota, como <sha256>.sh.
+	script := []byte("#!/bin/zsh\n")
+	ss := sha256.Sum256(script)
+	sh := hex.EncodeToString(ss[:]) + ".sh"
+	if err := os.WriteFile(filepath.Join(dir, "pacotes", sh), script, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if r := envia(h, "GET", protocol.PackagesPath+sh, m.Credential, nil); r.Code != http.StatusOK || r.Body.String() != string(script) ||
+		r.Header().Get("ETag") != `"`+strings.TrimSuffix(sh, ".sh")+`"` {
+		t.Errorf("download do Installomator: %d %q", r.Code, r.Header().Get("ETag"))
+	}
 	// Sem credencial: 401.
 	if r := envia(h, "GET", protocol.PackagesPath+nome, "", nil); r.Code != http.StatusUnauthorized {
 		t.Errorf("sem credencial: %d", r.Code)

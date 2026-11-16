@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/httpx"
+	"github.com/tasantiago/patchd/internal/installomator"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
@@ -26,8 +27,14 @@ func WithThirdPartyManifest(m *thirdparty.Manifest) Option {
 	return func(a *api) { a.tpManifest = m }
 }
 
-// packageName: o nome do instalador no cache, <sha256>.msi ou <sha256>.exe (Aula 14.2).
-var packageName = regexp.MustCompile(`^[0-9a-f]{64}\.(msi|exe)$`)
+// WithInstallomator: a versão do Installomator que vai aos Macs (internal/installomator).
+func WithInstallomator(s installomator.Script) Option {
+	return func(a *api) { a.installomator = &s }
+}
+
+// packageName: o nome do instalador no cache, <sha256>.msi ou <sha256>.exe (Aula 14.2), ou o
+// Installomator dos Macs, <sha256>.sh (internal/installomator).
+var packageName = regexp.MustCompile(`^[0-9a-f]{64}\.(msi|exe|sh)$`)
 
 // packageFile entrega um instalador do cache às máquinas autenticadas. O nome é o SHA-256:
 // o agente confere o conteúdo contra o job assinado antes de executar.
@@ -53,7 +60,7 @@ func (a *api) packageFile(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("ETag", `"`+strings.TrimSuffix(strings.TrimSuffix(name, ".msi"), ".exe")+`"`)
+	w.Header().Set("ETag", `"`+name[:64]+`"`)
 	a.logger.Info("download de instalador", "machine_id", id, "file", name[:16], "request_id", RequestID(r.Context()))
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }
@@ -93,7 +100,7 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo"
 	}
 	when := changed.InventoryChangedAt.UTC().Format("2006-01-02 15:04:05")
-	machine, _ := tpinstall.Entries(inv.Software, *a.tpManifest, p.App)
+	machine, _ := tpinstall.Entries(inv.OS.ID, inv.Software, *a.tpManifest, p.App)
 	switch len(machine) {
 	case 0:
 		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC não mostra mais o programa %s; agente: %s", when, p.App, agent)

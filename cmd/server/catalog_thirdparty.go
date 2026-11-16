@@ -115,6 +115,43 @@ func syncThirdParty(ctx context.Context, m thirdparty.Manifest, src2 thirdpartyS
 	return saved, failed, nil
 }
 
+// usesInstallomator: alguma regra do macOS instala pelo Installomator.
+func usesInstallomator(m thirdparty.Manifest) bool {
+	for _, a := range m.For("macos") {
+		if a.Install != nil && a.Install.Installomator != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// syncInstallomator garante o script dos Macs na pasta de pacotes, quando alguma regra o usa.
+// false: falhou (a sincronização dos terceiros fica com falha, e o script guardado continua).
+func syncInstallomator(ctx context.Context, srcs catalogSources, out io.Writer) bool {
+	if !usesInstallomator(srcs.Manifest) || srcs.Installomator == nil && srcs.InstallomatorErr == nil {
+		return true
+	}
+	switch {
+	case srcs.InstallomatorErr != nil:
+		fmt.Fprintf(out, "  Installomator FALHOU: %v\n", srcs.InstallomatorErr)
+		return false
+	case srcs.ContentDir == "":
+		fmt.Fprintln(out, "  Installomator: sem PATCHD_CONTENT_DIR, os Macs ficam sem instalação pelo patchd")
+		return true
+	}
+	n, cached, err := srcs.Installomator(ctx, packagesDir(srcs.ContentDir))
+	switch {
+	case err != nil:
+		fmt.Fprintf(out, "  Installomator %s FALHOU (fica o guardado, se houver): %v\n", srcs.InstallomatorVer, err)
+		return false
+	case cached:
+		fmt.Fprintf(out, "  Installomator %s: no cache, conferido (%d bytes)\n", srcs.InstallomatorVer, n)
+	default:
+		fmt.Fprintf(out, "  Installomator %s: baixado e conferido (%d bytes)\n", srcs.InstallomatorVer, n)
+	}
+	return true
+}
+
 // printThirdPartyRules escreve o "catalog terceiros": as regras do manifesto e a versão de
 // referência guardada de cada uma.
 func printThirdPartyRules(m thirdparty.Manifest, refs []thirdparty.Ref, out io.Writer) {

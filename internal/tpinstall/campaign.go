@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/installomator"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/protocol"
@@ -21,6 +22,7 @@ type CampaignStore interface {
 	LatestInventory(ctx context.Context, id string) (protocol.InventoryReport, bool, error)
 	ThirdPartyPackages(ctx context.Context) ([]store.ThirdPartyPackage, error)
 	ThirdPartyApprovals(ctx context.Context) ([]store.ThirdPartyApproval, error)
+	MachineCapabilities(ctx context.Context, id string) ([]string, error)
 }
 
 // Campaigner decide a campanha de terceiros (Aula 14.7): uma versão aprovada de um
@@ -31,6 +33,34 @@ type Campaigner struct {
 	Store    CampaignStore
 	Manifest thirdparty.Manifest
 	Dir      string // PATCHD_CONTENT_DIR/pacotes; vazio: o servidor não guarda instaladores
+	// Installomator: a versão do script que vai aos Macs (internal/installomator); nil: os
+	// Macs ficam fora das campanhas de terceiros.
+	Installomator *installomator.Script
+}
+
+// macRule: a regra do macOS do programa, com o rótulo do Installomator.
+func (c Campaigner) macRule(app string) *thirdparty.App {
+	for _, r := range c.Manifest.For("macos") {
+		if r.ID == app && r.Install != nil && r.Install.Installomator != "" {
+			return &r
+		}
+	}
+	return nil
+}
+
+// MacScript confere o Installomator no cache: o script e o motivo de não haver.
+func (c Campaigner) MacScript() (*MacScript, string) {
+	switch {
+	case c.Installomator == nil:
+		return nil, "o servidor está sem o Installomator configurado"
+	case c.Dir == "":
+		return nil, "o servidor não guarda instaladores (PATCHD_CONTENT_DIR)"
+	}
+	n, err := installomator.Check(c.Dir, *c.Installomator)
+	if err != nil {
+		return nil, fmt.Sprintf("o Installomator %s não está no cache ou não confere (%v): catalog sync -source terceiros", c.Installomator.Version, err)
+	}
+	return &MacScript{SHA256: c.Installomator.SHA256, Size: n}, ""
 }
 
 func (c Campaigner) rule(app string) *thirdparty.App {
@@ -59,7 +89,8 @@ func versionPackages(all []store.ThirdPartyPackage, app, version string) []store
 // reason vazio: pronta. err é falha de leitura (o laço tenta de novo no minuto seguinte).
 func (c Campaigner) Ready(ctx context.Context, app, version string) (string, error) {
 	rule := c.rule(app)
-	if rule == nil {
+	mac := c.macRule(app)
+	if rule == nil && mac == nil {
 		return fmt.Sprintf("o programa %q não tem \"install\" nas regras", app), nil
 	}
 	approvals, err := c.Store.ThirdPartyApprovals(ctx)
@@ -73,11 +104,21 @@ func (c Campaigner) Ready(ctx context.Context, app, version string) (string, err
 	if !approved {
 		return fmt.Sprintf("%s %s não está aprovado (a aprovação pode ter sido revogada)", app, version), nil
 	}
+	if rule == nil { // só Mac: vale o Installomator no cache
+		_, why := c.MacScript()
+		return why, nil
+	}
 	all, err := c.Store.ThirdPartyPackages(ctx)
 	if err != nil {
 		return "", err
 	}
 	pkgs := versionPackages(all, app, version)
+	if len(pkgs) == 0 && mac != nil {
+		// Sem instalador do Windows guardado, a campanha anda pelos Macs (os do Windows ficam
+		// "sem pacote"), se o Installomator estiver no cache.
+		_, why := c.MacScript()
+		return why, nil
+	}
 	switch {
 	case len(pkgs) == 0:
 		return fmt.Sprintf("nenhum instalador de %s %s guardado (package fetch)", app, version), nil
@@ -102,8 +143,10 @@ func (c Campaigner) Job(ctx context.Context, machineID, app, version string) (*j
 	switch {
 	case err != nil:
 		return nil, "", err
+	case found && inv.OS.ID == "macos":
+		return c.macJob(ctx, machineID, inv, app, version)
 	case !found || inv.OS.ID != "windows":
-		return nil, "sem inventário do Windows", nil
+		return nil, "sem inventário do Windows ou do macOS", nil
 	}
 	arch, ok := MachineArch(inv.OS.Arch)
 	if !ok {
@@ -129,6 +172,38 @@ func (c Campaigner) Job(ctx context.Context, machineID, app, version string) (*j
 	return nil, "sem o programa", nil
 }
 
+// macJob decide um Mac: o job do Installomator, ou por que ele fica fora.
+func (c Campaigner) macJob(ctx context.Context, machineID string, inv protocol.InventoryReport, app, version string) (*jobs.ThirdPartyParams, string, error) {
+	if c.macRule(app) == nil {
+		return nil, "sem regra do Installomator para o macOS", nil
+	}
+	caps, err := c.Store.MachineCapabilities(ctx, machineID)
+	if err != nil {
+		return nil, "", err
+	}
+	if !slices.Contains(caps, protocol.CapabilityInstallomator) {
+		return nil, "agente do Mac sem o Installomator (atualize o agente)", nil
+	}
+	script, why := c.MacScript()
+	if script == nil {
+		return nil, why, nil
+	}
+	for _, d := range PlanMac(inv.Software, c.Manifest, func(string) string { return version }) {
+		if d.App.ID != app {
+			continue
+		}
+		if d.State != StateUpdate {
+			return nil, strings.ToLower(Labels[d.State]), nil
+		}
+		p, err := MacJobParams(d, *script)
+		if err != nil {
+			return nil, "job do Installomator inválido", nil
+		}
+		return &p, "", nil
+	}
+	return nil, "sem o programa", nil
+}
+
 // Approved lista, para a campanha de todos os programas aprovados, a versão aprovada mais nova
 // de cada programa que tem "install" nas regras (implementa campaign.ThirdPartyCatalog). Se a
 // versão está pronta, quem decide é o Ready, a cada grupo de implantação.
@@ -139,7 +214,7 @@ func (c Campaigner) Approved(ctx context.Context) ([]campaign.AppVersion, error)
 	}
 	best := map[string]string{}
 	for _, a := range approvals {
-		if c.rule(a.AppID) == nil {
+		if c.rule(a.AppID) == nil && c.macRule(a.AppID) == nil {
 			continue
 		}
 		cur, ok := best[a.AppID]

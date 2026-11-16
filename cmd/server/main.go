@@ -24,6 +24,7 @@ import (
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/canal"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/installomator"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/logging"
 	"github.com/tasantiago/patchd/internal/machinebox"
@@ -461,6 +462,13 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		apiOpts = append(apiOpts, api.WithBackground(ctx)) // as regras dos grupos de implantação, a cada 5 min
 		// O mesmo manifesto confere, no inventário, o efeito do job thirdparty (Aula 14.4).
 		apiOpts = append(apiOpts, api.WithThirdPartyManifest(&manifest))
+		// O Installomator dos Macs (a versão fixada, ou a das variáveis).
+		script, err := installomator.Pinned(look)
+		if err != nil {
+			logger.Error("Installomator", "error", err)
+			return exitConfig
+		}
+		apiOpts = append(apiOpts, api.WithInstallomator(script))
 		tpRules = &manifest
 	}
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco

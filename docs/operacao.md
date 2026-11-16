@@ -1313,6 +1313,49 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
 Na auditoria: `terceiros.baixar` (com a versão pedida) e `terceiros.excluir`. Sem pasta de
 conteúdo (`PATCHD_CONTENT_DIR`), o painel continua mostrando o comando da linha de comando.
 
+## Programas de terceiros no Mac, pelo Installomator
+
+No macOS, o patchd instala e atualiza programas de terceiros pelo **Installomator**
+(<https://github.com/Installomator/Installomator>, licença Apache 2.0), o script que a comunidade
+de administradores de Mac mantém: um rótulo por programa (`googlechromepkg`, `firefoxpkg`,
+`visualstudiocode`), que baixa a versão mais nova **do próprio fabricante**, confere o **Team ID**
+da assinatura da Apple e instala.
+
+- **A regra.** No manifesto, a regra do macOS ganha `"install": {"installomator": "<rótulo>"}`. O
+  manifesto embutido já traz Chrome (`googlechromepkg`), Firefox (`firefoxpkg`) e VS Code
+  (`visualstudiocode`); outros entram pelo manifesto local (`PATCHD_THIRDPARTY_MANIFEST`), com o
+  rótulo da lista do Installomator.
+- **O script.** O patchd fixa a versão (hoje a **10.10**, de 12/11/2026) e o SHA-256 dela. O
+  `catalog sync -source terceiros` baixa o `Installomator.sh` da tag no GitHub e só guarda em
+  `PATCHD_CONTENT_DIR/pacotes/<sha256>.sh` se o hash for o fixado; os agentes baixam de lá, com a
+  credencial da máquina, e conferem o SHA-256 e o tamanho do job assinado antes de rodar. Para
+  trocar de versão sem recompilar: `PATCHD_INSTALLOMATOR_VERSION` e `PATCHD_INSTALLOMATOR_SHA256`
+  (as duas), depois de ler o que mudou; um espelho interno do GitHub entra por
+  `PATCHD_INSTALLOMATOR_URL`. Sem acesso ao GitHub, copie o arquivo para a pasta de pacotes com o
+  nome `<sha256>.sh`: o servidor confere o conteúdo, não o nome.
+- **Como o agente roda.** Como root, com o rótulo e sempre as mesmas opções: `NOTIFY=silent` (sem
+  aviso na tela), `BLOCKING_PROCESS_ACTION=silent_fail` (com o programa aberto, não fecha nada:
+  o job volta **adiado** e a campanha tenta de novo, como no Windows), `INTERRUPT_DND=no` (não
+  interrompe apresentação ou chamada em tela cheia: também adiado) e `REOPEN=no`. A saída inteira
+  fica em `logs/installomator-job-N.log` na pasta de dados do agente. Só vai a Macs cujo agente
+  anuncia `installomator-v1`; os anteriores aparecem como "agente do Mac sem o Installomator".
+- **A versão.** O Installomator instala sempre a mais nova do fabricante; a versão do job é a
+  **aprovada** em Patch (a mesma aprovação do Windows), e o servidor só dá o job por concluído
+  se o inventário de depois mostrar essa versão ou uma mais nova. Um programa que só tem regra
+  do Mac (sem instalador do Windows guardado) é aprovado pela linha de comando:
+  `patchd-server package approve -app <id> -version <versão>`.
+- **Onde pedir.** Na página da máquina (aba Pendências, cartão "Atualização pelo patchd", um botão
+  por programa) e nas campanhas de terceiros: numa campanha, os Macs do grupo recebem o job do
+  Installomator e os Windows o instalador guardado; sem instalador do Windows guardado, a campanha
+  anda só pelos Macs.
+- **Códigos do Installomator** no detalhe do job: rótulo desconhecido (1) e App Store (23) =
+  recusado; programa aberto (10, 11, 12) e tela cheia (24, 25) = adiado; download do fabricante
+  (2, 77) = falhou sem instalar; Team ID diferente (5) = falhou, e vale olhar o log: o arquivo do
+  fabricante não é o esperado.
+- **Limites.** O patchd não fecha programa aberto no Mac (o "fechar o programa com aviso" é só do
+  Windows) e não atualiza apps da App Store. Testado com um script falso no laboratório (Linux);
+  confira num Mac piloto antes de levar ao parque.
+
 ## Aprovação em lote e filtros em Patch
 
 **Sistema operacional.** A lista tem duas visões: **por item** (cada pacote ou CVE) e **por
