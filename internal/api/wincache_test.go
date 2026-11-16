@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/settings"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/wucache"
 )
@@ -151,3 +153,97 @@ type comPrazo struct {
 }
 
 func (c *comPrazo) SetWriteDeadline(time.Time) error { c.vezes++; return nil }
+
+// O horário para baixar da Microsoft: fora dele, o pedido da máquina volta "agendado", com a
+// hora em que abre (no texto e entre colchetes, para a campanha), e o cartão mostra a fila;
+// dentro dele, a fila é baixada e o mesmo pedido encontra o arquivo pronto.
+func TestHorarioParaBaixarDaMicrosoft(t *testing.T) {
+	ctx := context.Background()
+	origem := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("pacote ", 100))
+	}))
+	defer origem.Close()
+	c, err := wucache.New(t.TempDir(), "teste", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Origin = func(u *url.URL) []string { return []string{origem.URL + u.Path} }
+	st0 := store.NewMemory()
+	hhmm := func(t time.Time) string { return t.UTC().Format("15:04") }
+	agora := time.Now()
+	fechado := hhmm(agora.Add(2*time.Hour)) + "-" + hhmm(agora.Add(3*time.Hour))
+	aberto := hhmm(agora.Add(-time.Hour)) + "-" + hhmm(agora.Add(2*time.Hour))
+	params := settings.New([]settings.Def{{Key: api.WinCacheFetchKey, Group: "Agentes", Label: "Horário para baixar da Microsoft",
+		Check: func(v string) (string, error) {
+			w, err := api.ParseFetchHours(v, time.UTC)
+			return api.FetchHoursText(w), err
+		}}}, func(string) (string, bool) { return "", false }, st0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := params.Apply(ctx, map[string]string{api.WinCacheFetchKey: fechado}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	h, st, _ := ambientePaginas(t, api.WithWinCache(c), api.WithSettings(params))
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateEnrollmentToken(ctx, hash, "t", time.Now().Add(time.Hour), 1); err != nil {
+		t.Fatal(err)
+	}
+	m := registra(t, h, tok)
+	const arq = "http://download.windowsupdate.com/c/msdownload/windows11.0-kb5070009-x64.msu"
+	pede := func() protocol.WinCacheFile {
+		t.Helper()
+		corpo, _ := json.Marshal(protocol.WinCacheRequest{URLs: []string{arq}})
+		r := envia(h, "POST", protocol.WinCachePath, m.Credential, corpo)
+		var resp protocol.WinCacheResponse
+		if r.Code != http.StatusOK || json.Unmarshal(r.Body.Bytes(), &resp) != nil || len(resp.Files) != 1 {
+			t.Fatalf("pedido: %d %s", r.Code, r.Body)
+		}
+		return resp.Files[0]
+	}
+	f := pede()
+	if f.State != wucache.StateScheduled || !strings.Contains(f.Detail, api.ScheduledMark) ||
+		!regexp.MustCompile(`a partir de \d\d/\d\d \d\d:\d\d \[\d{4}-\d\d-\d\dT\d\d:\d\d:00Z\]$`).MatchString(f.Detail) {
+		t.Fatalf("fora do horário: %+v", f)
+	}
+	b := pagina(h, "GET", "/painel/configuracao", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"só das " + fechado, "fechado agora, abre em", "Na fila para baixar da Microsoft", "windows11.0-kb5070009-x64.msu"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("cartão sem %q", quer)
+		}
+	}
+	// O horário abre (o parâmetro vale na hora): a fila é baixada.
+	if _, err := params.Apply(ctx, map[string]string{api.WinCacheFetchKey: aberto}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if n := c.Drain(); n != 1 {
+		t.Fatalf("horário aberto: %d download(s) começados", n)
+	}
+	for i := 0; i < 200 && f.State != wucache.StateReady; i++ {
+		time.Sleep(10 * time.Millisecond)
+		f = pede()
+	}
+	if f.State != wucache.StateReady {
+		t.Fatalf("depois do horário: %+v", f)
+	}
+	if b := pagina(h, "GET", "/painel/configuracao", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "aberto agora") || strings.Contains(b, "Na fila para baixar") {
+		t.Error("cartão com o horário aberto")
+	}
+}
+
+// ParseFetchHours: o formato, os limites e a volta pela meia-noite.
+func TestHorarioDoCacheFormato(t *testing.T) {
+	for v, quer := range map[string]string{"": "", " 22:00-06:00 ": "22:00-06:00", "01:30-02:00": "01:30-02:00", "00:00-23:00": "00:00-23:00", "2:00-5:00": "02:00-05:00"} {
+		w, err := api.ParseFetchHours(v, time.UTC)
+		if err != nil || api.FetchHoursText(w) != quer {
+			t.Errorf("%q: %q %v", v, api.FetchHoursText(w), err)
+		}
+	}
+	for _, v := range []string{"22:00", "22:00-22:00", "22:00-22:10", "00:00-23:30", "25:00-02:00", "22h-06h", "a-b", "22:00-06:00-07:00"} {
+		if _, err := api.ParseFetchHours(v, time.UTC); err == nil {
+			t.Errorf("%q aceito", v)
+		}
+	}
+	w, _ := api.ParseFetchHours("22:00-06:00", time.UTC)
+	dia := time.Date(2026, 11, 16, 23, 30, 0, 0, time.UTC)
+	if s, e := w.Next(dia, time.Minute); !s.Equal(time.Date(2026, 11, 16, 22, 0, 0, 0, time.UTC)) || !e.Equal(time.Date(2026, 11, 17, 6, 0, 0, 0, time.UTC)) {
+		t.Errorf("janela pela meia-noite: %v %v", s, e)
+	}
+}

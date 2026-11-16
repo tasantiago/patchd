@@ -9,10 +9,13 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/window"
 	"github.com/tasantiago/patchd/internal/wucache"
 )
 
@@ -41,6 +44,9 @@ func (a *api) winCacheEnsure(w http.ResponseWriter, r *http.Request, id string) 
 	}
 	resp := protocol.WinCacheResponse{Files: []protocol.WinCacheFile{}}
 	for _, s := range a.winCache.Ensure(r.Context(), req.URLs) {
+		if s.State == wucache.StateScheduled {
+			s.Detail = a.scheduledDetail(s.Opens)
+		}
 		resp.Files = append(resp.Files, protocol.WinCacheFile{URL: s.URL, Key: s.Key, State: s.State, Size: s.Size, Done: s.Done,
 			SHA256: s.SHA256, Detail: s.Detail})
 		if s.State == wucache.StateRefused {
@@ -88,6 +94,72 @@ const (
 // WinCacheDaysKey: a limpeza do cache (o que nenhuma máquina pediu nesse prazo sai).
 const WinCacheDaysKey = "PATCHD_WUCACHE_DAYS"
 
+// WinCacheFetchKey: o horário em que o servidor baixa os pacotes da Microsoft para o cache
+// ("HH:MM-HH:MM", no fuso do painel; vazio: a qualquer hora, quando a primeira máquina pede).
+const WinCacheFetchKey = "PATCHD_WUCACHE_FETCH_HOURS"
+
+// ParseFetchHours lê "HH:MM-HH:MM" (pode passar da meia-noite: "22:00-06:00"). Vazio: sem
+// horário (nil). De 30 minutos a 23 horas: com menos, um pacote de alguns GB não chega; um
+// horário de 24 horas é o mesmo que nenhum.
+func ParseFetchHours(v string, loc *time.Location) (*window.Window, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, nil
+	}
+	bad := errors.New("use HH:MM-HH:MM, de 30 minutos a 23 horas (ex.: 22:00-06:00), ou deixe vazio para baixar a qualquer hora")
+	from, to, ok := strings.Cut(v, "-")
+	if !ok {
+		return nil, bad
+	}
+	start, err1 := window.ParseStart(from)
+	end, err2 := window.ParseStart(to)
+	if err1 != nil || err2 != nil {
+		return nil, bad
+	}
+	d := end - start
+	if d <= 0 {
+		d += 24 * time.Hour
+	}
+	if d < 30*time.Minute || d > 23*time.Hour {
+		return nil, bad
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+	return &window.Window{Days: window.AllDays, Start: start, Duration: d, Location: loc}, nil
+}
+
+// FetchHoursText: o horário como "22:00-06:00" (o formato do parâmetro, normalizado).
+func FetchHoursText(w *window.Window) string {
+	if w == nil {
+		return ""
+	}
+	end := (w.Start + w.Duration) % (24 * time.Hour)
+	return fmt.Sprintf("%02d:%02d-%02d:%02d", int(w.Start.Hours()), int(w.Start.Minutes())%60, int(end.Hours()), int(end.Minutes())%60)
+}
+
+// fetchSchedule: o Schedule do cache, pelo parâmetro de agora (a mudança na tela vale na hora).
+func (a *api) fetchSchedule(now time.Time) (bool, time.Time) {
+	if a.params == nil {
+		return true, time.Time{}
+	}
+	w, err := ParseFetchHours(a.params.Value(WinCacheFetchKey), a.panelLocation())
+	if err != nil || w == nil {
+		return true, time.Time{}
+	}
+	start, _ := w.Next(now, time.Minute)
+	return !start.After(now), start
+}
+
+// ScheduledMark: o texto fixo do "agendado" no detalhe do job. O motor das campanhas acha por
+// ele a hora (entre colchetes, em UTC) e só tenta de novo depois dela (campaign.scheduledAt).
+const ScheduledMark = campaign.ScheduledMark
+
+// scheduledDetail: o que a máquina (e o detalhe do job) leem quando o arquivo ficou na fila.
+func (a *api) scheduledDetail(opens time.Time) string {
+	return fmt.Sprintf("%s, a partir de %s [%s]", ScheduledMark, opens.In(a.panelLocation()).Format("02/01 15:04"), opens.UTC().Format(time.RFC3339))
+}
+
 // WinCacheFor diz se o job do Windows desta máquina vai pelo cache: o cache existe, o
 // parâmetro inclui a máquina e o agente dela sabe usar. O mesmo para o painel e as campanhas.
 func WinCacheFor(ctx context.Context, mode string, st interface {
@@ -125,6 +197,9 @@ type winCacheView struct {
 	Files    int
 	Size     string
 	Fetching []winCacheRow
+	Queued   []winCacheRow // na fila do horário
+	Hours    string        // o horário para baixar da Microsoft ("" = a qualquer hora)
+	Opens    string        // quando abre (fora do horário)
 	Recent   []winCacheRow
 	More     int
 	Days     string
@@ -155,6 +230,17 @@ func (a *api) winCacheCard() (*winCacheView, error) {
 	}
 	if v.Mode == "" {
 		v.Mode = winCacheModeLabel[WinCacheOff]
+	}
+	if a.params != nil {
+		if w, err := ParseFetchHours(a.params.Value(WinCacheFetchKey), a.panelLocation()); err == nil && w != nil {
+			v.Hours = FetchHoursText(w)
+			if open, opens := a.fetchSchedule(a.now()); !open {
+				v.Opens = a.stamp(opens)
+			}
+		}
+	}
+	for _, q := range st.Queued {
+		v.Queued = append(v.Queued, winCacheRow{Name: winCacheName(q.Key), When: a.stamp(q.Asked)})
 	}
 	for _, f := range st.Fetching {
 		row := winCacheRow{Name: winCacheName(f.Key), Progress: humanBytes(f.Done)}

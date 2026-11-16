@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -711,6 +712,40 @@ type failedJob struct {
 	reason string
 }
 
+// ScheduledMark: o começo do detalhe do job adiado porque o servidor só baixa o arquivo da
+// Microsoft no horário configurado (docs/cache-windows.md). Depois dele vem a hora em que o
+// horário abre, em UTC, entre colchetes.
+const ScheduledMark = "o servidor baixa este arquivo da Microsoft no horário configurado"
+
+// scheduledSlack: a nova tentativa sai este tanto depois de o horário abrir (o servidor ainda
+// vai baixar; se não acabou, o agente espera o resto).
+const scheduledSlack = 30 * time.Minute
+
+var scheduledTime = regexp.MustCompile(`\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\]`)
+
+// scheduledAt: quando tentar de novo um job adiado pelo horário do cache; ok=false se o
+// detalhe não é desse caso. O detalhe vem do agente: a hora só vale até 26 h depois do fim do
+// job (um agente não consegue se adiar para sempre).
+func scheduledAt(j JobState) (time.Time, bool) {
+	i := strings.Index(j.Detail, ScheduledMark)
+	if i < 0 || j.FinishedAt == nil {
+		return time.Time{}, false
+	}
+	m := scheduledTime.FindStringSubmatch(j.Detail[i:])
+	if m == nil {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, m[1])
+	if err != nil {
+		return time.Time{}, false
+	}
+	t = t.Add(scheduledSlack)
+	if limit := j.FinishedAt.Add(26 * time.Hour); t.After(limit) {
+		t = limit
+	}
+	return t, true
+}
+
 func ringStatus(list []JobState, now time.Time, autoResend int) ringState {
 	latest, attempts, fails := map[string]JobState{}, map[string]int{}, map[string]int{}
 	for _, j := range list {
@@ -754,6 +789,11 @@ func ringStatus(list []JobState, now time.Time, autoResend int) ringState {
 			}
 			if j.Unblocked != nil && j.Unblocked.Before(at) { // tentar assim que fechar
 				at = *j.Unblocked
+			}
+			// O servidor só baixa o arquivo da Microsoft no horário: tentar antes de ele abrir
+			// só gastaria uma busca na máquina e uma das tentativas.
+			if t, ok := scheduledAt(j); ok && t.After(at) {
+				at = t
 			}
 			if now.Before(at) {
 				st.waiting++

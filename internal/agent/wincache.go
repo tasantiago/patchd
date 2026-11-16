@@ -15,6 +15,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/wucache"
 )
 
@@ -121,6 +122,11 @@ func (f WinCacheFetcher) waitReady(ctx context.Context, urls []string) ([]protoc
 					w += fmt.Sprintf(" (%d%%)", file.Done*100/file.Size)
 				}
 				waiting = append(waiting, w)
+			case wucache.StateScheduled:
+				// O servidor só baixa da Microsoft no horário configurado e pôs o arquivo na
+				// fila: "adiado", sem esperar aqui. A campanha tenta de novo depois que o
+				// horário abrir (o detalhe leva a hora).
+				return nil, fmt.Errorf("%w: %s: %s", jobs.ErrRetry, file.Key, texto.Clip(file.Detail, 300))
 			case wucache.StateRefused:
 				return nil, fmt.Errorf("%w: o servidor não guarda %s: %s", jobs.ErrRefused, file.URL, file.Detail)
 			default:

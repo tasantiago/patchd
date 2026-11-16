@@ -47,6 +47,9 @@ const (
 	StateFetching = "baixando"
 	StateFailed   = "falhou"
 	StateRefused  = "recusado" // o endereço não é de um pacote da Microsoft
+	// StateScheduled: o arquivo não está no cache e o servidor só baixa da Microsoft no horário
+	// configurado (Schedule): ficou na fila, e a máquina tenta de novo depois.
+	StateScheduled = "agendado"
 )
 
 const (
@@ -132,6 +135,7 @@ type Status struct {
 	Done   int64 // baixando: quanto já veio
 	SHA256 string
 	Detail string
+	Opens  time.Time // agendado: quando o servidor começa a baixar
 }
 
 type progress struct {
@@ -155,6 +159,9 @@ type Cache struct {
 	Idle      time.Duration
 	// Origin troca os endereços de origem (testes: um servidor local). nil: a Microsoft.
 	Origin func(u *url.URL) []string
+	// Schedule: o horário em que o servidor baixa da Microsoft (queue.go). open: pode agora;
+	// senão, opens é quando abre. nil: a qualquer hora, quando a primeira máquina pede.
+	Schedule func(now time.Time) (open bool, opens time.Time)
 
 	now func() time.Time
 
@@ -222,6 +229,17 @@ func (c *Cache) ensureOne(u *url.URL, key string) Status {
 		st.State, st.Size, st.Done = StateFetching, p.size, p.done
 		return st
 	}
+	if c.Schedule != nil {
+		if open, opens := c.Schedule(c.now()); !open {
+			// Fora do horário: o pedido fica na fila (em disco: vale depois de um reinício) e
+			// o download sai quando o horário abrir (Drain).
+			if err := c.enqueue(key, u.String()); err != nil {
+				c.Logger.Warn("cache do Windows: pedido não guardado na fila", "arquivo", key, "error", err)
+			}
+			st.State, st.Opens = StateScheduled, opens
+			return st
+		}
+	}
 	if f, ok := c.failed[key]; ok && c.now().Sub(f.at) < retryAfter {
 		st.State, st.Detail = StateFailed, f.err
 		return st
@@ -267,6 +285,7 @@ func (c *Cache) fetch(u *url.URL, key string) {
 		c.Logger.Warn("cache do Windows: download falhou", "arquivo", key, "url", u.String(), "error", err)
 		return
 	}
+	c.dequeue(key)
 	c.Logger.Info("cache do Windows: arquivo guardado", "arquivo", key)
 }
 
@@ -482,7 +501,8 @@ type Stats struct {
 	Files    int
 	Bytes    int64
 	Fetching []Status
-	Recent   []Meta // os mais usados por último primeiro
+	Queued   []Queued // na fila do horário (queue.go)
+	Recent   []Meta   // os mais usados por último primeiro
 }
 
 // List devolve o que está guardado.
@@ -522,6 +542,7 @@ func (c *Cache) Stats() (Stats, error) {
 	}
 	c.mu.Unlock()
 	slices.SortFunc(s.Fetching, func(a, b Status) int { return strings.Compare(a.Key, b.Key) })
+	s.Queued = c.Queue()
 	return s, nil
 }
 
@@ -542,6 +563,12 @@ func (c *Cache) Prune(before time.Time) (int, int64, error) {
 	c.mu.Unlock()
 	for _, e := range entries {
 		name := e.Name()
+		if strings.HasSuffix(name, queueSuffix) { // um pedido que ninguém repetiu em uma semana
+			if fi, err := e.Info(); err == nil && c.now().Sub(fi.ModTime()) > queueKeep {
+				_ = os.Remove(filepath.Join(c.Dir, name))
+			}
+			continue
+		}
 		if key, ok := strings.CutSuffix(name, ".part"); ok && !running[key] {
 			if fi, err := e.Info(); err == nil && c.now().Sub(fi.ModTime()) > 48*time.Hour {
 				_ = os.Remove(filepath.Join(c.Dir, name))

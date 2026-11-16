@@ -295,6 +295,28 @@ Voltar a oferecer uma versão anterior que ainda está em `releases/`:
 muda o que o painel e as máquinas novas recebem). Retirar a oferta, sem versão nenhuma:
 `rm releases/current` (o servidor no ar só lê a pasta).
 
+## Liberar espaço: versões antigas do agente e imagens antigas
+
+Cada versão assinada do agente fica numa pasta de `releases/` (uns 100 MB), e cada versão do
+servidor deixa uma imagem. Nada disso sai sozinho. A linha "Versões do agente" da aba Saúde
+mede o disco onde está o `/home` do usuário do serviço: as imagens e as caches do build
+(`~/.local/share/containers`, `~/.cache`) contam junto.
+
+```bash
+cd ~/patchd
+cat releases/current                 # a versão publicada: esta NÃO se apaga
+du -sh releases/v* | sort -h         # o tamanho de cada uma
+# apagar todas menos a publicada e as 2 mais novas (confira a lista antes; depois troque o echo por rm -rf)
+ls -d releases/v* | sort -V | head -n -3 | grep -v "/$(cat releases/current)\$" | xargs -r echo
+```
+
+Os agentes já instalados não precisam das versões antigas: eles só baixam a publicada. Apagar
+uma versão antiga só tira a possibilidade de voltar a oferecê-la (`agente.sh --publicar`).
+
+As imagens antigas do servidor: `podman images` lista; guarde a atual e a anterior (o
+`atualizar.sh --voltar` precisa dela) e apague as outras com `podman rmi patchd-server:vX.Y.Z`.
+`podman image prune` tira as camadas sem nome que sobram dos builds.
+
 ## Problemas comuns
 
 - **"short-name resolution enforced but cannot prompt without a TTY"**: uma imagem sem o
