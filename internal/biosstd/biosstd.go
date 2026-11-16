@@ -62,7 +62,8 @@ var (
 	// normal vêm antes; "Boot to Network" (a máquina acorda e tenta o PXE) só entra se não
 	// houver outro.
 	// No notebook Lenovo, "ACOnly" vem antes de "Enable": acordar só na tomada não gasta bateria.
-	wakeOn = []string{"boottoharddrive", "boottonormalbootorder", "followbootorder", "lanonly", "aconly", "enable", "enabled", "on",
+	// "Boot Order" é o do ThinkCentre (acorda e segue a ordem de boot normal).
+	wakeOn = []string{"boottoharddrive", "boottonormalbootorder", "followbootorder", "bootorder", "lanonly", "aconly", "enable", "enabled", "on",
 		"primary", "automatic", "acandbattery", "lanwlan", "lanwithpxeboot", "boottonetwork"}
 	deepOn = map[string]bool{"enable": true, "enabled": true, "s5only": true, "s5": true, "s4ands5": true, "s4s5": true}
 )
@@ -135,10 +136,17 @@ func stuckNote(s protocol.BIOSSetting) string {
 
 func evalWake(settings []protocol.BIOSSetting) Finding {
 	f := Finding{Goal: GoalWake}
-	found, stuck := false, ""
+	found, stuck, odd := false, "", ""
 	for _, s := range settings {
 		n, v := biosconfig.Norm(s.Name), biosconfig.Norm(s.Value)
 		switch {
+		case wakeName(n) && v != "" && !isWakeOn(v) && !offValues[v] && v != "wlanonly":
+			// A configuração existe, com um valor que o patchd não conhece: dizer isso, e não
+			// "este modelo não tem" (era o "Boot Order" do ThinkCentre).
+			if odd == "" {
+				odd = fmt.Sprintf("a BIOS informa %s = %s, um valor que o patchd não conhece; confira na máquina se liga pela rede", s.Name, s.Value)
+				f.Evidence = append(f.Evidence, s.Name+": "+s.Value)
+			}
 		case wakeName(n) && (isWakeOn(v) || offValues[v] || v == "wlanonly"):
 			found = true
 			f.Evidence = append(f.Evidence, s.Name+": "+s.Value)
@@ -164,7 +172,11 @@ func evalWake(settings []protocol.BIOSSetting) Finding {
 			}
 		}
 	}
-	return f.close(found, stuck, "este modelo não informa uma configuração de Wake on LAN")
+	missing := "este modelo não informa uma configuração de Wake on LAN"
+	if odd != "" {
+		missing = odd
+	}
+	return f.close(found, stuck, missing)
 }
 
 func evalUSBBoot(settings []protocol.BIOSSetting) Finding {

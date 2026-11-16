@@ -40,6 +40,11 @@ func TestConfiguracoesDoFirmware(t *testing.T) {
 	if len(ls) != 2 || bios == nil || *bios || deep != nil {
 		t.Errorf("Lenovo (só o da dock ligado): %+v bios=%v", ls, bios)
 	}
+	// ThinkCentre: "Boot Order" acorda e segue a ordem de boot normal.
+	tc := biosSettings(protocol.FirmwareLenovo, []map[string]any{{"CurrentSetting": "WakeonLAN,Boot Order;[Optional:Disabled,Network,Boot Order]"}})
+	if bios, _ := wakeFirmware(tc); len(tc) != 1 || bios == nil || !*bios {
+		t.Errorf("ThinkCentre Boot Order: %+v bios=%v", tc, bios)
+	}
 	// Valor que não se conhece: não se sabe, em vez de um palpite.
 	if bios, _ := wakeFirmware([]protocol.WakeSetting{{Name: "Wake on LAN", Value: "Talvez"}}); bios != nil {
 		t.Error("valor desconhecido virou decisão")

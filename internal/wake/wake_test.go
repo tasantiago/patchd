@@ -65,3 +65,33 @@ func TestDecide(t *testing.T) {
 		t.Error("chassi")
 	}
 }
+
+// Agente antigo, que não conhecia o "Boot Order" do Lenovo ThinkCentre: mandou a configuração
+// sem decidir. O servidor decide com a regra de hoje, sem esperar o agente novo, e sem mexer no
+// que recebeu.
+func TestServidorDecideOQueOAgenteNaoSoube(t *testing.T) {
+	sim := true
+	w := &protocol.Wake{Settings: []protocol.WakeSetting{{Name: "WakeonLAN", Value: "Boot Order"}},
+		Adapters: []protocol.WakeAdapter{{Wired: true, MagicPacket: protocol.WakeOn, DeviceWake: &sim}}}
+	v := Decide(w, false)
+	if v.State != Ready || slices.Contains(v.Notes, NoteBIOSUnknown) {
+		t.Errorf("Boot Order: %+v", v)
+	}
+	if w.BIOS != nil {
+		t.Error("Decide mudou o que recebeu")
+	}
+	w.Settings[0].Value = "Disabled"
+	if v := Decide(w, false); v.State != Blocked || !slices.Contains(v.Blockers, BIOSOff) {
+		t.Errorf("desligado: %+v", v)
+	}
+	w.Settings[0].Value = "Talvez"
+	if v := Decide(w, false); v.State != Unknown || !slices.Contains(v.Notes, NoteBIOSUnknown) {
+		t.Errorf("valor desconhecido: %+v", v)
+	}
+	// O que o agente decidiu vale.
+	nao := false
+	w.Settings[0].Value, w.BIOS = "Boot Order", &nao
+	if v := Decide(w, false); v.State != Blocked {
+		t.Errorf("a decisão do agente: %+v", v)
+	}
+}

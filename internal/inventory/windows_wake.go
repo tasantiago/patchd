@@ -7,6 +7,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/texto"
+	"github.com/tasantiago/patchd/internal/wake"
 )
 
 // Ligar pela rede no Windows (Aula 22.1), só leitura. Como o firmware da 21.1, fica fora do
@@ -98,40 +99,9 @@ func firstValue(v any) string {
 	return asString(v)
 }
 
-// Valores conhecidos (normalizados) que ligam ou desligam.
-var (
-	wakeOffValues = map[string]bool{"disable": true, "disabled": true, "off": true}
-	wakeOnValues  = map[string]bool{"enable": true, "enabled": true, "on": true, "lanonly": true, "lanwlan": true,
-		"aconly": true, "acandbattery": true, "boottonetwork": true, "boottoharddrive": true, "followbootorder": true,
-		"primary": true, "automatic": true}
-	deepOnValues = map[string]bool{"enable": true, "enabled": true, "s5only": true, "s4ands5": true, "s4s5": true}
-)
-
-// wakeFirmware: WoL no firmware e economia profunda, pelas configurações lidas. Um WoL
-// ligado basta (alguns modelos têm um para cada estado); economia profunda ligada em qualquer
-// uma pesa contra.
-func wakeFirmware(settings []protocol.WakeSetting) (bios, deep *bool) {
-	for _, s := range settings {
-		n, v := norm(s.Name), norm(s.Value)
-		switch {
-		case strings.Contains(n, "wakeonlan") && !strings.Contains(n, "wlan") && !strings.Contains(n, "dock"):
-			switch {
-			case wakeOnValues[v]:
-				bios = boolPtr(true)
-			case wakeOffValues[v] && bios == nil:
-				bios = boolPtr(false)
-			}
-		case strings.Contains(n, "deepsleep"), strings.Contains(n, "maximumpowersaving"), strings.Contains(n, "maxpowersaving"):
-			switch {
-			case deepOnValues[v]:
-				deep = boolPtr(true)
-			case wakeOffValues[v] && deep == nil:
-				deep = boolPtr(false)
-			}
-		}
-	}
-	return bios, deep
-}
+// wakeFirmware: WoL no firmware e economia profunda, pelas configurações lidas. A regra é a
+// do pacote wake, a mesma que o servidor usa quando o agente não soube decidir.
+func wakeFirmware(settings []protocol.WakeSetting) (bios, deep *bool) { return wake.Firmware(settings) }
 
 // Os valores de MSFT_NetAdapter e MSFT_NetAdapterPowerManagementSettingData.
 const (

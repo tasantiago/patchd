@@ -78,7 +78,8 @@ var catalog = []Entry{
 		Help:     "Permite que a TI ligue o computador à distância (Wake on LAN), por exemplo para atualizar fora do horário.",
 		contains: []string{"wakeonlan"},
 		values: map[string]string{"enable": "Ligado", "enabled": "Ligado", "primary": "Ligado", "automatic": "Ligado (automático)",
-			"aconly": "Ligado, só na tomada", "acandbattery": "Ligado, na tomada e na bateria"}},
+			"aconly": "Ligado, só na tomada", "acandbattery": "Ligado, na tomada e na bateria",
+			"bootorder": "Ligado, na ordem normal de inicialização"}}, // Lenovo ThinkCentre
 	{Key: KeyDeepSleep, Topic: TopicPower, Title: "Economia máxima com o computador desligado",
 		Help:     "Corta a energia da placa de rede quando o computador desliga: economiza, mas impede de ligar pela rede.",
 		contains: []string{"deepsleep", "maximumpowersaving", "maxpowersaving"},
