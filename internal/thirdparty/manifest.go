@@ -91,7 +91,11 @@ type App struct {
 // Install diz de onde vem o instalador: um pacote do winget-pkgs, que não precisa ser o
 // mesmo da versão de referência (a do Chrome vem da Google; o instalador, do winget).
 type Install struct {
-	Winget string `json:"winget"` // Google.Chrome, Mozilla.Firefox.pt-BR
+	Winget string `json:"winget,omitempty"` // Google.Chrome, Mozilla.Firefox.pt-BR (Windows)
+	// Installomator (macOS): o rótulo do programa no Installomator (googlechromepkg). O
+	// Installomator baixa do fabricante e confere o Team ID da assinatura; o patchd leva o
+	// script, preso pelo SHA-256 (internal/installomator).
+	Installomator string `json:"installomator,omitempty"`
 	// Type exige um tipo de instalador: o mesmo do que está nas máquinas. O 7-Zip publica
 	// exe e MSI; instalar o outro deixa duas entradas no Desinstalar. Vazio: o primeiro que
 	// serve, na ordem do manifesto (como o winget).
@@ -254,10 +258,21 @@ func (a *App) compile() error {
 	if a.Lifecycle != "" && !lifecycleSlug.MatchString(a.Lifecycle) {
 		return fmt.Errorf("lifecycle %q: o nome do produto no endoflife.date, em minúsculas (python, nodejs)", a.Lifecycle)
 	}
-	if a.Install != nil {
+	if a.Install != nil && a.OS == "macos" {
+		in := a.Install
 		switch {
-		case a.OS != "windows":
-			return fmt.Errorf("install só vale para windows (o macOS fica para o MDM)")
+		case a.Category != CategoryFeed && a.Category != CategoryMinimum && a.Category != CategoryLifecycle:
+			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
+		case !jobs.ValidInstallomatorLabel(in.Installomator):
+			return fmt.Errorf("no macOS, install leva installomator: o rótulo do programa no Installomator (googlechromepkg)")
+		case in.Winget != "" || in.Type != "" || in.Signer != "" || in.UnsignedReason != "" || len(in.Processes) > 0:
+			return fmt.Errorf("no macOS, install leva só installomator: o Installomator confere o Team ID e adia com o programa aberto")
+		}
+	}
+	if a.Install != nil && a.OS == "windows" {
+		switch {
+		case a.Install.Installomator != "":
+			return fmt.Errorf("installomator só vale para macos")
 		case a.Category != CategoryFeed && a.Category != CategoryMinimum && a.Category != CategoryLifecycle:
 			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
 		case !winget.ValidID(a.Install.Winget):

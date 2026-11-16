@@ -62,7 +62,7 @@ func TestCampaigner(t *testing.T) {
 	win("dupla", lo("25.2.1.1", msi), lo("24.8.0.1"))
 	st.SaveInventory(ctx, "linux", protocol.InventoryReport{SchemaVersion: 1, Hash: "linux", OS: protocol.OSInfo{ID: "ubuntu", Arch: "amd64"}})
 	for id, want := range map[string]string{"nova": "em dia", "sem": "sem o programa", "exe": "sem pacote", "dupla": "duplicado",
-		"linux": "sem inventário do Windows", "nenhuma": "sem inventário do Windows"} {
+		"linux": "sem inventário do Windows ou do macOS", "nenhuma": "sem inventário do Windows ou do macOS"} {
 		if p, skip, err := c.Job(ctx, id, "libreoffice", "26.8.1.1"); err != nil || p != nil || skip != want {
 			t.Errorf("%s: %+v %q %v; esperava %q", id, p, skip, err, want)
 		}

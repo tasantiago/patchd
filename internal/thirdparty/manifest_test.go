@@ -140,12 +140,16 @@ func TestInstall(t *testing.T) {
 		return `{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "minimum", "match": "x", "min_version": "1"` + extra + `}]}`
 	}
 	for entrada, trecho := range map[string]string{
-		regra(`, "install": {"winget": "Chrome"}`):                                                                                                    "fora da forma Fabricante.Programa",
-		regra(`, "install": {"winget": "Google.Chrome", "type": "msix"}`):                                                                             `install.type "msix"`,
-		regra(`, "install": {"winget": "Google.Chrome", "scope": "user"}`):                                                                            "unknown field",
-		regra(`, "install": {"winget": "Google.Chrome", "processes": ["C:\\x\\chrome.exe"]}`):                                                         "não é o nome de um executável",
-		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"winget": "a.b"}}]}`: "só vale para windows",
-		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                       "exige categoria feed, minimum ou lifecycle",
+		regra(`, "install": {"winget": "Chrome"}`):                                                                                                                            "fora da forma Fabricante.Programa",
+		regra(`, "install": {"winget": "Google.Chrome", "type": "msix"}`):                                                                                                     `install.type "msix"`,
+		regra(`, "install": {"winget": "Google.Chrome", "scope": "user"}`):                                                                                                    "unknown field",
+		regra(`, "install": {"winget": "Google.Chrome", "processes": ["C:\\x\\chrome.exe"]}`):                                                                                 "não é o nome de um executável",
+		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"winget": "a.b"}}]}`:                         "no macOS, install leva installomator",
+		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"installomator": "Chrome"}}]}`:               "no macOS, install leva installomator",
+		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"installomator": "a", "winget": "a.b"}}]}`:   "leva só installomator",
+		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "eol", "match": "x", "install": {"installomator": "a"}}]}`:                                            "exige categoria feed",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "minimum", "match": "x", "min_version": "1", "install": {"installomator": "a", "winget": "a.b"}}]}`: "installomator só vale para macos",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                                               "exige categoria feed, minimum ou lifecycle",
 		// As fontes novas: Evergreen (com filtro), a segunda fonte e o endoflife.date.
 		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "feed", "match": "x", "source": {"type": "evergreen", "id": "a/b"}}]}`:                                    "nome do aplicativo no Evergreen",
 		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "feed", "match": "x", "source": {"type": "winget", "id": "a.b", "filter": {"Channel": "Stable"}}}]}`:      "filter só vale para a fonte evergreen",

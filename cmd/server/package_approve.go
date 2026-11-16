@@ -28,9 +28,29 @@ func packageApprove(ctx context.Context, st approveStore, manifest thirdparty.Ma
 	if !ok {
 		return exitConfig
 	}
+	mac := hasMacInstallRule(manifest, app)
 	if !hasInstallRule(manifest, app) {
-		fmt.Fprintf(stderr, "patchd-server: a regra %q do Windows não existe ou não tem \"install\"\n", app)
-		return exitConfig
+		if !mac {
+			fmt.Fprintf(stderr, "patchd-server: a regra %q do Windows não existe ou não tem \"install\" (nem a do macOS, com o Installomator)\n", app)
+			return exitConfig
+		}
+		// Só Mac: o Installomator baixa do fabricante; a versão aprovada é a mínima que o job
+		// confere no inventário de depois. Não há instalador a guardar.
+		if _, ok := thirdparty.Normalize(ver); !ok {
+			fmt.Fprintf(stderr, "patchd-server: a versão %q não se compara\n", ver)
+			return exitConfig
+		}
+		created, err := st.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: app, Version: ver, ApprovedBy: by, Note: note})
+		switch {
+		case err != nil:
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		case !created:
+			fmt.Fprintf(stdout, "%s %s já estava aprovado; a aprovação original ficou\n", app, ver)
+		default:
+			fmt.Fprintf(stdout, "%s %s aprovado (%s) para os Macs: o Installomator instala a mais nova do fabricante, e o job confere pelo menos esta\n", app, ver, by)
+		}
+		return exitOK
 	}
 	pkgs, err := st.ThirdPartyPackages(ctx)
 	if err != nil {
@@ -107,6 +127,16 @@ func approvalFlags(name string, args []string, withNote bool, stderr io.Writer) 
 func hasInstallRule(m thirdparty.Manifest, app string) bool {
 	for _, a := range m.For("windows") {
 		if a.ID == app && a.Install != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// hasMacInstallRule: a regra do macOS do programa instala pelo Installomator.
+func hasMacInstallRule(m thirdparty.Manifest, app string) bool {
+	for _, a := range m.For("macos") {
+		if a.ID == app && a.Install != nil && a.Install.Installomator != "" {
 			return true
 		}
 	}

@@ -134,3 +134,43 @@ func TestSyncThirdParty(t *testing.T) {
 		}
 	}
 }
+
+// O script dos Macs na sincronização dos terceiros: só quando alguma regra o usa e há pasta de
+// conteúdo; a falha conta como falha dos terceiros.
+func TestSyncInstallomator(t *testing.T) {
+	m, err := thirdparty.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	pastas := []string{}
+	srcs := catalogSources{Manifest: m, ContentDir: "/srv/patchd", InstallomatorVer: "10.10",
+		Installomator: func(_ context.Context, dir string) (int64, bool, error) {
+			pastas = append(pastas, dir)
+			return 677099, false, nil
+		}}
+	var out bytes.Buffer
+	if !syncInstallomator(ctx, srcs, &out) || len(pastas) != 1 || pastas[0] != "/srv/patchd/pacotes" ||
+		!strings.Contains(out.String(), "Installomator 10.10: baixado e conferido (677099 bytes)") {
+		t.Errorf("baixar: %v %s", pastas, out.String())
+	}
+	out.Reset()
+	srcs.Installomator = func(context.Context, string) (int64, bool, error) { return 0, false, errors.New("SHA-256 diferente") }
+	if syncInstallomator(ctx, srcs, &out) || !strings.Contains(out.String(), "FALHOU (fica o guardado, se houver): SHA-256 diferente") {
+		t.Errorf("falha: %s", out.String())
+	}
+	out.Reset()
+	srcs.ContentDir = ""
+	if !syncInstallomator(ctx, srcs, &out) || !strings.Contains(out.String(), "sem PATCHD_CONTENT_DIR") {
+		t.Errorf("sem pasta: %s", out.String())
+	}
+	// Sem regra do Mac com Installomator, nada é pedido.
+	local, _ := thirdparty.Parse([]byte(`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x"}]}`))
+	srcs = catalogSources{Manifest: local, ContentDir: "/srv", Installomator: func(context.Context, string) (int64, bool, error) {
+		t.Error("pediu o script sem regra que o use")
+		return 0, false, nil
+	}}
+	if !syncInstallomator(ctx, srcs, &out) {
+		t.Error("sem regra devia passar")
+	}
+}

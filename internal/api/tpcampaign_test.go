@@ -76,7 +76,7 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 	// Conferência: a previsão por grupo de implantação; nada criado ainda.
 	b = pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form).Body.String()
 	for _, tr := range []string{"instalar programa de terceiros · programa: libreoffice 26.8.1.1", "<th>Hoje</th>",
-		"<td>1 job(s); fora: 1 sem inventário do Windows</td>", `name="programa" value="libreoffice 26.8.1.1"`, "a campanha pausa"} {
+		"<td>1 job(s); fora: 1 sem inventário do Windows ou do macOS</td>", `name="programa" value="libreoffice 26.8.1.1"`, "a campanha pausa"} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("conferência: faltou %q\n", tr)
 		}

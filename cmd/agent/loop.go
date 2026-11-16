@@ -242,7 +242,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	if inst := patch.NewInstaller(platform.ExecRunner{Timeout: installTimeout}); inst != nil {
 		ag.Install = inst.Install
 	}
-	// Job thirdparty (Aula 14.4): só no Windows.
+	// Job thirdparty (Aula 14.4): no Windows, com o instalador do winget-pkgs guardado no
+	// servidor; no macOS, pelo Installomator.
 	if tp := newThirdParty(client, opts.DataDir, opts.AllowedSigners); tp != nil {
 		ag.ThirdParty = tp
 		// Tentar assim que fechar: o job adiado por programa aberto é vigiado.
@@ -253,8 +254,14 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			}
 			return len(platform.Running(list, names)) > 0, nil
 		}
-		// O job de terceiros com close (fechar o programa com aviso) só vem a quem anuncia.
-		client.Capabilities = append(client.Capabilities, protocol.CapabilityCloseApps)
+		switch runtime.GOOS {
+		case "windows":
+			// O job de terceiros com close (fechar o programa com aviso) só vem a quem anuncia.
+			client.Capabilities = append(client.Capabilities, protocol.CapabilityCloseApps)
+		case "darwin":
+			// No macOS, o job de terceiros é o Installomator; só vem a quem anuncia.
+			client.Capabilities = append(client.Capabilities, protocol.CapabilityInstallomator)
+		}
 	}
 	client.Capabilities = append(client.Capabilities, protocol.CapabilityStandardization)
 	// Job script (Aula 23.8): em todos os sistemas. O bundle é baixado e extraído na pasta

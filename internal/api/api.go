@@ -23,6 +23,7 @@ import (
 	"github.com/tasantiago/patchd/internal/canal"
 	"github.com/tasantiago/patchd/internal/descoberta"
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/installomator"
 	"github.com/tasantiago/patchd/internal/oidc"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/perfeval"
@@ -261,8 +262,10 @@ type api struct {
 	releases      release.Dir // vazia: sem atualização automática
 	serverVersion string
 
-	contentDir string        // vazio: o servidor não distribui o catálogo offline
-	content    ContentSource // a versão atual de cada arquivo distribuído
+	contentDir string // vazio: o servidor não distribui o catálogo offline
+	// installomator: a versão do script dos Macs; nil: o painel não pede instalação no Mac.
+	installomator *installomator.Script
+	content       ContentSource // a versão atual de cada arquivo distribuído
 
 	repoCache *protocol.RepoCache // nil: o check-in não anuncia o cache de repositórios
 

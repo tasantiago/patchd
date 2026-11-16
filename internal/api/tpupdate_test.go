@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/installomator"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
@@ -219,5 +220,73 @@ func TestProgramaComProcessos(t *testing.T) {
 	b := pagina(h, "GET", "/painel/patch/programa?app=vscode", sessaoTeste, nil).Body.String()
 	if !strings.Contains(b, "assinatura exigida: Microsoft Corporation · não instala com Code.exe aberto") {
 		t.Errorf("programa vscode:\n%s", b)
+	}
+}
+
+// O mesmo cartão num Mac: o alvo é a versão aprovada; o botão só aparece com o agente que
+// anuncia o Installomator e o script conferido no cache; o job leva o script e o rótulo.
+func TestAtualizarTerceirosNoMac(t *testing.T) {
+	pub, priv, _ := jobs.GenerateKey()
+	dir := t.TempDir()
+	m, _ := thirdparty.Default()
+	script := []byte("#!/bin/zsh\n# Installomator de teste\n")
+	soma := sha256.Sum256(script)
+	sc := installomator.Script{Version: "10.10", SHA256: hex.EncodeToString(soma[:])}
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(&m), api.WithInstallomator(sc))
+	ctx := context.Background()
+	const id = "aaaa0000-0004" // uma máquina do ambiente de teste, agora com inventário de Mac
+	maq := "/painel/maquinas/" + id
+	if _, err := st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "m", OS: protocol.OSInfo{ID: "macos", Arch: "arm64"},
+		Software: []protocol.Software{{Name: "Google Chrome", Version: "154.0.8037.93", Scope: "machine"}, {Name: "Firefox", Version: "157.0.1", Scope: "machine"}}}); err != nil {
+		t.Fatal(err)
+	}
+	aba := maq + "?aba=pendencias"
+	pede := func() string {
+		return local(pagina(h, "POST", maq+"/terceiros/atualizar", sessaoAdmin, url.Values{"app": {"google-chrome"}}))
+	}
+	// Sem aprovação: nada a alcançar.
+	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "nenhuma versão aprovada") || !strings.Contains(b, "quem instala é o Installomator") || strings.Contains(b, "/terceiros/atualizar") {
+		t.Errorf("sem aprovação:\n%s", b)
+	}
+	st.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: "google-chrome", Version: "155.0.8059.40", ApprovedBy: "ana"})
+	st.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: "mozilla-firefox", Version: "157.0.1", ApprovedBy: "ana"})
+	// Aprovado, mas o agente é antigo e o script não está no cache.
+	b = pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "154.0.8037.93 → 155.0.8059.40 ou mais nova · Installomator (googlechromepkg)") ||
+		!strings.Contains(b, "o agente deste Mac é anterior ao Installomator") || strings.Contains(b, "/terceiros/atualizar") {
+		t.Errorf("agente antigo:\n%s", b)
+	}
+	if l := pede(); !strings.Contains(l, "erro=terceiros-mac") {
+		t.Errorf("pedido com agente antigo: %s", l)
+	}
+	st.SetMachineCapabilities(ctx, id, []string{protocol.CapabilityJobs, protocol.CapabilityInstallomator})
+	if b = pagina(h, "GET", aba, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "não está no cache") {
+		t.Errorf("sem script:\n%s", b)
+	}
+	pacotes := filepath.Join(dir, "pacotes")
+	os.MkdirAll(pacotes, 0o750)
+	if err := os.WriteFile(filepath.Join(pacotes, installomator.FileName(sc.SHA256)), script, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	b = pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "Atualizar para 155.0.8059.40") || !strings.Contains(b, "versão 10.10") {
+		t.Fatalf("botão:\n%s", b)
+	}
+	if l := pede(); !strings.Contains(l, "criado=1") {
+		t.Fatalf("pedido: %s", l)
+	}
+	env, _ := st.DeliverJobs(ctx, id, time.Now())
+	if len(env) != 1 {
+		t.Fatalf("jobs entregues: %d", len(env))
+	}
+	j, err := jobs.Verify(pub, env[0], id, time.Now(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := jobs.ParseThirdPartyParams(j.Params)
+	if err != nil || p.Installer != jobs.InstallerInstallomator || p.Args[0] != "googlechromepkg" || p.SHA256 != sc.SHA256 ||
+		p.Size != int64(len(script)) || p.Version != "155.0.8059.40" {
+		t.Errorf("job: %+v %v", p, err)
 	}
 }

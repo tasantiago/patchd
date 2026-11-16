@@ -93,10 +93,13 @@
      "note": "fim do suporte estendido do SQL Server 2012 em 2022-07-12"},
 
     {"id": "google-chrome", "os": "macos", "name": "Google Chrome", "category": "feed",
-     "match": "^Google Chrome$", "source": {"type": "chrome", "id": "mac"}},
+     "match": "^Google Chrome$", "source": {"type": "chrome", "id": "mac"},
+     "install": {"installomator": "googlechromepkg"}},
     {"id": "mozilla-firefox", "os": "macos", "name": "Mozilla Firefox", "category": "feed",
-     "match": "^Firefox$", "source": {"type": "firefox", "id": "LATEST_FIREFOX_VERSION"}},
+     "match": "^Firefox$", "source": {"type": "firefox", "id": "LATEST_FIREFOX_VERSION"},
+     "install": {"installomator": "firefoxpkg"}},
     {"id": "vscode", "os": "macos", "name": "Visual Studio Code", "category": "feed",
-     "match": "^Visual Studio Code$", "source": {"type": "homebrew", "id": "visual-studio-code"}}
+     "match": "^Visual Studio Code$", "source": {"type": "homebrew", "id": "visual-studio-code"},
+     "install": {"installomator": "visualstudiocode"}}
   ]
 }

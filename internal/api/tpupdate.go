@@ -8,14 +8,17 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/pkgcache"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/tpinstall"
+	"github.com/tasantiago/patchd/internal/version"
 )
 
 // Atualização de programas de terceiros pela página da máquina (Aula 14.6): o cartão
@@ -40,6 +43,9 @@ type tpUpdateCard struct {
 	Rows    []tpUpdateRow
 	Updates int   // decisões ATUALIZAR
 	Open    int64 // job thirdparty em aberto (só calculado para o admin com a chave)
+	// Mac: o plano é o do Installomator (MacVersion: a versão do script).
+	Mac        bool
+	MacVersion string
 }
 
 // tpUpdateClass: a cor do estado da decisão.
@@ -60,8 +66,11 @@ func (a *api) tpPlan(ctx context.Context, id string) (ds []tpinstall.Decision, a
 		return nil, nil, false, nil
 	}
 	inv, found, err := a.store.LatestInventory(ctx, id)
-	if err != nil || !found || inv.OS.ID != "windows" {
+	if err != nil || !found || inv.OS.ID != "windows" && inv.OS.ID != "macos" {
 		return nil, nil, false, err
+	}
+	if inv.OS.ID == "macos" {
+		return a.tpPlanMac(ctx, inv)
 	}
 	arch, known := tpinstall.MachineArch(inv.OS.Arch)
 	if !known {
@@ -80,6 +89,44 @@ func (a *api) tpPlan(ctx context.Context, id string) (ds []tpinstall.Decision, a
 		approved[store.TPApprovalKey(ap.AppID, ap.Version)] = true
 	}
 	return tpinstall.Plan(inv.Software, *a.tpManifest, pkgs, arch), approved, true, nil
+}
+
+// tpPlanMac: o plano do Mac (Installomator), com a versão aprovada mais nova de cada programa
+// como alvo.
+func (a *api) tpPlanMac(ctx context.Context, inv protocol.InventoryReport) ([]tpinstall.Decision, map[string]bool, bool, error) {
+	approvals, err := a.store.ThirdPartyApprovals(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	approved, newest := map[string]bool{}, map[string]string{}
+	for _, ap := range approvals {
+		approved[store.TPApprovalKey(ap.AppID, ap.Version)] = true
+		cur, ok := newest[ap.AppID]
+		if n, err := version.CompareDotted(ap.Version, cur); !ok || err == nil && n > 0 {
+			newest[ap.AppID] = ap.Version
+		}
+	}
+	return tpinstall.PlanMac(inv.Software, *a.tpManifest, func(app string) string { return newest[app] }), approved, true, nil
+}
+
+// macScript: o Installomator no cache, conferido; why diz o que falta.
+func (a *api) macScript() (*tpinstall.MacScript, string) {
+	return tpinstall.Campaigner{Dir: a.packagesDir(), Installomator: a.installomator}.MacScript()
+}
+
+// macReady: o que falta para o job do Installomator nesta máquina (vazio: nada).
+func (a *api) macReady(ctx context.Context, id string) (string, error) {
+	caps, err := a.store.MachineCapabilities(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if !slices.Contains(caps, protocol.CapabilityInstallomator) {
+		return "o agente deste Mac é anterior ao Installomator: atualize o agente", nil
+	}
+	if _, why := a.macScript(); why != "" {
+		return why, nil
+	}
+	return "", nil
 }
 
 // packagesDir: onde o servidor guarda os instaladores (PATCHD_CONTENT_DIR/pacotes).
@@ -109,6 +156,12 @@ func (a *api) tpUpdateView(r *http.Request, id string, v *machineView) error {
 		return err
 	}
 	card := &tpUpdateCard{}
+	if len(ds) > 0 && ds[0].Package == nil && ds[0].App.OS == "macos" {
+		card.Mac = true
+		if a.installomator != nil {
+			card.MacVersion = a.installomator.Version
+		}
+	}
 	if v.Admin && v.JobsOn {
 		if card.Open, err = a.openJob(r.Context(), id, jobs.TypeThirdParty); err != nil {
 			return err
@@ -120,15 +173,39 @@ func (a *api) tpUpdateView(r *http.Request, id string, v *machineView) error {
 			Label: strings.ToLower(tpinstall.Labels[d.State]), Class: tpUpdateClass(d.State), Reason: d.Reason}
 		if d.State == tpinstall.StateUpdate {
 			card.Updates++
-			row.Target = d.Package.Version
-			row.Approved = approved[store.TPApprovalKey(d.App.ID, d.Package.Version)]
-			row.Action, row.ActionHref = a.tpUpdateAction(d, row.Approved, dir, v, card.Open)
+			row.Target = d.TargetVersion()
+			row.Approved = approved[store.TPApprovalKey(d.App.ID, row.Target)]
+			if d.Package == nil { // Mac: o Installomator
+				if row.Action, err = a.macUpdateAction(r.Context(), id, v, card.Open); err != nil {
+					return err
+				}
+			} else {
+				row.Action, row.ActionHref = a.tpUpdateAction(d, row.Approved, dir, v, card.Open)
+			}
 			row.CanInstall = row.Action == ""
 		}
 		card.Rows = append(card.Rows, row)
 	}
 	v.TPUpdate = card
 	return nil
+}
+
+// macUpdateAction: o que falta para o botão do Installomator; vazio quando ele aparece.
+func (a *api) macUpdateAction(ctx context.Context, id string, v *machineView, open int64) (string, error) {
+	switch {
+	case !v.Admin:
+		return "aprovado; pedir exige o perfil admin", nil
+	case !v.JobsOn:
+		return "pedir exige a chave de jobs no servidor", nil
+	}
+	why, err := a.macReady(ctx, id)
+	if err != nil || why != "" {
+		return why, err
+	}
+	if open > 0 {
+		return fmt.Sprintf("job %d em aberto: uma instalação por vez", open), nil
+	}
+	return "", nil
 }
 
 // tpUpdateAction: o que falta para o botão, na ordem em que o admin resolve; vazio quando
@@ -199,23 +276,40 @@ func (a *api) thirdPartyUpdateAction(w http.ResponseWriter, r *http.Request, s p
 	case d.State != tpinstall.StateUpdate:
 		refuse("terceiros-nada", "a decisão não é ATUALIZAR", "state", d.State)
 		return
-	case !approved[store.TPApprovalKey(d.App.ID, d.Package.Version)]:
-		refuse("terceiros-nao-aprovado", "versão sem aprovação", "version", d.Package.Version)
+	case !approved[store.TPApprovalKey(d.App.ID, d.TargetVersion())]:
+		refuse("terceiros-nao-aprovado", "versão sem aprovação", "version", d.TargetVersion())
 		return
 	}
-	dir := a.packagesDir()
-	if dir == "" {
-		refuse("terceiros-sem-arquivo", "o servidor não guarda instaladores")
-		return
-	}
-	if _, err := pkgcache.Check(dir, d.Package.SHA256, d.Package.MSI()); err != nil {
-		refuse("terceiros-sem-arquivo", "instalador ausente ou diferente no cache", "version", d.Package.Version, "error", err)
-		return
-	}
-	p, err := tpinstall.JobParams(*d)
-	if err != nil {
-		refuse("terceiros-job", "parâmetros inválidos", "version", d.Package.Version, "error", err)
-		return
+	var p jobs.ThirdPartyParams
+	if d.Package == nil { // Mac: o Installomator, com o agente e o script conferidos de novo
+		why, err := a.macReady(r.Context(), id)
+		if err != nil {
+			a.internalError(w, r, "conferir o Installomator", err)
+			return
+		}
+		script, _ := a.macScript()
+		if why != "" || script == nil {
+			refuse("terceiros-mac", "Installomator indisponível", "motivo", why)
+			return
+		}
+		if p, err = tpinstall.MacJobParams(*d, *script); err != nil {
+			refuse("terceiros-job", "parâmetros inválidos", "version", d.TargetVersion(), "error", err)
+			return
+		}
+	} else {
+		dir := a.packagesDir()
+		if dir == "" {
+			refuse("terceiros-sem-arquivo", "o servidor não guarda instaladores")
+			return
+		}
+		if _, err := pkgcache.Check(dir, d.Package.SHA256, d.Package.MSI()); err != nil {
+			refuse("terceiros-sem-arquivo", "instalador ausente ou diferente no cache", "version", d.Package.Version, "error", err)
+			return
+		}
+		if p, err = tpinstall.JobParams(*d); err != nil {
+			refuse("terceiros-job", "parâmetros inválidos", "version", d.Package.Version, "error", err)
+			return
+		}
 	}
 	open, err := a.openJob(r.Context(), id, jobs.TypeThirdParty)
 	if err != nil {
@@ -256,6 +350,8 @@ func tpUpdateFlash(code string, job int64) string {
 		return "A versão do instalador não está aprovada; nada foi pedido. Aprove na página do programa, em Patch."
 	case "terceiros-sem-arquivo":
 		return "O instalador não está no cache do servidor ou não confere com o SHA-256 guardado; nada foi pedido. Baixe de novo com package fetch."
+	case "terceiros-mac":
+		return "O Installomator não está pronto para este Mac (agente anterior a ele, ou o script fora do cache do servidor); nada foi pedido. Veja o motivo no cartão."
 	case "terceiros-job":
 		return "Os argumentos do instalador guardado não formam um job válido (veja o log do servidor); nada foi pedido."
 	case "terceiros-aberto":
