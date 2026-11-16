@@ -98,6 +98,11 @@ func (f WinCacheFetcher) waitReady(ctx context.Context, urls []string) ([]protoc
 	for {
 		var resp protocol.WinCacheResponse
 		if _, err := f.Client.post(ctx, protocol.WinCachePath, protocol.WinCacheRequest{URLs: urls}, &resp); err != nil {
+			// Rede fora, servidor reiniciando ou sobrecarregado: "adiado", não "falhou" (a
+			// campanha tenta de novo sozinha).
+			if jobs.Transient(err) && ctx.Err() == nil {
+				return nil, fmt.Errorf("%w: o cache do servidor não respondeu: %w", jobs.ErrRetry, err)
+			}
 			return nil, fmt.Errorf("o cache do servidor não respondeu: %w", err)
 		}
 		if len(resp.Files) != len(urls) {
@@ -193,6 +198,11 @@ func (f WinCacheFetcher) prune() {
 	}
 	for _, e := range entries {
 		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > winCacheKeep {
+			if e.IsDir() && strings.HasPrefix(e.Name(), "entrega-") {
+				// A pasta de entrega ao Windows Update que ficou de um agente interrompido.
+				_ = os.RemoveAll(filepath.Join(f.Dir, e.Name()))
+				continue
+			}
 			if err := os.Remove(filepath.Join(f.Dir, e.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
 				continue
 			}

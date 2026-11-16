@@ -113,4 +113,18 @@ func TestCacheDoWindowsNoAgenteFalhas(t *testing.T) {
 		}
 		srv.Close()
 	}
+	// O servidor fecha a conexão sem responder (reiniciando, ou passou do prazo sobrecarregado):
+	// adiado, para a campanha tentar de novo, não falha.
+	fecha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hj, ok := w.(http.Hijacker); ok {
+			if c, _, err := hj.Hijack(); err == nil {
+				c.Close()
+			}
+		}
+	}))
+	defer fecha.Close()
+	f := WinCacheFetcher{Client: NewClient(fecha.URL, "cred", "teste"), Dir: t.TempDir(), Poll: time.Millisecond, MaxWait: time.Second}
+	if _, err := f.Fetch(context.Background(), []string{u}); !errors.Is(err, jobs.ErrRetry) || !strings.Contains(err.Error(), "não respondeu") {
+		t.Errorf("conexão fechada sem resposta: %v", err)
+	}
 }

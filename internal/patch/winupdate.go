@@ -4,6 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -73,6 +79,84 @@ func cacheFiles(parts []cachePart, local map[string]string) ([][]string, error) 
 		}
 	}
 	return out, nil
+}
+
+// originalName: o nome do arquivo como o Windows Update o baixaria, o último trecho do
+// caminho do endereço. Só letras, números, ponto, hífen e sublinhado: o nome vira caminho.
+var originalNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`)
+
+func originalName(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("endereço ilegível: %s", raw)
+	}
+	name := path.Base(u.Path)
+	if !originalNamePattern.MatchString(name) || strings.Contains(name, "..") {
+		return "", fmt.Errorf("nome de arquivo fora do formato em %s", raw)
+	}
+	return name, nil
+}
+
+// stageFiles põe os arquivos de cada parte numa pasta nova dentro de dir, com o nome
+// original. O CopyToCache só aceita os arquivos exatamente como o Windows Update os baixaria;
+// com o nome do cache do agente ("<16 hex>-<nome>"), respondia 0x80070002 (arquivo não
+// encontrado) em todas as máquinas. Link físico (os .wim passam de 1 GB; o mesmo volume) e,
+// se não der, cópia. cleanup apaga a pasta: o Windows Update guarda a sua própria cópia.
+func stageFiles(dir string, parts []cachePart, files [][]string) (staged [][]string, cleanup func(), err error) {
+	stage, err := os.MkdirTemp(dir, "entrega-")
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup = func() { _ = os.RemoveAll(stage) }
+	from := map[string]string{} // nome original → arquivo local já posto
+	staged = make([][]string, len(parts))
+	for i, p := range parts {
+		if len(files[i]) != len(p.URLs) {
+			cleanup()
+			return nil, nil, fmt.Errorf("parte %d: %d arquivo(s) para %d endereço(s)", i+1, len(files[i]), len(p.URLs))
+		}
+		for j, raw := range p.URLs {
+			name, err := originalName(raw)
+			if err != nil {
+				cleanup()
+				return nil, nil, err
+			}
+			dst := filepath.Join(stage, name)
+			switch src, ok := from[strings.ToLower(name)]; {
+			case ok && src != files[i][j]:
+				cleanup()
+				return nil, nil, fmt.Errorf("dois arquivos diferentes com o nome %s", name)
+			case !ok:
+				if err := linkOrCopy(files[i][j], dst); err != nil {
+					cleanup()
+					return nil, nil, fmt.Errorf("preparar %s para o Windows Update: %w", name, err)
+				}
+				from[strings.ToLower(name)] = files[i][j]
+			}
+			staged[i] = append(staged[i], dst)
+		}
+	}
+	return staged, cleanup, nil
+}
+
+func linkOrCopy(src, dst string) error {
+	if os.Link(src, dst) == nil {
+		return nil
+	}
+	in, err := os.Open(src) // #nosec G304 -- arquivo do cache do próprio agente, conferido pelo SHA-256
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- pasta nova do próprio agente, nome validado
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // wuaTarget é uma atualização devolvida pela busca do instalador.

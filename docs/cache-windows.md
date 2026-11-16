@@ -83,6 +83,22 @@ do agente): o limite vira 2 minutos sem conseguir escrever nada. Os jobs que fal
 voltam com o **Reenviar** da campanha, depois de atualizar o servidor. O agente atualizado
 também trata a queda no meio como "adiado" (tenta de novo), não como "falhou".
 
+**O que a primeira campanha grande mostrou (16/11/2026, cerca de 8.800 jobs, 2.600 máquinas).**
+Nenhum job terminou pelo cache. Três defeitos, corrigidos assim:
+
+| Detalhe no job | Quantos | Causa | Correção |
+|---|---|---|---|
+| `download do servidor: unexpected EOF`, `tls: bad record MAC`, `Get ...: EOF` | cerca de 5.700 | o corte de 60 s acima (o servidor fecha a conexão no meio de um registro TLS: o agente vê o fim antes da hora ou um registro adulterado) | servidor |
+| `entregar os arquivos do cache ao Windows Update: 0x80070002` | cerca de 1.040 | o agente entregava ao `CopyToCache` os arquivos com o nome do cache (`<16 hex>-<nome>`); o Windows Update só aceita os arquivos exatamente como os baixaria, e responde "arquivo não encontrado" | agente: antes do `CopyToCache`, cada arquivo vai para uma pasta `entrega-*` dentro do cache do agente com o nome original (link físico, sem copiar; cópia só se o link falhar), apagada no fim |
+| `o cache do servidor não respondeu: ... EOF` | cerca de 420 | o servidor sobrecarregado (pool cheio) passava do prazo e fechava a conexão; o agente contava isso como falha | agente: vira "adiado", e a campanha tenta de novo |
+
+O resto é da máquina ou da rede, não do cache: busca na Microsoft com `0x80072EFE` (conexão
+interrompida até a Microsoft), disco cheio, nome do servidor que a máquina não resolve,
+"passou de 1 h", e os recusados "KB não está pendente" (já instalado ou substituído).
+
+As correções do agente valem conforme as máquinas recebem a versão nova; até lá, as máquinas
+com o agente antigo continuam falhando com `0x80070002` mesmo com o download inteiro.
+
 ## 5. Desligar o WSUS (depois do piloto)
 
 Com o piloto bom e o parâmetro em **todas as máquinas**:
