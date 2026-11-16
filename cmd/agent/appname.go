@@ -11,9 +11,10 @@ import (
 )
 
 // O nome da Central de software (Aula 20.10) vem do painel (parâmetro PATCHD_APP_NAME), na loja
-// que a Central pede ao agente. O agente guarda o nome na pasta de dados e, no Windows, grava
-// na descrição da cópia da Central (patchd-app.exe), que é de onde o Windows tira o título dos
-// avisos. A Central, ao ver a cópia trocada, reabre sozinha (Aula 18.8) já com o nome novo.
+// que a Central pede ao agente, e vai para o título da página. O agente guarda o nome na pasta
+// de dados. O nome que o Windows mostra nos avisos é a descrição do patchd-app.exe, gravada na
+// compilação com o nome do painel daquele momento (deploy/agente.sh): o agente não muda mais o
+// executável (appcopy.go).
 
 const appNameFile = "central-nome.txt"
 
@@ -31,7 +32,7 @@ func loadAppName(dir string) string {
 type appNamer struct {
 	dir    string
 	logger *slog.Logger
-	// apply refaz a cópia da Central com o nome (Windows, serviço instalado); nil: só guarda.
+	// apply: o que fazer com o nome novo além de guardar; nil: só guarda.
 	apply func(name string) (bool, error)
 
 	mu      sync.Mutex

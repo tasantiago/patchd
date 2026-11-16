@@ -75,6 +75,14 @@ fi
 JOBPUB="$(podman exec patchd-server /patchd-server job pubkey 2>/dev/null | grep -oE '^[A-Za-z0-9+/]{43}=$' || true)"
 [ -n "$JOBPUB" ] || { echo "o servidor não devolveu a chave pública de jobs (podman exec patchd-server /patchd-server job pubkey)" >&2; exit 1; }
 
+# O nome da Central (Configuração › Parâmetros › Aparência): vai na descrição do patchd-app.exe,
+# que é o título dos avisos do Windows. Mudou no painel? Vale na próxima versão do agente.
+APPNAME="$(podman exec patchd-server /patchd-server settings get PATCHD_APP_NAME 2>/dev/null | head -1 || true)"
+if [ -z "$APPNAME" ]; then
+  APPNAME="Central de software"
+  echo "aviso: o servidor não devolveu o nome da Central; vai o padrão (\"$APPNAME\")" >&2
+fi
+
 # A mesma imagem do Go do deploy/Dockerfile: o agente e o servidor saem do mesmo Go.
 GOIMG="$(sed -n 's/^FROM \(docker\.io\/library\/golang:[^ ]*\).*/\1/p' deploy/Dockerfile | head -1)"
 [ -n "$GOIMG" ] || { echo "não achei a imagem do Go no deploy/Dockerfile" >&2; exit 1; }
@@ -106,7 +114,7 @@ podman run --rm -i \
   -e VERSAO="$VERSAO" -e PATCHD_JOB_PUBKEY="$JOBPUB" \
   -e PATCHD_UPDATE_PUBKEY_NEXT="$(val PATCHD_UPDATE_PUBKEY_NEXT)" \
   -e PATCHD_JOB_PUBKEY_NEXT="$(val PATCHD_JOB_PUBKEY_NEXT)" \
-  -e PATCHD_APP_COMPANY="$(val PATCHD_APP_COMPANY)" \
+  -e PATCHD_APP_COMPANY="$(val PATCHD_APP_COMPANY)" -e PATCHD_APP_NAME="$APPNAME" \
   -e HTTPS_PROXY="${HTTPS_PROXY:-$(val HTTPS_PROXY)}" -e HTTP_PROXY="${HTTP_PROXY:-$(val HTTP_PROXY)}" \
   -e NO_PROXY="${NO_PROXY:-$(val NO_PROXY)}" \
   "$GOIMG" bash -c '
@@ -121,6 +129,8 @@ podman run --rm -i \
     export PATCHD_UPDATE_PUBKEY
     ./scripts/build.sh "$VERSAO"
     /tmp/patchd-release sign -key /chave/release.key -version "$VERSAO" -dist dist -out /saida
+    echo "SHA-256 da Central do Windows (patchd-app.exe, embutida no agente; para a exceção do antivírus):"
+    grep patchd-app dist/SHA256SUMS
   ' < "$KEY"
 
 [ -s "$T/saida/$VERSAO/manifest.json" ] || { echo "a assinatura não gerou $VERSAO/manifest.json" >&2; exit 1; }

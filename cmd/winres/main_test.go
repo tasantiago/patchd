@@ -10,7 +10,7 @@ import (
 func TestWinres(t *testing.T) {
 	dir := t.TempDir()
 	var o, e bytes.Buffer
-	if code := run([]string{"-version", "v0.17.13", "-name", "Central de software", "-out", dir}, &o, &e); code != 0 {
+	if code := run([]string{"-version", "v0.17.13", "-name", "Central de software", "-file", "patchd-app.exe", "-out", dir}, &o, &e); code != 0 {
 		t.Fatalf("%d %s", code, e.String())
 	}
 	for _, a := range []string{"amd64", "arm64"} {
@@ -18,7 +18,8 @@ func TestWinres(t *testing.T) {
 			t.Errorf("%s: %v", a, err)
 		}
 	}
-	for _, args := range [][]string{{"-out", dir}, {"-version", "v1.0.0", "-name", "", "-out", dir}, {"-version", "v1.0.0", "-name", "a\tb", "-out", dir}} {
+	for _, args := range [][]string{{"-out", dir}, {"-version", "v1.0.0", "-name", "", "-out", dir}, {"-version", "v1.0.0", "-name", "a\tb", "-out", dir},
+		{"-version", "v1.0.0", "-file", `..\x.exe`, "-out", dir}, {"-version", "v1.0.0", "-file", "app", "-out", dir}} {
 		if code := run(args, &o, &e); code != 2 {
 			t.Errorf("%v: %d", args, code)
 		}

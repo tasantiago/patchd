@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,20 +8,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-
-	"github.com/tasantiago/patchd/internal/winres"
 )
 
-// O app do usuário (Aula 17.4) roda de uma cópia do agente, patchd-app.exe, ao lado do
-// patchd-agent.exe. Uma cópia à parte porque o Windows não deixa trocar um executável em
-// uso: com o app aberto nas sessões, a atualização do agente falharia. A cópia em uso pode
-// ser renomeada (o Windows deixa); a nova entra no lugar e a antiga sai quando ninguém mais a
-// usa. Quem abre o app no logon é a chave Run do HKLM: vale para todo usuário que entra.
+// O app do usuário (Aula 17.4) é o patchd-app.exe, ao lado do patchd-agent.exe: um executável
+// próprio (cmd/app), que o agente traz embutido e grava sem mudar nada (appcopy.go). Em
+// arquivo à parte também porque o Windows não deixa trocar um executável em uso: com o app
+// aberto nas sessões, a atualização do agente falharia. A cópia em uso pode ser renomeada (o
+// Windows deixa); a nova entra no lugar e a antiga sai quando ninguém mais a usa. Quem abre o
+// app no logon é a chave Run do HKLM: vale para todo usuário que entra.
 
 const (
 	runKey   = `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
@@ -42,7 +39,7 @@ func managedAppPath() string {
 }
 
 // syncUserApp põe (ou tira) o app do logon. Só o serviço instalado mexe nisso.
-func syncUserApp(logger *slog.Logger, enabled bool, name string) {
+func syncUserApp(logger *slog.Logger, enabled bool, _ string) {
 	if !runningInstalledCopy() {
 		return
 	}
@@ -53,7 +50,7 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 		logger.Debug("app do usuário desligado (-user-app=false)")
 		return
 	}
-	changed, err := refreshUserApp(name)
+	changed, err := refreshUserApp()
 	if err != nil {
 		logger.Error("app do usuário: cópia não atualizada", "error", err)
 		return
@@ -77,66 +74,17 @@ func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	}
 }
 
-// userAppRenamer (Aula 20.10): refaz a cópia com o nome novo, só no serviço instalado.
-func userAppRenamer() func(string) (bool, error) {
-	if !runningInstalledCopy() {
-		return nil
-	}
-	return refreshUserApp
-}
+// userAppRenamer: desde que a Central é um executável próprio, o nome do painel não muda o
+// executável (o nome que o Windows mostra é o do build; a página usa o do painel).
+func userAppRenamer() func(string) (bool, error) { return nil }
 
-// userAppMu: a partida do serviço e o nome vindo do painel não refazem a cópia ao mesmo tempo.
-var userAppMu sync.Mutex
-
-// refreshUserApp deixa o patchd-app.exe igual ao executável do serviço, mas marcado como
-// programa gráfico (guiImage): aberto no logon, ele não mostra a janela preta do console. E com
-// o nome da Central na descrição (Aula 20.10): é o título dos avisos do Windows.
-func refreshUserApp(name string) (bool, error) {
-	userAppMu.Lock()
-	defer userAppMu.Unlock()
-	dest := userAppPath()
-	cleanOldApps(dest)
-	self, err := os.Executable()
+// refreshUserApp deixa o patchd-app.exe igual à Central embutida no agente, byte a byte.
+func refreshUserApp() (bool, error) {
+	img, err := userAppImage(embeddedAppGz, embeddedAppSum)
 	if err != nil {
 		return false, err
 	}
-	img, err := os.ReadFile(self)
-	if err != nil {
-		return false, err
-	}
-	if img, err = guiImage(img); err != nil {
-		return false, err
-	}
-	switch named, err := winres.SetDescription(img, name); {
-	case err == nil:
-		img = named
-	case !errors.Is(err, winres.ErrNoSlot): // build sem o recurso (fora do build.sh): fica o nome do arquivo
-		return false, err
-	}
-	if cur, err := os.ReadFile(dest); err == nil && bytes.Equal(cur, img) {
-		return false, nil
-	}
-	if _, err := os.Stat(dest); err == nil {
-		// Em uso numa sessão: renomear funciona; apagar, não.
-		if err := os.Rename(dest, fmt.Sprintf("%s.old-%d", dest, time.Now().UnixNano())); err != nil {
-			return false, fmt.Errorf("tirar a cópia antiga do caminho: %w", err)
-		}
-	}
-	tmp := dest + ".novo"
-	// #nosec G306 G703 -- a cópia da Central para o usuário: executável; dest é fixo (Program Files)
-	if err := os.WriteFile(tmp, img, 0o755); err != nil {
-		os.Remove(tmp)
-		return false, err
-	}
-	return true, os.Rename(tmp, dest)
-}
-
-// cleanOldApps apaga as cópias antigas que ninguém mais usa; as em uso ficam para a próxima.
-func cleanOldApps(dest string) {
-	old, _ := filepath.Glob(dest + ".old-*")
-	for _, f := range old {
-		_ = os.Remove(f)
-	}
+	return writeUserApp(userAppPath(), img)
 }
 
 // removeUserApp tira o app do logon e apaga a cópia. A cópia em uso numa sessão é renomeada
