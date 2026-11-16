@@ -493,10 +493,27 @@ agente (`C:\ProgramData\patchd\logs\agent.log`), procure por `autoatendimento`.
 No Windows, o serviço do agente põe a Central de software para abrir no logon de todos os
 usuários: a chave `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, valor
 `patchd-central-de-software`, aponta para `C:\Program Files\patchd\patchd-app.exe app`. O
-`patchd-app.exe` é uma cópia do agente feita pelo serviço: com o app aberto nas sessões, o
-`patchd-agent.exe` continua livre para a atualização automática. A cópia é marcada como
-programa gráfico (um campo do cabeçalho do executável), para o logon não abrir uma janela de
-console. Cópia em uso é renomeada (`.old-...`) e sai quando ninguém mais a usa.
+`patchd-app.exe` é um executável próprio (`cmd/app`), compilado como programa gráfico (o logon
+não abre janela de console). O agente do Windows o traz embutido, comprimido e com o SHA-256
+do build, e o grava sem mudar um byte; com o app aberto nas sessões, o `patchd-agent.exe`
+continua livre para a atualização automática. Cópia em uso é renomeada (`.old-...`) e sai
+quando ninguém mais a usa.
+
+**Antivírus.** Até a versão de 16/11/2026, o serviço montava o `patchd-app.exe` a partir do
+próprio executável (trocando o subsistema no cabeçalho e a descrição no recurso de versão).
+Um antivírus por aprendizado de máquina (o Trend Micro Apex One, com a detecção
+`Troj.Win32.TRX.XXPE50FFF111`) tomou isso por um "dropper" instalando persistência e pôs a
+cópia em quarentena. Agora o arquivo sai pronto do build, igual em todas as máquinas da mesma
+versão. Para a equipe de segurança:
+
+- o SHA-256 do `patchd-app.exe` de cada versão sai no fim do `deploy/agente.sh` (e em
+  `dist/SHA256SUMS`); o do `patchd-agent.exe` está no manifesto assinado
+  (`releases/VERSÃO/manifest.json`);
+- o agente confere o SHA-256 da Central embutida antes de gravar;
+- a exceção mais estável é pela pasta `C:\Program Files\patchd\` (só administradores e o
+  SYSTEM escrevem nela): o hash muda a cada versão;
+- com o arquivo restaurado da quarentena (ou depois da exceção), o serviço do agente põe a
+  Central e a chave Run de volta na próxima partida.
 
 - O app mostra o escudo perto do relógio. Clique abre a página no navegador padrão; o menu
   (botão direito) tem "Fechar este ícone". Quando aparece atualização nova para o usuário,
@@ -1043,19 +1060,18 @@ Windows tira da "Descrição do arquivo" do executável. Sem ela, aparecia o nom
   Central de software** (`PATCHD_APP_NAME`, padrão "Central de software", de 1 a 40
   caracteres). Vale no título dos avisos, no ícone perto do relógio (dica e menu) e no topo da
   página da Central.
-- **Como chega às máquinas**: a loja que a Central pede ao agente traz o nome; o agente guarda
-  (`central-nome.txt` na pasta de dados) e grava na descrição da cópia `patchd-app.exe`. A
-  Central percebe a cópia trocada e reabre sozinha em até 1 minuto, já com o nome. A página
-  mostra o nome novo na hora; o título dos avisos, depois do próximo logon do usuário (o
-  Windows guarda o nome de quem manda os avisos).
-- **No build**: o `scripts/build.sh` grava o recurso de versão (versão, `ProductName` patchd,
-  nome original `patchd-agent.exe` e a descrição padrão num espaço de tamanho fixo, que o
-  agente troca sem mexer no resto do arquivo). `PATCHD_APP_COMPANY` (opcional) vai em
-  Propriedades › Detalhes › Empresa. Build sem o `build.sh` (sem o recurso): a Central funciona
-  e o título volta a ser o nome do arquivo.
-
-O serviço (`patchd-agent.exe`) fica com a descrição padrão; só a cópia da Central leva o nome do
-painel.
+- **Como chega às máquinas**: a página da Central mostra o nome que vem na loja, na hora. O
+  título dos avisos e a dica do ícone vêm da descrição do `patchd-app.exe`, gravada **no
+  build**: o `deploy/agente.sh` lê o nome do servidor no ar (`patchd-server settings get
+  PATCHD_APP_NAME`) e o põe no recurso de versão. Mudou o nome no painel? Ele chega ao título
+  dos avisos com a próxima versão do agente. (Até 16/11/2026 o agente regravava a descrição na
+  máquina; isso acabou, porque mexer no executável na máquina é o que antivírus por
+  aprendizado de máquina tomam por malware.)
+- **No build**: o `scripts/build.sh` grava os recursos de versão: o `patchd-agent.exe` com a
+  descrição "Agente patchd" e o `patchd-app.exe` com o nome da Central (`PATCHD_APP_NAME`;
+  sem ele, "Central de software"). `PATCHD_APP_COMPANY` (opcional) vai em Propriedades ›
+  Detalhes › Empresa dos dois. Agente do Windows compilado sem o `build.sh` não traz a
+  Central: o serviço registra o erro no log e segue sem ela.
 
 ## Firmware no inventário (Aula 21.1)
 

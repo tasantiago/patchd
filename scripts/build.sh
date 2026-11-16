@@ -86,29 +86,52 @@ for par in "PATCHD_UPDATE_PUBKEY_NEXT:release.NextPublicKey:atualização" "PATC
   echo "chave seguinte de ${nome} embutida nos agentes"
 done
 
-# Recurso de versão do agente do Windows (Aula 20.9): a "Descrição do arquivo" é o nome que
-# o Windows mostra no título dos avisos da Central, no Gerenciador de Tarefas e nos aplicativos
-# de inicialização (sem ela, aparece o nome do arquivo). Aula 20.10: o nome vem do painel
-# (Configuração › Parâmetros › Aparência, PATCHD_APP_NAME): o build grava o padrão num espaço
-# de tamanho fixo e o agente troca na cópia da Central. PATCHD_APP_COMPANY é a organização
-# (opcional). Os .syso são gerados aqui, fora do git, e apagados no fim.
-trap 'rm -f cmd/agent/versao_windows_*.syso' EXIT
-go run ./cmd/winres -version "$VERSAO" -company "${PATCHD_APP_COMPANY:-}" -out cmd/agent > /dev/null
-echo "recurso de versão do Windows gravado (o nome da Central vem do painel)"
+# Recurso de versão do Windows (Aula 20.9): a "Descrição do arquivo" é o nome que o Windows
+# mostra no Gerenciador de Tarefas, nos aplicativos de inicialização e no título dos avisos da
+# Central. O agente se chama "Agente patchd"; a Central (cmd/app), o nome do painel
+# (PATCHD_APP_NAME, que o deploy/agente.sh lê do servidor no ar). PATCHD_APP_COMPANY é a
+# organização (opcional). Os .syso e a Central embutida são gerados aqui, fora do git, e
+# apagados no fim.
+APP_NAME="${PATCHD_APP_NAME:-Central de software}"
+limpa_gerados() {
+  rm -f cmd/agent/versao_windows_*.syso cmd/app/versao_windows_*.syso cmd/agent/patchd-app.exe.gz cmd/agent/patchd-app.exe.sha256
+}
+trap limpa_gerados EXIT
+go run ./cmd/winres -version "$VERSAO" -name "Agente patchd" -company "${PATCHD_APP_COMPANY:-}" -out cmd/agent > /dev/null
+go run ./cmd/winres -version "$VERSAO" -name "$APP_NAME" -file patchd-app.exe -company "${PATCHD_APP_COMPANY:-}" -out cmd/app > /dev/null
+echo "recurso de versão do Windows gravado (Central: \"$APP_NAME\")"
 
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 
 rm -rf dist
 mkdir -p dist
 
+# A Central do Windows (cmd/app) é um executável próprio, compilado como programa gráfico
+# (-H windowsgui: aberta no logon, sem janela preta). O agente do Windows a leva embutida,
+# comprimida, com o SHA-256, e a grava sem mudar um byte: nada de executável montado na
+# máquina, que um antivírus por aprendizado de máquina toma por "dropper". A cópia em dist/
+# serve para conferir o hash (SHA256SUMS) e para pedir a exceção ao antivírus.
+LDFLAGS_APP="-s -w -X ${MODULO}/internal/buildinfo.Version=${VERSAO} -H windowsgui"
+
 for alvo in $ALVOS_AGENTE; do
   os="${alvo%/*}"
   arch="${alvo#*/}"
   ext=""
-  if [ "$os" = "windows" ]; then ext=".exe"; fi
+  tags=""
+  if [ "$os" = "windows" ]; then
+    ext=".exe"
+    tags="-tags patchdapp"
+    app="dist/patchd-app-windows-${arch}.exe"
+    GOOS=windows GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS_APP" -o "$app" ./cmd/app
+    gzip -9 -n -c "$app" > cmd/agent/patchd-app.exe.gz
+    sha256sum "$app" | cut -d' ' -f1 > cmd/agent/patchd-app.exe.sha256
+    echo "ok  $app"
+  fi
   saida="dist/patchd-agent-${os}-${arch}${ext}"
   # -trimpath: remove os caminhos da máquina de build do binário.
-  GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$saida" ./cmd/agent
+  # shellcheck disable=SC2086
+  GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath $tags -ldflags "$LDFLAGS" -o "$saida" ./cmd/agent
+  rm -f cmd/agent/patchd-app.exe.gz cmd/agent/patchd-app.exe.sha256
   echo "ok  $saida"
 done
 

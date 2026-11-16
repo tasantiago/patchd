@@ -419,7 +419,8 @@ O agente roda como SYSTEM e executa instaladores que ficam na pasta de dados
   `C:\Windows\Temp`, onde usuários comuns também criam arquivos (a porta clássica de troca de
   DLL). Agora o TEMP e o TMP do instalador são `pasta de dados\tmp\job-N`, só do SYSTEM.
 
-Revistos, sem mudança: o executável do serviço e a cópia da Central ficam em `Program
+Revistos, sem mudança: o executável do serviço e a Central (`patchd-app.exe`, embutida no
+agente e gravada byte a byte, conferida pelo SHA-256 do build) ficam em `Program
 Files\patchd` (só administradores escrevem); a atualização do agente e o catálogo offline
 ficam na pasta de dados (agora protegida como acima); o canal local da Central tem a sua
 própria ACL (17.3).

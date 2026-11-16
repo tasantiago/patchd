@@ -704,13 +704,15 @@ o valor inicial e o "restaurar o padrão".
 
 comandos:
   list              mostra cada parâmetro: o valor que vale, de onde vem e o do .env
+  get PARAMETRO     só o valor que vale, numa linha (para scripts: o deploy/agente.sh lê o
+                    nome da Central assim)
   reset PARAMETRO   apaga o valor da tela; o .env (ou o padrão) volta a valer
   reset -all        restaura todos
 `
 
 func runSettings(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "list" && args[0] != "reset") || (args[0] == "list" && len(args) != 1) ||
-		(args[0] == "reset" && len(args) != 2) {
+	if len(args) == 0 || (args[0] != "list" && args[0] != "reset" && args[0] != "get") || (args[0] == "list" && len(args) != 1) ||
+		(args[0] != "list" && len(args) != 2) {
 		fmt.Fprint(stderr, settingsUsage)
 		return exitConfig
 	}
@@ -758,6 +760,18 @@ func settingsCommand(ctx context.Context, st settings.Store, look config.Lookup,
 		}
 		_ = tw.Flush()
 		return exitOK
+	}
+	if args[0] == "get" {
+		for _, g := range s.Groups() {
+			for _, f := range g.Fields {
+				if f.Key == args[1] {
+					fmt.Fprintln(stdout, f.Value) // o valor normalizado; a tela não tem segredos (eles ficam em arquivos)
+					return exitOK
+				}
+			}
+		}
+		fmt.Fprintf(stderr, "patchd-server: %s não é um parâmetro da tela\n", args[1])
+		return exitConfig
 	}
 	keys := []string{args[1]}
 	if args[1] == "-all" || args[1] == "--all" {

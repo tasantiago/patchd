@@ -313,7 +313,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	)
 	// Autoatendimento (Aula 17.3): o canal local do app do usuário, só no Windows. Como
 	// serviço, o app do usuário (Aula 17.4) é posto (ou tirado) do logon de todos.
-	// Aula 20.10: o nome da Central vem do painel, na loja; o serviço instalado grava na cópia.
+	// Aula 20.10: o nome da Central vem do painel, na loja; o agente o guarda.
 	namer := &appNamer{dir: opts.DataDir, logger: logger}
 	if opts.AutoUpdate && opts.UserApp {
 		namer.apply = userAppRenamer()

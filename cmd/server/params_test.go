@@ -98,6 +98,13 @@ func TestComandoSettings(t *testing.T) {
 		}
 	}
 	out.Reset()
+	if code := settingsCommand(ctx, st, look, []string{"get", "PATCHD_PANEL_TITLE"}, &out, &errb); code != exitOK || out.String() != "Painel\n" {
+		t.Errorf("get: %d %q", code, out.String())
+	}
+	if code := settingsCommand(ctx, st, look, []string{"get", "PATCHD_LDAP_HOST"}, &out, &errb); code != exitConfig {
+		t.Errorf("get fora da lista: %d", code)
+	}
+	out.Reset()
 	if code := settingsCommand(ctx, st, look, []string{"reset", "PATCHD_PANEL_TITLE"}, &out, &errb); code != exitOK ||
 		!strings.Contains(out.String(), "restaurado: Nome do painel (PATCHD_PANEL_TITLE): Painel → patchd · lab") {
 		t.Errorf("reset: %d %s", code, out.String())
