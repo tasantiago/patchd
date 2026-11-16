@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	ole "github.com/go-ole/go-ole"
@@ -328,6 +329,16 @@ func copyFromCache(ctx context.Context, cache *WinCache, objs []*ole.IDispatch, 
 	if err != nil {
 		return err
 	}
+	var dir string // a pasta do cache do agente (só SYSTEM e administradores): o link fica no mesmo volume
+	for _, f := range local {
+		dir = filepath.Dir(f)
+		break
+	}
+	files, cleanup, err := stageFiles(dir, parts, files)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	for i, o := range partObjs {
 		if len(files[i]) == 0 {
 			continue
