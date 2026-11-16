@@ -194,6 +194,20 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v, nil
 			}, Show: showChoice(winCacheChoices)},
+		{Key: api.WinCacheFetchKey, Group: "Agentes", Label: "Horário para baixar da Microsoft (cache do Windows Update)", Kind: settings.Text,
+			Default: "", Help: "Vazio: o servidor baixa cada pacote da Microsoft na hora em que a primeira máquina pede. Com um horário (HH:MM-HH:MM, no fuso do painel; pode passar da meia-noite, como 22:00-06:00), o servidor só baixa da Microsoft dentro dele: o pacote pedido fora do horário fica na fila, o job da máquina fica adiado e a campanha tenta de novo depois que o horário abrir. A entrega às máquinas do que já está no cache não muda: vale a qualquer hora. O download em curso quando o horário fecha vai até o fim.",
+			Effect: "na hora: o próximo pacote que faltar já segue o horário; esvaziar o campo baixa a fila em até 1 minuto", Check: func(v string) (string, error) {
+				w, err := api.ParseFetchHours(v, time.UTC)
+				if err != nil {
+					return "", err
+				}
+				return api.FetchHoursText(w), nil
+			}, Show: func(v string) string {
+				if v == "" {
+					return "a qualquer hora"
+				}
+				return v
+			}},
 		{Key: api.WinCacheDaysKey, Group: "Agentes", Label: "Limpeza do cache do Windows Update", Kind: settings.Number, Unit: "dias",
 			Default: strconv.Itoa(defaultWinCacheDays), Help: "O pacote que nenhuma máquina pediu nesse prazo sai do disco do servidor. De 7 a 365.",
 			Effect: "na próxima limpeza (de hora em hora)", Check: func(v string) (string, error) {

@@ -56,6 +56,27 @@ Microsoft ──(1 vez por pacote)──> servidor do patchd ──(rede interna
 5. Acompanhe em **Configuração › Sistema › Cache do Windows Update**: o que está baixando, o
    que foi usado por último e o tamanho.
 
+**Baixar da Microsoft de madrugada.** Sem configurar nada, o servidor baixa cada pacote da
+Microsoft na hora em que a primeira máquina pede: alguns GB saindo do link de internet no meio
+do expediente. Em **Configuração › Parâmetros › Agentes › Horário para baixar da Microsoft**
+(`PATCHD_WUCACHE_FETCH_HOURS`), ponha um horário, como `22:00-06:00` (no fuso do painel; pode
+passar da meia-noite; de 30 minutos a 23 horas). Com ele:
+
+- o servidor só baixa da Microsoft dentro do horário. O pacote que uma máquina pede fora dele
+  entra numa fila (em disco: vale depois de um reinício do servidor) e é baixado quando o
+  horário abre. O download em curso quando o horário fecha vai até o fim;
+- a entrega às máquinas do que **já está** no cache não muda: vale a qualquer hora;
+- o job da máquina que pediu fica **adiado**, com "o servidor baixa este arquivo da Microsoft
+  no horário configurado, a partir de 16/11 22:00" no detalhe, e a campanha só tenta de novo
+  meia hora depois de o horário abrir (não de hora em hora, o que gastaria as tentativas);
+- na prática, o primeiro dia de uma atualização nova é o dia da fila: as máquinas pedem, o
+  servidor baixa de madrugada e, a partir da manhã seguinte, todas recebem do cache;
+- o cartão do cache (Configuração › Sistema) mostra o horário, se está aberto, e a fila.
+
+Para baixar agora o que está na fila (um piloto, uma urgência), esvazie o campo: o servidor
+baixa a fila em até 1 minuto. O agente anterior a esta versão não conhece o "agendado" e marca
+o job como falho, com o mesmo texto; o **Reenviar** da campanha resolve depois do horário.
+
 **Espaço em disco:** uma atualização cumulativa tem de centenas de MB a alguns GB por versão e
 arquitetura do Windows. Com três versões no parque, conte uns 5 a 10 GB por mês. O pacote que
 nenhuma máquina pede em 60 dias sai sozinho (o prazo muda em Parâmetros, de 7 a 365 dias).

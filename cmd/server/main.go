@@ -37,6 +37,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/wakereq"
+	"github.com/tasantiago/patchd/internal/wucache"
 )
 
 // Códigos de saída do servidor.
@@ -402,6 +403,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if winCache != nil {
 		apiOpts = append(apiOpts, api.WithWinCache(winCache))
 		go pruneWinCacheLoop(ctx, logger, winCache, params)
+		go winCache.RunQueue(ctx, wucache.QueueEvery) // a fila do horário para baixar da Microsoft
 		logger.Info("cache do Windows Update disponível", "pasta", winCache.Dir, "modo", params.Value(api.WinCacheKey))
 	}
 

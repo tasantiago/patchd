@@ -97,6 +97,8 @@ func TestCacheDoWindowsNoAgenteFalhas(t *testing.T) {
 	}{
 		{"servidor ainda baixando: adia", 1000, wucache.StateFetching, "", 20 * time.Millisecond, "ainda está baixando", jobs.ErrRetry},
 		{"servidor recusou o endereço", 1000, wucache.StateRefused, "", time.Second, "não guarda", jobs.ErrRefused},
+		// O servidor só baixa da Microsoft no horário: adia na hora, sem esperar os 45 minutos.
+		{"agendado para o horário do servidor: adia", 1000, wucache.StateScheduled, "", time.Hour, "tentar depois", jobs.ErrRetry},
 		{"servidor não conseguiu baixar", 1000, wucache.StateFailed, "", time.Second, "404", nil},
 		{"conteúdo diferente do anunciado", 1, wucache.StateFetching, strings.Repeat("0", 64), time.Second, "não é o anunciado", nil},
 	}

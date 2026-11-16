@@ -325,6 +325,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	if a.bg != nil {
 		go a.ringRuleLoop(a.bg)
 	}
+	if a.winCache != nil && a.params != nil {
+		// O horário para baixar da Microsoft (o parâmetro WinCacheFetchKey), lido a cada pedido.
+		a.winCache.Schedule = a.fetchSchedule
+	}
 
 	mux := http.NewServeMux()
 	// Agente.
