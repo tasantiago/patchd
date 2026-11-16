@@ -15,6 +15,7 @@ import (
 type fontesTerceirosFalsas struct {
 	versoes map[string]string
 	pedidos map[string]int
+	ciclos  map[string][]thirdparty.Cycle
 }
 
 func (f *fontesTerceirosFalsas) Latest(_ context.Context, s thirdparty.Source) (string, error) {
@@ -25,9 +26,41 @@ func (f *fontesTerceirosFalsas) Latest(_ context.Context, s thirdparty.Source) (
 	return "", errors.New("fora do ar")
 }
 
+func (f *fontesTerceirosFalsas) Lifecycle(_ context.Context, product string) ([]thirdparty.Cycle, error) {
+	f.pedidos["ciclos:"+product]++
+	if f.ciclos == nil || f.ciclos[product] == nil {
+		return nil, errors.New("fora do ar")
+	}
+	return f.ciclos[product], nil
+}
+
 type bancoTerceirosFalso struct {
-	gravadas map[string]string
-	mantidas []string
+	gravadas  map[string]string
+	conferida map[string]string
+	mantidas  []string
+	ciclos    map[string][]thirdparty.Cycle
+	produtos  []string
+}
+
+func (b *bancoTerceirosFalso) SaveThirdPartyCheck(_ context.Context, app, osID, version, source string) error {
+	if b.conferida == nil {
+		b.conferida = map[string]string{}
+	}
+	b.conferida[app+"/"+osID] = version + " " + source
+	return nil
+}
+
+func (b *bancoTerceirosFalso) ReplaceLifecycle(_ context.Context, product string, cycles []thirdparty.Cycle) error {
+	if b.ciclos == nil {
+		b.ciclos = map[string][]thirdparty.Cycle{}
+	}
+	b.ciclos[product] = cycles
+	return nil
+}
+
+func (b *bancoTerceirosFalso) PruneLifecycles(_ context.Context, keep []string) (int64, error) {
+	b.produtos = keep
+	return 0, nil
 }
 
 func (b *bancoTerceirosFalso) SaveThirdPartyVersion(_ context.Context, app, osID, version, source string) error {
@@ -51,6 +84,9 @@ func TestSyncThirdParty(t *testing.T) {
 		"firefox:LATEST_FIREFOX_VERSION": "157.0.1",
 		"firefox:FIREFOX_ESR":            "140.17.0",
 		"winget:7zip.7zip":               "26.04",
+		"evergreen:7zip":                 "26.05", // o fabricante à frente do winget-pkgs
+	}, ciclos: map[string][]thirdparty.Cycle{
+		"python": {{Product: "python", Name: "3.14", Latest: "3.14.10"}, {Product: "python", Name: "3.13", Latest: "3.13.9"}},
 	}}
 	banco := &bancoTerceirosFalso{gravadas: map[string]string{}}
 	var out bytes.Buffer
@@ -68,8 +104,18 @@ func TestSyncThirdParty(t *testing.T) {
 		t.Errorf("gravadas: %v", banco.gravadas)
 	}
 	// As fontes sem resposta falham sem gravar nada; a limpeza mantém todas as regras com fonte.
-	if salvas != 6 || falhas == 0 || salvas+falhas != len(banco.mantidas) {
+	// Falhas: 5 fontes principais, nenhuma conferência (a do 7-Zip respondeu; as outras nem são
+	// pedidas sem a principal) e 6 dos 7 produtos do endoflife.date.
+	if salvas != 6 || falhas != 11 || len(banco.mantidas) != 11 {
 		t.Errorf("salvas %d, falhas %d, mantidas %d", salvas, falhas, len(banco.mantidas))
+	}
+	if banco.conferida["7zip/windows"] != "26.05 evergreen:7zip" || len(banco.conferida) != 1 {
+		t.Errorf("conferência: %v", banco.conferida)
+	}
+	// Os ciclos: um pedido por produto, mesmo com duas regras do Python; a limpeza mantém os sete.
+	if fontes.pedidos["ciclos:python"] != 1 || len(banco.ciclos["python"]) != 2 || len(banco.produtos) != 7 ||
+		!slices.Contains(banco.produtos, "dotnet") {
+		t.Errorf("ciclos: %d pedidos, guardados %v, mantidos %v", fontes.pedidos["ciclos:python"], banco.ciclos, banco.produtos)
 	}
 	if !slices.Contains(banco.mantidas, "python-3.14/windows") || slices.Contains(banco.mantidas, "microsoft-edge/windows") {
 		t.Errorf("mantidas: %v", banco.mantidas)
@@ -78,6 +124,10 @@ func TestSyncThirdParty(t *testing.T) {
 		"google-chrome/windows: 155.0.8059.40 (chrome:win64)",
 		"notepad-plus-plus/windows FALHOU (fica a versão guardada): fora do ar",
 		"2 apagada(s) por sair do manifesto",
+		"7zip/windows: 26.04 (winget:7zip.7zip); conferência 26.05 (evergreen:7zip) · a fonte principal ainda não acompanhou",
+		"ciclos de python (endoflife.date): 2",
+		"ciclos de nodejs (endoflife.date) FALHOU (ficam os guardados): fora do ar",
+		"7 produto(s) com ciclos de suporte (2 ciclos)",
 	} {
 		if !strings.Contains(out.String(), trecho) {
 			t.Errorf("faltou %q em:\n%s", trecho, out.String())

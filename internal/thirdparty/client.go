@@ -22,17 +22,23 @@ type Client struct {
 	FirefoxURL  string // o JSON de versões do Firefox
 	GitHubURL   string // https://api.github.com
 	HomebrewURL string // https://formulae.brew.sh
+	// EvergreenURL: a API do Evergreen (evergreen-api.stealthpuppy.com), que exige um
+	// User-Agent próprio; EndoflifeURL: a do endoflife.date.
+	EvergreenURL string
+	EndoflifeURL string
 }
 
 // NewClient devolve um cliente para as fontes públicas.
 func NewClient(userAgent string) *Client {
 	return &Client{
-		HTTP:        &http.Client{Timeout: 60 * time.Second},
-		UserAgent:   userAgent,
-		ChromeURL:   "https://versionhistory.googleapis.com",
-		FirefoxURL:  "https://product-details.mozilla.org/1.0/firefox_versions.json",
-		GitHubURL:   "https://api.github.com",
-		HomebrewURL: "https://formulae.brew.sh",
+		HTTP:         &http.Client{Timeout: 60 * time.Second},
+		UserAgent:    userAgent,
+		ChromeURL:    "https://versionhistory.googleapis.com",
+		FirefoxURL:   "https://product-details.mozilla.org/1.0/firefox_versions.json",
+		GitHubURL:    "https://api.github.com",
+		HomebrewURL:  "https://formulae.brew.sh",
+		EvergreenURL: "https://evergreen-api.stealthpuppy.com",
+		EndoflifeURL: "https://endoflife.date",
 	}
 }
 
@@ -102,6 +108,19 @@ func (c *Client) Latest(ctx context.Context, s Source) (string, error) {
 		// Alguns casks guardam "versão,build": vale a versão.
 		ver, _, _ := strings.Cut(v.Version, ",")
 		versions = []string{ver}
+	case SourceEvergreen:
+		var raw json.RawMessage
+		if err := c.getJSON(ctx, fmt.Sprintf("%s/app/%s", c.EvergreenURL, url.PathEscape(s.ID)), &raw); err != nil {
+			return "", err
+		}
+		rows, err := evergreenRows(raw)
+		if err != nil {
+			return "", err
+		}
+		versions = evergreenVersions(rows, s.Filter)
+		if len(versions) == 0 {
+			return "", fmt.Errorf("%s: nenhuma das %d linhas passa no filtro", s, len(rows))
+		}
 	default:
 		return "", fmt.Errorf("fonte %q desconhecida", s.Type)
 	}

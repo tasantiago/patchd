@@ -34,6 +34,7 @@ type bancoComplianceFalso struct {
 	modelos  map[string]compliance.MacModel
 	extras   map[string]compliance.MacExtra
 	refs     []thirdparty.Ref
+	cycles   []thirdparty.Cycle
 	situacao map[string]store.CatalogSourceStatus
 }
 
@@ -51,6 +52,10 @@ func (b *bancoComplianceFalso) CatalogStatus(_ context.Context, sources []string
 
 func (b *bancoComplianceFalso) ThirdPartyVersions(context.Context) ([]thirdparty.Ref, error) {
 	return b.refs, nil
+}
+
+func (b *bancoComplianceFalso) Lifecycles(context.Context) ([]thirdparty.Cycle, error) {
+	return b.cycles, nil
 }
 
 func (b *bancoComplianceFalso) MacOSMajors(context.Context) ([]compliance.MacOSMajor, error) {
@@ -459,7 +464,7 @@ func TestEvaluateMachineTerceiros(t *testing.T) {
 		produtos: []compliance.MSRCProduct{{ID: "20438", Name: "Windows 11 Version 25H2 for x64-based Systems"}},
 		refs: []thirdparty.Ref{
 			{App: "google-chrome", OS: "windows", Version: "155.0.8059.40", Source: "chrome:win64", Fetched: agora.Add(-2 * time.Hour)},
-			{App: "powershell-7", OS: "windows", Version: "7.6.6.0", Source: "winget:Microsoft.PowerShell", Fetched: agora.AddDate(0, 0, -10)},
+			{App: "python-3.14", OS: "windows", Version: "3.14.3", Source: "winget:Python.Python.3.14", Fetched: agora.AddDate(0, 0, -10)},
 		},
 	}
 	ev, err := evaluateMachine(context.Background(), banco, "287d", evalOptions{Now: agora, Manifest: &manifesto})
@@ -484,7 +489,9 @@ func TestEvaluateMachineTerceiros(t *testing.T) {
 		"FORA DE SUPORTE   Microsoft Visual C++ 2008",
 		"fim do suporte estendido em 2018-04-10",
 		"CATÁLOGO DO SO    Microsoft Edge",
-		"winget:Microsoft.PowerShell, 2026-09-27 (antiga)",
+		"winget:Python.Python.3.14, 2026-09-27 (antiga)",
+		// O PowerShell agora segue a linha instalada (endoflife.date), e o banco não tem os ciclos.
+		"SEM REFERÊNCIA    PowerShell 7.6.6.0-x64",
 		"Sem regra no manifesto:",
 		"Spotify",
 	} {
