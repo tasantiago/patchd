@@ -83,6 +83,15 @@ func TestCacheDoWindowsPelaAPI(t *testing.T) {
 	if rec.Code != http.StatusPartialContent || rec.Body.String() != conteudo[100:] {
 		t.Errorf("retomada: %d", rec.Code)
 	}
+	// O prazo de escrita anda a cada escrita: os .wim passam de 1 GB, e o WriteTimeout de 60 s
+	// do servidor cortava o download no meio.
+	req = httptest.NewRequest("GET", protocol.WinCachePath+"/"+f.Key, nil)
+	req.Header.Set("Authorization", "Bearer "+m.Credential)
+	prazo := &comPrazo{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(prazo, req)
+	if prazo.Code != http.StatusOK || prazo.vezes < 2 {
+		t.Errorf("download sem estender o prazo de escrita: %d, %d vezes", prazo.Code, prazo.vezes)
+	}
 	// Sem credencial, e chave fora do formato.
 	if r := httptest.NewRecorder(); func() int {
 		h.ServeHTTP(r, httptest.NewRequest("GET", protocol.WinCachePath+"/"+f.Key, nil))
@@ -134,3 +143,11 @@ func TestQuemUsaOCacheDoWindows(t *testing.T) {
 		}
 	}
 }
+
+// comPrazo conta os SetWriteDeadline que o http.ResponseController faz chegar à conexão.
+type comPrazo struct {
+	*httptest.ResponseRecorder
+	vezes int
+}
+
+func (c *comPrazo) SetWriteDeadline(time.Time) error { c.vezes++; return nil }

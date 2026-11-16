@@ -118,7 +118,8 @@ type DBStats struct {
 	CacheHitPct    float64 // blocos lidos da memória do PostgreSQL; Unknown sem leitura bastante
 	BlocksRead     int64
 	Deadlocks      int64
-	TempBytes      int64
+	TempBytes      int64         // escritos em arquivos temporários desde StatsReset (acumulado: não é espaço ocupado)
+	StatsReset     time.Time     // a última limpeza das estatísticas do banco; zero: desconhecida
 	LongestQuery   time.Duration // a consulta ativa mais antiga
 	Tables         []TableSize   // as maiores, em ordem
 }

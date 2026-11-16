@@ -1710,6 +1710,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{template "leia-mais" (leia .C.Detail)}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
+<dt>Resultado</dt><dd><a href="/painel/campanhas/{{.C.ID}}/resultado.csv">Baixar CSV</a> <span class="muted">(todos os grupos de implantação, uma linha por job)</span></dd>
 </dl>
 {{if or .CanPause .CanResume .CanCancel}}<div class="lote">
 {{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button class="sec" type="submit">Pausar</button></form>{{end}}
@@ -1744,7 +1745,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th>{{if .HasSlot}}<th>Programa</th>{{end}}<th>Estado</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{if $rv.HasSlot}}<td>{{.Slot}}</td>{{end}}
 <td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td></tr>{{end}}</tbody></table></div>
-<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}<a href="{{.CSV}}">Baixar CSV{{if or .Q .Filter .Slot}} com este filtro{{end}}</a></nav>
 {{else if .Total}}<p class="muted">Nenhum job com esse filtro.</p>{{end}}{{end}}</div>{{end}}
 {{template "fim"}}{{end}}
 

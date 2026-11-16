@@ -412,6 +412,13 @@ terceiros dá para filtrar por programa. Cem jobs por página, com anterior/pró
 que fica fora por inteiro (sem inventário do Windows, arquitetura desconhecida) aparece uma
 vez nas notas, não uma vez por programa.
 
+**CSV do resultado.** "Baixar CSV" no quadro da campanha traz todos os grupos de implantação,
+uma linha por job: campanha, grupo, job, máquina (ID e nome), programa, estado, detalhe (com a
+explicação dos códigos de erro do Windows Update), início da janela e quando encerrou (UTC). A
+tabela de cada grupo tem o seu "Baixar CSV", com o mesmo filtro da tela (estado, programa,
+máquina): por exemplo, só os que falharam no grupo 1. Mesmo formato das outras exportações
+(";" e BOM, abre direto no Excel); cada download fica na auditoria (`exportar.csv`).
+
 O detalhe da campanha pausada começa pelo resumo por motivo ("247 job(s) sem sucesso (231
 expirado, 14 rejeitado, 2 falhou)") e o que fazer; a lista dos jobs fica no fim, atrás do
 "leia mais" (no painel) e fora do e-mail de campanha pausada.

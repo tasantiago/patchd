@@ -407,6 +407,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/campanhas/nova", a.sameOrigin(a.adminAction(a.newCampaignAction)))
 	mux.Handle("POST /painel/campanhas/arquivar-encerradas", a.sameOrigin(a.adminAction(a.archiveFinishedAction)))
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))
+	mux.Handle("GET /painel/campanhas/{id}/resultado.csv", a.panelPage(a.campaignCSV))
 	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.staleAfter(a.campaignChangeAction))))
 	mux.Handle("GET /painel/grupos-implantacao", a.panelPage(a.ringsPage))
 	mux.Handle("GET /painel/aneis", a.panelPage(movedTo("/painel/grupos-implantacao"))) // o endereço antigo (era "Anéis")

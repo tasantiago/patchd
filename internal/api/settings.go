@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/panel"
@@ -369,7 +370,7 @@ func (a *api) agentFile(w http.ResponseWriter, r *http.Request, s panel.Session)
 	a.audit(r, s, "agente.baixar", name, ver)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
-	http.ServeContent(w, r, name, st.ModTime(), f)
+	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, name, st.ModTime(), f)
 }
 
 // agentCAFile: GET /painel/configuracao/agente/ca.crt, só admin.

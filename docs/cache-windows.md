@@ -73,6 +73,16 @@ desenvolvimento não tem Windows). No piloto, com 1 máquina de cada versão do 
   recusa (os de entrega com parâmetros, de alguns pacotes), o job falha com o endereço no
   detalhe: anote e me passe.
 
+**Falhas "download do servidor: unexpected EOF" (corrigido em 16/11/2026).** Até aqui, o
+download de um arquivo do cache não estendia o prazo de escrita do servidor (60 s, o de
+qualquer resposta). Um `.wim` das edições ou dos recursos sob demanda passa de 1 GB, e cada
+tentativa era cortada no meio, perto de um minuto ("maior 66 s" na rota
+`GET /api/v1/agent/wucache/{key}` da aba Saúde), com "unexpected EOF" ou "tls: bad record MAC"
+no agente. Agora o prazo anda a cada escrita, como nos outros downloads (instaladores, versões
+do agente): o limite vira 2 minutos sem conseguir escrever nada. Os jobs que falharam assim
+voltam com o **Reenviar** da campanha, depois de atualizar o servidor. O agente atualizado
+também trata a queda no meio como "adiado" (tenta de novo), não como "falhou".
+
 ## 5. Desligar o WSUS (depois do piloto)
 
 Com o piloto bom e o parâmetro em **todas as máquinas**:
