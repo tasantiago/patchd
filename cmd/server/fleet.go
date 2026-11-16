@@ -590,17 +590,42 @@ func thirdPartyItems(ev machineEval, now time.Time) []protocol.ThirdPartyItem {
 		switch {
 		case f.Ref != nil:
 			it.Origin = fmt.Sprintf("%s, %s", f.Ref.Source, f.Ref.Fetched.Format("2006-01-02"))
+			if f.Behind {
+				it.Origin = fmt.Sprintf("%s, %s (o fabricante já publicou; %s ainda está em %s)", f.Ref.CheckSource,
+					f.Ref.Fetched.Format("2006-01-02"), f.Ref.Source, f.Ref.Version)
+			}
 			if now.Sub(f.Ref.Fetched) > 7*24*time.Hour {
 				it.Origin += " (antiga)"
 			}
 		case f.App.Category == thirdparty.CategoryMinimum:
 			it.Origin = "mínimo do manifesto"
+		case f.App.Category == thirdparty.CategoryLifecycle && f.Cycle != nil:
+			it.Origin = fmt.Sprintf("a mais nova do ciclo %s (endoflife.date, %s)", f.Cycle.Name, f.Cycle.Fetched.Format("2006-01-02"))
 		case f.App.Note != "":
 			it.Origin = f.App.Note
+		}
+		if note := lifecycleNote(f); note != "" {
+			it.Origin = strings.TrimPrefix(it.Origin+"; "+note, "; ")
 		}
 		out = append(out, it)
 	}
 	return out
+}
+
+// lifecycleNote: o que o endoflife.date diz do ciclo da versão instalada.
+func lifecycleNote(f thirdparty.Finding) string {
+	c := f.Cycle
+	switch {
+	case c == nil:
+		return ""
+	case f.State == thirdparty.StateEOL && c.EOLFrom != nil:
+		return fmt.Sprintf("o ciclo %s está sem suporte desde %s (endoflife.date)", c.Name, c.EOLFrom.Format("02/01/2006"))
+	case f.State == thirdparty.StateEOL:
+		return fmt.Sprintf("o ciclo %s está sem suporte (endoflife.date)", c.Name)
+	case f.EOLSoon:
+		return fmt.Sprintf("o suporte do ciclo %s termina em %s (endoflife.date)", c.Name, c.EOLFrom.Format("02/01/2006"))
+	}
+	return ""
 }
 
 // fillFacts extrai da avaliação o que a classificação precisa e o que a resposta mostra.

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -29,6 +30,11 @@ const (
 	CategoryOSVendor = "os-vendor" // as correções vêm pelo catálogo do fabricante do SO (MSRC)
 	CategoryEOL      = "eol"       // fora de suporte: não há versão alvo, há troca
 	CategoryIgnore   = "ignore"    // entrada auxiliar de outro programa (não é avaliada)
+	// CategoryLifecycle: a referência é a versão mais nova do ciclo instalado (3.12, 22, 8.0),
+	// do endoflife.date; o ciclo sem suporte fica FORA DE SUPORTE. Para os programas com várias
+	// linhas mantidas ao mesmo tempo (Python, Java, Node.js, .NET), em que "a mais nova" de
+	// todas não é a versão certa para quem está numa linha ainda suportada.
+	CategoryLifecycle = "lifecycle"
 )
 
 // Tipos de fonte da versão de referência.
@@ -37,6 +43,17 @@ const (
 	SourceFirefox  = "firefox"  // product-details.mozilla.org; ID é a chave (LATEST_FIREFOX_VERSION, FIREFOX_ESR)
 	SourceWinget   = "winget"   // github.com/microsoft/winget-pkgs; ID é o identificador do pacote
 	SourceHomebrew = "homebrew" // formulae.brew.sh; ID é o cask
+	// SourceEvergreen: a API do Evergreen (evergreen-api.stealthpuppy.com), que lê a versão
+	// no próprio fabricante; ID é o aplicativo (AdobeAcrobatReaderDC), e o filtro escolhe as
+	// linhas da resposta (Architecture, Channel, Release...).
+	SourceEvergreen = "evergreen"
+)
+
+var (
+	evergreenID    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	filterKey      = regexp.MustCompile(`^[A-Za-z]{1,40}$`)
+	lifecycleSlug  = regexp.MustCompile(`^[a-z0-9][a-z0-9.+-]{0,63}$`)
+	maxFilterPairs = 4
 )
 
 // Manifest é o conjunto de regras.
@@ -57,6 +74,13 @@ type App struct {
 	Source      *Source `json:"source,omitempty"`
 	MinVersion  string  `json:"min_version,omitempty"`
 	Note        string  `json:"note,omitempty"`
+	// Check: uma segunda fonte da mesma versão (o Evergreen, que lê no fabricante), para saber
+	// quando a fonte principal (o winget-pkgs) está atrasada. A referência é a maior das duas.
+	Check *Source `json:"check,omitempty"`
+	// Lifecycle: o produto no endoflife.date (python, nodejs, dotnet). Com ele, o ciclo da
+	// versão instalada sem suporte vira FORA DE SUPORTE, em qualquer categoria; o fim próximo
+	// aparece na origem.
+	Lifecycle string `json:"lifecycle,omitempty"`
 	// Install: como o patchd instala a atualização (Aula 14.1). Sem ele, o programa só é
 	// avaliado; a regra é a lista do que o patchd pode instalar.
 	Install *Install `json:"install,omitempty"`
@@ -90,9 +114,54 @@ type Install struct {
 type Source struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
+	// Filter (só evergreen): as linhas da resposta que contam, por campo e valor, sem
+	// diferença de maiúsculas ({"Architecture": "x64", "Channel": "Stable"}).
+	Filter map[string]string `json:"filter,omitempty"`
 }
 
-func (s Source) String() string { return s.Type + ":" + s.ID }
+func (s Source) String() string {
+	out := s.Type + ":" + s.ID
+	if len(s.Filter) > 0 {
+		keys := make([]string, 0, len(s.Filter))
+		for k := range s.Filter {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for i, k := range keys {
+			keys[i] = k + "=" + s.Filter[k]
+		}
+		out += "[" + strings.Join(keys, ",") + "]"
+	}
+	return out
+}
+
+// validate confere a fonte.
+func (s *Source) validate() error {
+	if s.ID == "" {
+		return fmt.Errorf("a fonte exige type e id")
+	}
+	switch s.Type {
+	case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew:
+	case SourceEvergreen:
+		if !evergreenID.MatchString(s.ID) {
+			return fmt.Errorf("evergreen: o id %q é o nome do aplicativo no Evergreen (AdobeAcrobatReaderDC)", s.ID)
+		}
+	default:
+		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew ou evergreen)", s.Type)
+	}
+	if len(s.Filter) > 0 && s.Type != SourceEvergreen {
+		return fmt.Errorf("filter só vale para a fonte evergreen")
+	}
+	if len(s.Filter) > maxFilterPairs {
+		return fmt.Errorf("filter: no máximo %d campos", maxFilterPairs)
+	}
+	for k, v := range s.Filter {
+		if !filterKey.MatchString(k) || v == "" || len(v) > 60 || strings.ContainsAny(v, "\r\n\t[],=") {
+			return fmt.Errorf("filter %q=%q inválido (campo em letras; valor de uma linha, até 60 caracteres)", k, v)
+		}
+	}
+	return nil
+}
 
 // Key identifica a regra: o mesmo programa tem uma regra por SO.
 func (a App) Key() string { return a.ID + "/" + a.OS }
@@ -153,28 +222,44 @@ func (a *App) compile() error {
 	}
 	switch a.Category {
 	case CategoryFeed:
-		if a.Source == nil || a.Source.ID == "" {
+		if a.Source == nil {
 			return fmt.Errorf("categoria feed exige source com type e id")
 		}
-		switch a.Source.Type {
-		case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew:
-		default:
-			return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget ou homebrew)", a.Source.Type)
+		if err := a.Source.validate(); err != nil {
+			return err
 		}
 	case CategoryMinimum:
 		if _, ok := Normalize(a.MinVersion); !ok {
 			return fmt.Errorf("categoria minimum exige min_version numérica (recebido %q)", a.MinVersion)
 		}
+	case CategoryLifecycle:
+		if a.Lifecycle == "" {
+			return fmt.Errorf("categoria lifecycle exige lifecycle (o produto no endoflife.date)")
+		}
+		if a.Source != nil {
+			return fmt.Errorf("categoria lifecycle não tem source: a referência é a versão mais nova do ciclo instalado")
+		}
 	case CategoryOSVendor, CategoryEOL, CategoryIgnore:
 	default:
 		return fmt.Errorf("categoria %q desconhecida", a.Category)
+	}
+	if a.Check != nil {
+		if a.Category != CategoryFeed {
+			return fmt.Errorf("check (a segunda fonte) só vale na categoria feed")
+		}
+		if err := a.Check.validate(); err != nil {
+			return fmt.Errorf("check: %w", err)
+		}
+	}
+	if a.Lifecycle != "" && !lifecycleSlug.MatchString(a.Lifecycle) {
+		return fmt.Errorf("lifecycle %q: o nome do produto no endoflife.date, em minúsculas (python, nodejs)", a.Lifecycle)
 	}
 	if a.Install != nil {
 		switch {
 		case a.OS != "windows":
 			return fmt.Errorf("install só vale para windows (o macOS fica para o MDM)")
-		case a.Category != CategoryFeed && a.Category != CategoryMinimum:
-			return fmt.Errorf("install exige categoria feed ou minimum (há versão a alcançar)")
+		case a.Category != CategoryFeed && a.Category != CategoryMinimum && a.Category != CategoryLifecycle:
+			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
 		case !winget.ValidID(a.Install.Winget):
 			return fmt.Errorf("install.winget %q fora da forma Fabricante.Programa", a.Install.Winget)
 		case a.Install.Type != "" && !winget.Supported(a.Install.Type):

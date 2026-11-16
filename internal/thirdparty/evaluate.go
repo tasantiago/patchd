@@ -17,6 +17,16 @@ type Ref struct {
 	Version string
 	Source  string // chrome:win64, winget:7zip.7zip...
 	Fetched time.Time
+	// CheckVersion e CheckSource: a da segunda fonte (App.Check), quando houver.
+	CheckVersion, CheckSource string
+}
+
+// Data é o que a avaliação cruza com o inventário: as versões de referência e os ciclos de
+// suporte do endoflife.date, no instante da avaliação.
+type Data struct {
+	Refs   []Ref
+	Cycles []Cycle
+	Now    time.Time
 }
 
 // Situações de um programa identificado.
@@ -42,6 +52,13 @@ type Finding struct {
 	Reference string // versão de referência ou mínima (vazia quando não se aplica)
 	Ref       *Ref   // de onde veio a referência (feed)
 	State     string
+	// Cycle: o ciclo de suporte da versão instalada (regras com lifecycle); EOLSoon: o
+	// suporte dele termina em LifecycleWarning.
+	Cycle   *Cycle
+	EOLSoon bool
+	// Behind: a fonte principal está atrás da segunda (o winget-pkgs ainda não tem a versão
+	// que o fabricante publicou); a referência é a da segunda.
+	Behind bool
 }
 
 // Result é a avaliação dos programas de terceiros de uma máquina.
@@ -64,15 +81,25 @@ func (r Result) Count(state string) int {
 	return n
 }
 
-// Evaluate reconhece os programas do inventário pelas regras do SO e compara as versões.
+// Evaluate reconhece os programas do inventário pelas regras do SO e compara as versões,
+// sem os ciclos de suporte (EvaluateWith).
+func Evaluate(osID string, sw []protocol.Software, m Manifest, refs []Ref) Result {
+	return EvaluateWith(osID, sw, m, Data{Refs: refs, Now: time.Now()})
+}
+
+// EvaluateWith reconhece os programas do inventário pelas regras do SO e compara as versões.
 // Cada entrada do inventário é avaliada pela primeira regra que a reconhece; duas entradas
 // do mesmo programa (o 7-Zip instalado pelo exe e pelo MSI) são avaliadas separadamente.
-func Evaluate(osID string, sw []protocol.Software, m Manifest, refs []Ref) Result {
+func EvaluateWith(osID string, sw []protocol.Software, m Manifest, d Data) Result {
 	rules := m.For(osID)
 	res := Result{Rules: len(rules)}
 	byKey := map[string]Ref{}
-	for _, r := range refs {
+	for _, r := range d.Refs {
 		byKey[r.App+"/"+r.OS] = r
+	}
+	cycles := map[string][]Cycle{}
+	for _, c := range d.Cycles {
+		cycles[c.Product] = append(cycles[c.Product], c)
 	}
 	for _, s := range sw {
 		if s.SystemComponent || s.IsUpdate {
@@ -114,8 +141,41 @@ func Evaluate(osID string, sw []protocol.Software, m Manifest, refs []Ref) Resul
 				f.State = StateBadVersion
 				break
 			}
+			if cv, cok := Normalize(r.CheckVersion); cok {
+				if c, err := version.CompareDotted(cv, ref); err == nil && c > 0 {
+					ref, f.Behind = cv, true
+				}
+			}
 			f.Reference = ref
 			f.State = compare(installed, ok, ref, StateOutdated)
+		case CategoryLifecycle:
+			cy := CycleFor(installed, cycles[a.Lifecycle])
+			if !ok || cy == nil {
+				f.State = StateNoReference
+				if !ok {
+					f.State = StateBadVersion
+				}
+				break
+			}
+			ref, rok := Normalize(cy.Latest)
+			if !rok {
+				f.State = StateNoReference
+				break
+			}
+			f.Reference = ref
+			f.State = compare(installed, ok, ref, StateOutdated)
+		}
+		// O ciclo sem suporte vence: não vai haver correção nenhuma para ele.
+		if a.Lifecycle != "" && ok {
+			if cy := CycleFor(installed, cycles[a.Lifecycle]); cy != nil {
+				f.Cycle = cy
+				switch {
+				case cy.EOLAt(d.Now):
+					f.State = StateEOL
+				case cy.EOLSoon(d.Now, LifecycleWarning):
+					f.EOLSoon = true
+				}
+			}
 		}
 		res.Findings = append(res.Findings, f)
 	}

@@ -74,6 +74,7 @@ type complianceStore interface {
 	AppleModelsCount(ctx context.Context) (int, error)
 	AppleExtraBuild(ctx context.Context, build string) (compliance.MacExtra, bool, error)
 	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
+	Lifecycles(ctx context.Context) ([]thirdparty.Cycle, error)
 	CatalogStatus(ctx context.Context, sources []string) ([]store.CatalogSourceStatus, error)
 }
 
@@ -343,7 +344,12 @@ func evaluateID(ctx context.Context, st complianceStore, id string, opts evalOpt
 		if err != nil {
 			return ev, err
 		}
-		r := thirdparty.Evaluate(inv.OS.ID, inv.Software, *opts.Manifest, refs)
+		cycles, err := st.Lifecycles(ctx)
+		if err != nil {
+			return ev, err
+		}
+		r := thirdparty.EvaluateWith(inv.OS.ID, inv.Software, *opts.Manifest, thirdparty.Data{Refs: refs, Cycles: cycles, Now: opts.Now})
+
 		ev.Third = &r
 	}
 	return ev, nil
@@ -905,6 +911,14 @@ func printThirdParty(ev machineEval, verbose bool, now time.Time, out io.Writer)
 				origin = "mínimo do manifesto"
 			case f.App.Category == thirdparty.CategoryFeed:
 				origin = f.App.Source.String()
+			case f.App.Category == thirdparty.CategoryLifecycle && f.Cycle != nil:
+				origin = "a mais nova do ciclo " + f.Cycle.Name + " (endoflife.date)"
+			}
+			if f.Behind && f.Ref != nil {
+				origin += fmt.Sprintf("; o fabricante já publicou (%s); %s ainda está em %s", f.Ref.CheckSource, f.Ref.Source, f.Ref.Version)
+			}
+			if note := lifecycleNote(f); note != "" {
+				origin = strings.TrimPrefix(origin+"; "+note, "; ")
 			}
 			if ref == "" {
 				ref = "-"

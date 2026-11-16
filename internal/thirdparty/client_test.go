@@ -40,27 +40,137 @@ func TestLatest(t *testing.T) {
 	c.ChromeURL, c.FirefoxURL, c.GitHubURL, c.HomebrewURL = srv.URL, srv.URL+"/firefox.json", srv.URL, srv.URL
 
 	ctx := context.Background()
-	for src, want := range map[Source]string{
-		{SourceChrome, "win64"}:                   "155.0.8059.40",
-		{SourceFirefox, "LATEST_FIREFOX_VERSION"}: "157.0.1",
-		{SourceFirefox, "FIREFOX_ESR"}:            "140.17.0",
-		{SourceWinget, "7zip.7zip"}:               "26.04",
-		{SourceWinget, "Mozilla.Firefox"}:         "157.0.1",
-		{SourceWinget, "Notepad++.Notepad++"}:     "8.9.8.1",
-		{SourceHomebrew, "visual-studio-code"}:    "1.140.0",
+	for _, tc := range []struct {
+		src  Source
+		want string
+	}{
+		{Source{Type: SourceChrome, ID: "win64"}, "155.0.8059.40"},
+		{Source{Type: SourceFirefox, ID: "LATEST_FIREFOX_VERSION"}, "157.0.1"},
+		{Source{Type: SourceFirefox, ID: "FIREFOX_ESR"}, "140.17.0"},
+		{Source{Type: SourceWinget, ID: "7zip.7zip"}, "26.04"},
+		{Source{Type: SourceWinget, ID: "Mozilla.Firefox"}, "157.0.1"},
+		{Source{Type: SourceWinget, ID: "Notepad++.Notepad++"}, "8.9.8.1"},
+		{Source{Type: SourceHomebrew, ID: "visual-studio-code"}, "1.140.0"},
 	} {
-		if got, err := c.Latest(ctx, src); err != nil || got != want {
-			t.Errorf("%s: %q %v (queria %q)", src, got, err, want)
+		if got, err := c.Latest(ctx, tc.src); err != nil || got != tc.want {
+			t.Errorf("%s: %q %v (queria %q)", tc.src, got, err, tc.want)
 		}
 	}
-	for src, trecho := range map[Source]string{
-		{SourceFirefox, "FIREFOX_NIGHTLY"}: "não está no JSON",
-		{SourceWinget, "Vazio.Pacote"}:     "nenhuma versão comparável",
-		{SourceWinget, "Nao.Existe"}:       "HTTP 404",
-		{SourceWinget, ".x"}:               "inválido",
+	for _, tc := range []struct {
+		src    Source
+		trecho string
+	}{
+		{Source{Type: SourceFirefox, ID: "FIREFOX_NIGHTLY"}, "não está no JSON"},
+		{Source{Type: SourceWinget, ID: "Vazio.Pacote"}, "nenhuma versão comparável"},
+		{Source{Type: SourceWinget, ID: "Nao.Existe"}, "HTTP 404"},
+		{Source{Type: SourceWinget, ID: ".x"}, "inválido"},
 	} {
-		if _, err := c.Latest(ctx, src); err == nil || !strings.Contains(err.Error(), trecho) {
-			t.Errorf("%s: %v (queria %q)", src, err, trecho)
+		if _, err := c.Latest(ctx, tc.src); err == nil || !strings.Contains(err.Error(), tc.trecho) {
+			t.Errorf("%s: %v (queria %q)", tc.src, err, tc.trecho)
+		}
+	}
+}
+
+// O Evergreen: a resposta é uma lista de linhas (uma por canal, plataforma, arquitetura); o
+// filtro escolhe as que contam, sem diferença de maiúsculas no campo e no valor. A API pede
+// um User-Agent próprio.
+func TestEvergreen(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") != "patchd-teste" {
+			http.Error(w, `{"message": "Invalid or missing User-Agent header"}`, http.StatusBadRequest)
+			return
+		}
+		switch r.URL.Path {
+		case "/app/MicrosoftVisualStudioCode":
+			w.Write([]byte(`[
+			  {"Version": "1.141.0", "Platform": "win32-x64", "Channel": "Insider", "Architecture": "x64", "URI": "https://x/i"},
+			  {"Version": "1.140.2", "Platform": "win32-x64", "Channel": "Stable", "Architecture": "x64", "URI": "https://x/s"},
+			  {"Version": "1.140.2", "Platform": "win32-arm64", "Channel": "Stable", "Architecture": "ARM64", "URI": "https://x/a"},
+			  {"Version": "1.139.0", "Platform": "win32-x64-user", "Channel": "Stable", "Architecture": "x64", "URI": "https://x/u"}]`))
+		case "/app/NotepadPlusPlus":
+			// Uma linha só, como objeto (versões antigas da API).
+			w.Write([]byte(`{"Version": "8.9.9", "Architecture": "x64", "Type": "exe", "URI": "https://x/n"}`))
+		case "/app/SemVersao":
+			w.Write([]byte(`[{"Version": "RateLimited", "URI": "https://docs.github.com"}]`))
+		default:
+			http.Error(w, `{"message": "Application not found"}`, http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient("patchd-teste")
+	c.EvergreenURL = srv.URL
+	ctx := context.Background()
+	for _, tc := range []struct {
+		src  Source
+		want string
+	}{
+		{Source{Type: SourceEvergreen, ID: "MicrosoftVisualStudioCode", Filter: map[string]string{"channel": "STABLE", "Platform": "win32-x64"}}, "1.140.2"},
+		{Source{Type: SourceEvergreen, ID: "MicrosoftVisualStudioCode"}, "1.141.0"},
+		{Source{Type: SourceEvergreen, ID: "NotepadPlusPlus"}, "8.9.9"},
+	} {
+		if got, err := c.Latest(ctx, tc.src); err != nil || got != tc.want {
+			t.Errorf("%s: %q %v (queria %q)", tc.src, got, err, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		src    Source
+		trecho string
+	}{
+		{Source{Type: SourceEvergreen, ID: "MicrosoftVisualStudioCode", Filter: map[string]string{"Channel": "Beta"}}, "nenhuma das 4 linhas"},
+		{Source{Type: SourceEvergreen, ID: "SemVersao"}, "nenhuma versão comparável"},
+		{Source{Type: SourceEvergreen, ID: "NaoExiste"}, "HTTP 404"},
+	} {
+		if _, err := c.Latest(ctx, tc.src); err == nil || !strings.Contains(err.Error(), tc.trecho) {
+			t.Errorf("%s: %v (queria %q)", tc.src, err, tc.trecho)
+		}
+	}
+	if s := (Source{Type: SourceEvergreen, ID: "X", Filter: map[string]string{"b": "2", "a": "1"}}).String(); s != "evergreen:X[a=1,b=2]" {
+		t.Errorf("nome da fonte com filtro: %s", s)
+	}
+}
+
+// O endoflife.date: os ciclos de um produto, com a data do fim (ou nenhuma) e a mais nova.
+func TestLifecycle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/products/python":
+			w.Write([]byte(`{"schema_version": "1.2.1", "generated_at": "2026-11-15T00:00:00+00:00", "last_modified": "2026-11-01T00:00:00+00:00",
+			  "result": {"name": "python", "label": "Python", "releases": [
+			    {"name": "3.14", "codename": null, "label": "3.14", "releaseDate": "2025-10-07", "isLts": false, "ltsFrom": null,
+			     "isEoas": false, "eoasFrom": "2027-10-01", "isEol": false, "eolFrom": "2030-10-31", "isMaintained": true,
+			     "latest": {"name": "3.14.10", "date": "2026-11-04", "link": null}},
+			    {"name": "3.9", "codename": null, "label": "3.9", "releaseDate": "2020-10-05", "isLts": false, "ltsFrom": null,
+			     "isEol": true, "eolFrom": "2025-10-31", "isMaintained": false, "latest": {"name": "3.9.25", "date": null, "link": null}},
+			    {"name": "4.0", "codename": null, "label": "4.0", "releaseDate": "2030-01-01", "isLts": false, "ltsFrom": null,
+			     "isEol": false, "eolFrom": null, "isMaintained": true, "latest": null}]}}`))
+		case "/api/v1/products/vazio":
+			w.Write([]byte(`{"result": {"name": "vazio", "releases": []}}`))
+		case "/api/v1/products/data-ruim":
+			w.Write([]byte(`{"result": {"name": "data-ruim", "releases": [{"name": "1", "isEol": false, "eolFrom": "31/12/2030"}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient("patchd-teste")
+	c.EndoflifeURL = srv.URL
+	ctx := context.Background()
+	cs, err := c.Lifecycle(ctx, "python")
+	if err != nil || len(cs) != 3 {
+		t.Fatalf("python: %+v %v", cs, err)
+	}
+	if c := cs[0]; c.Product != "python" || c.Name != "3.14" || c.IsEOL || c.EOLFrom == nil || c.EOLFrom.Format("2006-01-02") != "2030-10-31" || c.Latest != "3.14.10" {
+		t.Errorf("3.14: %+v", c)
+	}
+	if c := cs[1]; !c.IsEOL || c.Latest != "3.9.25" {
+		t.Errorf("3.9: %+v", c)
+	}
+	if c := cs[2]; c.EOLFrom != nil || c.Latest != "" {
+		t.Errorf("4.0 sem data nem versão: %+v", c)
+	}
+	for produto, trecho := range map[string]string{"vazio": "0 ciclos", "data-ruim": "ilegível", "nao-existe": "HTTP 404", "Maiusculo": "inválido", "../x": "inválido"} {
+		if _, err := c.Lifecycle(ctx, produto); err == nil || !strings.Contains(err.Error(), trecho) {
+			t.Errorf("%s: %v (queria %q)", produto, err, trecho)
 		}
 	}
 }

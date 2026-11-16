@@ -159,6 +159,11 @@ func (x timedStore) AppleExtraBuild(ctx context.Context, build string) (complian
 	return x.st.AppleExtraBuild(ctx, build)
 }
 
+func (x timedStore) Lifecycles(ctx context.Context) ([]thirdparty.Cycle, error) {
+	defer x.t.add("Lifecycles", time.Now())
+	return x.st.Lifecycles(ctx)
+}
+
 func (x timedStore) ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error) {
 	defer x.t.add("ThirdPartyVersions", time.Now())
 	return x.st.ThirdPartyVersions(ctx)

@@ -145,7 +145,16 @@ func TestInstall(t *testing.T) {
 		regra(`, "install": {"winget": "Google.Chrome", "scope": "user"}`):                                                                            "unknown field",
 		regra(`, "install": {"winget": "Google.Chrome", "processes": ["C:\\x\\chrome.exe"]}`):                                                         "não é o nome de um executável",
 		`{"version": 1, "apps": [{"id": "x", "os": "macos", "category": "minimum", "match": "x", "min_version": "1", "install": {"winget": "a.b"}}]}`: "só vale para windows",
-		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                       "exige categoria feed ou minimum",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "install": {"winget": "a.b"}}]}`:                       "exige categoria feed, minimum ou lifecycle",
+		// As fontes novas: Evergreen (com filtro), a segunda fonte e o endoflife.date.
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "feed", "match": "x", "source": {"type": "evergreen", "id": "a/b"}}]}`:                                    "nome do aplicativo no Evergreen",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "feed", "match": "x", "source": {"type": "winget", "id": "a.b", "filter": {"Channel": "Stable"}}}]}`:      "filter só vale para a fonte evergreen",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "feed", "match": "x", "source": {"type": "evergreen", "id": "A", "filter": {"Channel": "a,b"}}}]}`:        "filter",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "minimum", "match": "x", "min_version": "1", "check": {"type": "evergreen", "id": "A"}}]}`:                "só vale na categoria feed",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "feed", "match": "x", "source": {"type": "winget", "id": "a.b"}, "check": {"type": "nada", "id": "A"}}]}`: "check: fonte",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "lifecycle", "match": "x"}]}`:                                                                             "exige lifecycle",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "lifecycle", "match": "x", "lifecycle": "python", "source": {"type": "winget", "id": "a.b"}}]}`:           "não tem source",
+		`{"version": 1, "apps": [{"id": "x", "os": "windows", "category": "eol", "match": "x", "lifecycle": "Python"}]}`:                                                            "em minúsculas",
 		// Aula 20.5 (F2): assinatura exigida ou o motivo de não ter.
 		regra(`, "install": {"winget": "Google.Chrome"}`):                                                 "install exige signer",
 		regra(`, "install": {"winget": "Google.Chrome", "unsigned_reason": "  "}`):                        "install exige signer",

@@ -108,6 +108,10 @@ func (s memoStore) ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, er
 	return memoized(ctx, s.m, "third-versions", func() ([]thirdparty.Ref, error) { return s.complianceStore.ThirdPartyVersions(ctx) })
 }
 
+func (s memoStore) Lifecycles(ctx context.Context) ([]thirdparty.Cycle, error) {
+	return memoized(ctx, s.m, "third-cycles", func() ([]thirdparty.Cycle, error) { return s.complianceStore.Lifecycles(ctx) })
+}
+
 func (s memoStore) UbuntuEcosystemsKnown(ctx context.Context) ([]string, error) {
 	return memoized(ctx, s.m, "ubuntu-ecos", func() ([]string, error) { return s.complianceStore.UbuntuEcosystemsKnown(ctx) })
 }
