@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/jobs"
@@ -30,12 +31,56 @@ type Store interface {
 	StandardizationJobs(context.Context, string, time.Time) (map[string]store.JobRow, int, error)
 	SaveStandardizationState(context.Context, store.StandardizationState) error
 	LatestInventory(context.Context, string) (protocol.InventoryReport, bool, error)
+	// MachinePlatform: o sistema (GOOS) do inventário atual, sem ler a lista de software.
+	MachinePlatform(context.Context, string) (platform string, known bool, err error)
 	ThirdPartyPackages(context.Context) ([]store.ThirdPartyPackage, error)
 	ThirdPartyApprovals(context.Context) ([]store.ThirdPartyApproval, error)
 }
 
+// PolicyCache guarda as políticas por pouco tempo: a padronização é avaliada a cada check-in
+// e a cada 5 minutos por usuário conectado, e as políticas quase nunca mudam. Quem grava uma
+// política chama Reset.
+type PolicyCache struct {
+	TTL  time.Duration
+	mu   sync.Mutex
+	list []store.StandardizationPolicy
+	at   time.Time
+	gen  uint64 // muda a cada Reset: uma leitura antiga não sobrescreve a nova
+}
+
+// Reset descarta as políticas guardadas.
+func (c *PolicyCache) Reset() {
+	c.mu.Lock()
+	c.list, c.at = nil, time.Time{}
+	c.gen++
+	c.mu.Unlock()
+}
+
+func (c *PolicyCache) get(ctx context.Context, load func(context.Context) ([]store.StandardizationPolicy, error), now time.Time) ([]store.StandardizationPolicy, error) {
+	c.mu.Lock()
+	if c.list != nil && now.Sub(c.at) < c.TTL && !now.Before(c.at) {
+		list := c.list
+		c.mu.Unlock()
+		return list, nil
+	}
+	gen := c.gen
+	c.mu.Unlock()
+	list, err := load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	if c.gen == gen {
+		c.list, c.at = list, now
+	}
+	c.mu.Unlock()
+	return list, nil
+}
+
 type Service struct {
-	Store       Store
+	Store Store
+	// Policies: o cache das políticas; nil lê do banco a cada avaliação.
+	Policies    *PolicyCache
 	Manifest    *thirdparty.Manifest
 	Key         ed25519.PrivateKey
 	PackagesDir string
@@ -142,17 +187,27 @@ func (s *Service) Reconcile(ctx context.Context, machine string, user protocol.S
 	if s.Now != nil {
 		now = s.Now().UTC()
 	}
-	policies, err := s.Store.StandardizationPolicies(ctx)
+	policies, err := s.policies(ctx, now)
 	if err != nil {
 		return protocol.StandardizationPlan{}, err
 	}
-	inv, known, err := s.Store.LatestInventory(ctx, machine)
+	// O sistema vem do inventário atual sem a lista de software (centenas de KB por máquina):
+	// ela só é lida quando há aplicativo ou instalador a conferir. Inventário de agente antigo,
+	// sem o sistema guardado à parte, é lido inteiro.
+	var inv protocol.InventoryReport
+	loaded := false
+	platform, known, err := s.Store.MachinePlatform(ctx, machine)
 	if err != nil {
 		return protocol.StandardizationPlan{}, err
 	}
-	platform := inv.OS.Family
-	if platform == "" && inv.OS.ID == "windows" {
-		platform = "windows"
+	if known && platform == "" {
+		if inv, known, err = s.Store.LatestInventory(ctx, machine); err != nil {
+			return protocol.StandardizationPlan{}, err
+		}
+		loaded, platform = true, inv.OS.Family
+		if platform == "" && inv.OS.ID == "windows" {
+			platform = "windows"
+		}
 	}
 	out, apps := Resolve(policies, machine, user, platform)
 	installers := resolveInstallers(policies, machine, user, platform, &out)
@@ -164,9 +219,19 @@ func (s *Service) Reconcile(ctx context.Context, machine string, user protocol.S
 		out.Warnings = append(out.Warnings, "Aguardando inventário para identificar o sistema e aplicar os aplicativos e atalhos.")
 	}
 	out.GeneratedAt = now
+	if len(apps) == 0 && len(installers) == 0 {
+		// Só atalhos (ou nada): nenhum job a criar, nada a travar.
+		err := s.Store.SaveStandardizationState(ctx, store.StandardizationState{MachineID: machine, Account: user.Account, Plan: out, EvaluatedAt: now})
+		return out, err
+	}
+	if !loaded && known {
+		if inv, known, err = s.Store.LatestInventory(ctx, machine); err != nil {
+			return out, err
+		}
+	}
 	locked, err := s.Store.WithStandardizationLock(ctx, machine, func(ctx context.Context) error {
 		if len(apps) > 0 {
-			states, n, err := s.applications(ctx, machine, apps, now)
+			states, n, err := s.applications(ctx, inv, known, apps, now, machine)
 			if err != nil {
 				return err
 			}
@@ -191,7 +256,15 @@ func (s *Service) Reconcile(ctx context.Context, machine string, user protocol.S
 	return out, nil
 }
 
-func (s *Service) applications(ctx context.Context, machine string, apps []string, now time.Time) ([]protocol.StandardAppState, int, error) {
+// policies: as políticas, do cache quando houver.
+func (s *Service) policies(ctx context.Context, now time.Time) ([]store.StandardizationPolicy, error) {
+	if s.Policies == nil {
+		return s.Store.StandardizationPolicies(ctx)
+	}
+	return s.Policies.get(ctx, s.Store.StandardizationPolicies, now)
+}
+
+func (s *Service) applications(ctx context.Context, inv protocol.InventoryReport, found bool, apps []string, now time.Time, machine string) ([]protocol.StandardAppState, int, error) {
 	out := []protocol.StandardAppState{}
 	for _, id := range apps {
 		out = append(out, protocol.StandardAppState{App: id, Name: id, State: "bloqueado"})
@@ -201,10 +274,6 @@ func (s *Service) applications(ctx context.Context, machine string, apps []strin
 			out[i].Detail = detail
 		}
 		return out, 0, nil
-	}
-	inv, found, err := s.Store.LatestInventory(ctx, machine)
-	if err != nil {
-		return nil, 0, err
 	}
 	if !found {
 		return block("Aguardando o primeiro inventário.")

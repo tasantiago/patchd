@@ -258,6 +258,37 @@ O intervalo de check-in pode ficar em 1 hora (2 check-ins por segundo com 7.000 
 servidor mediu 500 por segundo): quem dá a resposta rápida é o canal em tempo real, não o
 check-in mais frequente.
 
+### Terceira rodada (16/11/2026): o que um parque real mostrou
+
+Num parque em produção, com 2 núcleos, a aba Saúde mostrou o pool cheio em 16% dos minutos (922
+mil esperas por conexão, 8 s em média), o p95 em 58 s e a CPU da máquina em 88% ou mais, quase
+toda do PostgreSQL. As rotas que pesavam: `POST /api/v1/agent/standardization` (140 mil pedidos
+num dia, 21 s em média, 11 mil erros 5xx), o check-in (25 s em média, porque avaliava a
+padronização dentro dele) e `standardization/report` (105 mil). A causa: o app de cada usuário
+conectado pede a padronização a cada 5 minutos e relata o resultado a cada 5 minutos, e cada
+avaliação fazia umas dez idas ao banco, duas delas lendo o inventário inteiro da máquina
+(centenas de KB de JSON) e três gravando, mesmo quando nada tinha mudado.
+
+O que mudou:
+
+| Onde | Antes | Agora |
+|---|---|---|
+| Pool de conexões | o padrão do pgx: o número de núcleos, no mínimo 4 | 4 por núcleo, de 8 a 16; `pool_max_conns` na URL manda |
+| Políticas da padronização | lidas do banco a cada avaliação | em cache por 30 s; gravar uma política pelo painel renova na hora |
+| Sistema da máquina (para saber que atalhos valem) | o inventário inteiro | a coluna `os_family` do inventário atual |
+| Máquina só com atalhos (nenhum aplicativo nem instalador) | trava, jobs, pacotes e aprovações | só o plano; nada de trava nem de inventário |
+| Máquina com aplicativo | o inventário inteiro duas vezes | uma vez |
+| Estado da padronização | gravado a cada avaliação | só quando o plano muda (sem contar a hora em que foi gerado); a hora da avaliação é renovada de hora em hora |
+| Relato dos atalhos | gravado a cada 5 minutos | só quando muda (ou de hora em hora) |
+| Padronização no check-in | a cada check-in, dentro dele | só se a máquina não foi avaliada nos últimos 10 minutos (pelo check-in ou pelo app do usuário) |
+| App do usuário (agente novo) | pede a cada 5 min e relata sempre; todos 15 s depois do logon | pede a cada 4 a 6 min, o primeiro entre 15 e 75 s depois do logon; relata só o que mudou |
+
+As do servidor valem assim que ele for atualizado; as do app do usuário, conforme os agentes se
+atualizam. Com o pool maior e o PostgreSQL na mesma máquina, a CPU passa a ser o limite: 6
+núcleos dão folga para o pico da manhã. Se a aba ainda mostrar "Arquivos temporários" crescendo
+(41 GB naquele parque), suba o `work_mem` do PostgreSQL para 16 MB e veja as consultas mais caras
+em `pg_stat_statements`.
+
 ## 4. A tela
 
 - O veredito e as recomendações (o porquê, com os números, e o que fazer).

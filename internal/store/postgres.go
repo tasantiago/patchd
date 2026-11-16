@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,7 +37,20 @@ func Connect(ctx context.Context, url string, wait time.Duration) (*pgxpool.Pool
 // chamada (medido com 4.000 máquinas: a lista das fontes falhando, de 437 ms para 23 ms).
 // Nenhuma consulta daqui é analítica a ponto de o JIT se pagar. Quem quiser de volta põe
 // "jit=on" na URL do banco.
+//
+// pool_max_conns: o padrão do pgx é o número de núcleos (no mínimo 4). Com 2 núcleos, 4
+// conexões não bastam para um parque de milhares de máquinas: os pedidos esperavam conexão
+// (em média 8 s, o pool cheio em 16% dos minutos, medido num parque real) enquanto o banco
+// tinha folga de conexões. O padrão do patchd é 4 por núcleo, de 8 a 16; a URL manda.
 func sessionDefaults(cfg *pgxpool.Config) {
+	sessionDefaultsFor(cfg, runtime.NumCPU(), "")
+}
+
+// sessionDefaultsFor é o sessionDefaults com os núcleos e a URL explícitos (os testes).
+func sessionDefaultsFor(cfg *pgxpool.Config, cpus int, url string) {
+	if !strings.Contains(url, "pool_max_conns") {
+		cfg.MaxConns = int32(min(max(4*cpus, 8), 16)) // #nosec G115 -- entre 8 e 16
+	}
 	if cfg.ConnConfig.RuntimeParams == nil {
 		cfg.ConnConfig.RuntimeParams = map[string]string{}
 	}
@@ -53,7 +68,7 @@ func ConnectNotify(ctx context.Context, url string, wait time.Duration, waiting 
 		// A mensagem do pgx pode conter a URL inteira, com a senha: não repassar.
 		return nil, errors.New("URL do banco inválida")
 	}
-	sessionDefaults(cfg)
+	sessionDefaultsFor(cfg, runtime.NumCPU(), url)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("pool do banco: %w", err)
