@@ -547,6 +547,9 @@ func (a *api) biosSummary(ctx context.Context, id string, fw *protocol.Firmware)
 			r.Standard, r.StdLevel = std(false)
 		default:
 			r.State = "Este modelo não tem esta configuração"
+			if len(f.Evidence) > 0 { // a configuração existe, com um valor desconhecido
+				r.State, r.Level = "Valor que o patchd não conhece", "atencao"
+			}
 		}
 		out = append(out, r)
 	}

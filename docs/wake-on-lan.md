@@ -20,6 +20,15 @@ Nenhum valor real (nome de máquina, MAC, sub-rede) entra aqui.
 A decisão (pronta, bloqueada, sem informação) fica no servidor (`internal/wake`), com os
 motivos em texto fixo: o cartão da máquina e o resumo do parque contam pelos mesmos textos.
 
+Os valores da BIOS que contam como "ligado" variam por fabricante e modelo: `Boot to Hard
+Drive` e `Boot to Normal Boot Order` (HP), `LanOnly` e `LanWlan` (Dell), `ACOnly`, `Enable`,
+`Primary` e `Automatic` (Lenovo) e `Boot Order` (Lenovo ThinkCentre: acorda e segue a ordem de
+boot normal). A regra fica em `internal/wake` (`Firmware`), usada pelo agente e de novo pelo
+servidor quando o agente não soube decidir: um valor novo passa a valer na próxima tela, sem
+esperar os agentes. Um valor que o patchd ainda não conhece aparece no resumo da aba BIOS como
+"Valor que o patchd não conhece", com o nome e o valor, e não como "Este modelo não tem esta
+configuração": é o caso de acrescentar o valor à lista.
+
 ## As aulas
 
 - **22.1 (feita): prontidão, só leitura.** O inventário ganha o bloco `wake`; a aba Hardware

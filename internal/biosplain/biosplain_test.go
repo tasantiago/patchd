@@ -43,6 +43,7 @@ func TestValoresSimples(t *testing.T) {
 		{"WakeOnLan", "LanOnly", "Ligado, só pelo cabo"},
 		{"WakeOnLAN", "ACOnly", "Ligado, só na tomada"},
 		{"Wake on LAN", "Primary", "Ligado"},
+		{"WakeonLAN", "Boot Order", "Ligado, na ordem normal de inicialização"},
 		{"DeepSleepCtrl", "S4AndS5", "Ligado, desligado ou hibernando"},
 		{"After Power Loss", "Previous State", "Voltar como estava"},
 		{"After Power Loss", "Power Off", "Ficar desligado"},

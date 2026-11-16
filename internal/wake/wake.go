@@ -47,6 +47,19 @@ func Decide(w *protocol.Wake, laptop bool) Verdict {
 		v.State = Unknown
 		return v
 	}
+	if w.BIOS == nil || w.DeepSleep == nil {
+		// O agente não soube decidir (um valor que a versão dele não conhecia): a regra de
+		// hoje, sobre as mesmas configurações. Numa cópia: quem chamou não vê mudança.
+		c := *w
+		bios, deep := Firmware(w.Settings)
+		if c.BIOS == nil {
+			c.BIOS = bios
+		}
+		if c.DeepSleep == nil {
+			c.DeepSleep = deep
+		}
+		w = &c
+	}
 	block := func(s string) { v.Blockers = append(v.Blockers, s) }
 	note := func(s string) { v.Notes = append(v.Notes, s) }
 	if w.Adapters != nil {
