@@ -303,6 +303,7 @@ type api struct {
 	items       itemsCache                           // a lista de pendências do parque, por um minuto (itemscache.go)
 	creds       credCache                            // a credencial de cada máquina, por um minuto (credcache.go)
 	gate        *agentGate                           // a fila dos agentes (agentgate.go); nil: sem fila
+	downloads   downloadTracker                      // os downloads em andamento, para a aba Saúde (downloads.go)
 	agentLimits agentLimiter                         // requisições por máquina (Aula 20.5)
 	hashSlots   chan struct{}                        // conferências de senha simultâneas
 	system      *SystemInfo                          // Configuração › Sistema (Aula 15.2); nil: só o que a API sabe
