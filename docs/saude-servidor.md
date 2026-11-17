@@ -340,8 +340,30 @@ banco gasta o tempo: é por elas que a próxima otimização começa. O texto é
 - O que o banco está executando: as consultas mais vistas em execução desde a partida.
 - Downloads agora (no quadro "Processo e disco"): quantos downloads estão em andamento e de
   quantas máquinas, por tipo de arquivo (cache do Windows, versões do agente, instaladores,
-  catálogo offline, scripts), e o pico desde a partida do servidor, com a hora. A tabela de
-  rotas só conta o download quando ele termina; esta linha conta o que está no meio do caminho.
+  catálogo offline, scripts), o pico desde a partida do servidor, com a hora, o limite e
+  quantos ele recusou. A tabela de rotas só conta o download quando ele termina; esta linha
+  conta o que está no meio do caminho.
+
+### Limite de downloads ao mesmo tempo
+
+**Configuração › Parâmetros › Agentes › Downloads ao mesmo tempo** (`PATCHD_DOWNLOAD_MAX`,
+padrão 40; 0 é sem limite; vale na hora). Conta os arquivos que o servidor entrega às
+máquinas: atualizações do cache do Windows, versões do agente, instaladores de terceiros e o
+catálogo offline. Os pacotes de scripts ficam de fora (são pequenos, e o agente marcaria o job
+como falho).
+
+A máquina que passaria do número recebe "ocupado" (`503`, com `Retry-After`) antes de baixar
+qualquer coisa. O agente trata como falha passageira: tenta de novo algumas vezes, com espera
+crescente, e, se não der, o job fica **adiado** (cache do Windows, instaladores; a campanha
+tenta de novo depois) ou o arquivo vem no próximo check-in (versão do agente, catálogo
+offline). Agentes anteriores a 14/11/2026 marcam o job do cache do Windows como falho; o
+Reenviar da campanha resolve.
+
+Como escolher o número: cada download de 1 GB numa rede de 1 Gbit/s leva cerca de 10 s
+sozinho; 40 ao mesmo tempo dividem o link e o disco e ainda deixam folga para o banco e o
+painel numa máquina de 2 núcleos. Com o servidor maior, ou o PostgreSQL em outra máquina,
+suba. Se a linha mostrar muitos recusados e as campanhas demorarem demais, suba aos poucos;
+se o painel ficar lento durante as campanhas, desça.
 - Banco (pool, conexões, cache, temporários, maiores tabelas), processo e as pastas de dados.
 
 ## 5. Fora desta versão

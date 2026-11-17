@@ -208,6 +208,20 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v
 			}},
+		{Key: api.DownloadMaxKey, Group: "Agentes", Label: "Downloads ao mesmo tempo", Kind: settings.Number, Unit: "downloads",
+			Default: strconv.Itoa(api.DefaultDownloadMax), Help: "Quantos arquivos o servidor entrega às máquinas ao mesmo tempo: atualizações do cache do Windows, versões do agente, instaladores de terceiros e o catálogo offline. A máquina que passaria do número recebe \"ocupado\" antes de baixar qualquer coisa e tenta de novo depois: o job fica adiado, não falha. Protege o painel e o banco quando muitas máquinas baixam arquivos grandes de uma vez. Com 2 núcleos e o banco na mesma máquina, comece em 40; suba se a rede e o disco aguentam. 0: sem limite. De 5 a 1000.",
+			Effect: "na hora: vale para os próximos downloads (os em andamento vão até o fim)", Check: func(v string) (string, error) {
+				n, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || (n != 0 && (n < 5 || n > 1000)) {
+					return "", errors.New("use 0 (sem limite) ou de 5 a 1000")
+				}
+				return strconv.Itoa(n), nil
+			}, Show: func(v string) string {
+				if v == "0" {
+					return "sem limite"
+				}
+				return v + " ao mesmo tempo"
+			}},
 		{Key: api.WinCacheDaysKey, Group: "Agentes", Label: "Limpeza do cache do Windows Update", Kind: settings.Number, Unit: "dias",
 			Default: strconv.Itoa(defaultWinCacheDays), Help: "O pacote que nenhuma máquina pediu nesse prazo sai do disco do servidor. De 7 a 365.",
 			Effect: "na próxima limpeza (de hora em hora)", Check: func(v string) (string, error) {
