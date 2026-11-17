@@ -42,7 +42,7 @@ type Store interface {
 // o mesmo serviço: o mesmo pedido dá a mesma decisão.
 type Service struct {
 	Store       Store
-	Manifest    *thirdparty.Manifest
+	Manifest    *thirdparty.Live
 	Key         ed25519.PrivateKey
 	PackagesDir string // PATCHD_CONTENT_DIR/pacotes
 	Now         func() time.Time
@@ -220,7 +220,7 @@ func (s *Service) items(ctx context.Context, machineID string, u protocol.SelfSe
 	if err != nil {
 		return nil, err
 	}
-	return Catalog(offers, TokenMember(u.Groups), Machine{Software: inv.Software, Arch: arch}, *s.Manifest, pkgs, approvals), nil
+	return Catalog(offers, TokenMember(u.Groups), Machine{Software: inv.Software, Arch: arch}, s.Manifest.Get(), pkgs, approvals), nil
 }
 
 func (s *Service) openJob(ctx context.Context, machineID string) (int64, error) {
@@ -349,7 +349,7 @@ func (s *Service) params(ctx context.Context, machineID string, it Item) (jobs.T
 	if it.Action == ActionInstall {
 		d.Package = tpinstall.ForNewInstall(rule, versionPkgs, arch)
 	} else {
-		for _, x := range tpinstall.Plan(inv.Software, *s.Manifest, versionPkgs, arch) {
+		for _, x := range tpinstall.Plan(inv.Software, s.Manifest.Get(), versionPkgs, arch) {
 			if x.App.ID == it.AppID && x.State == tpinstall.StateUpdate {
 				d.Package = x.Package
 			}

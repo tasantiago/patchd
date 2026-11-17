@@ -1100,8 +1100,40 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{end}}
 {{template "fim"}}{{end}}
 
+{{define "terceiros-incluir"}}{{template "topo" .}}
+<p><a href="/painel/patch?aba=terceiros">← Programas de terceiros</a></p>
+<h1>{{if .Editing}}Editar programa{{else}}Incluir programa{{end}}</h1>
+{{if not .CanUse}}<p class="aviso erro">Este servidor não tem os programas de terceiros ligados (precisa do PostgreSQL).</p>{{else}}
+<div class="card"><div class="card-cab"><h2>{{if .Editing}}<code>{{.Editing}}</code>{{else}}Um programa do winget{{end}}</h2><span class="muted">Windows · o instalador vem do winget-pkgs, conferido pelo SHA-256</span></div>
+<p class="muted">Para programas que estão no catálogo do winget e ainda não estão na lista do patchd (Zoom, VLC, GIMP…). Depois de salvar, o caminho é o de sempre: na página do programa, <b>baixe</b> o instalador e <b>aprove</b> a versão; em Configuração › Autoatendimento, <b>ofereça</b> aos usuários. O patchd acompanha as versões novas sozinho.</p>
+{{if and .CanFind (not .Editing)}}<form class="busca" method="get" action="/painel/patch/terceiros/incluir"><input name="winget" value="{{.Form.Winget}}" maxlength="128" placeholder="Pacote do winget, ex.: VideoLAN.VLC" aria-label="pacote do winget" required><button type="submit">Buscar no winget</button></form>
+<p class="muted">O identificador está em winget.run ou no <code>winget search nome</code> de um Windows. A busca preenche o formulário; confira antes de salvar.</p>{{end}}
+{{with .Found}}<p class="aviso ok">Achado: <b>{{.Name}}</b> {{.Version}} · {{.Publisher}}{{if .Types}} · instaladores x64: {{range $i, $t := .Types}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .Unsupported}} · <span class="nivel-atencao">o patchd não instala {{range $i, $t := .Unsupported}}{{if $i}}, {{end}}{{$t}}{{end}}</span>{{end}}.{{if not .DisplayName}} O pacote não diz como o programa aparece em Programas e Recursos: confira numa máquina com ele instalado (aba Software).{{end}}</p>{{end}}
+<form class="formulario" method="post" action="/painel/patch/terceiros/incluir">{{if .Editing}}<input type="hidden" name="editar" value="{{.Editing}}">{{end}}
+<div class="campo"><label for="ci-nome">Nome</label><input id="ci-nome" name="nome" value="{{.Form.Name}}" maxlength="80" required><small class="muted">como aparece no painel e na Central de software</small></div>
+<div class="campo"><label for="ci-winget">Pacote do winget</label><input id="ci-winget" name="winget" value="{{.Form.Winget}}" maxlength="128" required{{if .Editing}} readonly{{end}}><small class="muted">Fabricante.Programa{{if .Editing}}; para trocar, exclua e inclua de novo{{end}}</small></div>
+<div class="campo"><label for="ci-inv">Nome no inventário</label><input id="ci-inv" name="inventario" value="{{.Form.Inventory}}" maxlength="160" required><small class="muted">como o programa aparece em Programas e Recursos (aba Software da máquina)</small></div>
+<div class="campo"><label for="ci-modo">Comparar o nome</label><select id="ci-modo" name="modo"><option value="igual"{{if eq .Form.Mode "igual"}} selected{{end}}>igual (o nome inteiro)</option><option value="comeca"{{if eq .Form.Mode "comeca"}} selected{{end}}>começa com (o nome traz a versão ou a arquitetura depois)</option></select></div>
+<div class="campo"><label for="ci-fab">Fabricante no inventário</label><input id="ci-fab" name="fabricante" value="{{.Form.Publisher}}" maxlength="160"><small class="muted">opcional; evita confundir programas de nome parecido</small></div>
+<div class="campo"><label for="ci-tipo">Tipo do instalador</label><select id="ci-tipo" name="tipo">{{range .Types}}<option value="{{.}}"{{if eq . $.Form.Type}} selected{{end}}>{{if .}}{{.}}{{else}}o primeiro do winget{{end}}</option>{{end}}</select><small class="muted">o mesmo que está nas máquinas (MSI só atualiza MSI; exe, exe)</small></div>
+<fieldset class="escolhas"><legend>Assinatura do instalador</legend>
+<label class="opcao"><input type="radio" name="assinatura" value="sim"{{if not .Form.NoSignature}} checked{{end}}><span>Exigir a assinatura da organização <input name="assinante" value="{{.Form.Signer}}" maxlength="128" placeholder="O= do certificado, ex.: VideoLAN" aria-label="organização que assina"></span></label>
+<label class="opcao"><input type="radio" name="assinatura" value="nao"{{if .Form.NoSignature}} checked{{end}}><span>O instalador não é assinado, porque <input name="sem_assinatura" value="{{.Form.Unsigned}}" maxlength="300" placeholder="ex.: o fabricante publica sem assinatura" aria-label="motivo sem assinatura"></span></label>
+</fieldset>
+<p class="muted">A organização está em Propriedades › Assinaturas digitais do instalador, ou no <code>Get-AuthenticodeSignature</code>. Sem assinatura, o que garante o arquivo é o SHA-256 do winget-pkgs e a sua aprovação de cada versão.</p>
+<div class="campo"><label for="ci-proc">Processos do programa</label><input id="ci-proc" name="processos" value="{{.Form.Processes}}" maxlength="400" placeholder="ex.: vlc.exe"><small class="muted">opcional; com um deles aberto, o agente não instala (adia), em vez de falhar no meio</small></div>
+<div class="acoes"><button type="submit">{{if .Editing}}Salvar alterações{{else}}Incluir programa{{end}}</button>{{if .Editing}} <a href="/painel/patch/terceiros/incluir">Cancelar</a>{{end}}</div>
+</form></div>
+<div class="card"><div class="card-cab"><h2>Incluídos pelo painel</h2><span class="muted">{{len .Rows}} programa(s)</span></div>
+{{if .Rows}}<div class="tabela"><table><thead><tr><th>Programa</th><th>Pacote do winget</th><th>Nome no inventário</th><th>Alterado</th><th></th></tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Name}}</a></td><td><code>{{.Winget}}</code></td><td>{{.Match}}</td><td class="muted">{{.Updated}}</td>
+<td><a class="btn" href="/painel/patch/terceiros/incluir?editar={{.ID}}">Editar</a> <details class="excluir"><summary>Excluir</summary><form method="post" action="/painel/patch/terceiros/incluidos/excluir"><input type="hidden" name="id" value="{{.ID}}"><button class="perigo" type="submit">Excluir {{.Name}}</button> <span class="muted">só sem versão aprovada, sem oferta no autoatendimento e fora da Padronização</span></form></details></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="muted">Nenhum ainda.</p>{{end}}</div>
+{{end}}
+{{template "fim"}}{{end}}
+
 {{define "patch-terceiros"}}{{template "topo" .}}
-<h1>Patch <span class="muted">› Programas de terceiros</span></h1>
+<h1>Patch <span class="muted">› Programas de terceiros</span>{{if .Admin}} <a class="btn" href="/painel/patch/terceiros/incluir">Incluir programa</a>{{end}}</h1>
 {{template "patch-abas" "terceiros"}}
 {{if .Unavailable}}<p class="aviso erro">{{.Unavailable}}</p>{{else}}
 <ul class="kpis">
@@ -1155,6 +1187,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "patch-programa"}}{{template "topo" .}}
 <p><a href="/painel/patch?aba=terceiros">← Programas de terceiros</a></p>
 <h1>{{.P.Program}}</h1>
+{{if .Custom}}<p class="muted">Incluído pelo painel.{{if .Admin}} <a href="/painel/patch/terceiros/incluir?editar={{.P.AppID}}">Editar ou excluir</a>{{end}}</p>{{end}}
 <div class="card"><dl class="dados">
 <dt>Referência</dt><dd>{{if .P.Reference}}<code>{{.P.Reference}}</code>{{else}}—{{end}}</dd>
 {{if .P.Origin}}<dt>Origem</dt><dd>{{.P.Origin}}</dd>{{end}}
@@ -1175,10 +1208,10 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .CanFetch}}{{if .OtherBusy}}<p class="muted">Baixando outro programa agora ({{.OtherBusy}}); um download por vez.</p>{{else if not (and .Fetch .Fetch.Running)}}<form class="acao" method="post" action="/painel/patch/terceiros/baixar"><input type="hidden" name="app" value="{{.P.AppID}}"><input name="versao" maxlength="64" placeholder="Versão do winget (vazio: a mais nova)" aria-label="versão a baixar">{{if .Kinds}}<select name="tipo" aria-label="tipo do instalador"><option value="">{{if .RuleType}}o da regra ({{.RuleType}}){{else}}o primeiro do manifesto{{end}}</option>{{range .Kinds}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>{{end}}<button type="submit">Baixar</button></form>{{if .Kinds}}<p class="muted">O tipo segue o que está instalado nas máquinas: uma instalação MSI só é atualizada por um MSI, e uma exe por um exe (a Atualização pelo patchd, na máquina, diz qual falta). A aprovação é da versão e vale para os dois.</p>{{end}}{{end}}{{end}}
 {{if not .Admin}}<p class="muted">Aprovar, baixar e excluir exigem o perfil admin.</p>{{end}}
 </div>{{end}}
-<div class="card"><div class="card-cab"><h2>Instalações</h2></div><div class="tabela"><table>
+<div class="card"><div class="card-cab"><h2>Instalações</h2></div>{{if not .Rows}}<p class="muted">Nenhuma máquina tem este programa no inventário{{if .Custom}} (confira o nome no inventário, se ele já estiver instalado em alguma){{end}}.</p>{{else}}<div class="tabela"><table>
 <thead><tr><th>Máquina</th><th>Como aparece no inventário</th><th>Instalada</th><th>Situação</th><th>Escopo</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=pendencias">{{if .Machine}}{{.Machine}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td>
-<td>{{.Name}}</td><td><code>{{.Installed}}</code></td><td><span class="estado {{.Class}}">{{.Label}}</span></td><td>{{.ScopeLabel}}</td></tr>{{end}}</tbody></table></div></div>
+<td>{{.Name}}</td><td><code>{{.Installed}}</code></td><td><span class="estado {{.Class}}">{{.Label}}</span></td><td>{{.ScopeLabel}}</td></tr>{{end}}</tbody></table></div>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "patch"}}{{template "topo" .}}

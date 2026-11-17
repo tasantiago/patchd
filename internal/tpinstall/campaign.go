@@ -32,15 +32,26 @@ type CampaignStore interface {
 type Campaigner struct {
 	Store    CampaignStore
 	Manifest thirdparty.Manifest
-	Dir      string // PATCHD_CONTENT_DIR/pacotes; vazio: o servidor não guarda instaladores
+	// Rules: as regras que valem agora (o programa incluído pelo painel entra na hora); nil:
+	// vale Manifest.
+	Rules *thirdparty.Live
+	Dir   string // PATCHD_CONTENT_DIR/pacotes; vazio: o servidor não guarda instaladores
 	// Installomator: a versão do script que vai aos Macs (internal/installomator); nil: os
 	// Macs ficam fora das campanhas de terceiros.
 	Installomator *installomator.Script
 }
 
+// rules: o manifesto de agora.
+func (c Campaigner) rules() thirdparty.Manifest {
+	if c.Rules != nil {
+		return c.Rules.Get()
+	}
+	return c.Manifest
+}
+
 // macRule: a regra do macOS do programa, com o rótulo do Installomator.
 func (c Campaigner) macRule(app string) *thirdparty.App {
-	for _, r := range c.Manifest.For("macos") {
+	for _, r := range c.rules().For("macos") {
 		if r.ID == app && r.Install != nil && r.Install.Installomator != "" {
 			return &r
 		}
@@ -64,7 +75,7 @@ func (c Campaigner) MacScript() (*MacScript, string) {
 }
 
 func (c Campaigner) rule(app string) *thirdparty.App {
-	for _, r := range c.Manifest.For("windows") {
+	for _, r := range c.rules().For("windows") {
 		if r.ID == app && r.Install != nil {
 			return &r
 		}
@@ -156,7 +167,7 @@ func (c Campaigner) Job(ctx context.Context, machineID, app, version string) (*j
 	if err != nil {
 		return nil, "", err
 	}
-	for _, d := range Plan(inv.Software, c.Manifest, versionPackages(all, app, version), arch) {
+	for _, d := range Plan(inv.Software, c.rules(), versionPackages(all, app, version), arch) {
 		if d.App.ID != app {
 			continue
 		}
@@ -188,7 +199,7 @@ func (c Campaigner) macJob(ctx context.Context, machineID string, inv protocol.I
 	if script == nil {
 		return nil, why, nil
 	}
-	for _, d := range PlanMac(inv.Software, c.Manifest, func(string) string { return version }) {
+	for _, d := range PlanMac(inv.Software, c.rules(), func(string) string { return version }) {
 		if d.App.ID != app {
 			continue
 		}

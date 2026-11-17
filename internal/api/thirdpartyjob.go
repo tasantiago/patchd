@@ -23,7 +23,7 @@ import (
 
 // WithThirdPartyManifest dá ao servidor as regras de terceiros (Aula 14.4): é com elas que
 // ele reconhece, no inventário novo, o programa que o job thirdparty atualizou.
-func WithThirdPartyManifest(m *thirdparty.Manifest) Option {
+func WithThirdPartyManifest(m *thirdparty.Live) Option {
 	return func(a *api) { a.tpManifest = m }
 }
 
@@ -105,7 +105,7 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo"
 	}
 	when := changed.InventoryChangedAt.UTC().Format("2006-01-02 15:04:05")
-	machine, _ := tpinstall.Entries(inv.OS.ID, inv.Software, *a.tpManifest, p.App)
+	machine, _ := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
 	switch len(machine) {
 	case 0:
 		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC não mostra mais o programa %s; agente: %s", when, p.App, agent)

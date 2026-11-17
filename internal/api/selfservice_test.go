@@ -26,7 +26,7 @@ func TestAutoatendimentoPeloAgente(t *testing.T) {
 	m, _ := thirdparty.Default()
 	_, priv, _ := jobs.GenerateKey()
 	dir := t.TempDir()
-	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
 	_, _ = st.CreateEnrollmentToken(ctx, hash, "teste", time.Now().Add(time.Hour), 1)

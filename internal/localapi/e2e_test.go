@@ -30,7 +30,7 @@ func TestDoCanalAoJob(t *testing.T) {
 	_, priv, _ := jobs.GenerateKey()
 	dir := t.TempDir()
 	st := store.NewMemory()
-	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(&m))
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 

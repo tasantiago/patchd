@@ -128,7 +128,7 @@ func usesInstallomator(m thirdparty.Manifest) bool {
 // syncInstallomator garante o script dos Macs na pasta de pacotes, quando alguma regra o usa.
 // false: falhou (a sincronização dos terceiros fica com falha, e o script guardado continua).
 func syncInstallomator(ctx context.Context, srcs catalogSources, out io.Writer) bool {
-	if !usesInstallomator(srcs.Manifest) || srcs.Installomator == nil && srcs.InstallomatorErr == nil {
+	if !usesInstallomator(srcs.rules()) || srcs.Installomator == nil && srcs.InstallomatorErr == nil {
 		return true
 	}
 	switch {

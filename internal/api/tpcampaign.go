@@ -25,7 +25,7 @@ func (a *api) campaigner() campaign.ThirdPartyPlanner {
 	if a.tpManifest == nil {
 		return noRules{}
 	}
-	return tpinstall.Campaigner{Store: a.store, Manifest: *a.tpManifest, Dir: a.packagesDir(), Installomator: a.installomator}
+	return tpinstall.Campaigner{Store: a.store, Manifest: a.tpManifest.Get(), Dir: a.packagesDir(), Installomator: a.installomator}
 }
 
 type noRules struct{}

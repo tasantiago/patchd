@@ -21,7 +21,7 @@ func TestProgramaAbertoPeloPainel(t *testing.T) {
 	ctx := context.Background()
 	_, priv, _ := jobs.GenerateKey()
 	m, _ := thirdparty.Default()
-	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
 	if _, err := st.CreateEnrollmentToken(ctx, hash, "t", time.Now().Add(time.Hour), 1); err != nil {
 		t.Fatal(err)

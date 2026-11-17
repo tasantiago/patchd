@@ -79,6 +79,9 @@ type catalogSources struct {
 	Third       thirdpartySource
 	Manifest    thirdparty.Manifest
 	ManifestErr error
+	// Rules: as regras que valem agora no servidor (com os programas incluídos pelo painel);
+	// nil: vale Manifest (a linha de comando).
+	Rules *thirdparty.Live
 	// Retries conta os pedidos repetidos pelos clientes (nil nos testes: nenhum).
 	Retries *atomic.Int64
 	// WSUS baixa o wsusscn2.cab para ContentDir (vazio: sem diretório de conteúdo).
@@ -90,6 +93,14 @@ type catalogSources struct {
 	Installomator    func(ctx context.Context, dir string) (size int64, cached bool, err error)
 	InstallomatorErr error
 	InstallomatorVer string
+}
+
+// rules: o manifesto de agora.
+func (s catalogSources) rules() thirdparty.Manifest {
+	if s.Rules != nil {
+		return s.Rules.Get()
+	}
+	return s.Manifest
 }
 
 func (s catalogSources) retries() int64 {
@@ -301,7 +312,7 @@ func syncOneSource(ctx context.Context, name string, srcs catalogSources, st cat
 		if srcs.ManifestErr != nil {
 			return failure(srcs.ManifestErr)
 		}
-		saved, tfail, err := syncThirdParty(ctx, srcs.Manifest, srcs.Third, st, out)
+		saved, tfail, err := syncThirdParty(ctx, srcs.rules(), srcs.Third, st, out)
 		if err != nil {
 			return failure(err)
 		}

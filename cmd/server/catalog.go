@@ -162,6 +162,18 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		return exitRuntime
 	}
 	st := store.NewPostgres(pool)
+	// As mesmas regras do servidor no ar, com os programas incluídos pelo painel (migração
+	// 0074): a sincronização apaga a versão das regras que não estão no manifesto, e sem eles
+	// apagaria a dos programas incluídos.
+	srcs := newCatalogSources(look)
+	if srcs.ManifestErr == nil {
+		_, all, err := thirdPartyRules(ctx, look, st, logger)
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: programas incluídos pelo painel: %v\n", err)
+			return exitRuntime
+		}
+		srcs.Manifest, manifest = all, all
+	}
 
 	switch args[0] {
 	case "sync":
@@ -170,7 +182,7 @@ func runCatalog(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		// A trava do banco impede que o agendamento do servidor e este comando sincronizem
 		// ao mesmo tempo.
 		err := withCatalogLock(ctx, st, func() {
-			results = syncCatalog(ctx, newCatalogSources(look), st, opts, stdout)
+			results = syncCatalog(ctx, srcs, st, opts, stdout)
 		})
 		if err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)

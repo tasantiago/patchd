@@ -37,7 +37,7 @@ func TestAutoatendimentoPelaLinhaDeComando(t *testing.T) {
 	_ = mem.SetSelfServiceOffer(ctx, store.SelfServiceOffer{AppID: "7zip", CanUpdate: true, Groups: []string{"GG-Exemplo"}, UpdatedBy: "x"})
 	m, _ := thirdparty.Default()
 	_, key, _ := jobs.GenerateKey()
-	svc := &selfservice.Service{Store: mem, Manifest: &m, Key: key, PackagesDir: dir, Now: time.Now}
+	svc := &selfservice.Service{Store: mem, Manifest: thirdparty.NewLive(m), Key: key, PackagesDir: dir, Now: time.Now}
 	roda := func(args ...string) (int, string, string) {
 		var o, e bytes.Buffer
 		code := selfServiceCommand(ctx, memoriaComPrefixo{mem}, svc, args, &o, &e)

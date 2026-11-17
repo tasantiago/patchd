@@ -385,6 +385,19 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			logger.Info("fila dos agentes ligada", "pool", max, "agentes", api.AgentGateSlots(max))
 		}
 	}
+	// Os programas de terceiros (Aula 13.3): o manifesto embutido, o local e os incluídos pelo
+	// painel (migração 0074), um só para todos os serviços. Incluir ou excluir um programa no
+	// painel troca o manifesto inteiro (thirdparty.Live): vale na hora.
+	var tpRules *thirdparty.Live
+	var tpBase thirdparty.Manifest
+	if pg, ok := st.(*store.Postgres); ok {
+		base, all, err := thirdPartyRules(ctx, look, pg, logger)
+		if err != nil {
+			logger.Error("manifesto dos programas de terceiros", "error", err)
+			return exitConfig
+		}
+		tpBase, tpRules = base, thirdparty.NewLive(all)
+	}
 	retention := liveRetention(params, cfg.Retention)
 	if p, ok := st.(pruner); ok {
 		logger.Info("retenção: " + describeRetention(retention()) + "; aplicada de hora em hora (patchd-server retention mostra antes)")
@@ -392,6 +405,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 	if pg, ok := st.(*store.Postgres); ok { // sem banco não há catálogo
 		srcs := newCatalogSources(look)
+		srcs.Rules = tpRules // o programa incluído pelo painel entra na próxima sincronização
 		if srcs.ContentDirErr != nil {
 			logger.Error("o wsusscn2.cab fica fora do agendamento", "error", srcs.ContentDirErr)
 		}
@@ -414,7 +428,7 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		logger.Info("campanhas paradas (sem PATCHD_JOB_SIGNING_KEY_FILE): nenhum grupo de implantação é liberado")
 	default:
 		var tp campaign.ThirdPartyPlanner
-		switch c, err := newCampaigner(pg, look); {
+		switch c, err := newCampaigner(pg, look, tpRules); {
 		case err != nil:
 			logger.Error("campanhas de terceiros paradas (pausam no primeiro grupo de implantação)", "error", err)
 		default:
@@ -456,22 +470,15 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	}
 
 	// Estado de compliance (RF-23, Aula 7.4): avaliado contra o catálogo do mesmo banco.
-	var tpRules *thirdparty.Manifest // Aula 23.3: as mesmas regras para o download pelo painel
 	if pg, ok := st.(*store.Postgres); ok {
 		cs := newComplianceService(pg, logger)
 		go cs.Warm(ctx) // o cache das avaliações quente: as páginas do parque não reavaliam tudo
-		// Programas de terceiros no painel (Aula 13.3): o mesmo manifesto da linha de comando.
-		path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
-		manifest, err := thirdparty.Load(path)
-		if err != nil {
-			logger.Error("manifesto dos programas de terceiros", "error", err)
-			return exitConfig
-		}
-		cs.manifest = &manifest
+		// Programas de terceiros no painel (Aula 13.3): o mesmo manifesto de todos os serviços.
+		cs.manifest = tpRules
 		apiOpts = append(apiOpts, api.WithCompliance(cs))
 		apiOpts = append(apiOpts, api.WithBackground(ctx)) // as regras dos grupos de implantação, a cada 5 min
 		// O mesmo manifesto confere, no inventário, o efeito do job thirdparty (Aula 14.4).
-		apiOpts = append(apiOpts, api.WithThirdPartyManifest(&manifest))
+		apiOpts = append(apiOpts, api.WithThirdPartyManifest(tpRules), api.WithCustomApps(tpBase, wingetDescriber(info.Version), customAppSync(pg, look, logger)))
 		// O Installomator dos Macs (a versão fixada, ou a das variáveis).
 		script, err := installomator.Pinned(look)
 		if err != nil {
@@ -479,7 +486,6 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			return exitConfig
 		}
 		apiOpts = append(apiOpts, api.WithInstallomator(script))
-		tpRules = &manifest
 	}
 	// O catálogo offline do Windows é distribuído pelo servidor que o baixa (o mesmo banco
 	// e a mesma pasta), mesmo com o agendamento desligado (o catalog sync manual também baixa).

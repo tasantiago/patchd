@@ -122,6 +122,12 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		return exitRuntime
 	}
 	st := store.NewPostgres(pool)
+	// Com o banco, os programas incluídos pelo painel entram nas regras (migração 0074).
+	if _, all, err := thirdPartyRules(ctx, look, st, logger); err == nil {
+		manifest = all
+	} else {
+		fmt.Fprintf(stderr, "patchd-server: programas incluídos pelo painel fora: %v\n", err)
+	}
 	switch args[0] {
 	case "list":
 		return packageList(ctx, st, packagesDir(dir), args[1:], time.Now(), stdout, stderr)

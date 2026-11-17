@@ -32,7 +32,7 @@ func tela(linhas map[string]url.Values, extra url.Values) url.Values {
 // ou nada na conferência, só as linhas que mudaram na trilha.
 func TestOfertaEmLote(t *testing.T) {
 	m, _ := thirdparty.Default()
-	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	envia := func(f url.Values) *http.Response {
 		r := pagina(h, "POST", "/painel/configuracao/autoatendimento", sessaoAdmin, f)

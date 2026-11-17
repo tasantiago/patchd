@@ -42,6 +42,10 @@ import (
 // tipo com estes métodos serve (a memória, o PostgreSQL, um fake de teste).
 type Store interface {
 	StandardizationPolicies(context.Context) ([]store.StandardizationPolicy, error)
+	// Os programas de terceiros incluídos pelo painel (customapps.go).
+	CustomApps(ctx context.Context) ([]store.CustomApp, error)
+	SaveCustomApp(ctx context.Context, a store.CustomApp) error
+	DeleteCustomApp(ctx context.Context, id string) (bool, error)
 	SaveStandardizationPolicy(context.Context, store.StandardizationPolicy) (int64, error)
 	DeleteStandardizationPolicy(context.Context, int64, int64) error
 	WithStandardizationLock(context.Context, string, func(context.Context) error) (bool, error)
@@ -280,7 +284,8 @@ type api struct {
 
 	directory   Directory                            // nil: só usuários locais
 	compliance  ComplianceSource                     // nil: sem estado de compliance (armazenamento em memória)
-	tpManifest  *thirdparty.Manifest                 // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
+	custom      *customApps                          // programas incluídos pelo painel (customapps.go); nil: desligado
+	tpManifest  *thirdparty.Live                     // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
 	tpFetch     PackageFetcher                       // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
 	fetches     tpFetchBoard                         // Aula 23.3: o download em andamento e o último de cada programa
 	assets      assetCache                           // Aula 23.6: o patrimônio, pelo tombo
@@ -376,6 +381,9 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/patch", a.panelPage(a.patchPage))
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))
 	mux.Handle("GET /painel/patch/programa", a.panelPage(a.thirdPartyProgramPage))
+	mux.Handle("GET /painel/patch/terceiros/incluir", a.adminAction(a.customPage))
+	mux.Handle("POST /painel/patch/terceiros/incluir", a.sameOrigin(a.adminAction(a.customSaveAction)))
+	mux.Handle("POST /painel/patch/terceiros/incluidos/excluir", a.sameOrigin(a.adminAction(a.customDeleteAction)))
 	mux.Handle("POST /painel/patch/terceiros/aprovar", a.sameOrigin(a.adminAction(a.approveThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/aprovar-lote", a.sameOrigin(a.adminAction(a.tpBatchAction)))
 	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))

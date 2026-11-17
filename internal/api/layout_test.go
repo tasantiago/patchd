@@ -255,7 +255,7 @@ func TestLogotipoDoPainel(t *testing.T) {
 func TestLogotipoParaOAgente(t *testing.T) {
 	m, _ := thirdparty.Default()
 	_, priv, _ := jobs.GenerateKey()
-	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(&m), api.WithBrand("patchd · TJ"))
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)), api.WithBrand("patchd · TJ"))
 	ctx := context.Background()
 	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
 	_, _ = st.CreateEnrollmentToken(ctx, hash, "teste", time.Now().Add(time.Hour), 1)

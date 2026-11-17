@@ -59,7 +59,7 @@ func paramsNpp() json.RawMessage {
 
 func TestThirdPartyPorJob(t *testing.T) {
 	m, _ := thirdparty.Default()
-	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(&m))
+	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	pub, priv, _ := jobs.GenerateKey()
 	var buscas atomic.Int32
 	log := &bytes.Buffer{}
@@ -166,7 +166,7 @@ func TestThirdPartyRecusadoForaDoWindows(t *testing.T) {
 // O download falhou: o instalador não rodou, o job é "falhou" e o inventário não é reenviado.
 func TestThirdPartySemDownloadNaoReenviaInventario(t *testing.T) {
 	m, _ := thirdparty.Default()
-	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(&m))
+	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	pub, priv, _ := jobs.GenerateKey()
 	var buscas atomic.Int32
 	a := agenteDeTeste(t, srv, cred, &buscas, &bytes.Buffer{})
@@ -193,7 +193,7 @@ func TestThirdPartySemDownloadNaoReenviaInventario(t *testing.T) {
 // inventário não é reenviado.
 func TestThirdPartyAdiado(t *testing.T) {
 	m, _ := thirdparty.Default()
-	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(&m))
+	srv, id, cred := novoServidor(t, api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	pub, priv, _ := jobs.GenerateKey()
 	var buscas atomic.Int32
 	a := agenteDeTeste(t, srv, cred, &buscas, &bytes.Buffer{})

@@ -77,7 +77,7 @@ func TestAvaliacaoDoParqueCompartilhaOCatalogo(t *testing.T) {
 	}
 	s := newComplianceService(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.now = func() time.Time { return agora }
-	s.manifest = &manifest
+	s.manifest = thirdparty.NewLive(manifest)
 	fleet, err := s.fleet(context.Background(), modeWarm)
 	if err != nil || len(fleet.Machines) != n {
 		t.Fatalf("parque: %d máquinas, %v", len(fleet.Machines), err)

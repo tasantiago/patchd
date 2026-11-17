@@ -37,7 +37,7 @@ func TestAprovacaoDeInstaladores(t *testing.T) {
 	}
 	m, _ := thirdparty.Default()
 	log := &syncBuffer{}
-	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m))
+	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	prog := "/painel/patch/programa?app=google-chrome"
 
 	// Leitura: o cartão, sem formulários.

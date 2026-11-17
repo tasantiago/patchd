@@ -25,7 +25,7 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 	_, priv, _ := jobs.GenerateKey()
 	dir := t.TempDir()
 	m, _ := thirdparty.Default()
-	h, st, log := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(&m))
+	h, st, log := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	const pc = "92fc3b93-0003"
 	st.SaveInventory(ctx, pc, protocol.InventoryReport{SchemaVersion: 1, Hash: "w", OS: protocol.OSInfo{ID: "windows", Arch: "amd64"},
@@ -57,7 +57,7 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 	src := &complianceFalso{fleet: protocol.ComplianceFleet{Machines: []protocol.ComplianceStatus{{MachineID: pc}}},
 		terceiros: map[string][]protocol.ThirdPartyItem{pc: {{AppID: "libreoffice", Program: "LibreOffice", Name: "LibreOffice 25.2.1.1",
 			State: "DESATUALIZADO", Installed: "25.2.1.1", Reference: "26.8.1.1"}}}}
-	hp := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithJobKey(priv), api.WithThirdPartyManifest(&m))
+	hp := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithJobKey(priv), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	prog := pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(prog, `<a class="btn" href="/painel/campanhas?programa=libreoffice&#43;26.8.1.1&amp;tipo=thirdparty#nova">Campanha por grupo de implantação</a>`) {
 		t.Errorf("programa (admin) sem o link:\n%s", prog)
@@ -106,7 +106,7 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 func TestCampanhaTodosOsProgramasPeloPainel(t *testing.T) {
 	_, priv, _ := jobs.GenerateKey()
 	m, _ := thirdparty.Default()
-	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	if b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="terceiros_todos"`) {
 		t.Fatal("sem a opção de todos os programas")
 	}
