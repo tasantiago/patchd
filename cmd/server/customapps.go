@@ -66,8 +66,8 @@ func wingetDescriber(version string) api.WingetDescriber {
 func customAppSync(st thirdpartyStore, look config.Lookup, logger *slog.Logger) func(context.Context, thirdparty.App) {
 	src := newCatalogSources(look).Third
 	return func(ctx context.Context, app thirdparty.App) {
-		if app.Source == nil {
-			return
+		if app.Source == nil || app.Source.Type == thirdparty.SourceUpload {
+			return // o instalador próprio: a referência vem do envio
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()

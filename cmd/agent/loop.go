@@ -29,6 +29,7 @@ import (
 	"github.com/tasantiago/patchd/internal/release"
 	"github.com/tasantiago/patchd/internal/scriptexec"
 	"github.com/tasantiago/patchd/internal/sensor"
+	"github.com/tasantiago/patchd/internal/shortcuts"
 	"github.com/tasantiago/patchd/internal/wol"
 )
 
@@ -272,6 +273,25 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}).Execute
 	ag.MicrosoftFallback = msFallback.Store
 	ag.Route = route
+	// Atalhos na área de trabalho de todos os usuários (programas de terceiros): só no Windows.
+	if pm, err := shortcuts.PublicDesktop(opts.DataDir); err == nil {
+		ag.DesktopShortcuts = func(_ context.Context, list protocol.DesktopShortcuts) {
+			res, err := pm.Apply(list)
+			if err != nil {
+				logger.Warn("atalhos na área de trabalho pública não aplicados", "error", err)
+				return
+			}
+			for _, r := range res {
+				switch r.State {
+				case shortcuts.PublicCurrent, shortcuts.PublicNoProgram:
+				case shortcuts.PublicError, shortcuts.PublicKept:
+					logger.Warn("atalho na área de trabalho pública", "app", r.App, "nome", r.Name, "estado", r.State, "detalhe", r.Detail)
+				default:
+					logger.Info("atalho na área de trabalho pública", "app", r.App, "nome", r.Name, "estado", r.State)
+				}
+			}
+		}
+	}
 	// Job windows_update (Aula 16.1): só no Windows, pelo WUA. Com o cache do servidor
 	// (docs/cache-windows.md): a busca pelo catálogo offline e os arquivos do servidor.
 	wc := &patch.WinCache{Fetch: agent.WinCacheFetcher{Client: client, Dir: filepath.Join(opts.DataDir, "wucache")}.Fetch}

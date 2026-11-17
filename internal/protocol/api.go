@@ -191,6 +191,9 @@ type CheckinResponse struct {
 	// Parâmetros): quando a busca na fonte da política falhar, o agente busca também direto na
 	// Microsoft. Agente anterior: ignora o campo.
 	WinUpdateMicrosoft bool `json:"winupdate_microsoft,omitempty"`
+	// DesktopShortcuts (desktop.go): os atalhos na área de trabalho de todos os usuários que
+	// o agente do Windows mantém. Agente anterior: ignora o campo.
+	DesktopShortcuts *DesktopShortcuts `json:"desktop_shortcuts,omitempty"`
 }
 
 // Limites do intervalo de check-in definido no servidor.

@@ -209,6 +209,10 @@ var silentDefaults = map[string]string{
 	"inno":     "/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
 }
 
+// SilentDefault: os argumentos de instalação silenciosa do tipo, quando o instalador não
+// declara os dele ("" para exe: cada exe tem os seus).
+func SilentDefault(t string) string { return silentDefaults[t] }
+
 // Supported diz se o patchd executa instaladores desse tipo.
 func Supported(t string) bool {
 	_, ok := silentDefaults[t]

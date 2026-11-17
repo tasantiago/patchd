@@ -68,6 +68,7 @@ func (a *api) checkin(w http.ResponseWriter, r *http.Request, id string) {
 	resp.WinUpdateMicrosoft = a.microsoftAllowed()
 	resp.Channel = a.channelOn() // o agente novo abre a espera do canal em tempo real
 	resp.Relay = a.relayInfo()   // docs/rele.md: o relé, para quando estiver fora da rede
+	resp.DesktopShortcuts = a.desktopShortcuts()
 	if slices.Contains(req.Capabilities, protocol.CapabilityJobs) {
 		// Uma falha aqui não derruba o check-in: os jobs ficam pendentes para o próximo.
 		delivered, err := a.store.DeliverJobs(r.Context(), id, a.now())

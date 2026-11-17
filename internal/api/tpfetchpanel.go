@@ -5,10 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,10 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/tasantiago/patchd/internal/panel"
-	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
+	"github.com/tasantiago/patchd/internal/tpupload"
 )
 
 // Instaladores de terceiros pelo painel (Aula 23.3): o admin baixa uma versão (a mais nova do
@@ -260,27 +257,10 @@ func (a *api) deleteThirdPartyAction(w http.ResponseWriter, r *http.Request, s p
 		http.Redirect(w, r, back+"&erro=nada", http.StatusSeeOther)
 		return
 	}
-	rest, err := a.store.ThirdPartyPackages(r.Context())
-	if err != nil {
-		a.internalError(w, r, "listar instaladores", err)
-		return
-	}
-	used := map[string]bool{}
-	for _, p := range rest {
-		used[p.SHA256] = true
-	}
-	var freed int64
-	for _, g := range gone {
-		if used[g.SHA256] {
-			continue
-		}
-		path := filepath.Join(a.contentDir, "pacotes", pkgcache.FileName(g.SHA256, g.MSI()))
-		switch err := os.Remove(path); {
-		case err == nil:
-			freed += g.Size
-		case !errors.Is(err, fs.ErrNotExist):
-			// O registro já saiu: o arquivo órfão não é oferecido a ninguém; fica o aviso.
-			a.logger.Warn("instalador excluído do registro, mas o arquivo ficou", "file", filepath.Base(path), "error", err)
+	freed := a.removePackageFiles(r, gone)
+	if rule := a.installRule(app); rule != nil && rule.Uploaded() {
+		if err := tpupload.SaveReference(r.Context(), a.store, *rule); err != nil {
+			a.logger.Warn("instalador próprio: versão de referência não atualizada", "app", app, "error", err)
 		}
 	}
 	a.logger.Info("versão de instalador de terceiros excluída", "app", app, "version", ver, "installers", len(gone),

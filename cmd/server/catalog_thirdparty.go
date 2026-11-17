@@ -51,6 +51,9 @@ func syncThirdParty(ctx context.Context, m thirdparty.Manifest, src2 thirdpartyS
 			continue
 		}
 		keep = append(keep, a.Key())
+		if a.Source.Type == thirdparty.SourceUpload {
+			continue // o instalador próprio: a referência é a do último envio, guardada pelo painel
+		}
 		key := a.Source.String()
 		r := latest(*a.Source)
 		if r.err != nil {

@@ -115,6 +115,9 @@ type Agent struct {
 	ProgramOpen func(names []string) (bool, error)
 	blockedOnce sync.Once
 	bs          *blockedState
+	// DesktopShortcuts mantém os atalhos na área de trabalho de todos os usuários que o
+	// servidor manda no check-in (só Windows). nil: não mantém.
+	DesktopShortcuts func(ctx context.Context, list protocol.DesktopShortcuts)
 	// Route (docs/rele.md): direto ou pelo relé. nil: sempre direto. O transporte do Client
 	// precisa ser o Route.Wrap para o relé valer.
 	Route *Route
@@ -510,6 +513,12 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			}
 		}
 		a.saveStateOrLog(state)
+	}
+
+	// Atalhos na área de trabalho de todos os usuários (protocol.DesktopShortcut): depois das
+	// instalações e dos scripts, para o programa instalado agora já ganhar o atalho.
+	if resp.DesktopShortcuts != nil && a.DesktopShortcuts != nil {
+		a.DesktopShortcuts(ctx, *resp.DesktopShortcuts)
 	}
 
 	// Limpeza de temporários: depois das instalações (os instaladores dos jobs já saíram).

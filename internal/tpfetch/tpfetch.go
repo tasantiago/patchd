@@ -34,6 +34,9 @@ type Store interface {
 
 // Resolve lê o manifesto do winget da regra (a versão pedida ou a mais nova).
 func Resolve(ctx context.Context, c *winget.Client, a thirdparty.App, ver string) (winget.Manifest, error) {
+	if a.Uploaded() {
+		return winget.Manifest{}, fmt.Errorf("%s é instalador próprio: envie o arquivo pelo painel, não pelo winget", a.ID)
+	}
 	if ver == "" {
 		versions, err := c.Versions(ctx, a.Install.Winget)
 		if err != nil {

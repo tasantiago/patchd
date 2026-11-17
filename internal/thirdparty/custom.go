@@ -34,6 +34,13 @@ type CustomInput struct {
 	Signer         string // a organização (O=) da assinatura do instalador
 	UnsignedReason string // ou: por que o instalador não tem assinatura
 	Processes      []string
+	// Upload: o instalador próprio, enviado pelo painel (sem winget). O id vem do nome, ou é
+	// ID (a edição mantém o id de quando foi incluído).
+	Upload bool
+	ID     string
+	// O atalho na área de trabalho de todos os usuários (opcional): o nome, o executável e o
+	// ícone. Sem o executável, não há atalho.
+	ShortcutName, ShortcutTarget, ShortcutIcon string
 }
 
 // customID: o id da regra, derivado do pacote do winget ("VideoLAN.VLC" → "videolan-vlc").
@@ -77,18 +84,32 @@ func BuildCustom(in CustomInput) (App, error) {
 		field, v string
 		max      int
 		required bool
-	}{{"o nome", in.Name, 80, true}, {"o pacote do winget", in.WingetID, 128, true}, {"o nome no inventário", in.InventoryName, 160, true},
+	}{{"o nome", in.Name, 80, true}, {"o pacote do winget", in.WingetID, 128, !in.Upload}, {"o nome no inventário", in.InventoryName, 160, true},
 		{"o fabricante", in.Publisher, 160, false}, {"o assinante", in.Signer, 128, false}, {"o motivo sem assinatura", in.UnsignedReason, 300, false}} {
 		if err := oneLine(c.field, c.v, c.max, c.required); err != nil {
 			return App{}, err
 		}
 	}
-	if !winget.ValidID(in.WingetID) {
+	id := ""
+	switch {
+	case in.Upload:
+		if in.WingetID != "" {
+			return App{}, errors.New("o instalador próprio não tem pacote do winget")
+		}
+		id = CustomID(in.Name)
+		if in.ID != "" {
+			id = in.ID
+		}
+		if !customIDPattern.MatchString(id) {
+			return App{}, errors.New("o nome não dá um identificador válido: use letras e números (ex.: IRPF 2026)")
+		}
+	case !winget.ValidID(in.WingetID):
 		return App{}, fmt.Errorf("o pacote do winget %q fora da forma Fabricante.Programa (ex.: VideoLAN.VLC)", in.WingetID)
-	}
-	id := CustomID(in.WingetID)
-	if !customIDPattern.MatchString(id) {
-		return App{}, errors.New("o pacote do winget não dá um identificador válido")
+	default:
+		id = CustomID(in.WingetID)
+		if !customIDPattern.MatchString(id) {
+			return App{}, errors.New("o pacote do winget não dá um identificador válido")
+		}
 	}
 	match := "^" + regexp.QuoteMeta(in.InventoryName)
 	switch in.NameMode {
@@ -102,6 +123,23 @@ func BuildCustom(in CustomInput) (App, error) {
 	a := App{ID: id, OS: "windows", Name: in.Name, Category: CategoryFeed, Match: match,
 		Source:  &Source{Type: SourceWinget, ID: in.WingetID},
 		Install: &Install{Winget: in.WingetID, Type: in.InstallType, Signer: in.Signer, UnsignedReason: in.UnsignedReason, Processes: in.Processes}}
+	if in.Upload {
+		if !slices.Contains(UploadTypes, in.InstallType) {
+			return App{}, fmt.Errorf("o tipo do instalador próprio: %s", strings.Join(UploadTypes, ", "))
+		}
+		a.Source = &Source{Type: SourceUpload, ID: id}
+		a.Install.Upload = true
+	}
+	switch {
+	case in.ShortcutTarget != "":
+		name := in.ShortcutName
+		if name == "" {
+			name = in.Name
+		}
+		a.Shortcut = &Shortcut{Name: name, Target: in.ShortcutTarget, Icon: in.ShortcutIcon}
+	case in.ShortcutName != "" || in.ShortcutIcon != "":
+		return App{}, errors.New("o atalho precisa do caminho do executável")
+	}
 	if in.Publisher != "" {
 		a.Publisher = "^" + regexp.QuoteMeta(in.Publisher) + "$"
 	}

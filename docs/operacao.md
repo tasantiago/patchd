@@ -1369,6 +1369,65 @@ As regras ficam no banco (migração 0074) e somam-se ao manifesto embutido e ao
 o manifesto já tem não é incluído de novo. A linha de comando (`package fetch`, `catalog sync`,
 `compliance`, `selfservice`) usa as mesmas regras.
 
+## Instaladores próprios e atalho na área de trabalho
+
+Um programa que **não está no winget** (o IRPF da Receita, um sistema interno, um cliente que o
+fornecedor manda por e-mail) entra com o **instalador próprio**: o arquivo `.msi` ou `.exe` que
+você tem. Em **Patch › Programas de terceiros › Incluir programa**, aba **Instalador próprio**:
+
+1. **Nome** (vira o identificador: "IRPF 2026" → `irpf-2026`), **nome no inventário** (como
+   aparece em Programas e Recursos; "começa com" quando o nome traz mais coisa), fabricante
+   (opcional), **tipo do instalador** (`msi`; `nullsoft` e `inno`, que têm a instalação
+   silenciosa padrão; ou `exe`, que pede os argumentos do fabricante), assinatura e processos,
+   como num programa do winget.
+2. **Atalho na área de trabalho de todos os usuários** (opcional): o caminho do executável
+   depois de instalado (`C:\Arquivos de Programas RFB\IRPF2026\irpf.exe`, ou começando por
+   `%ProgramFiles%`, `%ProgramFiles(x86)%`, `%ProgramData%`…), o nome do atalho (vazio: o do
+   programa) e o ícone (vazio: o do executável; ou um `.ico`, `.exe` ou `.dll` já instalado,
+   com `,N` para escolher o ícone de dentro do arquivo). O atalho vale também para os
+   programas do winget: é o mesmo campo no formulário deles.
+3. **Salvar** e abrir o programa. Em **Enviar instalador**: a **versão** (a mesma que aparece em
+   Programas e Recursos depois de instalar: é por ela que o patchd sabe quem está em dia), a
+   arquitetura, os argumentos da instalação silenciosa e o arquivo (até 2 GiB). Com **Aprovar**
+   marcado, a versão já vale para a Central de software, a Padronização e as campanhas.
+4. Em Configuração › Autoatendimento, **oferecer** (instalar, atualizar, grupos).
+
+**Versão nova** (a atualização do IRPF de cada ano, que não está no winget): envie o instalador
+novo na página do programa, com a versão nova e **Substituir** marcado. As versões anteriores
+perdem a aprovação e o instalador sai do servidor; quem tem a versão antiga instalada passa a
+"desatualizado" e é atualizado pela campanha ou pela Central. Uma versão anterior com job em
+aberto ou campanha não encerrada fica (já sem aprovação) até eles acabarem; exclua-a depois. A
+versão de referência do programa é a do instalador mais novo guardado. Na auditoria:
+`terceiros.enviar`, e `terceiros.aprovar`, `terceiros.revogar`, `terceiros.excluir` de cada
+versão. Um IRPF de outro ano é outro programa (outro nome no inventário e outra pasta): inclua
+"IRPF 2027" quando ele sair.
+
+O mesmo envio pela linha de comando, no servidor, para um arquivo muito grande:
+
+```sh
+patchd-server package upload -app irpf-2026 -version 1.1 -file IRPF2026Win64v1.1.exe -args "-q"
+patchd-server package approve -app irpf-2026 -version 1.1
+```
+
+**Segurança.** O arquivo vai para o mesmo cache dos instaladores do winget, com o SHA-256 no
+nome; o job leva o SHA-256 e o tamanho, assinados pela chave de jobs, e o agente confere os dois
+e a assinatura (a organização exigida na regra) antes de executar. Os argumentos passam pela
+mesma lista dos outros instaladores (sem aspas, caminhos ou propriedades que tragam outro
+arquivo). O painel confere o tipo pelo conteúdo (um `.msi` de verdade, um executável do
+Windows). Numa máquina com a lista própria de assinantes (`-allowed-signers`), um instalador sem
+assinatura daquela lista é recusado, como qualquer outro.
+
+**O atalho.** O servidor manda a lista de atalhos em cada check-in, e o agente do Windows, como
+SYSTEM, mantém os arquivos em `C:\Users\Public\Desktop` (a área de trabalho de todos os
+usuários): cria o atalho quando o executável existe (logo depois da instalação, pelo patchd ou
+não), refaz quando você muda o nome, o caminho ou o ícone, e apaga o que criou quando o
+executável some (o programa foi desinstalado) ou a regra deixa de pedir. Um atalho com o mesmo
+nome que o próprio instalador criou é trocado pelo da regra; um que alguém alterou depois que o
+patchd criou não é apagado. O atalho só aponta para um `.exe` que já está no disco, sem
+argumentos, com a pasta de trabalho na pasta dele: nada é baixado nem executado. Agentes
+anteriores ignoram a lista. O resultado fica no log do agente ("atalho na área de trabalho
+pública").
+
 ## Programas de terceiros no Mac, pelo Installomator
 
 No macOS, o patchd instala e atualiza programas de terceiros pelo **Installomator**
