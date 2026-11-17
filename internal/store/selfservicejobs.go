@@ -47,3 +47,26 @@ func (m *Memory) SelfServiceJobs(ctx context.Context, since time.Time, limit int
 	}
 	return out, nil
 }
+
+// OpenSelfServiceJob diz se a máquina tem um job do autoatendimento em andamento (pendente ou
+// entregue). O limite de downloads deixa passar os arquivos dele: quem pediu está esperando na
+// frente da máquina. O índice dos jobs abertos (0018) atende.
+func (p *Postgres) OpenSelfServiceJob(ctx context.Context, machineID string) (bool, error) {
+	var ok bool
+	err := p.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM jobs WHERE machine_id = $1 AND state IN ('pendente', 'entregue')
+		               AND starts_with(created_by, '`+SelfServiceAuthorPrefix+`'))`, machineID).Scan(&ok)
+	return ok, err
+}
+
+// OpenSelfServiceJob diz se a máquina tem um job do autoatendimento em andamento.
+func (m *Memory) OpenSelfServiceJob(ctx context.Context, machineID string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, j := range m.jobs {
+		if j.MachineID == machineID && (j.State == "pendente" || j.State == "entregue") && strings.HasPrefix(j.CreatedBy, SelfServiceAuthorPrefix) {
+			return true, nil
+		}
+	}
+	return false, nil
+}

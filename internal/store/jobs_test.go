@@ -25,6 +25,7 @@ type contratoJobs interface {
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
 	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
 	SelfServiceJobs(ctx context.Context, since time.Time, limit int) ([]JobRow, error)
+	OpenSelfServiceJob(ctx context.Context, machineID string) (bool, error)
 }
 
 func testarJobs(t *testing.T, st contratoJobs) {
@@ -168,6 +169,21 @@ func testarJobs(t *testing.T, st contratoJobs) {
 	}
 	if l, _ := st.SelfServiceJobs(ctx, agora.Add(time.Hour), 10); len(l) != 0 {
 		t.Errorf("desde depois: %+v", l)
+	}
+	// O limite de downloads deixa passar a máquina com um pedido do autoatendimento aberto.
+	if ok, err := st.OpenSelfServiceJob(ctx, "maq-a"); err != nil || !ok {
+		t.Errorf("pedido aberto: %v %v", ok, err)
+	}
+	for _, id := range []int64{p1, p2} {
+		if _, err := st.FinishJob(ctx, id, "concluido", "ok", agora); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ok, _ := st.OpenSelfServiceJob(ctx, "maq-a"); ok {
+		t.Error("os pedidos encerrados ainda contam (sobrou só o job do admin aberto)")
+	}
+	if ok, _ := st.OpenSelfServiceJob(ctx, "maq-b"); ok {
+		t.Error("outra máquina")
 	}
 }
 

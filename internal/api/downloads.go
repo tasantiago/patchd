@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -18,8 +19,8 @@ import (
 // "busy" com Retry-After, antes de transferir um byte. O agente trata como falha passageira:
 // tenta de novo algumas vezes com espera crescente e, se não der, o job fica adiado (cache do
 // Windows, instaladores) ou o arquivo vem no próximo check-in (versão do agente, catálogo
-// offline). Os pacotes de scripts ficam fora do limite: são pequenos, e o agente marcaria o
-// job como falho.
+// offline). Ficam fora do limite os pacotes de scripts (são pequenos, e o agente marcaria o
+// job como falho) e o instalador de um pedido do autoatendimento (o usuário está esperando).
 
 // DownloadMaxKey: quantos downloads o servidor entrega ao mesmo tempo (0: sem limite).
 const DownloadMaxKey = "PATCHD_DOWNLOAD_MAX"
@@ -48,28 +49,72 @@ type downloadTracker struct {
 	peak     int
 	peakAt   time.Time
 	refused  int64 // recusados pelo limite desde a partida
+	// exempt: os em andamento que passaram fora do limite (não ocupam vaga); selfService: os
+	// que passaram assim desde a partida.
+	exempt      int
+	selfService int64
 }
 
-// tryBegin: como begin, mas só se o total em andamento (sem contar os tipos fora do limite)
-// estiver abaixo de max; 0: sem limite.
-func (t *downloadTracker) tryBegin(kind downloadKind, machine string, now time.Time, max int) (func(), bool) {
+// tryBegin: como begin, mas só se o total em andamento (sem contar os de fora do limite)
+// estiver abaixo de max; 0: sem limite. exempt (pode ser nil) é chamada só quando o limite
+// recusaria: true deixa passar assim mesmo (o pedido do autoatendimento).
+func (t *downloadTracker) tryBegin(kind downloadKind, machine string, now time.Time, max int, exempt func() bool) (func(), bool) {
 	if max > 0 && kind != dlBundle { // os scripts ficam fora do limite
 		t.mu.Lock()
-		limited := t.total() - t.n[dlBundle]
-		if limited >= max {
-			t.refused++
-			t.mu.Unlock()
-			return nil, false
-		}
+		full := t.total()-t.n[dlBundle]-t.exempt >= max
 		t.mu.Unlock()
+		if full {
+			if exempt == nil || !exempt() {
+				t.mu.Lock()
+				t.refused++
+				t.mu.Unlock()
+				return nil, false
+			}
+			return t.beginExempt(kind, machine, now), true
+		}
 	}
 	return t.begin(kind, machine, now), true
+}
+
+// beginExempt: um download fora do limite (o do autoatendimento): conta no total e no pico,
+// mas não ocupa vaga.
+func (t *downloadTracker) beginExempt(kind downloadKind, machine string, now time.Time) func() {
+	done := t.begin(kind, machine, now)
+	t.mu.Lock()
+	t.exempt++
+	t.selfService++
+	t.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			t.mu.Lock()
+			t.exempt--
+			t.mu.Unlock()
+			done()
+		})
+	}
 }
 
 // beginDownload conta o download (e confere o limite do parâmetro). ok=false: já respondeu
 // "ocupado" (503 com Retry-After).
 func (a *api) beginDownload(w http.ResponseWriter, kind downloadKind, machine string) (func(), bool) {
-	done, ok := a.downloads.tryBegin(kind, machine, a.now(), a.downloadMax())
+	// O instalador de um pedido do autoatendimento passa mesmo com o limite cheio: o usuário
+	// está esperando na frente da máquina. Só os instaladores: o autoatendimento não pede
+	// atualização do Windows nem versão do agente. A consulta ao banco só acontece quando o
+	// limite recusaria.
+	var exempt func() bool
+	if kind == dlPackage {
+		exempt = func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			ok, err := a.store.OpenSelfServiceJob(ctx, machine)
+			if err != nil {
+				a.logger.Warn("limite de downloads: não deu para saber se é do autoatendimento", "machine_id", machine, "error", err)
+			}
+			return ok
+		}
+	}
+	done, ok := a.downloads.tryBegin(kind, machine, a.now(), a.downloadMax(), exempt)
 	if !ok {
 		busy(w)
 		return nil, false
@@ -129,13 +174,14 @@ type downloadStats struct {
 	Peak            int
 	PeakAt          time.Time
 	Refused         int64
-	Max             int // o limite (0: sem limite)
+	SelfService     int64 // passaram fora do limite (autoatendimento) desde a partida
+	Max             int   // o limite (0: sem limite)
 }
 
 func (t *downloadTracker) stats() downloadStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return downloadStats{Total: t.total(), Machines: len(t.machines), ByKind: t.n, Peak: t.peak, PeakAt: t.peakAt, Refused: t.refused}
+	return downloadStats{Total: t.total(), Machines: len(t.machines), ByKind: t.n, Peak: t.peak, PeakAt: t.peakAt, Refused: t.refused, SelfService: t.selfService}
 }
 
 // downloadsRow: a linha "Downloads agora" do quadro "Processo e disco".
@@ -160,6 +206,9 @@ func downloadsRow(s downloadStats, stamp func(time.Time) string) settingRow {
 	}
 	if s.Refused > 0 {
 		v += fmt.Sprintf(" · %d recusado(s) pelo limite desde a partida (a máquina tenta de novo depois)", s.Refused)
+	}
+	if s.SelfService > 0 {
+		v += fmt.Sprintf(" · %d do autoatendimento passaram fora do limite", s.SelfService)
 	}
 	return settingRow{Label: "Downloads agora", Value: v}
 }

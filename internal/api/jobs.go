@@ -30,6 +30,9 @@ type JobStore interface {
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
 	// SelfServiceJobs: os pedidos do autoatendimento, para o painel (Aula 17.7).
 	SelfServiceJobs(ctx context.Context, since time.Time, limit int) ([]store.JobRow, error)
+	// OpenSelfServiceJob: a máquina tem um job do autoatendimento em andamento (o limite de
+	// downloads deixa passar os arquivos dele).
+	OpenSelfServiceJob(ctx context.Context, machineID string) (bool, error)
 }
 
 // jobResult recebe o resultado de um job da máquina autenticada. O que o agente diz não
