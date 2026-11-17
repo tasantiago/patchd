@@ -31,7 +31,7 @@ func (c *Client) StandardizationReport(ctx context.Context, user protocol.SelfSe
 }
 
 func (a *Agent) Standardization(ctx context.Context, user protocol.SelfServiceUser) (protocol.StandardizationPlan, error) {
-	plan, err := a.client().Standardization(ctx, user)
+	plan, err := onDemand(ctx, a, func(c *Client) (protocol.StandardizationPlan, error) { return c.Standardization(ctx, user) })
 	if err == nil && plan.CreatedJobs > 0 {
 		a.Wake()
 	}
@@ -39,5 +39,6 @@ func (a *Agent) Standardization(ctx context.Context, user protocol.SelfServiceUs
 }
 
 func (a *Agent) StandardizationReport(ctx context.Context, user protocol.SelfServiceUser, result protocol.StandardizationResult) error {
-	return a.client().StandardizationReport(ctx, user, result)
+	_, err := onDemand(ctx, a, func(c *Client) (struct{}, error) { return struct{}{}, c.StandardizationReport(ctx, user, result) })
+	return err
 }

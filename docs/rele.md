@@ -196,7 +196,10 @@ check-in; o agente o guarda no disco (vale mesmo reiniciando fora da rede). A ca
    resolve);
 2. sem resposta, **disca o relé**; respondendo de novo, **volta ao servidor direto**;
 3. a escolha vale 1 minuto; a mudança de rede (IP novo) e uma falha de conexão fazem testar
-   de novo na hora; o canal em tempo real também reavalia quando cai.
+   de novo na hora; o canal em tempo real também reavalia quando cai;
+4. a **Central de software** (loja, pedidos, logotipo) e a padronização conferem o caminho na
+   hora de cada chamada, sem esperar o ciclo: logo depois de ligar o notebook fora da rede
+   (o primeiro check-in espera até 5 min) ou de trocar de rede, elas já saem pelo relé.
 
 Só o endereço discado muda: o TLS continua com o **nome do servidor** (o da URL do agente,
 mesmo sendo `.local`) e a CA interna. Não precisa de nome público, DNS externo nem certificado
@@ -264,6 +267,7 @@ para ela sai em segundos.
 | Relé fora do ar | Os notebooks de fora ficam sem contato e tentam de novo, com espera crescente; dentro da rede, nada muda | `systemctl status haproxy wg-quick@wg0` no relé |
 | Túnel caído | Idem; o HAProxy marca o servidor como fora | `wg show` (handshake recente?), `ping 10.99.0.1` no servidor |
 | IP de saída da rede interna mudou | O WireGuard se ajusta sozinho, mas a Security List só aceita o IP antigo | atualize a regra UDP 51820 (com várias saídas, todas) |
+| Central de software diz "servidor indisponível" fora da rede | Agente anterior à correção da Central pelo relé: ela só saía pelo relé depois do primeiro check-in | atualize o agente; no log, "autoatendimento: servidor indisponível" com o erro |
 | Varredura da internet na 443 | O HAProxy repassa; a porta só de agentes recusa tudo que não é agente | `journalctl` do servidor: "recusado na porta só de agentes" |
 
 **Segurança, em resumo:** o relé não guarda nada e não tem chave; um relé comprometido vê só
