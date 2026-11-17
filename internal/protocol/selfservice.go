@@ -145,6 +145,59 @@ type SelfServiceRebootState struct {
 	Allowed bool       `json:"allowed"`           // false: servidor (o reinício é com a TI)
 	JobID   int64      `json:"job_id,omitempty"`  // reinício já pedido (por qualquer um), em aberto
 	At      *time.Time `json:"at,omitempty"`      // a hora desse reinício, se conhecida
+	// O porquê e o quê, para a aba Reinício da Central: os motivos (RebootReasons), as
+	// atualizações instaladas desde a última inicialização, quem pediu o reinício já marcado
+	// e a última inicialização. Servidores e agentes anteriores não mandam.
+	Reasons  []string                  `json:"reasons,omitempty"`
+	Updates  []SelfServiceRebootUpdate `json:"updates,omitempty"`
+	By       string                    `json:"by,omitempty"`
+	LastBoot *time.Time                `json:"last_boot,omitempty"`
+}
+
+// SelfServiceRebootUpdate é uma atualização instalada que espera o reinício.
+type SelfServiceRebootUpdate struct {
+	Name   string     `json:"name"`
+	Date   *time.Time `json:"date,omitempty"`
+	Source string     `json:"source"` // "Windows Update" ou "patchd"
+}
+
+// MaxRebootUpdates: quantas atualizações a aba Reinício mostra.
+const MaxRebootUpdates = 20
+
+// RebootReasons traduz os sinais de reinício pendente para quem está na máquina, sem
+// repetir. Só os sinais que dizem "pendente" contam (o indício fraco também: ele diz o que
+// um programa deixou para a próxima inicialização).
+func RebootReasons(st RebootStatus) []string {
+	var out []string
+	add := func(s string) {
+		for _, x := range out {
+			if x == s {
+				return
+			}
+		}
+		out = append(out, s)
+	}
+	for _, sig := range st.Signals {
+		if !sig.Pending {
+			continue
+		}
+		src := strings.ToLower(sig.Source)
+		switch {
+		case strings.Contains(src, "rebootrequired") || strings.Contains(src, "windowsupdate"):
+			add("O Windows Update instalou atualizações que só terminam de valer depois de reiniciar.")
+		case strings.Contains(src, "component based servicing"):
+			add("Componentes do Windows (a atualização mensal, o .NET ou um recurso do sistema) esperam o reinício para concluir a instalação.")
+		case strings.Contains(src, "pendingfilerenameoperations"):
+			add("Um programa instalado ou atualizado deixou arquivos para trocar na próxima inicialização.")
+		case strings.Contains(src, "reboot-required"):
+			add("Pacotes atualizados pedem o reinício para valer.")
+		case strings.Contains(src, "kernel"):
+			add("Um núcleo (kernel) novo foi instalado e só passa a valer depois de reiniciar.")
+		default:
+			add("O sistema indica que há uma instalação esperando o reinício.")
+		}
+	}
+	return out
 }
 
 // NextClock é a próxima vez que o relógio marca hh:mm, a partir de now (no fuso de now):

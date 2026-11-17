@@ -356,7 +356,7 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 			st, err := s.RebootStatus(rctx)
 			cancel()
 			if err == nil && st.Pending != nil {
-				cat.Reboot.Pending = st.Pending
+				liveReboot(cat.Reboot, st)
 			}
 		}
 		cat.Logo = s.syncLogo(ctx, cat.Logo)
@@ -499,6 +499,30 @@ func (s *Server) allow(key string, limit int, window time.Duration) (time.Durati
 func limited(wait time.Duration) Response {
 	min := int((wait + time.Minute - 1) / time.Minute)
 	return fail(CodeLimit, fmt.Sprintf("pedidos demais em pouco tempo; tente de novo em %d minuto(s)", min))
+}
+
+// liveReboot troca o pendente da última busca pelo lido agora, com os motivos de agora. Se a
+// máquina reiniciou depois da busca, o que foi instalado antes já valeu e sai da lista.
+func liveReboot(rb *protocol.SelfServiceRebootState, st protocol.RebootStatus) {
+	rb.Pending = st.Pending
+	rb.Reasons = nil
+	if *st.Pending {
+		rb.Reasons = protocol.RebootReasons(st)
+	}
+	if st.LastBoot == nil {
+		return
+	}
+	if rb.LastBoot == nil || st.LastBoot.After(*rb.LastBoot) {
+		kept := rb.Updates[:0]
+		for _, u := range rb.Updates {
+			if u.Date != nil && u.Date.After(*st.LastBoot) {
+				kept = append(kept, u)
+			}
+		}
+		rb.Updates = kept
+	}
+	lb := *st.LastBoot
+	rb.LastBoot = &lb
 }
 
 // backendError traduz a falha com o servidor para o usuário; o detalhe fica no log.

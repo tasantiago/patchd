@@ -495,3 +495,27 @@ func TestNomeDaCentral(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// O agente troca os motivos pelos de agora e, se a máquina reiniciou depois da busca, tira o
+// que já valeu.
+func TestReinicioDeAgora(t *testing.T) {
+	sim := true
+	velho := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	novo := time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)
+	antes, depois := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC), time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	rb := &protocol.SelfServiceRebootState{Pending: &sim, LastBoot: &velho, Reasons: []string{"velho"},
+		Updates: []protocol.SelfServiceRebootUpdate{{Name: "antes", Date: &antes}, {Name: "depois", Date: &depois}, {Name: "sem data"}}}
+	liveReboot(rb, protocol.RebootStatus{Pending: &sim, LastBoot: &novo,
+		Signals: []protocol.RebootSignal{{Source: `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations`, Pending: true, Weak: true}}})
+	if len(rb.Updates) != 1 || rb.Updates[0].Name != "depois" || !rb.LastBoot.Equal(novo) {
+		t.Errorf("atualizações: %+v %v", rb.Updates, rb.LastBoot)
+	}
+	if len(rb.Reasons) != 1 || !strings.Contains(rb.Reasons[0], "arquivos para trocar") {
+		t.Errorf("motivos: %q", rb.Reasons)
+	}
+	nao := false
+	liveReboot(rb, protocol.RebootStatus{Pending: &nao})
+	if rb.Reasons != nil || *rb.Pending {
+		t.Errorf("sem pendência: %+v", rb)
+	}
+}
