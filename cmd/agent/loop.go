@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -278,6 +279,16 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	// Atalhos na área de trabalho de todos os usuários (programas de terceiros): só no Windows.
 	if pm, err := shortcuts.PublicDesktop(opts.DataDir); err == nil {
 		ag.DesktopShortcuts = func(_ context.Context, list protocol.DesktopShortcuts) {
+			// O nome da Central é do atalho dela (syncUserApp): um da lista com o mesmo nome
+			// trocaria um pelo outro a cada ciclo.
+			central := strings.ToLower(loadAppName(opts.DataDir))
+			list.Items = slices.DeleteFunc(slices.Clone(list.Items), func(s protocol.DesktopShortcut) bool {
+				if opts.UserApp && strings.ToLower(s.Name) == central {
+					logger.Warn("atalho na área de trabalho pública com o nome da Central: fica o da Central", "app", s.App, "nome", s.Name)
+					return true
+				}
+				return false
+			})
 			res, err := pm.Apply(list)
 			if err != nil {
 				logger.Warn("atalhos na área de trabalho pública não aplicados", "error", err)
@@ -338,7 +349,7 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	// Aula 20.10: o nome da Central vem do painel, na loja; o agente o guarda.
 	namer := &appNamer{dir: opts.DataDir, logger: logger}
 	if opts.AutoUpdate && opts.UserApp {
-		namer.apply = userAppRenamer()
+		namer.apply = userAppRenamer(logger)
 	}
 	startSelfService(ctx, logger, ag, namer.Set)
 	syncUserApp(logger, opts.UserApp, loadAppName(opts.DataDir))

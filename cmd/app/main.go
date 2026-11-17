@@ -3,7 +3,8 @@
 // Compilado pelo scripts/build.sh como programa gráfico (-H windowsgui) e com o próprio
 // recurso de versão; o patchd-agent.exe o leva embutido e o grava, sem mudar nada, ao lado de
 // si, como patchd-app.exe. A chave Run do HKLM o abre no logon com "patchd-app.exe app" (o
-// argumento é o mesmo de quando a Central era o próprio agente, e continua aceito).
+// argumento é o mesmo de quando a Central era o próprio agente, e continua aceito). Sem
+// argumento (o atalho da área de trabalho), a Central abre a página.
 package main
 
 import (
@@ -20,11 +21,20 @@ import (
 const AppFile = "patchd-app.exe"
 
 func main() {
-	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "app" {
-		args = args[1:]
+	os.Exit(appmain.Run(appArgs(os.Args[1:]), os.Stdout, os.Stderr, userapp.Caller(localapi.Call), managed()))
+}
+
+// appArgs: os argumentos da Central. "app" é o do logon (a chave Run): o ícone, sem abrir a
+// página. Sem argumento nenhum é o usuário que abriu (o atalho da área de trabalho, o
+// Explorer): abre a página.
+func appArgs(args []string) []string {
+	switch {
+	case len(args) == 0:
+		return []string{"-abrir"}
+	case args[0] == "app":
+		return args[1:]
 	}
-	os.Exit(appmain.Run(args, os.Stdout, os.Stderr, userapp.Caller(localapi.Call), managed()))
+	return args
 }
 
 // managed: o próprio executável, quando é a cópia do serviço (a atualização do agente a troca

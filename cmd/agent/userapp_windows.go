@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/shortcuts"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -39,11 +41,14 @@ func managedAppPath() string {
 }
 
 // syncUserApp põe (ou tira) o app do logon. Só o serviço instalado mexe nisso.
-func syncUserApp(logger *slog.Logger, enabled bool, _ string) {
+func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if !runningInstalledCopy() {
 		return
 	}
 	if !enabled {
+		if err := removeCentralLink(); err != nil {
+			logger.Warn("atalho da Central na área de trabalho não apagado", "error", err)
+		}
 		if err := removeUserApp(); err != nil {
 			logger.Warn("app do usuário: remoção incompleta", "error", err)
 		}
@@ -72,11 +77,42 @@ func syncUserApp(logger *slog.Logger, enabled bool, _ string) {
 	if changed {
 		logger.Info("app do usuário instalado: abre no próximo logon de cada usuário", "exe", userAppPath())
 	}
+	syncCentralLink(logger, name)
+}
+
+// syncCentralLink põe o atalho da Central na área de trabalho de todos os usuários, com o
+// nome da Central no painel (o que não vale como nome de arquivo fica com o padrão). O atalho
+// abre o patchd-app.exe sem argumentos: a página da Central.
+func syncCentralLink(logger *slog.Logger, name string) {
+	if !shortcuts.ValidLinkName(name) {
+		name = protocol.DefaultAppName
+	}
+	link, err := shortcuts.CentralLink(userAppPath())
+	if err != nil {
+		logger.Warn("atalho da Central na área de trabalho", "error", err)
+		return
+	}
+	state, removed, err := link.Sync(name)
+	for _, r := range removed {
+		logger.Info("atalho da Central com o nome antigo apagado", "nome", r)
+	}
+	switch {
+	case err != nil:
+		logger.Warn("atalho da Central na área de trabalho não criado", "nome", name, "error", err)
+	case state == shortcuts.AppLinkCreated:
+		logger.Info("atalho da Central criado na área de trabalho de todos os usuários", "nome", name)
+	}
 }
 
 // userAppRenamer: desde que a Central é um executável próprio, o nome do painel não muda o
-// executável (o nome que o Windows mostra é o do build; a página usa o do painel).
-func userAppRenamer() func(string) (bool, error) { return nil }
+// executável (o nome que o Windows mostra é o do build; a página usa o do painel). Muda o
+// atalho na área de trabalho, que leva o nome do painel.
+func userAppRenamer(logger *slog.Logger) func(string) (bool, error) {
+	return func(name string) (bool, error) {
+		syncCentralLink(logger, name)
+		return false, nil
+	}
+}
 
 // refreshUserApp deixa o patchd-app.exe igual à Central embutida no agente, byte a byte.
 func refreshUserApp() (bool, error) {
@@ -114,4 +150,15 @@ func removeUserApp() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// removeCentralLink apaga o atalho da Central (a Central desligada, o agente desinstalado). A
+// reinstalação da atualização do agente não passa por aqui: o atalho fica onde o usuário o pôs.
+func removeCentralLink() error {
+	link, err := shortcuts.CentralLink(userAppPath())
+	if err != nil {
+		return err
+	}
+	_, err = link.Remove()
+	return err
 }
