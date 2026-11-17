@@ -74,6 +74,16 @@ func writeWindows(path string, s protocol.StandardShortcut) error {
 	if err != nil {
 		return err
 	}
+	location := fmt.Sprintf("%s,%d", iconFile, index)
+	if s.Icon == "" && s.Kind == "aplicativo" {
+		location = target + ",0"
+	}
+	return saveLink(path, target, "", s.Name, location)
+}
+
+// saveLink grava o .lnk pelo WScript.Shell (COM), na thread travada. workDir vazio: o
+// atalho não define a pasta de trabalho.
+func saveLink(path, target, workDir, description, iconLocation string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
@@ -102,14 +112,15 @@ func writeWindows(path string, s protocol.StandardShortcut) error {
 	if _, err := oleutil.PutProperty(link, "TargetPath", target); err != nil {
 		return err
 	}
-	if _, err := oleutil.PutProperty(link, "Description", s.Name); err != nil {
+	if workDir != "" {
+		if _, err := oleutil.PutProperty(link, "WorkingDirectory", workDir); err != nil {
+			return err
+		}
+	}
+	if _, err := oleutil.PutProperty(link, "Description", description); err != nil {
 		return err
 	}
-	location := fmt.Sprintf("%s,%d", iconFile, index)
-	if s.Icon == "" && s.Kind == "aplicativo" {
-		location = target + ",0"
-	}
-	if _, err := oleutil.PutProperty(link, "IconLocation", location); err != nil {
+	if _, err := oleutil.PutProperty(link, "IconLocation", iconLocation); err != nil {
 		return err
 	}
 	_, err = oleutil.CallMethod(link, "Save")

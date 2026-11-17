@@ -12,15 +12,27 @@ import (
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpupload"
 )
 
 // Aprovação dos instaladores de terceiros no painel (Aula 14.5): na página do programa,
 // o cartão "Instaladores guardados" mostra cada versão que o servidor baixou e conferiu,
 // com a aprovação. Aprovar é por programa e versão, e só o admin aprova.
 
-type tpInstallInfo struct{ Winget, Type, Signer, Unsigned, Processes string }
+type tpInstallInfo struct {
+	Winget, Type, Signer, Unsigned, Processes string
+	Upload                                    bool   // instalador próprio (tpupload.go)
+	Shortcut                                  string // o atalho da regra, para mostrar
+}
 
-type tpPackageRow struct{ Type, Arch, Size, SHA, Fetched string }
+type tpPackageRow struct{ Type, Arch, Size, SHA, Fetched, Args, File string }
+
+// tpUploadView: o cartão de envio do instalador próprio.
+type tpUploadView struct {
+	Args, Arch string
+	Archs      []string
+	MaxSize    string
+}
 
 type tpVersionRow struct {
 	Version                      string
@@ -52,9 +64,15 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		return nil
 	}
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
-		Processes: strings.Join(rule.Install.Processes, ", ")}
+		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded()}
+	if sc := rule.Shortcut; sc != nil {
+		v.Install.Shortcut = fmt.Sprintf("%s → %s", sc.Name, sc.Target)
+		if sc.Icon != "" {
+			v.Install.Shortcut += " (ícone " + sc.Icon + ")"
+		}
+	}
 	v.MaxNote = maxNoteLen
-	v.CanFetch = v.Admin && a.tpFetch != nil
+	v.CanFetch = v.Admin && a.tpFetch != nil && !rule.Uploaded()
 	v.Kinds, v.RuleType = fetchKinds(*rule), rule.Install.Type
 	v.Fetch, v.OtherBusy = a.fetches.view(v.P.AppID)
 	if v.Fetch != nil && v.Fetch.Running {
@@ -63,6 +81,10 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	pkgs, err := a.store.ThirdPartyPackages(r.Context())
 	if err != nil {
 		return err
+	}
+	if rule.Uploaded() && v.Admin && a.contentDir != "" {
+		args, arch := uploadDefaults(rule.Install.Type, pkgs, v.P.AppID)
+		v.Upload = &tpUploadView{Args: args, Arch: arch, Archs: tpupload.Archs, MaxSize: pkgcache.Bytes(tpupload.MaxSize)}
 	}
 	approvals, err := a.store.ThirdPartyApprovals(r.Context())
 	if err != nil {
@@ -90,8 +112,11 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 			}
 			byVersion[p.Version] = row
 		}
-		row.Packages = append(row.Packages, tpPackageRow{Type: p.Type, Arch: p.Architecture, Size: pkgcache.Bytes(p.Size),
-			SHA: p.SHA256[:12], Fetched: a.stamp(p.FetchedAt)})
+		pr := tpPackageRow{Type: p.Type, Arch: p.Architecture, Size: pkgcache.Bytes(p.Size), SHA: p.SHA256[:12], Fetched: a.stamp(p.FetchedAt)}
+		if p.Uploaded() {
+			pr.File, pr.Args = strings.TrimPrefix(p.URL, store.UploadPrefix), p.Arguments
+		}
+		row.Packages = append(row.Packages, pr)
 	}
 	for _, row := range byVersion {
 		v.Versions = append(v.Versions, *row)
@@ -184,6 +209,22 @@ func tpApprovalFlash(q url.Values) (flash, errMsg string) {
 		return "", "Esta versão não tinha instalador guardado; nada foi excluído."
 	case q.Get("erro") == "aprovada":
 		return "", "Uma versão aprovada não é excluída: revogue a aprovação antes."
+	case q.Has("enviado"):
+		msg := "Instalador da versão " + q.Get("enviado") + " guardado."
+		if q.Has("aprovada") {
+			msg += " A versão está aprovada: a Central de software, a padronização e as campanhas já a usam."
+		} else {
+			msg += " Aprove a versão para o patchd instalá-la."
+		}
+		if v := q.Get("substituidas"); v != "" {
+			msg += " Substituídas (aprovação revogada e instalador apagado): " + v + "."
+		}
+		if v := q.Get("ficaram"); v != "" {
+			msg += " Ficaram, sem aprovação, até os jobs e campanhas acabarem: " + v + "; exclua-as depois."
+		}
+		return msg, ""
+	case q.Get("erro") == "envio":
+		return "", "O instalador não foi guardado: " + q.Get("motivo")
 	case q.Get("erro") == "em-uso":
 		return "", "Há jobs em aberto ou campanha não encerrada com esta versão: cancele (Jobs, Campanhas) ou espere terminar antes de excluir."
 	}

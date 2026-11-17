@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/jobs"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/winget"
 )
 
@@ -47,6 +49,10 @@ const (
 	// no próprio fabricante; ID é o aplicativo (AdobeAcrobatReaderDC), e o filtro escolhe as
 	// linhas da resposta (Architecture, Channel, Release...).
 	SourceEvergreen = "evergreen"
+	// SourceUpload: o instalador próprio, enviado pelo painel (Patch › Programas de
+	// terceiros › Incluir programa › instalador próprio). A referência é a versão do último
+	// instalador enviado: nenhuma consulta externa. ID é o próprio programa.
+	SourceUpload = "upload"
 )
 
 var (
@@ -84,6 +90,9 @@ type App struct {
 	// Install: como o patchd instala a atualização (Aula 14.1). Sem ele, o programa só é
 	// avaliado; a regra é a lista do que o patchd pode instalar.
 	Install *Install `json:"install,omitempty"`
+	// Shortcut (só Windows): o atalho na área de trabalho de todos os usuários que o agente
+	// mantém enquanto o executável existir (protocol.DesktopShortcut).
+	Shortcut *Shortcut `json:"shortcut,omitempty"`
 
 	publisher, match *regexp.Regexp
 }
@@ -112,7 +121,32 @@ type Install struct {
 	// agente não instala e o job falha dizendo qual: o instalador não substitui arquivo em
 	// uso, e o patchd não fecha o programa de quem está trabalhando. Só os medidos entram.
 	Processes []string `json:"processes,omitempty"`
+	// Upload (Windows): o instalador não vem do winget, é enviado pelo painel (o arquivo
+	// .msi ou .exe que o fabricante distribui, como o do IRPF). Exige o tipo e a fonte
+	// "upload"; os argumentos ficam em cada instalador enviado.
+	Upload bool `json:"upload,omitempty"`
 }
+
+// UploadTypes: os tipos de instalador que o painel aceita enviar.
+var UploadTypes = []string{"msi", "nullsoft", "inno", "exe"}
+
+// Shortcut é o atalho da regra: o nome, o executável e o ícone (opcional).
+type Shortcut struct {
+	Name   string `json:"name"`
+	Target string `json:"target"`
+	Icon   string `json:"icon,omitempty"`
+}
+
+// DesktopShortcut: o atalho da regra como vai ao agente.
+func (a App) DesktopShortcut() *protocol.DesktopShortcut {
+	if a.Shortcut == nil || a.OS != "windows" {
+		return nil
+	}
+	return &protocol.DesktopShortcut{App: a.ID, Name: a.Shortcut.Name, Target: a.Shortcut.Target, Icon: a.Shortcut.Icon}
+}
+
+// Uploaded: o instalador é o próprio, enviado pelo painel (sem winget).
+func (a App) Uploaded() bool { return a.Install != nil && a.Install.Upload }
 
 // Source diz de onde vem a versão de referência.
 type Source struct {
@@ -145,13 +179,13 @@ func (s *Source) validate() error {
 		return fmt.Errorf("a fonte exige type e id")
 	}
 	switch s.Type {
-	case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew:
+	case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew, SourceUpload:
 	case SourceEvergreen:
 		if !evergreenID.MatchString(s.ID) {
 			return fmt.Errorf("evergreen: o id %q é o nome do aplicativo no Evergreen (AdobeAcrobatReaderDC)", s.ID)
 		}
 	default:
-		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew ou evergreen)", s.Type)
+		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew, evergreen ou upload)", s.Type)
 	}
 	if len(s.Filter) > 0 && s.Type != SourceEvergreen {
 		return fmt.Errorf("filter só vale para a fonte evergreen")
@@ -275,7 +309,13 @@ func (a *App) compile() error {
 			return fmt.Errorf("installomator só vale para macos")
 		case a.Category != CategoryFeed && a.Category != CategoryMinimum && a.Category != CategoryLifecycle:
 			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
-		case !winget.ValidID(a.Install.Winget):
+		case a.Install.Upload && a.Install.Winget != "":
+			return fmt.Errorf("install com upload e winget: o instalador vem de um só lugar")
+		case a.Install.Upload && !slices.Contains(UploadTypes, a.Install.Type):
+			return fmt.Errorf("install.upload exige type: %s", strings.Join(UploadTypes, ", "))
+		case a.Install.Upload && (a.Category != CategoryFeed || a.Source == nil || a.Source.Type != SourceUpload || a.Source.ID != a.ID):
+			return fmt.Errorf("install.upload exige a categoria feed com a fonte upload do próprio programa (a referência é o último instalador enviado)")
+		case !a.Install.Upload && !winget.ValidID(a.Install.Winget):
 			return fmt.Errorf("install.winget %q fora da forma Fabricante.Programa", a.Install.Winget)
 		case a.Install.Type != "" && !winget.Supported(a.Install.Type):
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
@@ -297,6 +337,20 @@ func (a *App) compile() error {
 			return fmt.Errorf("install com signer e unsigned_reason: escolha um")
 		case len(a.Install.UnsignedReason) > 300 || strings.ContainsAny(a.Install.UnsignedReason, "\r\n\t"):
 			return fmt.Errorf("install.unsigned_reason: uma linha, até 300 caracteres")
+		}
+	}
+	if a.Source != nil && a.Source.Type == SourceUpload && !a.Uploaded() {
+		return fmt.Errorf("a fonte upload só vale com install.upload (o instalador enviado pelo painel)")
+	}
+	if a.Check != nil && a.Source != nil && a.Source.Type == SourceUpload {
+		return fmt.Errorf("check não vale com a fonte upload")
+	}
+	if a.Shortcut != nil {
+		if a.OS != "windows" {
+			return fmt.Errorf("shortcut só vale no Windows")
+		}
+		if err := a.DesktopShortcut().Validate(); err != nil {
+			return fmt.Errorf("shortcut: %w", err)
 		}
 	}
 	var err error

@@ -82,3 +82,56 @@ func TestRegrasDoBancoSomadas(t *testing.T) {
 		t.Error("Live sem manifesto")
 	}
 }
+
+// O instalador próprio: o id vem do nome (ou do da inclusão, na edição), a fonte é o envio, o
+// tipo é obrigatório, e o atalho passa pela conferência do agente.
+func TestInstaladorProprioNaRegra(t *testing.T) {
+	in := CustomInput{Name: "IRPF 2026", InventoryName: "IRPF2026", NameMode: NamePrefix, InstallType: "exe", UnsignedReason: "teste",
+		Upload: true, ShortcutTarget: `C:\Arquivos de Programas RFB\IRPF2026\irpf.exe`}
+	a, err := BuildCustom(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != "irpf-2026" || !a.Uploaded() || a.Source.Type != SourceUpload || a.Source.ID != "irpf-2026" || a.Install.Winget != "" {
+		t.Fatalf("regra: %+v %+v", a, a.Install)
+	}
+	if a.Shortcut == nil || a.Shortcut.Name != "IRPF 2026" || a.DesktopShortcut().App != "irpf-2026" {
+		t.Errorf("atalho: %+v", a.Shortcut)
+	}
+	in.ID = "irpf-2026"
+	in.Name = "Imposto de Renda"
+	if b, err := BuildCustom(in); err != nil || b.ID != "irpf-2026" {
+		t.Errorf("edição: %v %+v", err, b)
+	}
+	// A regra guardada volta pela conferência do manifesto.
+	raw, _ := json.Marshal(a)
+	m, errs := WithCustom(Manifest{Version: 1}, []json.RawMessage{raw})
+	if len(errs) > 0 || !m.Has("irpf-2026/windows") {
+		t.Fatalf("WithCustom: %v", errs)
+	}
+	for nome, mexe := range map[string]func(*CustomInput){
+		"sem tipo":       func(c *CustomInput) { c.InstallType = "" },
+		"burn":           func(c *CustomInput) { c.InstallType = "burn" },
+		"com winget":     func(c *CustomInput) { c.WingetID = "Receita.IRPF" },
+		"atalho ruim":    func(c *CustomInput) { c.ShortcutTarget = `\\servidor\irpf.exe` },
+		"ícone sem exe":  func(c *CustomInput) { c.ShortcutTarget, c.ShortcutIcon = "", `C:\a.ico` },
+		"nome sem letra": func(c *CustomInput) { c.Name, c.ID = "!!!", "" },
+	} {
+		c := in
+		mexe(&c)
+		if _, err := BuildCustom(c); err == nil {
+			t.Errorf("%s aceito", nome)
+		}
+	}
+	// Manifesto: upload sem a fonte upload, fonte upload sem upload, atalho no macOS.
+	for nome, js := range map[string]string{
+		"upload com winget": `{"id":"x","os":"windows","category":"feed","match":"^X$","source":{"type":"winget","id":"A.B"},"install":{"upload":true,"type":"exe","unsigned_reason":"t"}}`,
+		"fonte sem upload":  `{"id":"x","os":"windows","category":"feed","match":"^X$","source":{"type":"upload","id":"x"}}`,
+		"outro id":          `{"id":"x","os":"windows","category":"feed","match":"^X$","source":{"type":"upload","id":"y"},"install":{"upload":true,"type":"exe","unsigned_reason":"t"}}`,
+		"atalho no mac":     `{"id":"x","os":"macos","category":"ignore","match":"^X$","shortcut":{"name":"X","target":"C:\\x.exe"}}`,
+	} {
+		if _, err := Parse([]byte(`{"version":1,"apps":[` + js + `]}`)); err == nil {
+			t.Errorf("%s aceito", nome)
+		}
+	}
+}

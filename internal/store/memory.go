@@ -12,12 +12,14 @@ import (
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 )
 
 // Memory guarda tudo na memória do processo. Serve para desenvolvimento e para os
 // testes da API; em produção, o armazenamento é o PostgreSQL (Aula 4.2).
 type Memory struct {
-	customApps        map[string]CustomApp // programas incluídos pelo painel (custom_apps.go)
+	customApps        map[string]CustomApp      // programas incluídos pelo painel (custom_apps.go)
+	tpVersions        map[string]thirdparty.Ref // versões de referência de terceiros (catalog_thirdparty.go)
 	standardPolicies  map[int64]StandardizationPolicy
 	standardPolicySeq int64
 	standardStates    map[string]StandardizationState

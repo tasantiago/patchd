@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,12 @@ type ThirdPartyPackage struct {
 	ReturnCodes               map[int]string // código de saída → resposta do winget
 	FetchedAt                 time.Time
 }
+
+// UploadPrefix: a url de um instalador próprio, enviado pelo painel ("upload:<arquivo>").
+const UploadPrefix = "upload:"
+
+// Uploaded: o instalador foi enviado pelo painel (não veio do winget).
+func (p ThirdPartyPackage) Uploaded() bool { return strings.HasPrefix(p.URL, UploadPrefix) }
 
 // MSI: o msiexec executa (msi e wix); o arquivo do cache termina em .msi.
 func (p ThirdPartyPackage) MSI() bool { return p.Type == "msi" || p.Type == "wix" }

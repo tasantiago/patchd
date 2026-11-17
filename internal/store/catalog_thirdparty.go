@@ -1,7 +1,9 @@
 package store
 
 import (
+	"cmp"
 	"context"
+	"slices"
 
 	"github.com/tasantiago/patchd/internal/thirdparty"
 )
@@ -95,4 +97,27 @@ func (p *Postgres) ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, er
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// SaveThirdPartyVersion grava a versão de referência de uma regra (memória).
+func (m *Memory) SaveThirdPartyVersion(_ context.Context, app, osID, version, source string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.tpVersions == nil {
+		m.tpVersions = map[string]thirdparty.Ref{}
+	}
+	m.tpVersions[app+"/"+osID] = thirdparty.Ref{App: app, OS: osID, Version: version, Source: source, Fetched: m.now()}
+	return nil
+}
+
+// ThirdPartyVersions lista as versões de referência (memória), em ordem de SO e programa.
+func (m *Memory) ThirdPartyVersions(context.Context) ([]thirdparty.Ref, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]thirdparty.Ref, 0, len(m.tpVersions))
+	for _, r := range m.tpVersions {
+		out = append(out, r)
+	}
+	slices.SortFunc(out, func(a, b thirdparty.Ref) int { return cmp.Or(cmp.Compare(a.OS, b.OS), cmp.Compare(a.App, b.App)) })
+	return out, nil
 }

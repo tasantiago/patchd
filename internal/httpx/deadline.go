@@ -3,6 +3,7 @@
 package httpx
 
 import (
+	"io"
 	"net/http"
 	"time"
 )
@@ -42,3 +43,30 @@ func (e *extendingWriter) Write(b []byte) (int, error) {
 
 // Unwrap deixa o http.ResponseController alcançar a conexão por baixo deste writer.
 func (e *extendingWriter) Unwrap() http.ResponseWriter { return e.ResponseWriter }
+
+// ExtendReads faz o mesmo para o corpo de um envio grande (o instalador próprio, de centenas de
+// MB, pelo painel): a cada leitura, o prazo de ler e o de escrever a resposta andam para
+// "agora mais idle". Sem isso, o ReadTimeout do servidor cortaria o envio no meio, e a
+// resposta depois de um envio longo sairia com o WriteTimeout já vencido.
+func ExtendReads(w http.ResponseWriter, r *http.Request, idle time.Duration) {
+	er := &extendingReader{ReadCloser: r.Body, rc: http.NewResponseController(w), idle: idle}
+	er.extend()
+	r.Body = er
+}
+
+type extendingReader struct {
+	io.ReadCloser
+	rc   *http.ResponseController
+	idle time.Duration
+}
+
+func (e *extendingReader) extend() {
+	at := time.Now().Add(e.idle)
+	_ = e.rc.SetReadDeadline(at)
+	_ = e.rc.SetWriteDeadline(at)
+}
+
+func (e *extendingReader) Read(p []byte) (int, error) {
+	e.extend()
+	return e.ReadCloser.Read(p)
+}

@@ -310,6 +310,8 @@ type tpProgramView struct {
 	RuleType  string
 	Fetch     *tpFetchStatus
 	OtherBusy string // outro programa baixando agora (um download por vez)
+	// Upload: o envio do instalador próprio (tpupload.go); nil: o programa vem do winget.
+	Upload *tpUploadView
 }
 
 func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {

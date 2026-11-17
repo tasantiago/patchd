@@ -156,6 +156,9 @@ type Store interface {
 	RevokeThirdParty(ctx context.Context, app, version string) (bool, error)
 	// Aula 23.3: excluir uma versão guardada pelo painel.
 	DeleteThirdPartyVersion(ctx context.Context, app, version string) ([]store.ThirdPartyPackage, error)
+	// Instaladores próprios (tpupload): o instalador enviado e a versão de referência dele.
+	SaveThirdPartyPackage(ctx context.Context, p store.ThirdPartyPackage) (bool, error)
+	SaveThirdPartyVersion(ctx context.Context, app, osID, version, source string) error
 	// Aula 23.6: a localização do patrimônio.
 	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
 	AssetLocations(ctx context.Context) ([]store.AssetLocation, error)
@@ -266,6 +269,7 @@ type api struct {
 	store            Store
 	logger           *slog.Logger
 	now              func() time.Time
+	desktop          desktopCache // os atalhos na área de trabalho do check-in (desktop.go)
 
 	releases      release.Dir // vazia: sem atualização automática
 	serverVersion string
@@ -389,6 +393,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/baixar", a.sameOrigin(a.adminAction(a.fetchThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/excluir", a.sameOrigin(a.adminAction(a.deleteThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/enviar", a.sameOrigin(a.adminAction(a.uploadInstallerAction))) // instalador próprio (multipart)
 	mux.Handle("POST /painel/patch/aprovar", a.sameOrigin(a.adminAction(a.approvePatchAction)))
 	mux.Handle("POST /painel/patch/revogar", a.sameOrigin(a.adminAction(a.revokePatchAction)))
 	mux.Handle("POST /painel/patch/aprovar-lote", a.sameOrigin(a.adminAction(a.approveBatchAction)))

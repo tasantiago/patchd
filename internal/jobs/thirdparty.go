@@ -81,6 +81,9 @@ var (
 	processName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,59}\.[Ee][Xx][Ee]$`)
 )
 
+// ValidThirdPartyVersion: a versão cabe no job de terceiros (começa por dígito; letras, dígitos, . + -).
+func ValidThirdPartyVersion(v string) bool { return tpVersion.MatchString(v) }
+
 // ValidProcess: o nome de um executável, sem pasta (Code.exe, soffice.bin não serve).
 func ValidProcess(name string) bool { return processName.MatchString(name) }
 

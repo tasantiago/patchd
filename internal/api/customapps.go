@@ -53,6 +53,7 @@ type customView struct {
 	pageBase
 	Rows    []customRow
 	Form    customForm
+	Upload  bool   // o formulário do instalador próprio (?proprio=1)
 	Editing string // o id do programa em edição ("" = novo)
 	Found   *winget.Description
 	Types   []string
@@ -62,12 +63,15 @@ type customView struct {
 
 type customRow struct {
 	ID, Name, Winget, Match, Updated, Href string
+	Upload                                 bool
 }
 
 // customForm: os campos, como digitados.
 type customForm struct {
 	Name, Winget, Inventory, Mode, Publisher, Type, Signer, Unsigned, Processes string
 	NoSignature                                                                 bool
+	// O atalho na área de trabalho de todos os usuários.
+	ShortName, ShortTarget, ShortIcon string
 }
 
 // unquote desfaz o regexp.QuoteMeta (o painel monta a expressão; editar mostra o texto).
@@ -93,6 +97,9 @@ func formOf(r thirdparty.App) customForm {
 		f.Processes = strings.Join(r.Install.Processes, ", ")
 		f.NoSignature = r.Install.Signer == ""
 	}
+	if r.Shortcut != nil {
+		f.ShortName, f.ShortTarget, f.ShortIcon = r.Shortcut.Name, r.Shortcut.Target, r.Shortcut.Icon
+	}
 	return f
 }
 
@@ -102,9 +109,15 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 		Inventory: strings.TrimSpace(r.PostFormValue("inventario")), Mode: r.PostFormValue("modo"),
 		Publisher: strings.TrimSpace(r.PostFormValue("fabricante")), Type: r.PostFormValue("tipo"),
 		Signer: strings.TrimSpace(r.PostFormValue("assinante")), Unsigned: strings.TrimSpace(r.PostFormValue("sem_assinatura")),
-		Processes: strings.TrimSpace(r.PostFormValue("processos")), NoSignature: r.PostFormValue("assinatura") == "nao"}
+		Processes: strings.TrimSpace(r.PostFormValue("processos")), NoSignature: r.PostFormValue("assinatura") == "nao",
+		ShortName: strings.TrimSpace(r.PostFormValue("atalho_nome")), ShortTarget: strings.TrimSpace(r.PostFormValue("atalho_executavel")),
+		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone"))}
 	in := thirdparty.CustomInput{Name: f.Name, WingetID: f.Winget, InventoryName: f.Inventory, NameMode: f.Mode, Publisher: f.Publisher,
-		InstallType: f.Type}
+		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio",
+		ShortcutName: f.ShortName, ShortcutTarget: f.ShortTarget, ShortcutIcon: f.ShortIcon}
+	if in.Upload {
+		in.WingetID, f.Winget = "", ""
+	}
 	if f.NoSignature {
 		in.UnsignedReason = f.Unsigned
 	} else {
@@ -170,18 +183,21 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 	}
 	for _, c := range list {
 		rule := rules[c.ID]
-		row := customRow{ID: c.ID, Name: rule.Name, Match: formOf(rule).Inventory, Href: tpProgramPath(c.ID),
-			Updated: a.stamp(c.UpdatedAt) + " · " + c.UpdatedBy}
-		if rule.Install != nil {
-			row.Winget = rule.Install.Winget
-		}
-		v.Rows = append(v.Rows, row)
+		v.Rows = append(v.Rows, a.customRowOf(c, rule))
 	}
 	q := r.URL.Query()
+	v.Upload = q.Get("proprio") == "1"
+	if v.Upload {
+		v.Types = thirdparty.UploadTypes
+		v.Form.Type = thirdparty.UploadTypes[0]
+	}
 	switch {
 	case q.Get("editar") != "":
 		if rule, ok := rules[q.Get("editar")]; ok {
-			v.Editing, v.Form = q.Get("editar"), formOf(rule)
+			v.Editing, v.Form, v.Upload = q.Get("editar"), formOf(rule), rule.Uploaded()
+			if v.Upload {
+				v.Types = thirdparty.UploadTypes
+			}
 		}
 	case q.Get("winget") != "" && v.CanFind:
 		id := strings.TrimSpace(q.Get("winget"))
@@ -212,6 +228,8 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 		}
 	}
 	switch {
+	case q.Has("salvo") && q.Get("proprio") == "1":
+		v.Flash = "Programa salvo. Abra-o e envie o instalador (.msi ou .exe) com a versão; depois ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("salvo"):
 		v.Flash = "Programa salvo. Ele já vale no painel: abra-o, baixe o instalador, aprove a versão e ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("excluido"):
@@ -240,14 +258,19 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	f, in := customInput(r)
 	editing := strings.TrimSpace(r.PostFormValue("editar"))
+	if in.Upload && editing != "" {
+		in.ID = editing // o id do instalador próprio vem do nome de quando foi incluído
+	}
 	fail := func(msg string) {
-		v := customView{pageBase: a.baseFor(r.Context(), s, "Incluir programa", "patch"), Form: f, Editing: editing,
+		v := customView{pageBase: a.baseFor(r.Context(), s, "Incluir programa", "patch"), Form: f, Editing: editing, Upload: in.Upload,
 			Types: append([]string{""}, wingetTypes...), CanUse: true, CanFind: a.custom.describe != nil}
+		if in.Upload {
+			v.Types = thirdparty.UploadTypes
+		}
 		v.Error = msg
 		if list, rules, err := a.customList(r.Context()); err == nil {
 			for _, c := range list {
-				v.Rows = append(v.Rows, customRow{ID: c.ID, Name: rules[c.ID].Name, Match: formOf(rules[c.ID]).Inventory,
-					Href: tpProgramPath(c.ID), Updated: a.stamp(c.UpdatedAt) + " · " + c.UpdatedBy})
+				v.Rows = append(v.Rows, a.customRowOf(c, rules[c.ID]))
 			}
 		}
 		a.render(w, r, http.StatusUnprocessableEntity, "terceiros-incluir", v)
@@ -264,6 +287,9 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	switch {
 	case editing != "" && editing != rule.ID:
 		fail("Para trocar o pacote do winget, exclua este programa e inclua o novo: o pacote define o programa.")
+		return
+	case editing != "" && a.isUploadedCustom(r.Context(), editing) != rule.Uploaded():
+		fail("Um programa do winget não vira instalador próprio (nem o contrário): exclua e inclua de novo.")
 		return
 	case editing == "" && a.custom.base.Has(rule.Key()):
 		fail(fmt.Sprintf("O programa %s já está no manifesto do patchd: não precisa incluir.", rule.ID))
@@ -299,13 +325,25 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	if rule.Install.Signer == "" {
 		sig = "sem assinatura: " + rule.Install.UnsignedReason
 	}
-	a.audit(r, s, action, rule.ID, fmt.Sprintf("%s · winget %s · nome %q (%s) · %s", rule.Name, rule.Install.Winget, f.Inventory, f.Mode, sig))
-	a.logger.Info("programa de terceiros incluído pelo painel", "app", rule.ID, "winget", rule.Install.Winget, "username", s.Username,
+	origin := "winget " + rule.Install.Winget
+	if rule.Uploaded() {
+		origin = "instalador próprio " + rule.Install.Type
+	}
+	detail := fmt.Sprintf("%s · %s · nome %q (%s) · %s", rule.Name, origin, f.Inventory, f.Mode, sig)
+	if sc := rule.Shortcut; sc != nil {
+		detail += fmt.Sprintf(" · atalho %q → %s", sc.Name, sc.Target)
+	}
+	a.audit(r, s, action, rule.ID, detail)
+	a.logger.Info("programa de terceiros incluído pelo painel", "app", rule.ID, "origem", origin, "username", s.Username,
 		"request_id", RequestID(r.Context()))
-	if a.custom.sync != nil {
+	if a.custom.sync != nil && !rule.Uploaded() {
 		go a.custom.sync(context.WithoutCancel(r.Context()), rule) // a versão de referência, já
 	}
-	http.Redirect(w, r, "/painel/patch/terceiros/incluir?"+url.Values{"salvo": {rule.ID}}.Encode(), http.StatusSeeOther)
+	q := url.Values{"salvo": {rule.ID}}
+	if rule.Uploaded() {
+		q.Set("proprio", "1")
+	}
+	http.Redirect(w, r, "/painel/patch/terceiros/incluir?"+q.Encode(), http.StatusSeeOther)
 }
 
 // customDeleteAction: POST /painel/patch/terceiros/incluidos/excluir. Recusa o programa em uso
@@ -366,6 +404,22 @@ func (a *api) customInUse(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return slices.ContainsFunc(policies, func(p store.StandardizationPolicy) bool { return slices.Contains(p.Apps, id) }), nil
+}
+
+// customRowOf: a linha da lista dos incluídos.
+func (a *api) customRowOf(c store.CustomApp, rule thirdparty.App) customRow {
+	row := customRow{ID: c.ID, Name: rule.Name, Match: formOf(rule).Inventory, Href: tpProgramPath(c.ID),
+		Updated: a.stamp(c.UpdatedAt) + " · " + c.UpdatedBy, Upload: rule.Uploaded()}
+	if rule.Install != nil {
+		row.Winget = rule.Install.Winget
+	}
+	return row
+}
+
+// isUploadedCustom: o programa incluído (id) é de instalador próprio.
+func (a *api) isUploadedCustom(ctx context.Context, id string) bool {
+	_, rules, err := a.customList(ctx)
+	return err == nil && rules[id].Uploaded()
 }
 
 // isCustom: o programa foi incluído pelo painel (a página do programa mostra editar e excluir).

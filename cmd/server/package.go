@@ -36,6 +36,8 @@ comandos:
            e a versão estiver aprovada (Aula 14.5)
   approve  aprova um programa numa versão guardada: -app ID -version V [-note TEXTO]
   revoke   revoga a aprovação: -app ID -version V
+  upload   guarda o instalador próprio de um programa incluído pelo painel:
+           -app ID -version V -file ARQUIVO [-arch x64] [-args "..."]
 
 show e fetch:
   -app ID        a regra do manifesto de terceiros (ex.: 7zip, google-chrome)
@@ -71,7 +73,7 @@ type packageStore interface {
 func packagesDir(contentDir string) string { return filepath.Join(contentDir, "pacotes") }
 
 func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int {
-	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan", "install", "approve", "revoke"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"show", "fetch", "list", "plan", "install", "approve", "revoke", "upload"}, args[0]) {
 		fmt.Fprint(stderr, packageUsage)
 		return exitConfig
 	}
@@ -95,7 +97,7 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitConfig
 	}
-	if dir == "" && (args[0] == "fetch" || args[0] == "list" || args[0] == "install") {
+	if dir == "" && (args[0] == "fetch" || args[0] == "list" || args[0] == "install" || args[0] == "upload") {
 		fmt.Fprintln(stderr, "patchd-server: defina PATCHD_CONTENT_DIR (os instaladores ficam em PATCHD_CONTENT_DIR/pacotes)")
 		return exitConfig
 	}
@@ -147,6 +149,8 @@ func runPackage(args []string, look config.Lookup, stdout, stderr io.Writer) int
 		return packageApprove(ctx, st, manifest, args[1:], "linha de comando", stdout, stderr)
 	case "revoke":
 		return packageRevoke(ctx, st, args[1:], stdout, stderr)
+	case "upload":
+		return packageUpload(ctx, st, manifest, packagesDir(dir), args[1:], stdout, stderr)
 	}
 	return packageFetch(ctx, c, pkgcache.NewFetcher(ua), st, manifest, packagesDir(dir), args[1:], stdout, stderr)
 }
@@ -195,6 +199,13 @@ func rulesFor(manifest thirdparty.Manifest, o packageFlags, stderr io.Writer) []
 	var rules []thirdparty.App
 	for _, a := range manifest.For("windows") {
 		if a.Install != nil && (o.all || a.ID == o.app) {
+			if a.Uploaded() { // o instalador próprio não vem do winget
+				if !o.all {
+					fmt.Fprintf(stderr, "patchd-server: %s é instalador próprio: envie o arquivo pelo painel (página do programa) ou com package upload\n", a.ID)
+					return nil
+				}
+				continue
+			}
 			rules = append(rules, a)
 		}
 	}

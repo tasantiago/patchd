@@ -72,3 +72,38 @@ func TestPacotesPostgres(t *testing.T) {
 	}
 	testarPacotes(t, NewPostgres(pool))
 }
+
+// O instalador próprio (migração 0075): a origem "upload:" sem pacote do winget é aceita; um
+// endereço que não é https nem upload, ou o upload com pacote do winget, não.
+func TestInstaladorProprioPostgres(t *testing.T) {
+	pool := bancoDeTeste(t)
+	ctx := context.Background()
+	if err := Migrate(ctx, pool, silencioso()); err != nil {
+		t.Fatal(err)
+	}
+	st := NewPostgres(pool)
+	p := ThirdPartyPackage{AppID: "irpf-2026", Version: "1.0", Architecture: "x64", Type: "exe", Scope: "machine",
+		URL: UploadPrefix + "IRPF2026Win64v1.0.exe", SHA256: strings.Repeat("ab", 32), Size: 1 << 20, Arguments: "-q"}
+	if ok, err := st.SaveThirdPartyPackage(ctx, p); err != nil || !ok {
+		t.Fatalf("upload: %t %v", ok, err)
+	}
+	l, _ := st.ThirdPartyPackages(ctx)
+	if len(l) != 1 || !l[0].Uploaded() || l[0].WingetID != "" {
+		t.Fatalf("lido: %+v", l)
+	}
+	for nome, mexe := range map[string]func(*ThirdPartyPackage){
+		"http":              func(x *ThirdPartyPackage) { x.URL = "http://exemplo/x.exe" },
+		"upload com winget": func(x *ThirdPartyPackage) { x.WingetID = "Receita.IRPF" },
+		"https sem winget":  func(x *ThirdPartyPackage) { x.URL = "https://exemplo/x.exe" },
+	} {
+		x := p
+		x.Version = "9." + nome
+		mexe(&x)
+		if _, err := st.SaveThirdPartyPackage(ctx, x); err == nil {
+			t.Errorf("%s aceito", nome)
+		}
+	}
+	if err := st.SaveThirdPartyVersion(ctx, "irpf-2026", "windows", "1.0", "upload:irpf-2026"); err != nil {
+		t.Fatal(err)
+	}
+}
