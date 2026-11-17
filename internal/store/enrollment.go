@@ -37,10 +37,20 @@ func (p *Postgres) CreateRelayEnrollmentToken(ctx context.Context, hash []byte, 
 	return id, err
 }
 
+// CreateBothEnrollmentToken guarda um token que vale na rede interna e pelo relé, com usos
+// contados (1 a identity.MaxBothUses).
+func (p *Postgres) CreateBothEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error) {
+	var id int64
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO enrollment_tokens (token_hash, note, expires_at, max_uses, both_ports)
+		VALUES ($1, $2, $3, $4, true) RETURNING id`, hash, note, expiresAt, maxUses).Scan(&id)
+	return id, err
+}
+
 // EnrollmentTokens lista os tokens, do mais novo para o mais antigo.
 func (p *Postgres) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, note, created_at, expires_at, max_uses, uses, revoked_at, relay
+		SELECT id, note, created_at, expires_at, max_uses, uses, revoked_at, relay, both_ports
 		FROM enrollment_tokens ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -49,7 +59,7 @@ func (p *Postgres) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentT
 	list := []identity.EnrollmentToken{}
 	for rows.Next() {
 		var t identity.EnrollmentToken
-		if err := rows.Scan(&t.ID, &t.Note, &t.CreatedAt, &t.ExpiresAt, &t.MaxUses, &t.Uses, &t.RevokedAt, &t.Relay); err != nil {
+		if err := rows.Scan(&t.ID, &t.Note, &t.CreatedAt, &t.ExpiresAt, &t.MaxUses, &t.Uses, &t.RevokedAt, &t.Relay, &t.Both); err != nil {
 			return nil, err
 		}
 		t.CreatedAt, t.ExpiresAt, t.RevokedAt = t.CreatedAt.UTC(), t.ExpiresAt.UTC(), utc(t.RevokedAt)
@@ -94,9 +104,9 @@ func (p *Postgres) Enroll(ctx context.Context, tokenHash []byte, nm identity.New
 	var tok identity.EnrollmentToken
 	var now time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT id, expires_at, max_uses, uses, revoked_at, relay, now()
+		SELECT id, expires_at, max_uses, uses, revoked_at, relay, both_ports, now()
 		FROM enrollment_tokens WHERE token_hash = $1 FOR UPDATE`, tokenHash).
-		Scan(&tok.ID, &tok.ExpiresAt, &tok.MaxUses, &tok.Uses, &tok.RevokedAt, &tok.Relay, &now)
+		Scan(&tok.ID, &tok.ExpiresAt, &tok.MaxUses, &tok.Uses, &tok.RevokedAt, &tok.Relay, &tok.Both, &now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: token desconhecido", identity.ErrEnrollmentRejected)
 	}

@@ -243,6 +243,34 @@ nunca passa pela rede, há o **token pelo relé**:
 - No log do servidor, o registro traz `pelo_rele=true`; uma recusa diz o motivo ("é de
   registro pelo relé e só vale pela porta do relé", "é da rede interna e não vale pelo relé").
 
+### 5.2. Instalar um lote de notebooks, dentro ou fora da rede
+
+Para instalar de uma vez um lote (pela ferramenta de distribuição de software, por exemplo),
+sem saber quais notebooks estão na rede no momento, há o **token da rede interna e do relé**:
+
+- Vale **pelas duas portas**, de **1 a 50 máquinas**, e vence em **até 7 dias**: ele é aceito
+  pela porta que a internet alcança, então o lote tem tamanho e prazo. Revogue quando o lote
+  terminar (Configuração › Agente › Tokens de registro).
+- Criação: **Configuração › Agente › Tokens de registro**, **Onde vale: Na rede interna e pelo
+  relé**, com a quantidade de máquinas (ex.: 30) e a validade; ou
+  `patchd-server token create -both -uses 30 -ttl 72h -note "lote de notebooks"`. A lista
+  mostra "rede interna e relé"; a criação vai para a auditoria.
+- O mesmo comando em todas, com o `-relay` (a tela já mostra): dentro da rede o agente fala
+  com o servidor direto; fora, pelo relé. Na ferramenta de distribuição (que roda como
+  SYSTEM), o pacote leva o `patchd-agent-windows-amd64.exe`, o `ca.crt` e um script como:
+
+  ```powershell
+  New-Item -ItemType Directory -Force C:\ProgramData\patchd | Out-Null
+  Copy-Item .\ca.crt C:\ProgramData\patchd\ca.crt
+  $t = Join-Path $env:TEMP 'patchd-token.txt'; Set-Content -Path $t -Value 'TOKEN_DA_TELA' -NoNewline
+  .\patchd-agent-windows-amd64.exe install -server https://NOME_DO_SERVIDOR:8443 -enroll-token-file $t -ca-file C:\ProgramData\patchd\ca.crt -relay IP_DO_RELE:8443
+  Remove-Item $t
+  ```
+
+  O token vai no pacote de distribuição: trate o pacote como o token (acesso restrito) e apague
+  o pacote quando o lote terminar. Cada notebook usa um registro; o 31º de um token de 30 é
+  recusado ("esgotado").
+
 ## 6. Teste de ponta a ponta
 
 Num notebook com o agente desta versão, que já fez um check-in dentro da rede com o relé

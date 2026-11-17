@@ -75,6 +75,7 @@ type tokenRow struct {
 	Uses, MaxUses                  int
 	CanRevoke                      bool
 	Relay                          bool // pelo relé: uso único, só pela porta do relé
+	Both                           bool // na rede interna e pelo relé
 }
 
 type settingsView struct {
@@ -335,7 +336,7 @@ func (a *api) agentView(r *http.Request, v *settingsView) error {
 	for _, t := range list {
 		st := t.Status(now)
 		v.Tokens = append(v.Tokens, tokenRow{ID: t.ID, Note: dash(t.Note), Created: a.stamp(t.CreatedAt),
-			Expires: a.expiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido", Relay: t.Relay})
+			Expires: a.expiry(t.ExpiresAt), Status: st, Uses: t.Uses, MaxUses: t.MaxUses, CanRevoke: st == "válido", Relay: t.Relay, Both: t.Both})
 	}
 	slices.SortFunc(v.Tokens, func(x, y tokenRow) int { return int(y.ID - x.ID) })
 	return nil
@@ -394,6 +395,7 @@ type tokenCreatedView struct {
 	WinCommand, LinCommand string
 	Version                string
 	Relay                  string // token pelo relé: o endereço do relé (-relay)
+	Both                   bool   // vale na rede interna e pelo relé
 }
 
 // relayTokenMaxHours: a validade máxima do token pelo relé (ele é aceito pela porta que a
@@ -411,20 +413,30 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 	note := strings.TrimSpace(r.PostFormValue("nota"))
 	hours, _ := strconv.Atoi(r.PostFormValue("validade"))
 	uses, err := strconv.Atoi(r.PostFormValue("usos"))
-	relay := r.PostFormValue("rele") == "1"
+	// Onde o token vale: só na rede interna (o comum), só pelo relé (uso único) ou nos dois
+	// (o lote de notebooks instalado de uma vez, dentro e fora da rede).
+	where := r.PostFormValue("onde")
+	if r.PostFormValue("rele") == "1" {
+		where = "rele"
+	}
+	relay, both := where == "rele", where == "ambos"
 	relayAddr := ""
-	if relay {
-		uses, err = 1, nil // pelo relé: sempre uso único
+	if relay || both {
+		if relay {
+			uses, err = 1, nil // pelo relé: sempre uso único
+		}
 		if ri := a.relayInfo(); ri != nil {
 			relayAddr = ri.Addr
 		}
 	}
 	problem := ""
 	switch {
-	case relay && relayAddr == "":
-		problem = "Token pelo relé: configure antes o endereço do relé (PATCHD_RELAY_ADDR, em Configuração › Parâmetros)."
-	case relay && (hours <= 0 || hours > relayTokenMaxHours):
-		problem = "Token pelo relé: validade de 1 hora a 7 dias (ele é aceito pela porta que a internet alcança)."
+	case (relay || both) && relayAddr == "":
+		problem = "Token com o relé: configure antes o endereço do relé (PATCHD_RELAY_ADDR, em Configuração › Parâmetros)."
+	case (relay || both) && (hours <= 0 || hours > relayTokenMaxHours):
+		problem = "Token com o relé: validade de 1 hora a 7 dias (ele é aceito pela porta que a internet alcança)."
+	case both && (err != nil || uses < 1 || uses > identity.MaxBothUses):
+		problem = fmt.Sprintf("Token da rede interna e do relé: de 1 a %d máquinas (ele é aceito pela porta que a internet alcança).", identity.MaxBothUses)
 	case !slices.Contains(tokenTTLs, hours):
 		problem = "Escolha a validade da lista."
 	case err != nil || uses < 0 || uses > panelTokenMaxUses:
@@ -449,24 +461,30 @@ func (a *api) createTokenAction(w http.ResponseWriter, r *http.Request, s panel.
 		expires = a.now().Add(time.Duration(hours) * time.Hour).UTC()
 	}
 	var id int64
-	if relay {
+	switch {
+	case relay:
 		id, err = a.store.CreateRelayEnrollmentToken(r.Context(), hash, note, expires)
-	} else {
+	case both:
+		id, err = a.store.CreateBothEnrollmentToken(r.Context(), hash, note, expires, uses)
+	default:
 		id, err = a.store.CreateEnrollmentToken(r.Context(), hash, note, expires, uses)
 	}
 	if err != nil {
 		a.internalError(w, r, "criar token", err)
 		return
 	}
-	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "pelo_rele", relay, "expires_at", expires.Format(time.RFC3339),
+	a.logger.Info("token de registro criado pelo painel", "token_id", id, "uses", uses, "pelo_rele", relay, "rede_e_rele", both, "expires_at", expires.Format(time.RFC3339),
 		"username", s.Username, "request_id", RequestID(r.Context()))
 	detail := fmt.Sprintf("%d uso(s) (0 = ilimitado), validade: %s", uses, tokenExpiry(expires))
-	if relay {
+	switch {
+	case relay:
 		detail = "pelo relé (uso único, só pela porta do relé), validade: " + tokenExpiry(expires)
+	case both:
+		detail = fmt.Sprintf("na rede interna e pelo relé, %d uso(s), validade: %s", uses, tokenExpiry(expires))
 	}
 	a.audit(r, s, "token.criar", fmt.Sprintf("token %d", id), detail)
 	v := tokenCreatedView{pageBase: a.baseFor(r.Context(), s, "Token de registro", "configuracao"), ID: id, Token: plain,
-		Expires: a.expiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0, Relay: relayAddr}
+		Expires: a.expiry(expires), Note: note, Uses: uses, CA: len(a.agentCA) > 0, Relay: relayAddr, Both: both}
 	v.Server = a.publicURL
 	if v.Server == "" {
 		v.Server = "https://<endereço-do-servidor>"

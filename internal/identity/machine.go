@@ -29,11 +29,19 @@ type EnrollmentToken struct {
 	RevokedAt *time.Time
 	// Relay: token de registro pelo relé, de uso único, que só vale pela porta do relé.
 	Relay bool
+	// Both: vale na rede interna e pelo relé, com usos contados (de 1 a MaxBothUses) e
+	// validade curta: o lote de notebooks instalado de uma vez, dentro e fora da rede.
+	Both bool
 }
+
+// MaxBothUses: quantas máquinas um token "rede interna e relé" registra.
+const MaxBothUses = 50
 
 // RelayMismatch: o motivo da recusa quando o token e a porta não combinam ("" se combinam).
 func (t EnrollmentToken) RelayMismatch(viaRelay bool) string {
 	switch {
+	case t.Both:
+		return ""
 	case t.Relay && !viaRelay:
 		return "é de registro pelo relé e só vale pela porta do relé"
 	case !t.Relay && viaRelay:

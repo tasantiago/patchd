@@ -16,6 +16,7 @@ import (
 type contratoEnrollment interface {
 	CreateEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
 	CreateRelayEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time) (int64, error)
+	CreateBothEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error)
 	EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error)
 	RevokeEnrollmentToken(ctx context.Context, id int64) (bool, error)
 	Enroll(ctx context.Context, tokenHash []byte, nm identity.NewMachine) ([]protocol.IdentityLink, error)
@@ -289,5 +290,29 @@ func testarTokenPeloRele(t *testing.T, st contratoEnrollment) {
 	l, _ := st.EnrollmentTokens(ctx)
 	if len(l) < 2 || l[0].Relay || !l[1].Relay || l[1].MaxUses != 1 || l[1].Uses != 1 {
 		t.Errorf("lista: %+v", l[:min(2, len(l))])
+	}
+
+	// O da rede interna e do relé: as duas portas, até os usos dele; fora de 1 a 50, recusado.
+	_, ambos := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateBothEnrollmentToken(ctx, ambos, "lote", time.Now().Add(time.Hour), 51); err == nil {
+		t.Error("51 usos aceitos")
+	}
+	if _, err := st.CreateBothEnrollmentToken(ctx, ambos, "lote", time.Now().Add(time.Hour), 2); err != nil {
+		t.Fatal(err)
+	}
+	dentro, _ := novaMaquina()
+	fora, _ := novaMaquina()
+	fora.ViaRelay = true
+	terceira, _ := novaMaquina()
+	for i, mm := range []identity.NewMachine{dentro, fora} {
+		if _, err := st.Enroll(ctx, ambos, mm); err != nil {
+			t.Fatalf("token da rede e do relé, uso %d: %v", i+1, err)
+		}
+	}
+	if _, err := st.Enroll(ctx, ambos, terceira); !errors.Is(err, identity.ErrEnrollmentRejected) || !strings.Contains(err.Error(), "esgotado") {
+		t.Errorf("terceiro uso: %v", err)
+	}
+	if l, _ := st.EnrollmentTokens(ctx); !l[0].Both || l[0].Relay || l[0].Uses != 2 {
+		t.Errorf("lista: %+v", l[0])
 	}
 }

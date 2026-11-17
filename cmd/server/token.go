@@ -26,6 +26,7 @@ const tokenUsage = `uso: patchd-server token <comando> [opções]
 
 comandos:
   create   cria um token de enrollment e o mostra uma única vez
+           (-relay: só pelo relé, uso único; -both: na rede interna e pelo relé, de 1 a 50 usos)
   list     lista os tokens (nunca os segredos)
   revoke   revoga um token pelo ID
 
@@ -87,8 +88,23 @@ func tokenCreate(ctx context.Context, st *store.Postgres, args []string, stdout,
 	ttl := fs.Duration("ttl", 24*time.Hour, "validade: 0 = sem vencimento, ex.: 2h, 72h (máximo 720h)")
 	note := fs.String("note", "", "descrição para a lista, ex.: \"piloto grupo de implantação 0\"")
 	relay := fs.Bool("relay", false, "token pelo relé (docs/rele.md): uso único, só vale pela porta do relé, validade de até 168h")
+	both := fs.Bool("both", false, "vale na rede interna e pelo relé (docs/rele.md): de 1 a 50 usos, validade de até 168h")
 	if err := fs.Parse(args); err != nil {
 		return exitConfig
+	}
+	if *relay && *both {
+		fmt.Fprintln(stderr, "patchd-server: escolha -relay (só pelo relé) ou -both (rede interna e relé)")
+		return exitConfig
+	}
+	if *both {
+		if *uses < 1 || *uses > identity.MaxBothUses {
+			fmt.Fprintf(stderr, "patchd-server: o token -both registra de 1 a %d máquinas (-uses)\n", identity.MaxBothUses)
+			return exitConfig
+		}
+		if *ttl <= 0 || *ttl > 168*time.Hour {
+			fmt.Fprintln(stderr, "patchd-server: o token -both vence em até 168h (7 dias); -ttl 0 não vale")
+			return exitConfig
+		}
 	}
 	if *relay {
 		given := false
@@ -119,9 +135,12 @@ func tokenCreate(ctx context.Context, st *store.Postgres, args []string, stdout,
 	}
 	var id int64
 	var err error
-	if *relay {
+	switch {
+	case *relay:
 		id, err = st.CreateRelayEnrollmentToken(ctx, hash, *note, expires)
-	} else {
+	case *both:
+		id, err = st.CreateBothEnrollmentToken(ctx, hash, *note, expires, *uses)
+	default:
 		id, err = st.CreateEnrollmentToken(ctx, hash, *note, expires, *uses)
 	}
 	if err != nil {
@@ -145,8 +164,11 @@ func tokenList(ctx context.Context, st *store.Postgres, stdout, stderr io.Writer
 	fmt.Fprintln(tw, "ID\tSITUAÇÃO\tUSOS\tVENCE (UTC)\tRELÉ\tNOTA")
 	for _, t := range list {
 		via := "-"
-		if t.Relay {
-			via = "sim"
+		switch {
+		case t.Relay:
+			via = "só o relé"
+		case t.Both:
+			via = "rede e relé"
 		}
 		fmt.Fprintf(tw, "%d\t%s\t%d/%s\t%s\t%s\t%s\n", t.ID, t.Status(now), t.Uses, tokenUsesText(t.MaxUses), tokenExpiryText(t.ExpiresAt), via, t.Note)
 	}
