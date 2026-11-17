@@ -87,7 +87,7 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	if out.Requests, err = s.requests(ctx, machineID, u.Account); err != nil {
 		return out, err
 	}
-	out.Reboot, err = s.rebootState(ctx, machineID)
+	out.Reboot, err = s.rebootState(ctx, machineID, u.Account)
 	return out, err
 }
 
@@ -395,7 +395,7 @@ func isServer(os protocol.OSInfo) bool {
 
 // rebootState é o reinício da máquina para o app (Aula 17.6): o pendente da última busca (o
 // agente troca pelo de agora, que ele lê na hora) e o reinício já pedido, de qualquer autor.
-func (s *Service) rebootState(ctx context.Context, machineID string) (*protocol.SelfServiceRebootState, error) {
+func (s *Service) rebootState(ctx context.Context, machineID, account string) (*protocol.SelfServiceRebootState, error) {
 	inv, found, err := s.Store.LatestInventory(ctx, machineID)
 	if err != nil || !found || inv.OS.ID != "windows" {
 		return nil, err
@@ -407,6 +407,10 @@ func (s *Service) rebootState(ctx context.Context, machineID string) (*protocol.
 	}
 	if ok && rep.Reboot != nil {
 		st.Pending = rep.Reboot.Pending
+		st.LastBoot = rep.Reboot.LastBoot
+		if st.Pending != nil && *st.Pending {
+			st.Reasons = protocol.RebootReasons(*rep.Reboot)
+		}
 	}
 	list, err := s.Store.Jobs(ctx, machineID, openJobsScan)
 	if err != nil {
@@ -417,6 +421,7 @@ func (s *Service) rebootState(ctx context.Context, machineID string) (*protocol.
 			continue
 		}
 		st.JobID = j.ID
+		st.By = rebootAuthor(j.CreatedBy, account)
 		full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID)
 		if err != nil {
 			return nil, err
@@ -436,7 +441,90 @@ func (s *Service) rebootState(ctx context.Context, machineID string) (*protocol.
 		}
 		break
 	}
+	if (st.Pending != nil && *st.Pending) || st.JobID > 0 {
+		st.Updates, err = s.rebootUpdates(ctx, machineID, rep, ok, st.LastBoot, list)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return st, nil
+}
+
+// rebootLookback: sem a última inicialização, as atualizações destes dias.
+const rebootLookback = 14 * 24 * time.Hour
+
+// rebootUpdates: o que foi instalado desde a última inicialização, o mais novo primeiro: o
+// histórico do Windows Update (da última busca) e os programas que o patchd instalou.
+func (s *Service) rebootUpdates(ctx context.Context, machineID string, rep protocol.PatchScanReport, haveScan bool, lastBoot *time.Time,
+	list []store.JobRow) ([]protocol.SelfServiceRebootUpdate, error) {
+	since := s.Now().Add(-rebootLookback)
+	if lastBoot != nil {
+		since = *lastBoot
+	}
+	out := []protocol.SelfServiceRebootUpdate{}
+	seen := map[string]bool{}
+	if haveScan {
+		for _, h := range rep.History {
+			if h.Operation != "install" || !strings.HasPrefix(h.Result, "succeeded") || !h.Date.After(since) || h.Title == "" || seen[h.Title] {
+				continue
+			}
+			seen[h.Title] = true
+			d := h.Date
+			out = append(out, protocol.SelfServiceRebootUpdate{Name: h.Title, Date: &d, Source: "Windows Update"})
+		}
+	}
+	names := map[string]string{}
+	if s.Manifest != nil {
+		for _, r := range s.Manifest.For("windows") {
+			names[r.ID] = r.Name
+		}
+	}
+	for _, j := range list {
+		if j.Type != jobs.TypeThirdParty || j.State != jobs.StateDone || j.FinishedAt == nil || !j.FinishedAt.After(since) {
+			continue
+		}
+		full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID)
+		if err != nil {
+			return nil, err
+		}
+		var payload jobs.Job
+		if !found || json.Unmarshal([]byte(full.Payload), &payload) != nil {
+			continue
+		}
+		p, err := jobs.ParseThirdPartyParams(payload.Params)
+		if err != nil {
+			continue
+		}
+		name := names[p.App]
+		if name == "" {
+			name = p.App
+		}
+		name += " " + p.Version
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		d := *j.FinishedAt
+		out = append(out, protocol.SelfServiceRebootUpdate{Name: name, Date: &d, Source: "patchd"})
+	}
+	slices.SortStableFunc(out, func(a, b protocol.SelfServiceRebootUpdate) int { return b.Date.Compare(*a.Date) })
+	if len(out) > protocol.MaxRebootUpdates {
+		out = out[:protocol.MaxRebootUpdates]
+	}
+	return out, nil
+}
+
+// rebootAuthor: quem pediu o reinício, dito para o usuário (sem o nome de quem é da TI).
+func rebootAuthor(createdBy, account string) string {
+	switch {
+	case strings.EqualFold(createdBy, Author(account)):
+		return "você"
+	case strings.HasPrefix(createdBy, Author("")):
+		return "outro usuário deste computador"
+	case strings.HasPrefix(createdBy, "campanha "):
+		return "a campanha de atualizações da equipe de TI"
+	}
+	return "a equipe de TI"
 }
 
 // reboot atende o "reiniciar" (Aula 17.6): agora (o aviso mínimo) ou na hora escolhida, até
@@ -448,7 +536,7 @@ func (s *Service) reboot(ctx context.Context, machineID string, req protocol.Sel
 		o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceRefused, Message: msg}
 		return o, nil
 	}
-	st, err := s.rebootState(ctx, machineID)
+	st, err := s.rebootState(ctx, machineID, req.Account)
 	if err != nil {
 		return o, err
 	}

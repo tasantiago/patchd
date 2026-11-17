@@ -228,7 +228,15 @@ type rebootView struct {
 	JobID   int64
 	At      string // "18:00"; vazio: em breve (hora ainda não conhecida)
 	Options []rebootOption
+	// O porquê e o quê: os motivos, o que foi instalado desde a última inicialização, quem
+	// pediu o reinício marcado e quando o computador iniciou pela última vez.
+	Reasons []string
+	Updates []rebootUpdate
+	By      string
+	Boot    string
 }
+
+type rebootUpdate struct{ Name, When, Source string }
 
 type rebootOption struct {
 	Value, Label string
@@ -374,6 +382,17 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 			}
 			if v.Allowed && v.Pending && v.JobID == 0 {
 				v.Options = rebootOptions(a.now().In(a.loc()))
+			}
+			v.Reasons, v.By = rb.Reasons, rb.By
+			if rb.LastBoot != nil {
+				v.Boot = rb.LastBoot.In(a.loc()).Format("02/01 15:04")
+			}
+			for _, u := range rb.Updates {
+				x := rebootUpdate{Name: u.Name, Source: u.Source}
+				if u.Date != nil {
+					x.When = u.Date.In(a.loc()).Format("02/01 15:04")
+				}
+				v.Updates = append(v.Updates, x)
 			}
 			d.Reboot = v
 		}
@@ -864,15 +883,20 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{end}}
 {{define "reinicio"}}{{with .Reboot}}<section><h1>Reinício do computador</h1>
 {{if not .Allowed}}<p class="vazio">Neste computador (um servidor), o reinício é feito pela equipe de TI.</p>
-{{else if .JobID}}<p class="aviso agendado">{{if .At}}Reinício agendado para as <b>{{.At}}</b>{{else}}Reinício a caminho{{end}} (pedido nº {{.JobID}}). Salve seu trabalho antes; o Windows avisa na hora.</p>
+{{else if .JobID}}<p class="aviso agendado">{{if .At}}Reinício agendado para as <b>{{.At}}</b>{{else}}Reinício a caminho{{end}} (pedido nº {{.JobID}}{{if .By}}, por {{.By}}{{end}}). Salve seu trabalho antes; o Windows avisa na hora.</p>
+{{template "reinicio-porque" .}}
 {{else if .Options}}<p>Atualizações instaladas neste computador só terminam de valer depois de reiniciar. Escolha a melhor hora para você:</p>
 <form method="post" action="{{$.Base}}pedir" class="horas"><input type="hidden" name="action" value="reiniciar">
 <fieldset><legend>Quando reiniciar</legend>{{range .Options}}<label><input type="radio" name="quando" value="{{.Value}}"{{if .First}} checked{{end}}> {{.Label}}</label>{{end}}</fieldset>
 <button type="submit">Agendar o reinício</button></form>
 <p class="nota">Na hora marcada, o Windows mostra um aviso e reinicia. Se houver outro reinício marcado para mais cedo (pela equipe de TI, por exemplo), vale o mais cedo.</p>
+{{template "reinicio-porque" .}}
 {{else if .Known}}<p class="vazio">✓ Nenhum reinício pendente neste computador.</p>
 {{else}}<p class="vazio">O patchd ainda não sabe se este computador precisa reiniciar.</p>{{end}}
 </section>{{end}}{{end}}
+{{define "reinicio-porque"}}{{if .Reasons}}<section><h2>Por que reiniciar</h2><ul class="motivos">{{range .Reasons}}<li>{{.}}</li>{{end}}</ul></section>{{end}}
+{{if .Updates}}<section><h2>O que foi atualizado{{if .Boot}} desde o último início ({{.Boot}}){{end}}</h2><ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{if .When}}{{.When}} · {{end}}{{.Source}}</span></div><span class="selo atencao">espera o reinício</span></li>{{end}}</ul></section>
+{{else if or .Reasons .JobID}}<p class="nota">A lista do que foi instalado ainda não chegou ao servidor (ela vem com a próxima busca de atualizações{{if .Boot}}; último início: {{.Boot}}{{end}}).</p>{{end}}{{end}}
 {{define "pedidos"}}<section><h1>Meus pedidos neste computador</h1>
 {{if .Requests}}<ul class="lista">{{range .Requests}}<li><div><strong>{{.Name}} {{.Version}}</strong><span class="ver">{{if .ID}}pedido nº {{.ID}}{{else}}pedido à TI nº {{.Request}}{{end}} · {{.When}}</span>{{if .Detail}}<span class="det">{{.Detail}}</span>{{end}}</div>
 <span class="selo {{.Class}}">{{.Label}}</span></li>{{end}}</ul>
@@ -913,6 +937,7 @@ button:hover{background:var(--azul-2)}button:disabled{background:#c7d2df;border-
 .barra-topo .selo{font-size:.74rem;font-weight:400;border:1px solid var(--borda);background:#f7f8fb;color:var(--muted)}
 .selo.sucesso{color:#14532d;background:#eaf7ee}.selo.andamento{color:#0b3f73;background:#eef5fd}.selo.atencao{color:#7a4b00;background:#fff6e0}
 .selo.erro{color:#7f1d1d;background:#fbe9e9}.selo.neutro{color:var(--muted);background:#f1f3f5}
+ul.motivos{margin:.25rem 0 0;padding-left:1.2rem}ul.motivos li{margin:.2rem 0}
 .det{color:var(--muted);font-size:.8rem;margin-top:.15rem}
 a.btn{display:inline-block;padding:.45rem 1.1rem;border:1px solid var(--azul);border-radius:6px;color:var(--azul);text-decoration:none;font-size:.9rem;background:#fff;white-space:nowrap}
 a.btn:hover{background:#eef5fd}

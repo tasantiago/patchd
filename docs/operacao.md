@@ -588,6 +588,18 @@ ou a chave roubada): o job pode dizer o que quiser, a lista é da máquina.
   o pedido.
 - O ícone lembra do reinício pendente sem hora escolhida a cada 4 h; o clique abre a aba.
 - O pedido com hora exige o agente v0.17.3: os anteriores recusam o campo `at`.
+- **Por que e o quê.** A aba mostra também:
+  - **por que reiniciar**: os sinais do Windows em palavras simples (o Windows Update instalou
+    atualizações; componentes do Windows esperam o reinício; um programa deixou arquivos para
+    trocar na próxima inicialização), lidos na hora pelo agente;
+  - **o que foi atualizado desde o último início**: o histórico do Windows Update da última
+    busca (as instalações que deram certo) e os programas que o patchd instalou (nome e
+    versão), o mais novo primeiro, até 20. Se a máquina reiniciou depois da busca, o que foi
+    instalado antes sai da lista;
+  - **quem marcou o reinício**: "você", "outro usuário deste computador", "a campanha de
+    atualizações da equipe de TI" ou "a equipe de TI" (o nome de quem é da TI não aparece).
+
+  Exige o servidor e o agente desta versão; os anteriores mostram a aba como antes.
 
 ### O autoatendimento no painel (Aula 17.7)
 

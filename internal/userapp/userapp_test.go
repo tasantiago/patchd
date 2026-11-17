@@ -581,3 +581,37 @@ func TestNomeDaCentralNaPagina(t *testing.T) {
 		t.Errorf("Title: %q", Title)
 	}
 }
+
+// A aba Reinício diz por que reiniciar, o que foi atualizado e quem marcou o reinício.
+func TestAbaReinicioPorqueEOQue(t *testing.T) {
+	sim := true
+	boot := time.Date(2026, 10, 15, 8, 0, 0, 0, time.UTC)
+	dia := time.Date(2026, 10, 17, 7, 10, 0, 0, time.UTC)
+	loja := lojaDeTeste(0)
+	loja.Catalog.Reboot = &protocol.SelfServiceRebootState{Pending: &sim, Allowed: true, LastBoot: &boot,
+		Reasons: []string{"O Windows Update instalou atualizações que só terminam de valer depois de reiniciar."},
+		Updates: []protocol.SelfServiceRebootUpdate{{Name: "Atualização cumulativa <de exemplo>", Date: &dia, Source: "Windows Update"},
+			{Name: "7-Zip 26.06", Source: "patchd"}}}
+	c := &canal{loja: loja}
+	a := appDeTeste(c)
+	a.Loc = time.UTC
+	b := get(a, a.base()+"?aba=reinicio").Body.String()
+	for _, quer := range []string{"Por que reiniciar", "O Windows Update instalou atualizações", "O que foi atualizado desde o último início (15/10 08:00)",
+		"Atualização cumulativa &lt;de exemplo&gt;", "17/10 07:10 · Windows Update", "7-Zip 26.06", "espera o reinício", `name="quando"`} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("sem %q:\n%s", quer, b)
+		}
+	}
+	// Marcado pela campanha: quem pediu, e o porquê continua.
+	as18 := time.Date(2026, 10, 17, 18, 0, 0, 0, time.UTC)
+	c.mu.Lock()
+	c.loja.Catalog.Reboot.JobID, c.loja.Catalog.Reboot.At, c.loja.Catalog.Reboot.By = 91, &as18, "a campanha de atualizações da equipe de TI"
+	c.loja.Catalog.Reboot.Updates = nil
+	c.mu.Unlock()
+	b = get(a, a.base()+"?aba=reinicio").Body.String()
+	for _, quer := range []string{"(pedido nº 91, por a campanha de atualizações da equipe de TI)", "Por que reiniciar", "ainda não chegou ao servidor"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("agendado sem %q:\n%s", quer, b)
+		}
+	}
+}
