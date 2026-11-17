@@ -1336,6 +1336,39 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
 Na auditoria: `terceiros.baixar` (com a versão pedida) e `terceiros.excluir`. Sem pasta de
 conteúdo (`PATCHD_CONTENT_DIR`), o painel continua mostrando o comando da linha de comando.
 
+## Incluir programas pelo painel
+
+Um programa do Windows que está no catálogo do winget e ainda não está na lista do patchd
+(Zoom, VLC, GIMP…) entra por **Patch › Programas de terceiros › Incluir programa** (só admin),
+sem editar arquivo no servidor:
+
+1. **Buscar no winget**: digite o pacote (`VideoLAN.VLC`; o identificador está em winget.run ou
+   no `winget search nome` de um Windows). A busca lê o winget-pkgs e preenche o nome, o nome
+   e o fabricante em Programas e Recursos (quando o pacote declara) e o tipo do instalador.
+   Confira antes de salvar: o **nome no inventário** tem de ser o que aparece na aba Software
+   de uma máquina com o programa ("igual" ou "começa com", para quando o nome traz a versão).
+2. **Assinatura**: a organização que assina o instalador (Propriedades › Assinaturas digitais,
+   ou `Get-AuthenticodeSignature`), ou, se o fabricante não assina, o motivo. É a mesma regra
+   dos programas do manifesto: o agente recusa instalador com outro assinante.
+3. **Processos** (opcional): os executáveis do programa; com um deles aberto, o agente adia.
+4. **Salvar**: o programa vale na hora, sem reiniciar o servidor, no painel, na avaliação do
+   parque, nas campanhas, na Padronização e no autoatendimento. O servidor busca a versão de
+   referência em seguida (sem esperar a sincronização do catálogo).
+5. Depois, o caminho de sempre: na página do programa, **Baixar** o instalador e **Aprovar** a
+   versão; em Configuração › Autoatendimento, **oferecer** (atualizar, instalar, grupos).
+
+A página do programa abre mesmo sem nenhuma máquina com ele (é o caso de quem vai oferecê-lo só
+para instalar). **Editar** troca o nome, o nome no inventário, o fabricante, o tipo, a
+assinatura e os processos; para trocar o pacote do winget, exclua e inclua de novo.
+**Excluir** só vale sem versão aprovada, sem oferta no autoatendimento e fora dos grupos da
+Padronização (revogue, tire a oferta e tire dos grupos antes); os instaladores guardados ficam
+em disco até serem apagados na página do programa. Na auditoria: `terceiros.incluir`,
+`terceiros.editar`, `terceiros.excluir_programa`.
+
+As regras ficam no banco (migração 0074) e somam-se ao manifesto embutido e ao local; um id que
+o manifesto já tem não é incluído de novo. A linha de comando (`package fetch`, `catalog sync`,
+`compliance`, `selfservice`) usa as mesmas regras.
+
 ## Programas de terceiros no Mac, pelo Installomator
 
 No macOS, o patchd instala e atualiza programas de terceiros pelo **Installomator**

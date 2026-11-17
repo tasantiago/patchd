@@ -18,7 +18,7 @@ import (
 // da loja de uma máquina para uma lista de grupos.
 func TestAbaAutoatendimento(t *testing.T) {
 	m, _ := thirdparty.Default()
-	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	const pc = "c0ffee00-0009"
 	_, _ = st.SaveInventory(ctx, pc, protocol.InventoryReport{SchemaVersion: 1, Hash: "w",

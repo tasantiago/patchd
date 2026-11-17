@@ -20,7 +20,7 @@ import (
 func TestReinicioPeloAutoatendimento(t *testing.T) {
 	m, _ := thirdparty.Default()
 	_, priv, _ := jobs.GenerateKey()
-	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	maquina := func(name, edition string) protocol.EnrollResponse {
 		tok, hash := identity.NewSecret(identity.EnrollmentPrefix)

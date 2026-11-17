@@ -171,7 +171,7 @@ func runCampaign(args []string, look config.Lookup, stdout, stderr io.Writer) in
 		return exitRuntime
 	}
 	pg := store.NewPostgres(pool)
-	tp, err := newCampaigner(pg, look)
+	tp, err := newCampaigner(pg, look, nil)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitConfig
@@ -181,7 +181,7 @@ func runCampaign(args []string, look config.Lookup, stdout, stderr io.Writer) in
 
 // newCampaigner monta o planejador das campanhas de terceiros (Aula 14.7): o manifesto
 // das regras e a pasta dos instaladores, os mesmos do package plan e do painel.
-func newCampaigner(st tpinstall.CampaignStore, look config.Lookup) (*tpinstall.Campaigner, error) {
+func newCampaigner(st tpinstall.CampaignStore, look config.Lookup, rules *thirdparty.Live) (*tpinstall.Campaigner, error) {
 	path, _ := look("PATCHD_THIRDPARTY_MANIFEST")
 	m, err := thirdparty.Load(path)
 	if err != nil {
@@ -191,7 +191,7 @@ func newCampaigner(st tpinstall.CampaignStore, look config.Lookup) (*tpinstall.C
 	if err != nil {
 		return nil, err
 	}
-	c := &tpinstall.Campaigner{Store: st, Manifest: m}
+	c := &tpinstall.Campaigner{Store: st, Manifest: m, Rules: rules}
 	if dir != "" {
 		c.Dir = packagesDir(dir)
 	}

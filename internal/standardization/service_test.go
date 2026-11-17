@@ -170,7 +170,7 @@ func TestWindowsCatalogRequiresApprovalAndPreservesInstallerKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Manifest = &manifest
+	s.Manifest = thirdparty.NewLive(manifest)
 	s.PackagesDir = t.TempDir()
 	data := []byte("instalador exe de teste")
 	sum := sha256.Sum256(data)

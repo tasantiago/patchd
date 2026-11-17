@@ -28,7 +28,7 @@ func TestAtualizarTerceirosPeloPainel(t *testing.T) {
 	pub, priv, _ := jobs.GenerateKey()
 	dir := t.TempDir()
 	m, _ := thirdparty.Default()
-	h, st, log := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(&m))
+	h, st, log := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	const id = "92fc3b93-0003"
 	maq := "/painel/maquinas/" + id
@@ -188,7 +188,7 @@ func TestAtualizarTerceirosPeloPainel(t *testing.T) {
 // Sem a chave de jobs, o plano aparece e o pedido não cria nada.
 func TestAtualizarTerceirosSemChave(t *testing.T) {
 	m, _ := thirdparty.Default()
-	h, st, _ := ambientePaginas(t, api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(&m))
+	h, st, _ := ambientePaginas(t, api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	ctx := context.Background()
 	const id = "92fc3b93-0003"
 	st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "w", OS: protocol.OSInfo{ID: "windows", Arch: "amd64"},
@@ -216,7 +216,7 @@ func TestProgramaComProcessos(t *testing.T) {
 	st := store.NewMemory()
 	abreSessao(t, st, sessaoTeste, agora)
 	m, _ := thirdparty.Default()
-	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m))
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	b := pagina(h, "GET", "/painel/patch/programa?app=vscode", sessaoTeste, nil).Body.String()
 	if !strings.Contains(b, "assinatura exigida: Microsoft Corporation · não instala com Code.exe aberto") {
 		t.Errorf("programa vscode:\n%s", b)
@@ -232,7 +232,7 @@ func TestAtualizarTerceirosNoMac(t *testing.T) {
 	script := []byte("#!/bin/zsh\n# Installomator de teste\n")
 	soma := sha256.Sum256(script)
 	sc := installomator.Script{Version: "10.10", SHA256: hex.EncodeToString(soma[:])}
-	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(&m), api.WithInstallomator(sc))
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(dir, nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)), api.WithInstallomator(sc))
 	ctx := context.Background()
 	const id = "aaaa0000-0004" // uma máquina do ambiente de teste, agora com inventário de Mac
 	maq := "/painel/maquinas/" + id

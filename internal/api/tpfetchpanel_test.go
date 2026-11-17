@@ -72,7 +72,7 @@ func TestBaixarEExcluirPeloPainel(t *testing.T) {
 	}
 	m, _ := thirdparty.Default()
 	log := &syncBuffer{}
-	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m),
+	h := api.New(st, slog.New(slog.NewTextHandler(log, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)),
 		api.WithContent(dir, nil), api.WithPackageFetch(baixa))
 	prog := "/painel/patch/programa?app=google-chrome"
 	post := func(cookie, path string, f url.Values) *http.Response {
@@ -223,7 +223,7 @@ func TestBaixarSemOServico(t *testing.T) {
 	st.CreatePanelSession(ctx, identity.Hash(sessaoAdmin), panel.Session{Username: "thyago", Role: panel.RoleAdmin,
 		Source: panel.SourceAD, CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora})
 	m, _ := thirdparty.Default()
-	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m))
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	b := pagina(h, "GET", "/painel/patch/programa?app=7zip", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, "<code>patchd-server package fetch -app 7zip</code>") || strings.Contains(b, `action="/painel/patch/terceiros/baixar"`) || strings.Contains(b, `name="tipo"`) {
 		t.Errorf("sem o serviço:\n%s", b)
@@ -252,7 +252,7 @@ func TestBaixarTiposDaRegra(t *testing.T) {
 		return true
 	}
 	m, _ := thirdparty.Default()
-	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m),
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)),
 		api.WithContent(t.TempDir(), nil), api.WithPackageFetch(baixa))
 	prog := "/painel/patch/programa?app=7zip"
 	b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()

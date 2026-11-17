@@ -81,7 +81,7 @@ type Service struct {
 	Store Store
 	// Policies: o cache das políticas; nil lê do banco a cada avaliação.
 	Policies    *PolicyCache
-	Manifest    *thirdparty.Manifest
+	Manifest    *thirdparty.Live
 	Key         ed25519.PrivateKey
 	PackagesDir string
 	BundlesDir  string
@@ -306,7 +306,7 @@ func (s *Service) applications(ctx context.Context, inv protocol.InventoryReport
 			available = append(available, p)
 		}
 	}
-	decisions := tpinstall.Plan(inv.Software, *s.Manifest, available, arch)
+	decisions := tpinstall.Plan(inv.Software, s.Manifest.Get(), available, arch)
 	latest, open, err := s.Store.StandardizationJobs(ctx, machine, now)
 	if err != nil {
 		return nil, 0, err

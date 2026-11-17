@@ -39,7 +39,7 @@ type complianceService struct {
 	now    func() time.Time
 	// manifest: os programas de terceiros (Aula 13.3); nil: não os avalia. O estado da
 	// máquina não depende deles; a avaliação guardada já os traz para o Detail e o Items.
-	manifest *thirdparty.Manifest
+	manifest *thirdparty.Live
 
 	cache evalCache
 	// fill: um preenchimento do parque por vez (o segundo pedido acha o cache pronto). Canal
@@ -151,6 +151,9 @@ func (s *complianceService) catalogKey(ctx context.Context) (string, error) {
 	var b strings.Builder
 	for _, c := range st {
 		fmt.Fprintf(&b, "%s:%v:%v:%d;", c.Source, c.LastOK, c.LastFail, c.Runs)
+	}
+	if s.manifest != nil { // um programa incluído ou excluído pelo painel refaz as avaliações
+		fmt.Fprintf(&b, "regras:%d;", s.manifest.Gen())
 	}
 	return b.String(), nil
 }

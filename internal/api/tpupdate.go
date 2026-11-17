@@ -88,7 +88,7 @@ func (a *api) tpPlan(ctx context.Context, id string) (ds []tpinstall.Decision, a
 	for _, ap := range approvals {
 		approved[store.TPApprovalKey(ap.AppID, ap.Version)] = true
 	}
-	return tpinstall.Plan(inv.Software, *a.tpManifest, pkgs, arch), approved, true, nil
+	return tpinstall.Plan(inv.Software, a.tpManifest.Get(), pkgs, arch), approved, true, nil
 }
 
 // tpPlanMac: o plano do Mac (Installomator), com a versão aprovada mais nova de cada programa
@@ -106,7 +106,7 @@ func (a *api) tpPlanMac(ctx context.Context, inv protocol.InventoryReport) ([]tp
 			newest[ap.AppID] = ap.Version
 		}
 	}
-	return tpinstall.PlanMac(inv.Software, *a.tpManifest, func(app string) string { return newest[app] }), approved, true, nil
+	return tpinstall.PlanMac(inv.Software, a.tpManifest.Get(), func(app string) string { return newest[app] }), approved, true, nil
 }
 
 // macScript: o Installomator no cache, conferido; why diz o que falta.

@@ -297,8 +297,9 @@ type tpInstallRow struct {
 
 type tpProgramView struct {
 	pageBase
-	P    tpProgram
-	Rows []tpInstallRow
+	P      tpProgram
+	Rows   []tpInstallRow
+	Custom bool // incluído pelo painel (customapps.go)
 	// Instaladores guardados e aprovação (Aula 14.5); Install nil: a regra não tem install.
 	Install  *tpInstallInfo
 	Versions []tpVersionRow
@@ -332,11 +333,21 @@ func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {
 	}
 	all := aggregateThirdParty(list)
 	i := slices.IndexFunc(all, func(p tpProgram) bool { return p.AppID == app })
-	if i < 0 {
+	switch {
+	case i >= 0:
+		v.P = all[i]
+	case a.installRule(app) != nil:
+		// Um programa com regra de instalação que nenhuma máquina tem ainda (o recém-incluído
+		// pelo painel, ou o oferecido só para instalar): a página serve para baixar e aprovar.
+		v.P = tpProgram{AppID: app, Program: a.installRule(app).Name}
+		if v.P.Program == "" {
+			v.P.Program = app
+		}
+	default:
 		a.render(w, r, http.StatusNotFound, "patch-nao-encontrado", v.pageBase)
 		return
 	}
-	v.P = all[i]
+	v.Custom = a.isCustom(app)
 	v.Title = v.P.Program
 	for _, in := range v.P.Installs {
 		v.Rows = append(v.Rows, tpInstallRow{tpInstall: in, Label: strings.ToLower(in.State), Class: tpClass(in.State), ScopeLabel: scopeLabel(in.Scope)})

@@ -122,7 +122,7 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 	}
 	sv.Ran = true
 	for _, it := range selfservice.Catalog(offers, selfservice.TokenMember(splitGroups(groups)), selfservice.Machine{Software: inv.Software, Arch: arch},
-		*a.tpManifest, pkgs, approvals) {
+		a.tpManifest.Get(), pkgs, approvals) {
 		sv.Items = append(sv.Items, ssItem{Item: it, Label: ssActionLabels[it.Action]})
 	}
 	return nil

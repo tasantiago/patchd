@@ -73,7 +73,7 @@ func runSelfService(args []string, look config.Lookup, stdout, stderr io.Writer)
 		fmt.Fprintln(stderr, "patchd-server: o autoatendimento exige o PostgreSQL (PATCHD_DATABASE_URL ou PATCHD_DATABASE_URL_FILE)")
 		return exitConfig
 	}
-	svc := &selfservice.Service{Manifest: &manifest, Now: time.Now}
+	svc := &selfservice.Service{Manifest: thirdparty.NewLive(manifest), Now: time.Now}
 	if dir != "" {
 		svc.PackagesDir = packagesDir(dir)
 	}
@@ -100,6 +100,9 @@ func runSelfService(args []string, look config.Lookup, stdout, stderr io.Writer)
 	}
 	pg := store.NewPostgres(pool)
 	svc.Store = pg
+	if _, rules, err := thirdPartyRules(ctx, look, pg, nil); err == nil { // com os incluídos pelo painel
+		svc.Manifest = thirdparty.NewLive(rules)
+	}
 	if args[0] == "requests" || args[0] == "approve" || args[0] == "refuse" {
 		return selfServiceQueue(ctx, pg, svc, args, operator(look), stdout, stderr)
 	}

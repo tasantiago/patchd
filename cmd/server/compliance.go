@@ -86,7 +86,7 @@ type evalOptions struct {
 	Model  string    // -modelo: o modelo do Mac simulado
 	Now    time.Time // relógio da avaliação (zero: agora); os testes fixam
 	// Manifesto dos programas de terceiros; nil: não avalia os terceiros.
-	Manifest *thirdparty.Manifest
+	Manifest *thirdparty.Live
 }
 
 // machineEval é a avaliação de uma máquina, pronta para imprimir.
@@ -173,7 +173,7 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 		return exitConfig
 	}
-	opts.Manifest = &manifest
+	opts.Manifest = thirdparty.NewLive(manifest)
 	cfg, err := loadServerConfig(nil, look, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "patchd-server: configuração inválida:\n%v\n", err)
@@ -198,7 +198,11 @@ func runCompliance(args []string, look config.Lookup, stdout, stderr io.Writer) 
 		return exitRuntime
 	}
 
-	var st fleetStore = store.NewPostgres(pool)
+	pg := store.NewPostgres(pool)
+	if _, rules, err := thirdPartyRules(ctx, look, pg, logger); err == nil { // com os incluídos pelo painel
+		opts.Manifest = thirdparty.NewLive(rules)
+	}
+	var st fleetStore = pg
 	var times *stepTimes
 	if *timings {
 		times = newStepTimes()
@@ -348,7 +352,7 @@ func evaluateID(ctx context.Context, st complianceStore, id string, opts evalOpt
 		if err != nil {
 			return ev, err
 		}
-		r := thirdparty.EvaluateWith(inv.OS.ID, inv.Software, *opts.Manifest, thirdparty.Data{Refs: refs, Cycles: cycles, Now: opts.Now})
+		r := thirdparty.EvaluateWith(inv.OS.ID, inv.Software, opts.Manifest.Get(), thirdparty.Data{Refs: refs, Cycles: cycles, Now: opts.Now})
 
 		ev.Third = &r
 	}

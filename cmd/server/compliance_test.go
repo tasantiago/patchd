@@ -467,7 +467,7 @@ func TestEvaluateMachineTerceiros(t *testing.T) {
 			{App: "python-3.14", OS: "windows", Version: "3.14.3", Source: "winget:Python.Python.3.14", Fetched: agora.AddDate(0, 0, -10)},
 		},
 	}
-	ev, err := evaluateMachine(context.Background(), banco, "287d", evalOptions{Now: agora, Manifest: &manifesto})
+	ev, err := evaluateMachine(context.Background(), banco, "287d", evalOptions{Now: agora, Manifest: thirdparty.NewLive(manifesto)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +504,7 @@ func TestEvaluateMachineTerceiros(t *testing.T) {
 	}
 
 	// Ubuntu: os terceiros não se aplicam (os pacotes já vêm pela distribuição).
-	ev, err = evaluateMachine(context.Background(), banco, "7aa6", evalOptions{Now: agora, Manifest: &manifesto})
+	ev, err = evaluateMachine(context.Background(), banco, "7aa6", evalOptions{Now: agora, Manifest: thirdparty.NewLive(manifesto)})
 	if err != nil || ev.Third != nil {
 		t.Errorf("Ubuntu: %+v %v", ev.Third, err)
 	}

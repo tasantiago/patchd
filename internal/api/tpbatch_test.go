@@ -46,7 +46,7 @@ func TestTerceirosEmLote(t *testing.T) {
 	st.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: "google-chrome", Version: "154.0.7000.1", ApprovedBy: "ana"})
 	st.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: "notepad-plus-plus", Version: "8.9", ApprovedBy: "ana"})
 	m, _ := thirdparty.Default()
-	h := api.New(st, slog.New(slog.NewTextHandler(&syncBuffer{}, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(&m))
+	h := api.New(st, slog.New(slog.NewTextHandler(&syncBuffer{}, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 
 	b := pagina(h, "GET", "/painel/patch?aba=terceiros", sessaoAdmin, nil).Body.String()
 	for _, tr := range []string{
