@@ -32,12 +32,14 @@ const (
 	ExitConfig  = 2
 )
 
-const usage = `uso: patchd-app [app] [-no-tray]
+const usage = `uso: patchd-app [app] [-abrir] [-no-tray]
 
 A Central de software (Aula 17.4): roda na sessão do usuário, mostra o ícone perto do relógio
 e abre no navegador a página com as atualizações oferecidas a ele. O serviço do agente põe o
 app para abrir no logon de todos (desligue com -user-app=false no serviço).
 
+  -abrir     abre a página no navegador (o atalho da área de trabalho: patchd-app.exe sem
+             argumentos); com a Central já aberta na sessão, é ela que abre
   -no-tray   sem ícone: mostra o endereço da página no terminal (testes e outros sistemas)
 `
 
@@ -51,6 +53,9 @@ const (
 // atualização do agente (Aula 18.8).
 const appRenewEvery = time.Minute
 
+// openWait: quanto a execução do atalho espera a Central aberta receber o pedido.
+const openWait = 5 * time.Second
+
 // Run roda a Central. managed: o caminho da cópia que o serviço do agente mantém, se é dela
 // que o app roda (vigiada para reabrir com a cópia nova); vazio: nada a vigiar.
 func Run(args []string, stdout, stderr io.Writer, call userapp.Caller, managed string) int {
@@ -58,6 +63,7 @@ func Run(args []string, stdout, stderr io.Writer, call userapp.Caller, managed s
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, usage) }
 	noTray := fs.Bool("no-tray", false, "sem ícone: mostra o endereço da página")
+	open := fs.Bool("abrir", false, "abre a página no navegador")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return ExitOK
@@ -68,7 +74,21 @@ func Run(args []string, stdout, stderr io.Writer, call userapp.Caller, managed s
 	release = sync.OnceFunc(release) // a reabertura solta o mutex antes de abrir a cópia nova
 	defer release()
 	if !ok {
-		return ExitOK // já há uma Central aberta nesta sessão: o ícone dela atende
+		// Já há uma Central aberta nesta sessão: o ícone dela atende; o atalho pede a ela que
+		// mostre a página.
+		if *open && !userapp.RequestOpen(openWait) {
+			fmt.Fprintln(stderr, "patchd-app: a Central aberta nesta sessão não respondeu ao pedido de abrir a página")
+		}
+		return ExitOK
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// Os pedidos de abrir das próximas execuções (o atalho), logo depois do mutex.
+	requests, err := userapp.OpenRequests(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "patchd-app: o atalho da área de trabalho não vai reabrir a página: %v\n", err)
 	}
 
 	// O nome da Central é a descrição do recurso de versão deste executável, gravada na
@@ -88,10 +108,6 @@ func Run(args []string, stdout, stderr io.Writer, call userapp.Caller, managed s
 		fmt.Fprintf(stderr, "patchd-app: porta local: %v\n", err)
 		return ExitRuntime
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- app.Serve(ctx, ln) }()
 	go app.WatchStandardization(ctx, stderr)
@@ -102,6 +118,14 @@ func Run(args []string, stdout, stderr io.Writer, call userapp.Caller, managed s
 		<-served
 		return ExitOK
 	}
+	if *open {
+		userapp.OpenURL(app.TabURL(""))
+	}
+	go func() {
+		for range requests { // nil fora do Windows: nunca chega nada
+			userapp.OpenURL(app.TabURL(""))
+		}
+	}()
 	notices := make(chan userapp.Notice, 1)
 	go app.Watch(ctx, appFirstCheck, appCheckEvery, notices)
 	// Aula 18.8: a cópia em disco trocada pela atualização do agente reabre o app com ela.

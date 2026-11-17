@@ -52,3 +52,20 @@ func writePublic(path string, s protocol.DesktopShortcut, target, icon string, i
 	}
 	return saveLink(path, target, filepath.Dir(target), s.Name, location)
 }
+
+// CentralLink: o atalho da Central de software (o executável target) na área de trabalho
+// pública, com o escudo do Windows (o mesmo do ícone perto do relógio).
+func CentralLink(target string) (AppLink, error) {
+	desktop, err := windows.KnownFolderPath(windows.FOLDERID_PublicDesktop, 0)
+	if err != nil {
+		return AppLink{}, err
+	}
+	icon := ""
+	if root := os.Getenv("SystemRoot"); filepath.IsAbs(root) {
+		icon = filepath.Join(root, "System32", "imageres.dll") + ",73"
+	}
+	return AppLink{Desktop: desktop, Target: target, Icon: icon, Read: readLink,
+		Write: func(path, target, description, icon string) error {
+			return saveLink(path, target, filepath.Dir(target), description, icon)
+		}}, nil
+}

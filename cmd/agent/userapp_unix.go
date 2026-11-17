@@ -13,8 +13,12 @@ import (
 	"strings"
 )
 
-func userAppRenamer() func(string) (bool, error) { return nil }
-func managedAppPath() string                     { return "" }
+func userAppRenamer(*slog.Logger) func(string) (bool, error) { return nil }
+
+// removeCentralLink: o atalho da Central na área de trabalho é só do Windows.
+func removeCentralLink() error { return nil }
+
+func managedAppPath() string { return "" }
 
 func syncUserApp(logger *slog.Logger, enabled bool, name string) {
 	if os.Geteuid() != 0 {

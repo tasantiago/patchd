@@ -515,6 +515,17 @@ versão. Para a equipe de segurança:
 - com o arquivo restaurado da quarentena (ou depois da exceção), o serviço do agente põe a
   Central e a chave Run de volta na próxima partida.
 
+- **Atalho na área de trabalho.** O serviço põe em `C:\Users\Public\Desktop` (a área de
+  trabalho de todos os usuários) o atalho da Central, com o escudo do Windows e o nome da
+  Central no painel (Configuração › Parâmetros › Aparência › Nome da Central de software; um
+  nome que não vale como nome de arquivo fica "Central de software"). O atalho abre o
+  `patchd-app.exe` sem argumentos, e a Central mostra a página no navegador; com a Central já
+  aberta na sessão (a do logon), a execução do atalho avisa a aberta, que mostra a página, e
+  sai. O nome trocado no painel troca o atalho (o antigo sai) na próxima consulta da Central. O
+  atalho da Central é qualquer `.lnk` da pasta que aponta para o `patchd-app.exe`; ele sai com
+  `-user-app=false` e com `patchd-agent service uninstall`, e fica na reinstalação da
+  atualização automática (no lugar em que o usuário o pôs). Um atalho da regra de um programa
+  com o mesmo nome da Central é ignorado, com aviso no log.
 - O app mostra o escudo perto do relógio. Clique abre a página no navegador padrão; o menu
   (botão direito) tem "Fechar este ícone". Quando aparece atualização nova para o usuário,
   vem um aviso do Windows (até 2 min depois do logon e a cada 4 h).

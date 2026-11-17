@@ -126,3 +126,37 @@ func saveLink(path, target, workDir, description, iconLocation string) error {
 	_, err = oleutil.CallMethod(link, "Save")
 	return err
 }
+
+// readLink devolve o executável para onde o .lnk aponta (o TargetPath, pelo WScript.Shell).
+func readLink(path string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
+		var oe *ole.OleError
+		if !errors.As(err, &oe) || oe.Code() != 1 {
+			return "", err
+		}
+	}
+	defer ole.CoUninitialize()
+	object, err := oleutil.CreateObject("WScript.Shell")
+	if err != nil {
+		return "", err
+	}
+	defer object.Release()
+	dispatch, err := object.QueryInterface(ole.IID_IDispatch)
+	if err != nil {
+		return "", err
+	}
+	defer dispatch.Release()
+	value, err := oleutil.CallMethod(dispatch, "CreateShortcut", path)
+	if err != nil {
+		return "", err
+	}
+	link := value.ToIDispatch()
+	defer link.Release()
+	target, err := oleutil.GetProperty(link, "TargetPath")
+	if err != nil {
+		return "", err
+	}
+	return target.ToString(), nil
+}

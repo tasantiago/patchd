@@ -40,7 +40,11 @@ func runService(args []string, look config.Lookup, stdout, stderr io.Writer) int
 	case "install":
 		return serviceInstall(args[1:], look, stdout, stderr)
 	case "uninstall":
-		return serviceUninstall(stdout, stderr)
+		code := serviceUninstall(stdout, stderr)
+		if err := removeCentralLink(); err != nil { // a reinstalação (install) não tira o atalho
+			fmt.Fprintf(stderr, "patchd-agent: aviso: atalho da Central: %v\n", err)
+		}
+		return code
 	case "run":
 		return serviceRun(args[1:], look, stderr)
 	default:
