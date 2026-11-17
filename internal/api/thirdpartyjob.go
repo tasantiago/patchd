@@ -62,7 +62,11 @@ func (a *api) packageFile(w http.ResponseWriter, r *http.Request, id string) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("ETag", `"`+name[:64]+`"`)
 	a.logger.Info("download de instalador", "machine_id", id, "file", name[:16], "request_id", RequestID(r.Context()))
-	defer a.downloads.begin(dlPackage, id, a.now())() // a aba Saúde: downloads em andamento
+	done, ok := a.beginDownload(w, dlPackage, id) // o limite de downloads e a aba Saúde (downloads.go)
+	if !ok {
+		return
+	}
+	defer done()
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }
 

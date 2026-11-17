@@ -88,6 +88,10 @@ func (a *api) offlineCatalogFile(w http.ResponseWriter, r *http.Request, id stri
 	w.Header().Set("ETag", `"`+sum+`"`)
 	a.logger.Info("download do catálogo offline", "machine_id", id, "sha256", sum[:16], "range", r.Header.Get("Range"),
 		"request_id", RequestID(r.Context()))
-	defer a.downloads.begin(dlCatalog, id, a.now())() // a aba Saúde: downloads em andamento
+	done, ok := a.beginDownload(w, dlCatalog, id) // o limite de downloads e a aba Saúde (downloads.go)
+	if !ok {
+		return
+	}
+	defer done()
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }

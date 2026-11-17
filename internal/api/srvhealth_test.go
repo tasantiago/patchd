@@ -77,7 +77,7 @@ func TestSaudeDoServidor(t *testing.T) {
 		"<code>SELECT payload FROM inventory_reports WHERE id = $1</code>", ">0,50<", ">67%<", "lendo ou gravando no disco (100%)",
 		"processando (CPU) (100%)",
 		"Fila dos agentes", "0 de 5 vagas em uso",
-		"Downloads agora", "nenhum em andamento",
+		"Downloads agora", "nenhum em andamento", "sem limite",
 	} {
 		if !strings.Contains(b, quer) {
 			t.Errorf("a aba não tem %q", quer)
