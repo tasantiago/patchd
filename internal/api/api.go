@@ -187,6 +187,8 @@ type Store interface {
 	// Máquinas aposentadas (Aula 7.5): o painel lista, aposenta e restaura (Aula 7.6).
 	RetiredMachines(ctx context.Context) ([]protocol.RetiredMachine, error)
 	RetireMachine(ctx context.Context, id, reason, by string) (bool, error)
+	// A exclusão definitiva da aposentada (machine_delete.go do store).
+	DeleteRetiredMachine(ctx context.Context, id string) error
 	RestoreMachine(ctx context.Context, id string) (bool, error)
 	// Fila de jobs (Aula 8.1).
 	JobStore
@@ -379,8 +381,10 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/padronizacao/{id}/excluir", a.sameOrigin(a.adminAction(a.deleteStandardization)))
 	mux.Handle("GET /painel/maquinas/{id}", a.panelPage(a.machinePage))
 	mux.Handle("GET /painel/inventario", a.panelPage(a.equipmentPage))
-	mux.Handle("GET /painel/buscar", a.panelPage(a.quickSearch))                                 // a busca rápida do topo
-	mux.Handle("POST /painel/inventario/grupo", a.sameOrigin(a.adminAction(a.equipBatchAction))) // pôr as encontradas num grupo de implantação
+	mux.Handle("GET /painel/buscar", a.panelPage(a.quickSearch))                                      // a busca rápida do topo
+	mux.Handle("POST /painel/inventario/grupo", a.sameOrigin(a.adminAction(a.equipBatchAction)))      // pôr as encontradas num grupo de implantação
+	mux.Handle("POST /painel/inventario/aposentar", a.sameOrigin(a.adminAction(a.equipRetireAction))) // aposentar as encontradas que estão offline
+	mux.Handle("POST /painel/aposentadas/excluir", a.sameOrigin(a.adminAction(a.deleteRetiredAction)))
 	mux.Handle("GET /painel/inventario.csv", a.panelPage(a.equipmentCSV))
 	mux.Handle("GET /painel/patch", a.panelPage(a.patchPage))
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))

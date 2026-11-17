@@ -573,6 +573,8 @@ func (a *api) retiredPage(w http.ResponseWriter, r *http.Request) {
 	v := retiredView{pageBase: a.base(r, "Máquinas aposentadas", "aposentadas")}
 	if q := r.URL.Query(); q.Has("aposentada") {
 		v.Flash = "Máquina aposentada: saiu do parque, e a credencial dela deixou de valer."
+	} else {
+		retiredFlash(q, &v.pageBase)
 	}
 	list, err := a.store.RetiredMachines(r.Context())
 	if err != nil {
@@ -777,6 +779,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Equipamentos</span><span class="kpi-val">{{.Total}}</span></a></li>
 <li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val {{cor "v-verde" .Online}}">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
 <li><a class="kpi{{if eq .Status "offline"}} ativo{{end}}" href="{{.KPIOff}}"><span class="kpi-rot">Offline</span><span class="kpi-val {{cor "v-laranja" .Offline}}">{{.Offline}}</span><span class="kpi-sub">sem check-in há mais de 2 h</span></a></li>
+{{if .NoInventory}}<li><a class="kpi{{if eq .Status "sem-inventario"}} ativo{{end}}" href="{{.KPINoInv}}"><span class="kpi-rot">Sem inventário</span><span class="kpi-val v-laranja">{{.NoInventory}}</span><span class="kpi-sub">registraram e nunca mandaram o inventário</span></a></li>{{end}}
 </ul>
 <ul class="kpis" aria-label="firmware">{{range .FWCards}}
 <li><a class="kpi{{if .Active}} ativo{{end}}" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Class .N}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
@@ -792,6 +795,9 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <button type="submit">Buscar</button>{{if .HasFilter}} <a href="/painel/inventario">Limpar</a>{{end}}
 </form>
 <p class="muted nota">No campo IP, a busca aceita uma faixa: <code>10.1.2.0/24</code>, <code>10.1.2.10-10.1.2.50</code>, <code>10.1.2.10-50</code> ou <code>10.1.2.*</code>.{{if .Range}} Mostrando a {{.Range}}.{{end}}</p>
+{{with .Retire}}<details class="excluir"><summary>Aposentar {{if eq .Offline .N}}as {{.N}} encontradas{{else}}as {{.Offline}} encontradas que estão offline{{end}}</summary><form class="lote" method="post" action="/painel/inventario/aposentar">{{if .Q}}<input type="hidden" name="q" value="{{.Q}}"><input type="hidden" name="campo" value="{{.Field}}">{{end}}{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Firmware}}<input type="hidden" name="firmware" value="{{.Firmware}}">{{end}}{{if .Building}}<input type="hidden" name="predio" value="{{.Building}}">{{end}}<input type="hidden" name="n" value="{{.N}}">
+<input name="motivo" required minlength="3" maxlength="200" placeholder="Motivo, ex.: registro sem inventário, agente não volta" aria-label="motivo"> <button class="perigo" type="submit">Aposentar {{.Offline}}</button>
+<span class="muted">todas as do filtro que estão offline, não só as desta página; as online ficam. Saem do parque, a credencial deixa de valer e dá para restaurar em <a href="/painel/aposentadas">Aposentadas</a> (onde também se excluem de vez).</span></form></details>{{end}}
 {{with .Batch}}<form class="lote" method="post" action="/painel/inventario/grupo">{{if .Q}}<input type="hidden" name="q" value="{{.Q}}"><input type="hidden" name="campo" value="{{.Field}}">{{end}}{{if .Status}}<input type="hidden" name="status" value="{{.Status}}">{{end}}{{if .Firmware}}<input type="hidden" name="firmware" value="{{.Firmware}}">{{end}}{{if .Building}}<input type="hidden" name="predio" value="{{.Building}}">{{end}}<input type="hidden" name="n" value="{{.N}}">
 <label>Pôr {{if eq .N 1}}a máquina encontrada{{else}}as {{.N}} máquinas encontradas{{end}} no grupo de implantação <select name="anel" required><option value="" selected disabled>escolha</option>{{range .Rings}}<option value="{{.}}">{{.}}{{if eq . 0}} (piloto){{else if eq . 1}} (padrão){{end}}</option>{{end}}</select></label> <button type="submit">Mover</button> <span class="muted">todas as do filtro, não só as desta página</span></form>{{end}}
 {{if .Rows}}<div class="tabela"><table>
@@ -2203,11 +2209,14 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 
 {{define "aposentadas"}}{{template "topo" .}}
 <h1>Máquinas aposentadas</h1>
-<div class="card">{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>Máquina</th><th>Nome</th><th>SO</th><th>Aposentada em</th><th>Por</th><th>Motivo</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
-<tbody>{{range .Rows}}<tr><td><code>{{.Short}}</code></td><td>{{.Name}}</td><td>{{.OS}}</td><td>{{.When}}</td><td>{{.By}}</td><td>{{.Reason}}</td>
+<div class="card">{{if .Rows}}{{if .Admin}}<form id="excluir-aposentadas" method="post" action="/painel/aposentadas/excluir"></form>{{end}}<div class="tabela"><table>
+<thead><tr>{{if .Admin}}<th class="col-lote">Excluir</th>{{end}}<th>Máquina</th><th>Nome</th><th>SO</th><th>Aposentada em</th><th>Por</th><th>Motivo</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr>{{if $.Admin}}<td class="col-lote"><input form="excluir-aposentadas" type="checkbox" name="maquina" value="{{.ID}}" aria-label="marcar {{.Short}}"></td>{{end}}<td><code>{{.Short}}</code></td><td>{{.Name}}</td><td>{{.OS}}</td><td>{{.When}}</td><td>{{.By}}</td><td>{{.Reason}}</td>
 {{if $.Admin}}<td><form method="post" action="/painel/maquinas/{{.ID}}/restaurar"><button class="sec" type="submit">Restaurar</button></form></td>{{end}}</tr>{{end}}
 </tbody></table></div>
+{{if .Admin}}<div class="lote"><label><input form="excluir-aposentadas" type="checkbox" name="confirmar" value="1" required> Entendo que a exclusão não tem volta: o registro, os inventários, as buscas e os jobs dessas máquinas saem do banco</label>
+<button form="excluir-aposentadas" class="perigo" type="submit">Excluir de vez as marcadas</button>
+<span class="muted">Ficam as que têm senha da BIOS guardada, as de uma mescla e as com sessões do Terminal. A auditoria fica. Se o agente voltar, ele precisa ser registrado de novo.</span></div>{{end}}
 {{else}}<p class="vazio"><strong>Nenhuma máquina aposentada.</strong> Para tirar do parque uma máquina que saiu de uso, abra a página dela e use "Aposentar": nada é apagado, e dá para restaurar aqui.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 

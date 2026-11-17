@@ -120,7 +120,7 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/scripts` |
 | GET | `/painel/terminal` |
 
-## Admin (ação) (82)
+## Admin (ação) (84)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -128,6 +128,7 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 |---|---|
 | POST | `/painel/alertas/lote` |
 | POST | `/painel/alertas/{id}/reconhecer` |
+| POST | `/painel/aposentadas/excluir` |
 | POST | `/painel/autoatendimento/pedidos/{id}/aprovar` |
 | POST | `/painel/autoatendimento/pedidos/{id}/recusar` |
 | POST | `/painel/bios/lote` |
@@ -168,6 +169,7 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/grupos-implantacao/predio/remover` |
 | POST | `/painel/grupos-implantacao/predio` |
 | POST | `/painel/grupos-implantacao/{ring}/remover-janela` |
+| POST | `/painel/inventario/aposentar` |
 | POST | `/painel/inventario/grupo` |
 | POST | `/painel/jobs/{id}/cancelar` |
 | POST | `/painel/maquinas/{id}/anel` |
