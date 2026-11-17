@@ -349,8 +349,13 @@ banco gasta o tempo: é por elas que a próxima otimização começa. O texto é
 **Configuração › Parâmetros › Agentes › Downloads ao mesmo tempo** (`PATCHD_DOWNLOAD_MAX`,
 padrão 40; 0 é sem limite; vale na hora). Conta os arquivos que o servidor entrega às
 máquinas: atualizações do cache do Windows, versões do agente, instaladores de terceiros e o
-catálogo offline. Os pacotes de scripts ficam de fora (são pequenos, e o agente marcaria o job
-como falho).
+catálogo offline. Ficam de fora:
+
+- os **pedidos do autoatendimento**: o instalador da máquina com um pedido do usuário em
+  andamento passa mesmo com o limite cheio e não ocupa vaga (o usuário está esperando na frente
+  da máquina). O servidor só confere isso quando o limite recusaria; a linha da aba Saúde conta
+  quantos passaram assim;
+- os pacotes de scripts (são pequenos, e o agente marcaria o job como falho).
 
 A máquina que passaria do número recebe "ocupado" (`503`, com `Retry-After`) antes de baixar
 qualquer coisa. O agente trata como falha passageira: tenta de novo algumas vezes, com espera

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/settings"
 	"github.com/tasantiago/patchd/internal/store"
@@ -55,21 +56,21 @@ func TestDownloadsEmAndamento(t *testing.T) {
 
 	// O limite: passou do número, recusa (e conta); os scripts não contam nem são limitados.
 	var l downloadTracker
-	f1, ok1 := l.tryBegin(dlWinCache, "pc-a", t0, 2)
-	f2, ok2 := l.tryBegin(dlRelease, "pc-b", t0, 2)
-	fs, oks := l.tryBegin(dlBundle, "pc-c", t0, 2) // scripts: passam e não ocupam vaga
+	f1, ok1 := l.tryBegin(dlWinCache, "pc-a", t0, 2, nil)
+	f2, ok2 := l.tryBegin(dlRelease, "pc-b", t0, 2, nil)
+	fs, oks := l.tryBegin(dlBundle, "pc-c", t0, 2, nil) // scripts: passam e não ocupam vaga
 	if !ok1 || !ok2 || !oks {
 		t.Fatal("dentro do limite")
 	}
-	if _, ok := l.tryBegin(dlPackage, "pc-d", t0, 2); ok {
+	if _, ok := l.tryBegin(dlPackage, "pc-d", t0, 2, nil); ok {
 		t.Fatal("passou do limite")
 	}
 	f1()
-	f3, ok3 := l.tryBegin(dlPackage, "pc-d", t0, 2)
+	f3, ok3 := l.tryBegin(dlPackage, "pc-d", t0, 2, nil)
 	if !ok3 {
 		t.Fatal("a vaga solta não voltou")
 	}
-	if _, ok := l.tryBegin(dlWinCache, "pc-e", t0, 0); !ok {
+	if _, ok := l.tryBegin(dlWinCache, "pc-e", t0, 0, nil); !ok {
 		t.Error("0 é sem limite")
 	}
 	s = l.stats()
@@ -80,6 +81,65 @@ func TestDownloadsEmAndamento(t *testing.T) {
 	f2()
 	f3()
 	fs()
+
+	// O pedido do autoatendimento: com o limite cheio, passa (e não ocupa vaga); a pergunta só
+	// é feita quando o limite recusaria.
+	var ss downloadTracker
+	perguntas := 0
+	eDoUsuario := func(v bool) func() bool { return func() bool { perguntas++; return v } }
+	g1, _ := ss.tryBegin(dlWinCache, "pc-a", t0, 1, eDoUsuario(true))
+	if perguntas != 0 {
+		t.Error("perguntou com vaga sobrando")
+	}
+	if _, ok := ss.tryBegin(dlPackage, "pc-b", t0, 1, eDoUsuario(false)); ok {
+		t.Error("instalador de campanha passou do limite")
+	}
+	u1, ok := ss.tryBegin(dlPackage, "pc-c", t0, 1, eDoUsuario(true))
+	if !ok || perguntas != 2 {
+		t.Fatalf("pedido do usuário: %v, %d pergunta(s)", ok, perguntas)
+	}
+	g1() // a vaga do limite voltou, mesmo com o do usuário em andamento
+	g2, ok := ss.tryBegin(dlWinCache, "pc-d", t0, 1, nil)
+	if !ok {
+		t.Error("o download do usuário ocupou a vaga do limite")
+	}
+	st := ss.stats()
+	st.Max = 1
+	if st.Total != 2 || st.SelfService != 1 || st.Refused != 1 || !strings.Contains(downloadsRow(st, data).Value, "1 do autoatendimento passaram fora do limite") {
+		t.Errorf("números: %+v %q", st, downloadsRow(st, data).Value)
+	}
+	u1()
+	u1()
+	g2()
+	if st := ss.stats(); st.Total != 0 || ss.exempt != 0 {
+		t.Errorf("no fim: %+v, fora do limite %d", st, ss.exempt)
+	}
+}
+
+// OpenSelfServiceJob na memória: só o job aberto, desta máquina, pedido pelo autoatendimento.
+func TestJobDoAutoatendimentoAberto(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	cria := func(id int64, maq, autor string) {
+		if _, err := st.SaveInventory(ctx, maq, protocol.InventoryReport{SchemaVersion: 1, Hash: maq}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateJob(ctx, store.NewJob{ID: id, MachineID: maq, Type: jobs.TypeThirdParty, Signed: protocol.SignedJob{Payload: "{}", Signature: "s"},
+			CreatedBy: autor, NotAfter: time.Now().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cria(1, "pc-a", store.SelfServiceAuthorPrefix+"fulano")
+	cria(2, "pc-b", "admin")
+	cria(3, "pc-c", store.SelfServiceAuthorPrefix+"ciclano")
+	if _, err := st.FinishJob(ctx, 3, jobs.StateDone, "ok", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for maq, quer := range map[string]bool{"pc-a": true, "pc-b": false, "pc-c": false, "pc-x": false} {
+		if got, err := st.OpenSelfServiceJob(ctx, maq); err != nil || got != quer {
+			t.Errorf("%s: %v %v", maq, got, err)
+		}
+	}
 }
 
 // Na rota: o download de um arquivo do cache do Windows entra na conta e sai quando termina.
@@ -153,7 +213,7 @@ func TestDownloadContadoNaRota(t *testing.T) {
 	}
 	var presos []func()
 	for range 5 {
-		f, _ := a.downloads.tryBegin(dlRelease, "outra", time.Now(), 5)
+		f, _ := a.downloads.tryBegin(dlRelease, "outra", time.Now(), 5, nil)
 		presos = append(presos, f)
 	}
 	r := envia("GET", protocol.WinCachePath+"/"+resp.Files[0].Key, m.Credential, nil)
