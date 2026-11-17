@@ -73,6 +73,8 @@ const (
 	statusOnline  = "online"
 	statusOffline = "offline"
 	statusNoState = "sem-estado"
+	// statusNoInventory: registrou e nunca mandou o inventário (sem nome, sem sistema).
+	statusNoInventory = "sem-inventario"
 )
 
 // --- Categoria pelo hardware -------------------------------------------------------
@@ -257,7 +259,7 @@ func parseEquipQuery(v url.Values) equipQuery {
 	}
 	q.Q = strings.TrimSpace(v.Get("q"))
 	q.Q = texto.Clip(q.Q, maxSearchLen) // Aula 20.3: sem partir caractere, sem UTF-8 inválido da URL
-	if s := v.Get("status"); s == statusOnline || s == statusOffline || s == statusNoState {
+	if s := v.Get("status"); s == statusOnline || s == statusOffline || s == statusNoState || s == statusNoInventory {
 		q.Status = s
 	}
 	if f := v.Get("firmware"); slices.Contains(fwFilters, f) {
@@ -392,6 +394,10 @@ func filterEquip(list []equip, q equipQuery) []equip {
 			}
 		case statusNoState:
 			if e.HasState {
+				continue
+			}
+		case statusNoInventory:
+			if e.Collected != nil {
 				continue
 			}
 		}
@@ -544,6 +550,8 @@ type equipRow struct {
 type equipView struct {
 	pageBase
 	Total, Online, Offline int
+	NoInventory            int    // registradas que nunca mandaram o inventário
+	KPINoInv               string // o link do cartão delas
 	Status                 string
 	// Aula 21.2: a segunda linha de cartões, a do firmware.
 	Firmware                  string
@@ -565,6 +573,8 @@ type equipView struct {
 	Building                  string
 	Range                     string      // a busca é uma faixa de IP: o que ela cobre
 	Batch                     *equipBatch // o lote "pôr as encontradas no grupo" (admin, com filtro)
+	// Retire: o lote "aposentar as encontradas que estão offline" (admin, com filtro).
+	Retire *equipBatch
 }
 
 // equipBatch: o formulário do lote, com o filtro em campos escondidos e a contagem que o
@@ -573,6 +583,7 @@ type equipBatch struct {
 	Q, Field, Status, Firmware, Building string
 	N                                    int
 	Rings                                []int
+	Offline                              int // aposentar: quantas das encontradas estão offline
 }
 
 // fwCard: um cartão do firmware: a contagem e o link do filtro (que mantém a busca e o status).
@@ -651,6 +662,9 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		if e.Online {
 			v.Online++
 		}
+		if e.Collected == nil {
+			v.NoInventory++
+		}
 	}
 	v.Offline = v.Total - v.Online
 
@@ -660,7 +674,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 		k.Status, k.Page = status, 1
 		return k.href("/painel/inventario")
 	}
-	v.KPIAll, v.KPIOnline, v.KPIOff = kpi(""), kpi(statusOnline), kpi(statusOffline)
+	v.KPIAll, v.KPIOnline, v.KPIOff, v.KPINoInv = kpi(""), kpi(statusOnline), kpi(statusOffline), kpi(statusNoInventory)
 
 	// Aula 21.2: os cartões do firmware contam a frota toda (como os de cima) e filtram;
 	// clicar no ativo tira o filtro.
@@ -717,6 +731,15 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 	equipBatchFlash(r.URL.Query(), &v.pageBase)
 	if v.Admin && v.HasFilter && len(found) > 0 {
 		v.Batch = &equipBatch{Q: q.Q, Field: q.Field, Status: q.Status, Firmware: q.Firmware, Building: q.Building, N: len(found), Rings: allRings()}
+		off := 0
+		for _, e := range found {
+			if !e.Online {
+				off++
+			}
+		}
+		if off > 0 {
+			v.Retire = &equipBatch{Q: q.Q, Field: q.Field, Status: q.Status, Firmware: q.Firmware, Building: q.Building, N: len(found), Offline: off}
+		}
 	}
 	csvQ := q
 	csvQ.Page, csvQ.Per = 1, defaultPerPage

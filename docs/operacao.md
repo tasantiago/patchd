@@ -1217,6 +1217,32 @@ A mesclagem não executa nada na estação e não substitui o backup da chave de
 normal de inventários, buscas e jobs continua valendo; as senhas de BIOS permanecem fora
 dessa retenção.
 
+## Limpar o parque: aposentar em lote e excluir de vez
+
+Máquinas que pararam de falar com o servidor (a VM apagada, o registro que sobrou de uma
+reinstalação, o agente que se registrou e nunca mandou o inventário) saem em dois passos:
+
+1. **Aposentar em lote**, em **Inventário › Equipamentos**: filtre a lista (o cartão **Sem
+   inventário** mostra as que registraram e nunca mandaram dados; servem também Offline, uma
+   faixa de IP, um prédio, uma busca) e use **Aposentar as N encontradas que estão offline**, com
+   o motivo. Vale para todas as do filtro, não só as da página; as que estão online ficam. A
+   aposentada sai do parque, das campanhas e das contagens, e a credencial dela deixa de valer
+   na hora. Dá para **restaurar** em **Aposentadas**. Na auditoria: `maquina.aposentar` de cada
+   uma e `maquina.aposentar_lote` com o filtro.
+2. **Excluir de vez**, em **Aposentadas**: marque as máquinas, confirme e **Excluir de vez as
+   marcadas**. Saem o registro, os inventários, as buscas, os jobs, o desempenho e os pedidos de
+   ligar. **Não há volta**, e ficam (com o aviso de quantas):
+   - as que têm **senha da BIOS guardada**: o registro guarda a cópia, e a placa pode estar no
+     parque com outro registro (depois de uma reinstalação);
+   - as de uma **mescla** (o registro incorporado guarda a história do que foi juntado);
+   - as com **sessões do Terminal** (são a auditoria dos comandos dados nela).
+
+   A auditoria do painel fica (`maquina.excluir`). Se o agente de uma máquina excluída voltar,
+   o servidor recusa a credencial e ele precisa ser registrado de novo.
+
+Aposentar já tira a máquina de todas as telas: excluir é só para não guardar o que não serve
+mais.
+
 ## Guarda da senha da BIOS (Aula 21.4)
 
 O substituto do `.bat` de senha da BIOS começa pela guarda: o servidor sorteia a senha de

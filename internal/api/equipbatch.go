@@ -116,10 +116,18 @@ func equipBatchFlash(q url.Values, b *pageBase) {
 	switch q.Get("erro") {
 	case "lote-filtro":
 		b.Error = "Filtre a lista antes (faixa de IP, prédio, sistema...): o lote não move o parque inteiro."
+	case "motivo-lote":
+		b.Error = fmt.Sprintf("Diga o motivo de aposentar (de %d a %d caracteres): ele fica na auditoria e na lista das aposentadas.", minReasonLength, maxReasonLength)
 	case "lote-mudou":
 		antes, _ := strconv.Atoi(q.Get("antes"))
 		agora, _ := strconv.Atoi(q.Get("agora"))
 		b.Error = fmt.Sprintf("A lista mudou entre a página e o pedido (eram %d, agora são %d): nada foi movido. Confira a lista e peça de novo.", antes, agora)
+	}
+	if q.Has("aposentadas") {
+		b.Flash = fmt.Sprintf("%s máquina(s) aposentada(s): saíram do parque, e a credencial delas deixou de valer. Para excluir de vez, vá em Aposentadas.", q.Get("aposentadas"))
+		if n := q.Get("online"); n != "" && n != "0" {
+			b.Flash += fmt.Sprintf(" %s estava(m) online e ficou(aram).", n)
+		}
 	}
 	if q.Has("movidas") && q.Get("ja") != "" {
 		if ja, _ := strconv.Atoi(q.Get("ja")); ja > 0 {
