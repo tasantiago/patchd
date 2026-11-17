@@ -338,6 +338,10 @@ banco gasta o tempo: é por elas que a próxima otimização começa. O texto é
   minuto; 7, 30 e 90 dias por hora, com o tamanho do banco e o disco livre.
 - Onde o servidor gasta tempo: as rotas que mais somam tempo desde a partida.
 - O que o banco está executando: as consultas mais vistas em execução desde a partida.
+- Downloads agora (no quadro "Processo e disco"): quantos downloads estão em andamento e de
+  quantas máquinas, por tipo de arquivo (cache do Windows, versões do agente, instaladores,
+  catálogo offline, scripts), e o pico desde a partida do servidor, com a hora. A tabela de
+  rotas só conta o download quando ele termina; esta linha conta o que está no meio do caminho.
 - Banco (pool, conexões, cache, temporários, maiores tabelas), processo e as pastas de dados.
 
 ## 5. Fora desta versão

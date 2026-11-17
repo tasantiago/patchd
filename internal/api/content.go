@@ -88,5 +88,6 @@ func (a *api) offlineCatalogFile(w http.ResponseWriter, r *http.Request, id stri
 	w.Header().Set("ETag", `"`+sum+`"`)
 	a.logger.Info("download do catálogo offline", "machine_id", id, "sha256", sum[:16], "range", r.Header.Get("Range"),
 		"request_id", RequestID(r.Context()))
+	defer a.downloads.begin(dlCatalog, id, a.now())() // a aba Saúde: downloads em andamento
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }

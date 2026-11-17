@@ -78,6 +78,7 @@ func (a *api) winCacheFile(w http.ResponseWriter, r *http.Request, id string) {
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Patchd-SHA256", m.SHA256)
+	defer a.downloads.begin(dlWinCache, id, a.now())() // a aba Saúde: downloads em andamento
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, key, m.Fetched, io.ReadSeeker(f))
 }
 

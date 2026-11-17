@@ -72,5 +72,6 @@ func (a *api) releaseFile(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	a.logger.Info("download de versão do agente", "machine_id", id, "release", v, "file", name, "request_id", RequestID(r.Context()))
+	defer a.downloads.begin(dlRelease, id, a.now())() // a aba Saúde: downloads em andamento
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, name, fi.ModTime(), f)
 }

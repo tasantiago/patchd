@@ -520,6 +520,7 @@ func (a *api) bundleFile(w http.ResponseWriter, r *http.Request, id string) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("ETag", `"`+strings.TrimSuffix(name, ".zip")+`"`)
 	a.logger.Info("download de bundle", "machine_id", id, "file", name[:16], "request_id", RequestID(r.Context()))
+	defer a.downloads.begin(dlBundle, id, a.now())() // a aba Saúde: downloads em andamento
 	http.ServeContent(httpx.ExtendWrites(w, downloadIdle), r, "", fi.ModTime(), f)
 }
 

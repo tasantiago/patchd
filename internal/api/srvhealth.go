@@ -135,7 +135,7 @@ func (a *api) healthTab(r *http.Request) (*healthView, error) {
 	v.Routes, v.RoutesAll = routeRows(m.Routes())
 	v.Queries, v.QueriesNote = queryRows(m.Activity(healthQueries))
 	v.Disks = diskRows(in.Disks)
-	v.Process = processRows(in.Info, pts)
+	v.Process = append(processRows(in.Info, pts), downloadsRow(a.downloads.stats(), a.stamp))
 	return v, nil
 }
 
