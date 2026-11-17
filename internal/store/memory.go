@@ -297,6 +297,18 @@ func (m *Memory) CreateRelayEnrollmentToken(ctx context.Context, hash []byte, no
 	return id, err
 }
 
+// CreateBothEnrollmentToken guarda um token da rede interna e do relé (memória).
+func (m *Memory) CreateBothEnrollmentToken(ctx context.Context, hash []byte, note string, expiresAt time.Time, maxUses int) (int64, error) {
+	if maxUses < 1 || maxUses > identity.MaxBothUses {
+		return 0, fmt.Errorf("token da rede interna e do relé: de 1 a %d usos", identity.MaxBothUses)
+	}
+	id, err := m.CreateEnrollmentToken(ctx, hash, note, expiresAt, maxUses)
+	m.mu.Lock()
+	m.tokens[id-1].Both = true
+	m.mu.Unlock()
+	return id, err
+}
+
 // EnrollmentTokens lista os tokens, do mais novo para o mais antigo.
 func (m *Memory) EnrollmentTokens(ctx context.Context) ([]identity.EnrollmentToken, error) {
 	m.mu.RLock()

@@ -112,3 +112,49 @@ func TestTokenPeloRele(t *testing.T) {
 		t.Errorf("segundo uso: %d", r.Code)
 	}
 }
+
+// O token da rede interna e do relé: o lote de notebooks instalado de uma vez. Vale pelas
+// duas portas, com usos contados (1 a 50) e validade de até 7 dias. Dados fictícios.
+func TestTokenRedeERele(t *testing.T) {
+	h, st, _ := ambientePaginas(t, api.WithSettings(parametrosFixos{api.RelayKey: "203.0.113.10:8443"}))
+	form := pagina(h, "GET", "/painel/configuracao?aba=agente", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(form, `name="onde" value="ambos"`) || !strings.Contains(form, "Na rede interna e pelo relé") {
+		t.Fatal("formulário sem a opção")
+	}
+	for nome, f := range map[string]url.Values{
+		"validade longa": {"validade": {"720"}, "usos": {"30"}, "onde": {"ambos"}},
+		"ilimitado":      {"validade": {"24"}, "usos": {"0"}, "onde": {"ambos"}},
+		"usos demais":    {"validade": {"24"}, "usos": {"51"}, "onde": {"ambos"}},
+	} {
+		if r := pagina(h, "POST", "/painel/configuracao/agente/token", sessaoAdmin, f); r.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: %d", nome, r.Code)
+		}
+	}
+	r := pagina(h, "POST", "/painel/configuracao/agente/token", sessaoAdmin, url.Values{"nota": {"notebooks do lote"}, "validade": {"72"}, "usos": {"2"}, "onde": {"ambos"}})
+	b := r.Body.String()
+	if r.Code != http.StatusOK || !strings.Contains(b, "-relay 203.0.113.10:8443") || !strings.Contains(b, "Token <b>da rede interna e do relé</b>") {
+		t.Fatalf("token criado: %d\n%s", r.Code, b)
+	}
+	tok := regexp.MustCompile(`patchd_enr_[A-Za-z0-9_-]+`).FindString(b)
+	l, _ := st.EnrollmentTokens(context.Background())
+	if len(l) != 1 || !l[0].Both || l[0].Relay || l[0].MaxUses != 2 {
+		t.Fatalf("token: %+v", l)
+	}
+	if b := pagina(h, "GET", "/painel/configuracao?aba=agente", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "rede interna e relé</span>") {
+		t.Error("lista sem a marca")
+	}
+	viaRele := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r.WithContext(api.ViaRelay(r.Context()))) })
+	nb := func(i string) []byte {
+		c, _ := json.Marshal(protocol.EnrollRequest{AgentVersion: "v", Evidence: protocol.IdentityEvidence{InstallID: "guid-" + i, Hostname: "nb-" + i, OSFamily: "windows"}})
+		return c
+	}
+	if r := envia(h, "POST", "/api/v1/enroll", tok, nb("1")); r.Code != http.StatusCreated {
+		t.Fatalf("na rede interna: %d %s", r.Code, r.Body)
+	}
+	if r := envia(viaRele, "POST", "/api/v1/enroll", tok, nb("2")); r.Code != http.StatusCreated {
+		t.Fatalf("pelo relé: %d %s", r.Code, r.Body)
+	}
+	if r := envia(viaRele, "POST", "/api/v1/enroll", tok, nb("3")); r.Code != http.StatusUnauthorized {
+		t.Errorf("além dos usos: %d", r.Code)
+	}
+}
