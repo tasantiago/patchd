@@ -897,7 +897,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{end}}{{end}}
 {{if eq .Tab "patrimonio"}}{{with .Assets}}
 <div class="card"><div class="card-cab"><h2>Localização física</h2><span class="muted">do sistema de patrimônio, para o Inventário</span></div>
-<p class="muted">O CSV que o sistema de patrimônio exporta, com o cabeçalho na primeira linha: <code>DEPREDIO</code>, <code>DESALA</code>, <code>UO</code>, <code>TOMBO</code>, <code>DEBEM</code>, <code>DESUBGRUPOBEM</code> (em qualquer ordem; só o <code>TOMBO</code> é obrigatório). Vírgula ou ponto e vírgula; UTF-8 ou o CSV do Excel. Cada importação <strong>substitui</strong> a anterior inteira. A máquina é ligada ao bem pelo nome: os dígitos do hostname, sem os zeros à esquerda, iguais ao tombo (FJ088594 é o tombo 88594; letras antes e depois variam).</p>
+<p class="muted">O CSV que o sistema de patrimônio exporta, com o cabeçalho na primeira linha: <code>DEPREDIO</code>, <code>DESALA</code>, <code>UO</code>, <code>TOMBO</code>, <code>DEBEM</code>, <code>DESUBGRUPOBEM</code> (em qualquer ordem; só o <code>TOMBO</code> é obrigatório). Vírgula ou ponto e vírgula; UTF-8 ou o CSV do Excel. Cada importação <strong>substitui</strong> a anterior inteira. A máquina é ligada ao bem pelo nome: os dígitos do hostname, sem os zeros à esquerda, iguais ao tombo (EQ077001 é o tombo 77001; letras antes e depois variam).</p>
 <form class="acao" method="post" action="/painel/configuracao/patrimonio" enctype="multipart/form-data"><input type="file" name="arquivo" accept=".csv,text/csv" required aria-label="arquivo CSV do patrimônio"><button type="submit">Importar</button><span class="muted">até {{.MaxMB}} MB</span></form>
 </div>
 <div class="card"><div class="card-cab"><h2>Ligação com o inventário</h2></div>
@@ -1865,9 +1865,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next2}}<a href="{{.Next2}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhuma máquina de outro grupo{{if .HasFilter}} com esse filtro{{end}}.</p>{{end}}</div>
 {{else if eq .Tab "colar"}}<div class="card"><div class="card-cab"><h2>Colar lista</h2><span class="muted">um por linha: nome, IP ou tombo</span></div>
-<p class="muted">Cole direto da planilha: vale a primeira coluna de cada linha, o nome com ou sem o domínio (<code>FJ088594</code>, <code>fj088594.tj.local</code>), o IP ou o tombo (<code>88594</code>). O servidor mostra o que achou, o que não achou (com nomes parecidos) e o que é ambíguo, antes de mover. Até {{.MaxPaste}} linhas.</p>
+<p class="muted">Cole direto da planilha: vale a primeira coluna de cada linha, o nome com ou sem o domínio (<code>EQ077001</code>, <code>eq077001.exemplo.local</code>), o IP ou o tombo (<code>77001</code>). O servidor mostra o que achou, o que não achou (com nomes parecidos) e o que é ambíguo, antes de mover. Até {{.MaxPaste}} linhas.</p>
 <form method="post" action="/painel/grupos-implantacao/colar"><input type="hidden" name="destino" value="{{.Ring}}">
-<textarea name="lista" rows="12" required aria-label="lista de máquinas" placeholder="FJ088594&#10;FJ088595&#10;10.1.2.33&#10;88601"></textarea>
+<textarea name="lista" rows="12" required aria-label="lista de máquinas" placeholder="EQ077001&#10;EQ077002&#10;10.1.2.33&#10;77010"></textarea>
 <div class="lote"><button type="submit">Procurar as máquinas</button><span class="muted">Nada muda antes da conferência.</span></div></form></div>
 {{else}}{{template "grupo-regras" .}}{{end}}
 {{template "fim"}}{{end}}

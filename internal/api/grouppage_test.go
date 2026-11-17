@@ -105,7 +105,7 @@ func TestPaginaDoGrupo(t *testing.T) {
 	}
 
 	// Colar lista: nome com domínio e outra coluna, IP, tombo, um não achado com sugestões, repetida.
-	lista := "PC-1002.tj.local\tsala 3\n10.9.0.5\n1004\npc-1009\npc-1002\n\n"
+	lista := "PC-1002.exemplo.local\tsala 3\n10.9.0.5\n1004\npc-1009\npc-1002\n\n"
 	code, _, body = post("/painel/grupos-implantacao/colar", url.Values{"destino": {"3"}, "lista": {lista}})
 	for _, tr := range []string{"5 linha(s): 3 máquina(s) para mover, 1 não achada(s), 1 repetida(s).", "<td>nome</td>", "<td>IP</td>", "<td>tombo 1004</td>",
 		"<code>pc-1009</code></td><td>pc-1001, pc-1002, pc-1003</td>"} {

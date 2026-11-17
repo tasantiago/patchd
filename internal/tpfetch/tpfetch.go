@@ -116,9 +116,13 @@ func One(ctx context.Context, c *winget.Client, f *pkgcache.Fetcher, st Store, a
 	} else {
 		fmt.Fprintf(out, "  baixado     %s (%s) em %s\n", name, pkgcache.Bytes(r.Size), r.Duration.Round(100*time.Millisecond))
 	}
+	args := in.Arguments()
+	if a.Install.Arguments != "" {
+		args = a.Install.Arguments // os da regra, no lugar dos do winget
+	}
 	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, WingetID: m.PackageIdentifier,
 		Version: m.PackageVersion, Architecture: in.Architecture, Type: in.Type, Scope: in.Scope, URL: in.URL,
-		SHA256: in.SHA256, Size: r.Size, Arguments: in.Arguments(), ReturnCodes: in.ReturnCodes})
+		SHA256: in.SHA256, Size: r.Size, Arguments: args, ReturnCodes: in.ReturnCodes})
 	var pc *store.PackageChangedError
 	switch {
 	case errors.As(err, &pc):

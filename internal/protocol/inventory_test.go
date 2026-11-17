@@ -12,7 +12,7 @@ func relatorioBase() InventoryReport {
 		SchemaVersion: InventorySchemaVersion,
 		AgentVersion:  "v0.2.0",
 		CollectedAt:   time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC),
-		OS:            OSInfo{Family: "linux", ID: "ubuntu", Version: "26.04", Hostname: "itom-teste"},
+		OS:            OSInfo{Family: "linux", ID: "ubuntu", Version: "26.04", Hostname: "srv-teste"},
 		Hardware:      &Hardware{Manufacturer: "VMware, Inc.", MemoryBytes: 3513413632},
 		Software: []Software{
 			{Name: "libcares2", Version: "1.34.6-1ubuntu0.1", Scope: "machine", Source: "dpkg"},

@@ -52,7 +52,7 @@ func main() {
 }
 
 // panelTitle limpa o nome do painel: espaços nas pontas e um par de aspas em volta
-// ("patchd TJRO" ou 'patchd TJRO'). ok=false: vazio ou com mais de 40 caracteres.
+// ("patchd EXEMPLO" ou 'patchd EXEMPLO'). ok=false: vazio ou com mais de 40 caracteres.
 func panelTitle(v string) (string, bool) {
 	t := strings.TrimSpace(v)
 	if len(t) >= 2 && (t[0] == '"' || t[0] == '\'') && t[len(t)-1] == t[0] {

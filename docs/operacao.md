@@ -1539,6 +1539,35 @@ Os dois programas "feed" do Windows que o patchd só apontava passam a ter regra
 Os nomes de processo que impedem a instalação (Acrobat.exe e AcroRd32.exe; python.exe e
 pythonw.exe) não foram medidos em laboratório, como os dos outros programas: confirme no piloto.
 
+### Linhas do Python, do Node.js e do Temurin
+
+Programas com várias linhas mantidas ao mesmo tempo têm um pacote do winget por linha, e o
+patchd tem uma regra de instalação para cada uma:
+
+| Regra | Pacote do winget | Reconhece | Assinatura |
+|---|---|---|---|
+| `python-3.13`, `python-3.12`, `python-3.11` | `Python.Python.3.13` (e .12, .11) | "Python 3.13.x (64-bit)" e "(32-bit)", como a 3.14 | Python Software Foundation |
+| `nodejs-22` | `OpenJS.NodeJS.22` (wix) | "Node.js" de 64 bits com a versão 22.x | OpenJS Foundation |
+| `temurin-8-jre` … `temurin-25-jdk` | `EclipseAdoptium.Temurin.<linha>.<JRE ou JDK>` (wix) | "Eclipse Temurin JRE/JDK with Hotspot <linha>… (x64)" | Eclipse Foundation |
+
+- O que não tem regra própria continua na regra geral do programa, que só aponta a mais nova da
+  linha (endoflife.date): as outras linhas do Python e do Node.js, o Node.js e o Temurin de 32
+  bits (o MSI de 64 bits instalaria outro produto ao lado) e as instalações de agentes que não
+  informam a arquitetura.
+- **Python 3.12 e 3.11**: a python.org só publica correções em código-fonte para essas linhas; a
+  referência é o último instalador do Windows (3.12.10 e 3.11.9). A 3.10 e as anteriores estão
+  fora de suporte e ficam na regra geral.
+- **Node.js**: o nome é o mesmo em todas as linhas; a regra separa pela versão
+  (`version_match`) e pela arquitetura (`arch`). A linha 24 não tem pacote próprio no winget.
+- **Temurin**: o winget pede `ADDLOCAL=ALL`, que ligaria JAVA_HOME e as chaves do Java da Oracle
+  em quem não tinha. A regra troca pelos argumentos dela (`"arguments": "/quiet /norestart"`): o
+  MSI novo atualiza o da mesma linha e mantém os recursos que a máquina já tinha. Com `java.exe` ou
+  `javaw.exe` aberto, a instalação espera (ou fecha com aviso, pela opção da campanha).
+- As assinaturas foram conferidas nos MSI publicados (Node.js 22.23.5 e Temurin 8u512). Os nomes
+  de processo e a atualização no lugar ainda pedem o piloto.
+
+O caminho é o de sempre: na página de cada linha, **Baixar**, **Aprovar** e a campanha.
+
 **Fora de suporte** (Visual C++ 2008 a 2013, Access Database Engine 2010, SQL Server 2012
 Native Client): não existe versão mais nova em fonte nenhuma; o fabricante encerrou o produto.
 As versões instaladas já são, em geral, as últimas publicadas. O que resolve é tirar onde nenhum
@@ -1552,7 +1581,7 @@ obrigatória). Vale vírgula ou ponto e vírgula, UTF-8 com ou sem BOM, ou Windo
 Excel no Windows). Até 20 MB.
 
 - **Ligação pelo nome**: cada sequência de dígitos do nome da máquina, sem os zeros à esquerda,
-  é comparada com o tombo, também sem os zeros. `FJ088594` é o tombo `88594`; o prefixo e o
+  é comparada com o tombo, também sem os zeros. `EQ077001` é o tombo `77001`; o prefixo e o
   sufixo variam à vontade. Conta a sequência **inteira**: o tombo `1234` não liga `PC112345`.
 - **Substituição**: cada envio troca a localização inteira, numa transação só. O tombo que saiu
   do arquivo some da tabela. Um arquivo sem nenhum tombo válido é recusado e não muda nada.

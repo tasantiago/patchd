@@ -106,7 +106,7 @@ func EvaluateWith(osID string, sw []protocol.Software, m Manifest, d Data) Resul
 			continue
 		}
 		res.Programs++
-		i := slices.IndexFunc(rules, func(a App) bool { return a.Matches(s.Name, s.Publisher) })
+		i := slices.IndexFunc(rules, func(a App) bool { return a.MatchesSoftware(s) })
 		if i < 0 {
 			res.Unmatched = append(res.Unmatched, s)
 			continue

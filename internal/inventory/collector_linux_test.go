@@ -20,7 +20,7 @@ func arquivosFalsos(arquivos map[string]string) func(string) ([]byte, error) {
 func coletorFalso(arquivos map[string]string) *linuxCollector {
 	return &linuxCollector{
 		readFile: arquivosFalsos(arquivos),
-		hostname: func() (string, error) { return "itom-teste", nil },
+		hostname: func() (string, error) { return "srv-teste", nil },
 	}
 }
 
@@ -36,7 +36,7 @@ func TestLinuxOSUbuntu(t *testing.T) {
 	if got.ID != "ubuntu" || got.Name != "Ubuntu" || got.Version != "26.04" || got.Codename != "resolute" {
 		t.Errorf("identificação errada: %+v", got)
 	}
-	if got.Kernel != "7.0.0-14-generic" || got.Hostname != "itom-teste" || got.Family != "linux" {
+	if got.Kernel != "7.0.0-14-generic" || got.Hostname != "srv-teste" || got.Family != "linux" {
 		t.Errorf("kernel, hostname ou família errados: %+v", got)
 	}
 	quer := []string{"/etc/os-release", "/proc/sys/kernel/osrelease"}
