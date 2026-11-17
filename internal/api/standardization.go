@@ -50,6 +50,7 @@ func (a *api) stdReset() {
 
 func (a *api) standardizationService(r *http.Request) *standardization.Service {
 	return &standardization.Service{Store: a.store, Policies: a.stdPolicies, Manifest: a.tpManifest, Key: a.jobKey, PackagesDir: a.packagesDir(), BundlesDir: a.bundlesDir(), Now: a.now,
+		PlanOptions: a.planOptions,
 		OnCreated: func(rec jobs.Record, app, version string) {
 			a.logger.Info("padronização: instalação agendada", "machine_id", rec.MachineID, "job_id", rec.ID, "app", app, "version", version, "request_id", RequestID(r.Context()))
 			a.auditAs(r, store.StandardizationAuthor, "agente", "padronizacao.instalacao", rec.MachineID, fmt.Sprintf("job %d · %s %s", rec.ID, app, version))

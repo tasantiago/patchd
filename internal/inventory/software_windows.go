@@ -129,6 +129,8 @@ func readUninstallEntry(parent registry.Key, name string, access uint32) (uninst
 	e.SystemComponent = intValue(k, "SystemComponent")
 	e.WindowsInstaller = intValue(k, "WindowsInstaller")
 	e.BundleUpgradeCode = firstString(k, "BundleUpgradeCode")
+	e.QuietUninstall = stringValue(k, "QuietUninstallString") != ""
+	e.Uninstall = stringValue(k, "UninstallString") != ""
 	return e, nil
 }
 

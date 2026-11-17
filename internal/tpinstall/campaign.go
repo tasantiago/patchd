@@ -39,6 +39,21 @@ type Campaigner struct {
 	// Installomator: a versão do script que vai aos Macs (internal/installomator); nil: os
 	// Macs ficam fora das campanhas de terceiros.
 	Installomator *installomator.Script
+	// Regularize: o parâmetro da regularização (Options.Regularize), lido a cada máquina.
+	// nil: desligada.
+	Regularize func() bool
+}
+
+// options: as opções do plano da máquina (a regularização e se o agente dela remove a
+// instalação antiga).
+func (c Campaigner) options(ctx context.Context, machineID string) (Options, error) {
+	o := Options{Regularize: c.Regularize != nil && c.Regularize()}
+	if !o.Regularize {
+		return o, nil
+	}
+	caps, err := c.Store.MachineCapabilities(ctx, machineID)
+	o.CanReplace = slices.Contains(caps, protocol.CapabilityRegularize)
+	return o, err
 }
 
 // rules: o manifesto de agora.
@@ -167,7 +182,11 @@ func (c Campaigner) Job(ctx context.Context, machineID, app, version string) (*j
 	if err != nil {
 		return nil, "", err
 	}
-	for _, d := range Plan(inv.Software, c.rules(), versionPackages(all, app, version), arch) {
+	opts, err := c.options(ctx, machineID)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, d := range PlanWith(inv.Software, c.rules(), versionPackages(all, app, version), arch, opts) {
 		if d.App.ID != app {
 			continue
 		}

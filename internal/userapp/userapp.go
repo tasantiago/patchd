@@ -283,6 +283,8 @@ type Item struct {
 	Pending                              int64 // o pedido deste usuário que já espera a TI
 	// Aula 19.1b: na fila do "Atualizar tudo" (Queued) ou pedido por ela e instalando (Running).
 	Queued, Running bool
+	// Replaces: a atualização troca a instalação (a atual sai e volta na versão nova).
+	Replaces bool
 }
 
 // reqView é um pedido em "Meus pedidos".
@@ -343,7 +345,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		refresh = d.Busy > 0
 		for _, it := range resp.Catalog.Items {
 			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
-				Approval: it.Approval, Pending: it.Pending}
+				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces}
 			switch it.Action {
 			case protocol.SelfServiceUpdate:
 				d.Updates = append(d.Updates, x)
@@ -860,7 +862,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{define "atualizacoes"}}<section><div class="cab"><h1>Atualizações para você</h1>{{if .UpdateAll}}<form method="post" action="{{$.Base}}atualizar-tudo"><button type="submit">Atualizar tudo ({{.UpdateAll}})</button></form>{{end}}</div>
 {{with .Queue}}{{if .Waiting}}<div class="fila" role="status"><span class="gira" aria-hidden="true"></span><span>Atualizando tudo, uma de cada vez: {{len .Waiting}} na fila. Deixe a Central aberta até terminar.</span><form method="post" action="{{$.Base}}cancelar-fila"><button class="sec" type="submit">Cancelar o restante</button></form></div>{{end}}
 {{if .Failed}}<ul class="falhas">{{range .Failed}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}
-{{if .Updates}}<ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}} → <b>{{.Target}}</b>{{if .Approval}} · com aprovação da TI{{end}}</span></div>
+{{if .Updates}}<ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}} → <b>{{.Target}}</b>{{if .Approval}} · com aprovação da TI{{end}}</span>{{if .Replaces}}<span class="det">Troca a instalação: a atual sai e o programa volta na versão nova em alguns minutos.</span>{{end}}</div>
 {{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else if .Running}}<span class="selo andamento">Instalando</span>{{else if .Queued}}<span class="selo neutro">Na fila</span>{{else}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
 <button type="submit"{{if $.Busy}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Atualizar{{end}}</button></form>{{end}}</li>{{end}}</ul>
 <p class="nota">Feche o programa antes de atualizar. A instalação roda em segundo plano e leva poucos minutos.</p>

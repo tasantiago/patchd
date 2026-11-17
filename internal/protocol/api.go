@@ -74,6 +74,10 @@ const MaxUnblocked = 50
 // (o campo close). Os anteriores recusam o job com o campo: o servidor só o manda a quem anuncia.
 const CapabilityCloseApps = "fechar-programa-v1"
 
+// CapabilityRegularize: o agente remove a instalação de outro tipo antes de instalar a
+// aprovada (o campo replace do job de terceiros). Os anteriores recusam o campo.
+const CapabilityRegularize = "regularizar-v1"
+
 // CapabilityShutdown (Aula 22.3): o agente entende o job desligar (sem ninguém conectado). O
 // servidor só o manda a quem anuncia.
 const CapabilityShutdown = "desligar-v1"

@@ -15,7 +15,8 @@ import (
 // thirdparty assinado, com o usuário como autor e na auditoria.
 
 func (a *api) selfService() *selfservice.Service {
-	return &selfservice.Service{Store: a.store, Manifest: a.tpManifest, Key: a.jobKey, PackagesDir: a.packagesDir(), Now: a.now}
+	return &selfservice.Service{Store: a.store, Manifest: a.tpManifest, Key: a.jobKey, PackagesDir: a.packagesDir(), Now: a.now,
+		PlanOptions: a.planOptions}
 }
 
 func (a *api) selfServiceCatalog(w http.ResponseWriter, r *http.Request, id string) {

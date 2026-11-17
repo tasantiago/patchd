@@ -48,10 +48,21 @@ type Software struct {
 	SourcePackage        string `json:"source_package,omitempty"`         // Linux: pacote fonte (unidade dos avisos do Ubuntu)
 	SourcePackageVersion string `json:"source_package_version,omitempty"` // Linux: versão do pacote fonte
 	SystemComponent      bool   `json:"system_component,omitempty"`       // parte do SO, oculto nas listas de programas
-	IsUpdate             bool   `json:"is_update,omitempty"`              // entrada que representa atualização de outro produto
-	Held                 bool   `json:"held,omitempty"`                   // travado no gerenciador de pacotes: não será atualizado
-	Source               string `json:"source"`                           // de onde o dado veio (P-03)
+	// Uninstall (Windows): como a entrada se desinstala sem perguntar nada, para a
+	// regularização (o patchd troca a instalação pelo instalador aprovado): UninstallMSI,
+	// UninstallQuiet ou UninstallInno; vazio: não se sabe (agente anterior) ou não há.
+	Uninstall string `json:"uninstall,omitempty"`
+	IsUpdate  bool   `json:"is_update,omitempty"` // entrada que representa atualização de outro produto
+	Held      bool   `json:"held,omitempty"`      // travado no gerenciador de pacotes: não será atualizado
+	Source    string `json:"source"`              // de onde o dado veio (P-03)
 }
+
+// Como uma entrada do Windows se desinstala em silêncio (Software.Uninstall).
+const (
+	UninstallMSI   = "msi"   // msiexec /x com o ProductCode
+	UninstallQuiet = "quiet" // o QuietUninstallString que o instalador registrou
+	UninstallInno  = "inno"  // o desinstalador do Inno Setup (/VERYSILENT)
+)
 
 // Hardware descreve a máquina física ou virtual. Valores crus da fonte: seriais
 // genéricos ("To be filled by O.E.M.") são filtrados no servidor (Aula 4.3).

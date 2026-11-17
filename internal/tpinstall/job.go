@@ -43,5 +43,13 @@ func JobParams(d Decision) (jobs.ThirdPartyParams, error) {
 		p.Signer = d.App.Install.Signer
 		p.Processes = d.App.Install.Processes
 	}
+	if r := d.Regularize; r != nil && !r.Over {
+		method := r.Old.Uninstall
+		rep := jobs.ReplaceEntry{Name: r.Old.Name, Version: r.Old.Version, Key: r.Old.Source, Method: method}
+		if method == "msi" {
+			rep.ProductCode = r.Old.ProductCode
+		}
+		p.Replace = &rep
+	}
 	return p, p.Validate()
 }

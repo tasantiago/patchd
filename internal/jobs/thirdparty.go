@@ -50,6 +50,70 @@ type ThirdPartyParams struct {
 	// ele não fechar. nil: não fecha (adia, como sempre). Só vai a agentes que anunciam
 	// protocol.CapabilityCloseApps: os anteriores recusam o campo.
 	Close *CloseApps `json:"close,omitempty"`
+	// Replace (regularização): a instalação de outro tipo que sai antes da nova (o exe que o
+	// MSI aprovado substitui, o bundle). O agente baixa e confere o instalador novo, remove
+	// esta entrada em silêncio e só então instala. nil: nada sai. Só vai a agentes que
+	// anunciam protocol.CapabilityRegularize: os anteriores recusam o campo.
+	Replace *ReplaceEntry `json:"replace,omitempty"`
+}
+
+// ReplaceEntry é a entrada de Programas e Recursos que a regularização remove.
+type ReplaceEntry struct {
+	Name    string `json:"name"`    // o DisplayName, conferido na hora
+	Version string `json:"version"` // o DisplayVersion, conferido na hora
+	// Key: a subchave Uninstall da entrada, no HKLM (o Source do inventário).
+	Key string `json:"key"`
+	// Method: msi (msiexec /x ProductCode), quiet (QuietUninstallString) ou inno.
+	Method      string `json:"method"`
+	ProductCode string `json:"product_code,omitempty"` // msi
+}
+
+// As chaves Uninstall do HKLM em que a regularização pode remover (as de máquina).
+var replaceRoots = []string{
+	`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\`,
+	`HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\`,
+}
+
+var guidPattern = regexp.MustCompile(`^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$`)
+
+// ReplaceSubkey: a subchave de Key (o que vem depois da chave Uninstall); "" se Key não é
+// de uma das chaves permitidas.
+func (r ReplaceEntry) ReplaceSubkey() string {
+	for _, root := range replaceRoots {
+		if strings.HasPrefix(r.Key, root) {
+			return r.Key[len(root):]
+		}
+	}
+	return ""
+}
+
+// Validate confere a entrada.
+func (r ReplaceEntry) Validate() error {
+	printable := func(s string, max int) bool {
+		return s != "" && len(s) <= max && strings.IndexFunc(s, func(c rune) bool { return !unicode.IsPrint(c) }) < 0
+	}
+	sub := r.ReplaceSubkey()
+	switch {
+	case !printable(r.Name, 260):
+		return errors.New("regularização: nome da entrada inválido")
+	case r.Version != "" && !printable(r.Version, 64):
+		return errors.New("regularização: versão da entrada inválida")
+	case sub == "" || len(sub) > 200 || strings.ContainsAny(sub, `\/`) || !printable(sub, 200):
+		return errors.New("regularização: a chave da entrada tem de ser uma subchave Uninstall do HKLM")
+	}
+	switch r.Method {
+	case "msi":
+		if !guidPattern.MatchString(r.ProductCode) || !strings.EqualFold(sub, r.ProductCode) {
+			return errors.New("regularização: o msi pede o ProductCode, o mesmo da chave")
+		}
+	case "quiet", "inno":
+		if r.ProductCode != "" {
+			return errors.New("regularização: ProductCode só no msi")
+		}
+	default:
+		return fmt.Errorf("regularização: método %q (use msi, quiet ou inno)", r.Method)
+	}
+	return nil
 }
 
 // CloseApps: o aviso antes de fechar o programa aberto.
@@ -150,6 +214,13 @@ func (p ThirdPartyParams) Validate() error {
 		return fmt.Errorf("aviso antes de fechar o programa fora de %d a %d minutos", MinCloseNotice, MaxCloseNotice)
 	case p.Close != nil && len(p.Processes) == 0:
 		return errors.New("fechar o programa precisa da lista de processos da regra")
+	case p.Replace != nil && p.Installer == InstallerInstallomator:
+		return errors.New("a regularização é do Windows: o installomator não leva replace")
+	}
+	if p.Replace != nil {
+		if err := p.Replace.Validate(); err != nil {
+			return err
+		}
 	}
 	for _, n := range p.Processes {
 		if !ValidProcess(n) {

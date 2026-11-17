@@ -88,7 +88,11 @@ func (a *api) tpPlan(ctx context.Context, id string) (ds []tpinstall.Decision, a
 	for _, ap := range approvals {
 		approved[store.TPApprovalKey(ap.AppID, ap.Version)] = true
 	}
-	return tpinstall.Plan(inv.Software, a.tpManifest.Get(), pkgs, arch), approved, true, nil
+	opts, err := a.planOptions(ctx, id)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return tpinstall.PlanWith(inv.Software, a.tpManifest.Get(), pkgs, arch, opts), approved, true, nil
 }
 
 // tpPlanMac: o plano do Mac (Installomator), com a versão aprovada mais nova de cada programa

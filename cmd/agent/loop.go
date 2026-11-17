@@ -259,6 +259,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		case "windows":
 			// O job de terceiros com close (fechar o programa com aviso) só vem a quem anuncia.
 			client.Capabilities = append(client.Capabilities, protocol.CapabilityCloseApps)
+			// E o com replace (a regularização: remove a instalação de outro tipo antes).
+			client.Capabilities = append(client.Capabilities, protocol.CapabilityRegularize)
 		case "darwin":
 			// No macOS, o job de terceiros é o Installomator; só vem a quem anuncia.
 			client.Capabilities = append(client.Capabilities, protocol.CapabilityInstallomator)

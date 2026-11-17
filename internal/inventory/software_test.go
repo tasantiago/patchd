@@ -172,3 +172,23 @@ func TestSoftwareFromUninstallMarcadorDaSenhaDaBIOS(t *testing.T) {
 		t.Errorf("programa de verdade: %+v", s)
 	}
 }
+
+// O jeito de remover a entrada sem perguntar nada (a regularização): o MSI pelo ProductCode,
+// o QuietUninstallString, ou o UninstallString do Inno Setup (chave _is1, que aceita /VERYSILENT).
+func TestSoftwareFromUninstallRemocao(t *testing.T) {
+	for _, c := range []struct {
+		e    uninstallEntry
+		quer string
+	}{
+		{uninstallEntry{KeyName: "{23170F69-40C1-2702-2409-000001000000}", DisplayName: "7-Zip", WindowsInstaller: 1, QuietUninstall: true}, "msi"},
+		{uninstallEntry{KeyName: "{0cd7cb36-56f0-49ff-8be2-1250c8660c0d}", DisplayName: "PowerShell", QuietUninstall: true, Uninstall: true}, "quiet"},
+		{uninstallEntry{KeyName: "Programa_is1", DisplayName: "Programa", Uninstall: true}, "inno"},
+		{uninstallEntry{KeyName: "Google Chrome", DisplayName: "Google Chrome", Uninstall: true}, ""},
+		{uninstallEntry{KeyName: "Programa_is1", DisplayName: "Programa"}, ""},
+	} {
+		s, ok := softwareFromUninstall(c.e, maquina64)
+		if !ok || s.Uninstall != c.quer {
+			t.Errorf("%s: %q, quer %q", c.e.KeyName, s.Uninstall, c.quer)
+		}
+	}
+}
