@@ -118,6 +118,26 @@ type Decision struct {
 	// Target (macOS): a versão a alcançar pelo Installomator (a aprovada); no Windows, a do
 	// instalador (Package).
 	Target string
+	// Regularize: a atualização troca a instalação de outro tipo (o exe, o bundle) pela do
+	// instalador aprovado (Options.Regularize). nil: atualização comum.
+	Regularize *Regularization
+}
+
+// Regularization: a instalação que a atualização troca.
+type Regularization struct {
+	From string            // o tipo instalado: exe, msi ou bundle
+	Over bool              // instala por cima (a regra pede regularize: over): nada sai antes
+	Old  protocol.Software // a entrada que sai antes da nova (sem Over)
+}
+
+// Options: o que o plano pode fazer além da atualização do mesmo tipo.
+type Options struct {
+	// Regularize: trocar a instalação de outro tipo (ou feita por bundle) pelo instalador
+	// aprovado, quando ele é mais novo que a instalada (o parâmetro da regularização).
+	Regularize bool
+	// CanReplace: o agente da máquina remove a instalação antiga antes de instalar
+	// (protocol.CapabilityRegularize). Sem ele, só a regularização por cima.
+	CanReplace bool
 }
 
 // TargetVersion: a versão que o job leva.
@@ -131,10 +151,18 @@ func (d Decision) TargetVersion() string {
 // Plan decide cada programa com "install" encontrado no inventário. arch é a da máquina
 // (MachineArch). Programas que a máquina não tem não aparecem.
 func Plan(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdPartyPackage, arch string) []Decision {
+	return PlanWith(sw, m, pkgs, arch, Options{})
+}
+
+// PlanWith é o Plan com as opções (a regularização).
+func PlanWith(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdPartyPackage, arch string, o Options) []Decision {
 	groups := group(sw, m)
 	out := make([]Decision, 0, len(groups))
 	for _, d := range groups {
 		decide(d, pkgs, arch)
+		if o.Regularize && (d.State == StateNoPackage || d.State == StateBundle) {
+			regularize(d, pkgs, arch, o)
+		}
 		out = append(out, *d)
 	}
 	slices.SortStableFunc(out, func(a, b Decision) int {
@@ -281,6 +309,48 @@ func newest(pkgs []store.ThirdPartyPackage, app string, types []string, arch str
 		}
 	}
 	return best
+}
+
+// regularize troca a decisão "sem pacote do tipo" ou "bundle" pela atualização com o
+// instalador aprovado de outro tipo, quando ele é mais novo que a versão instalada (a
+// regularização nunca rebaixa) e a instalação antiga sai em silêncio (ou a regra instala por
+// cima). Sem como, a decisão fica e o motivo diz o que falta.
+func regularize(d *Decision, pkgs []store.ThirdPartyPackage, arch string, o Options) {
+	if len(d.Entries) != 1 || d.App.Install == nil || d.App.OS != "windows" {
+		return
+	}
+	e := d.Entries[0]
+	pk := ForNewInstall(d.App, pkgs, arch)
+	if pk == nil {
+		return
+	}
+	over := d.App.Install.Regularize == thirdparty.RegularizeOver
+	switch {
+	case !over && e.Software.Uninstall == "":
+		d.Reason += "; para regularizar, a instalação de agora precisa de desinstalação silenciosa registrada (não tem, ou o agente ainda não informa: atualize o agente)"
+		return
+	case !over && !o.CanReplace:
+		d.Reason += "; para regularizar, atualize o agente desta máquina"
+		return
+	}
+	pv, ok := thirdparty.Normalize(pk.Version)
+	if !ok || e.Installed == "" {
+		return
+	}
+	if c, err := version.CompareDotted(e.Installed, pv); err != nil || c >= 0 {
+		// A instalada é da versão aprovada ou mais nova: a regularização não rebaixa.
+		d.State, d.Package = StateCurrent, pk
+		d.Reason = fmt.Sprintf("%s instalado (%s); a regularização para %s vem com a próxima versão aprovada mais nova que esta",
+			e.Installed, KindLabel(e.Kind), pk.Type)
+		return
+	}
+	d.State, d.Package, d.Installed = StateUpdate, pk, e.Installed
+	d.Regularize = &Regularization{From: e.Kind, Over: over, Old: e.Software}
+	how := "remove a instalação " + KindLabel(e.Kind) + " e instala"
+	if over {
+		how = "instala por cima da " + KindLabel(e.Kind)
+	}
+	d.Reason = fmt.Sprintf("%s → %s · %s · %s · regularizar: %s", e.Installed, pk.Version, pk.Type, pk.Architecture, how)
 }
 
 // Counts: quantas decisões em cada estado.

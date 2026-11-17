@@ -4,7 +4,7 @@
     {"id": "google-chrome", "os": "windows", "name": "Google Chrome", "category": "feed",
      "publisher": "^Google LLC$", "match": "^Google Chrome$",
      "source": {"type": "chrome", "id": "win64"},
-     "install": {"winget": "Google.Chrome", "signer": "Google LLC"}},
+     "install": {"winget": "Google.Chrome", "signer": "Google LLC", "regularize": "over"}},
     {"id": "mozilla-firefox", "os": "windows", "name": "Mozilla Firefox", "category": "feed",
      "publisher": "^Mozilla", "match": "^Mozilla Firefox( \\(|$)",
      "source": {"type": "firefox", "id": "LATEST_FIREFOX_VERSION"},

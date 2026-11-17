@@ -36,12 +36,16 @@ type Item struct {
 	Reason      string // indisponível: por quê
 	// NeedsApproval (Aula 18.3): a oferta exige que a TI aprove o pedido.
 	NeedsApproval bool
+	// Replaces: a atualização troca a instalação (tpinstall.Decision.Regularize).
+	Replaces bool
 }
 
 // Machine é o que o catálogo usa da máquina.
 type Machine struct {
 	Software []protocol.Software
 	Arch     string // tpinstall.MachineArch
+	// Options: o que o plano faz além da atualização do mesmo tipo (a regularização).
+	Options tpinstall.Options
 }
 
 // Catalog monta a loja de um usuário numa máquina. member diz se o usuário está no grupo
@@ -59,7 +63,7 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 			approved = append(approved, p)
 		}
 	}
-	plan := tpinstall.Plan(m.Software, manifest, approved, m.Arch)
+	plan := tpinstall.PlanWith(m.Software, manifest, approved, m.Arch, m.Options)
 	rules := manifest.For("windows")
 
 	var out []Item
@@ -77,7 +81,7 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 			case !o.CanUpdate:
 				it.Action = ActionInstalled
 			case d.State == tpinstall.StateUpdate:
-				it.Action, it.Target = ActionUpdate, d.Package.Version
+				it.Action, it.Target, it.Replaces = ActionUpdate, d.Package.Version, d.Regularize != nil
 			case d.State == tpinstall.StateCurrent:
 				it.Action = ActionCurrent
 			case d.State == tpinstall.StateNoPackage:

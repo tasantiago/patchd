@@ -84,6 +84,9 @@ type Executor struct {
 	Closer *AppCloser
 	// Sleep: a espera do aviso (nos testes, sem esperar). nil: o relógio.
 	Sleep func(ctx context.Context, d time.Duration) error
+	// Remove (regularização, jobs.ReplaceEntry): remove a instalação de outro tipo antes de
+	// instalar (Uninstaller.Remove). nil: o job com replace é recusado.
+	Remove func(ctx context.Context, r jobs.ReplaceEntry, log string) (string, error)
 }
 
 // Prazo da execução do instalador, pelo tamanho: os grandes (o MSI do LibreOffice tem 350 MB e
@@ -130,7 +133,7 @@ const (
 	logKeepCount = 50
 )
 
-var jobLogName = regexp.MustCompile(`^instalar-job-[0-9]+\.log$`)
+var jobLogName = regexp.MustCompile(`^(instalar|remover)-job-[0-9]+\.log$`)
 
 // pruneLogs apaga os logs de instalação vencidos e os que passam da quantidade.
 func (e *Executor) pruneLogs(now time.Time) {
@@ -220,6 +223,29 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 		}
 		if err := e.checkRunning(p); err != nil { // aberto de novo enquanto fechava
 			return sigNote, err
+		}
+		sigNote = joinNote(note, sigNote)
+	}
+
+	// Regularização: a instalação de outro tipo sai antes, já com o instalador novo baixado e
+	// conferido (se a remoção falhar, nada é instalado e o programa antigo, em geral, fica).
+	if p.Replace != nil {
+		if e.Remove == nil {
+			return sigNote, fmt.Errorf("%w: este agente não remove instalações (regularização)", jobs.ErrRefused)
+		}
+		if err := e.checkBusy("o instalador foi baixado e conferido; nada foi removido nem instalado"); err != nil {
+			return sigNote, err
+		}
+		log := ""
+		if e.LogDir != "" {
+			log = filepath.Join(e.LogDir, "remover-job-"+strconv.FormatInt(jobID, 10)+".log")
+		}
+		note, err := e.Remove(ctx, *p.Replace, log)
+		if err != nil {
+			if errors.Is(err, jobs.ErrRefused) {
+				return sigNote, err
+			}
+			return sigNote, fmt.Errorf("regularização: a remoção de %s %s falhou, e o aprovado não foi instalado: %w", p.Replace.Name, p.Replace.Version, err)
 		}
 		sigNote = joinNote(note, sigNote)
 	}

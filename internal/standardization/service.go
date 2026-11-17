@@ -87,6 +87,8 @@ type Service struct {
 	BundlesDir  string
 	Now         func() time.Time
 	OnCreated   func(jobs.Record, string, string)
+	// PlanOptions: as opções do plano da máquina (a regularização). nil: o plano comum.
+	PlanOptions func(ctx context.Context, machineID string) (tpinstall.Options, error)
 }
 
 // GroupMember respeita o domínio quando ele é explicitado no grupo da política.
@@ -306,7 +308,13 @@ func (s *Service) applications(ctx context.Context, inv protocol.InventoryReport
 			available = append(available, p)
 		}
 	}
-	decisions := tpinstall.Plan(inv.Software, s.Manifest.Get(), available, arch)
+	var opts tpinstall.Options
+	if s.PlanOptions != nil {
+		if opts, err = s.PlanOptions(ctx, machine); err != nil {
+			return nil, 0, err
+		}
+	}
+	decisions := tpinstall.PlanWith(inv.Software, s.Manifest.Get(), available, arch, opts)
 	latest, open, err := s.Store.StandardizationJobs(ctx, machine, now)
 	if err != nil {
 		return nil, 0, err

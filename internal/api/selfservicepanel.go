@@ -120,8 +120,12 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 	if err != nil {
 		return err
 	}
+	opts, err := a.planOptions(ctx, chosen)
+	if err != nil {
+		return err
+	}
 	sv.Ran = true
-	for _, it := range selfservice.Catalog(offers, selfservice.TokenMember(splitGroups(groups)), selfservice.Machine{Software: inv.Software, Arch: arch},
+	for _, it := range selfservice.Catalog(offers, selfservice.TokenMember(splitGroups(groups)), selfservice.Machine{Software: inv.Software, Arch: arch, Options: opts},
 		a.tpManifest.Get(), pkgs, approvals) {
 		sv.Items = append(sv.Items, ssItem{Item: it, Label: ssActionLabels[it.Action]})
 	}

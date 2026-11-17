@@ -432,6 +432,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		case err != nil:
 			logger.Error("campanhas de terceiros paradas (pausam no primeiro grupo de implantação)", "error", err)
 		default:
+			// A regularização (parâmetro da tela): lida a cada máquina.
+			c.Regularize = func() bool { return api.Regularize(params) }
 			tp = c
 		}
 		eng := newCampaignEngine(pg, jobKey, tp, logger)

@@ -185,6 +185,15 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v, nil
 			}, Show: showChoice(microsoftChoices)},
+		{Key: api.RegularizeKey, Group: "Agentes", Label: "Regularizar instalações de terceiros", Kind: settings.Select, Options: regularizeChoices,
+			Default: "0", Help: "Ligada: quando um programa de terceiros está instalado de um jeito que o instalador aprovado não atualiza (pelo exe, e o aprovado é MSI; ou por um bundle), a atualização troca a instalação: o agente baixa e confere o aprovado, remove a instalação antiga em silêncio e instala. Vale para todos os programas com regra de instalação, na Central de software, nas campanhas, na página da máquina e na padronização (que age sozinha: ligue depois do piloto), e só quando o aprovado é mais novo que o instalado (nunca rebaixa). Precisa de agentes desta versão em diante. Comece pela campanha do grupo piloto.",
+			Effect: "na hora: a próxima loja, campanha, padronização ou job já regulariza", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v != "0" && v != "1" {
+					return "", errors.New("use 0 (desligada) ou 1 (ligada)")
+				}
+				return v, nil
+			}, Show: showChoice(regularizeChoices)},
 		{Key: api.WinCacheKey, Group: "Agentes", Label: "Cache do Windows Update no servidor", Kind: settings.Select, Options: winCacheChoices,
 			Default: api.WinCacheOff, Help: "Ligado: as atualizações do Windows aprovadas no patchd vêm do servidor, não do WSUS nem de cada máquina direto da Microsoft. O servidor baixa cada pacote da Microsoft uma vez e o entrega às máquinas da rede interna; o agente procura a atualização pelo catálogo offline que o servidor já distribui. Comece pelo grupo piloto. Precisa de PATCHD_CONTENT_DIR (os pacotes ficam lá) e de agentes desta versão em diante; os outros seguem como antes.",
 			Effect: "na hora: o próximo job do Windows (painel ou campanha) já sai pelo cache", Check: func(v string) (string, error) {
@@ -382,6 +391,8 @@ const defaultWinCacheDays = 60
 var terminalChoices = []settings.Option{{Value: "0", Label: "desligado"}, {Value: "1", Label: "ligado: comandos pelo painel, com motivo e registro"}}
 
 var channelChoices = []settings.Option{{Value: "1", Label: "ligado: jobs em segundos"}, {Value: "0", Label: "desligado: só o check-in"}}
+
+var regularizeChoices = []settings.Option{{Value: "0", Label: "desligada"}, {Value: "1", Label: "ligada: trocar a instalação pelo instalador aprovado"}}
 
 var microsoftChoices = []settings.Option{{Value: "0", Label: "desligada"}, {Value: "1", Label: "ligada: Microsoft Update quando a fonte da política falhar"}}
 

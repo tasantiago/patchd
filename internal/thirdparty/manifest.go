@@ -133,11 +133,18 @@ type Install struct {
 	// (o ADDLOCAL=ALL do Temurin liga JAVA_HOME e as chaves do Java da Oracle). Vazio: os do
 	// winget.
 	Arguments string `json:"arguments,omitempty"`
+	// Regularize (Windows): como a regularização troca uma instalação de outro tipo pela do
+	// instalador aprovado. Vazio: remove a antiga e instala; "over": instala por cima, sem
+	// remover (o MSI corporativo do Chrome assume a instalação feita pelo exe).
+	Regularize string `json:"regularize,omitempty"`
 	// Upload (Windows): o instalador não vem do winget, é enviado pelo painel (o arquivo
 	// .msi ou .exe que o fabricante distribui, como o do IRPF). Exige o tipo e a fonte
 	// "upload"; os argumentos ficam em cada instalador enviado.
 	Upload bool `json:"upload,omitempty"`
 }
+
+// RegularizeOver: a regularização instala por cima, sem remover a instalação antiga.
+const RegularizeOver = "over"
 
 // UploadTypes: os tipos de instalador que o painel aceita enviar.
 var UploadTypes = []string{"msi", "nullsoft", "inno", "exe"}
@@ -386,6 +393,9 @@ func (a *App) compile() error {
 	case "", "x64", "x86", "arm64":
 	default:
 		return fmt.Errorf("arch %q: use x64, x86 ou arm64", a.Arch)
+	}
+	if in := a.Install; in != nil && in.Regularize != "" && in.Regularize != RegularizeOver {
+		return fmt.Errorf("install.regularize %q: use \"over\" ou deixe vazio", in.Regularize)
 	}
 	if in := a.Install; in != nil && in.Arguments != "" {
 		if in.Winget == "" || in.Type == "" {

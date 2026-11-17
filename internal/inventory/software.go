@@ -24,6 +24,8 @@ type uninstallEntry struct {
 	// instala MSIs por dentro e registra a própria entrada). O MSI que o bundle instalou
 	// fica com SystemComponent=1 (Aula 14.3, medido no PowerShell 7).
 	BundleUpgradeCode string
+	// A desinstalação silenciosa (só se existe: o comando em si é lido na hora, pelo agente).
+	QuietUninstall, Uninstall bool
 }
 
 // uninstallLocation descreve a chave Uninstall de onde a entrada veio.
@@ -71,6 +73,14 @@ func softwareFromUninstall(e uninstallEntry, loc uninstallLocation) (Software, b
 	}
 	if c := strings.TrimSpace(e.BundleUpgradeCode); isGUID(c) {
 		s.BundleUpgradeCode = strings.ToUpper(c)
+	}
+	switch {
+	case s.ProductCode != "":
+		s.Uninstall = protocol.UninstallMSI
+	case e.QuietUninstall:
+		s.Uninstall = protocol.UninstallQuiet
+	case e.Uninstall && strings.HasSuffix(e.KeyName, "_is1"):
+		s.Uninstall = protocol.UninstallInno // a chave do Inno Setup: <AppId>_is1
 	}
 	return s, true
 }

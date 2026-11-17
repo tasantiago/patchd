@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/settings"
+	"github.com/tasantiago/patchd/internal/tpinstall"
 )
 
 // Parâmetros pela tela (Aula 19.2): Configuração › Parâmetros. A tela vence; o .env é o valor
@@ -73,6 +74,28 @@ func (a *api) tz() string {
 const MicrosoftFallbackKey = "PATCHD_WINUPDATE_MICROSOFT"
 
 // microsoftAllowed: se a fonte reserva da Microsoft está ligada (padrão: desligada).
+// RegularizeKey: o interruptor da regularização (tpinstall.Options.Regularize): a
+// atualização troca a instalação de outro tipo (exe, MSI, bundle) pela do instalador
+// aprovado, em todos os programas com regra de instalação.
+const RegularizeKey = "PATCHD_TP_REGULARIZE"
+
+// Regularize: o parâmetro da regularização está ligado.
+func Regularize(p interface{ Value(string) string }) bool {
+	return p != nil && p.Value(RegularizeKey) == "1"
+}
+
+// planOptions: as opções do plano de terceiros de uma máquina (a regularização, se ligada,
+// e se o agente dela remove a instalação antiga).
+func (a *api) planOptions(ctx context.Context, machineID string) (tpinstall.Options, error) {
+	o := tpinstall.Options{Regularize: a.params != nil && Regularize(a.params)}
+	if !o.Regularize {
+		return o, nil
+	}
+	caps, err := a.store.MachineCapabilities(ctx, machineID)
+	o.CanReplace = slices.Contains(caps, protocol.CapabilityRegularize)
+	return o, err
+}
+
 func (a *api) microsoftAllowed() bool {
 	return a.params != nil && a.params.Value(MicrosoftFallbackKey) == "1"
 }

@@ -46,6 +46,16 @@ type Service struct {
 	Key         ed25519.PrivateKey
 	PackagesDir string // PATCHD_CONTENT_DIR/pacotes
 	Now         func() time.Time
+	// PlanOptions: as opções do plano da máquina (a regularização). nil: o plano comum.
+	PlanOptions func(ctx context.Context, machineID string) (tpinstall.Options, error)
+}
+
+// planOptions: as opções da máquina, ou as do plano comum.
+func (s *Service) planOptions(ctx context.Context, machineID string) (tpinstall.Options, error) {
+	if s.PlanOptions == nil {
+		return tpinstall.Options{}, nil
+	}
+	return s.PlanOptions(ctx, machineID)
 }
 
 // ErrOff: o servidor está sem o que o autoatendimento precisa (regras de terceiros, chave
@@ -72,7 +82,7 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	}
 	for _, it := range items {
 		x := protocol.SelfServiceItem{App: it.AppID, Name: it.Name, Installed: it.Installed, Target: it.Target,
-			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval}
+			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval, Replaces: it.Replaces}
 		for _, q := range waiting {
 			if q.AppID == it.AppID && q.State == store.RequestWaiting {
 				x.Pending = q.ID
@@ -220,7 +230,11 @@ func (s *Service) items(ctx context.Context, machineID string, u protocol.SelfSe
 	if err != nil {
 		return nil, err
 	}
-	return Catalog(offers, TokenMember(u.Groups), Machine{Software: inv.Software, Arch: arch}, s.Manifest.Get(), pkgs, approvals), nil
+	opts, err := s.planOptions(ctx, machineID)
+	if err != nil {
+		return nil, err
+	}
+	return Catalog(offers, TokenMember(u.Groups), Machine{Software: inv.Software, Arch: arch, Options: opts}, s.Manifest.Get(), pkgs, approvals), nil
 }
 
 func (s *Service) openJob(ctx context.Context, machineID string) (int64, error) {
@@ -349,9 +363,13 @@ func (s *Service) params(ctx context.Context, machineID string, it Item) (jobs.T
 	if it.Action == ActionInstall {
 		d.Package = tpinstall.ForNewInstall(rule, versionPkgs, arch)
 	} else {
-		for _, x := range tpinstall.Plan(inv.Software, s.Manifest.Get(), versionPkgs, arch) {
+		opts, err := s.planOptions(ctx, machineID)
+		if err != nil {
+			return jobs.ThirdPartyParams{}, "", err
+		}
+		for _, x := range tpinstall.PlanWith(inv.Software, s.Manifest.Get(), versionPkgs, arch, opts) {
 			if x.App.ID == it.AppID && x.State == tpinstall.StateUpdate {
-				d.Package = x.Package
+				d.Package, d.Regularize = x.Package, x.Regularize
 			}
 		}
 	}

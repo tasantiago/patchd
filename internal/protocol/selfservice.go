@@ -73,6 +73,9 @@ type SelfServiceItem struct {
 	// espera a TI para este programa (0: nenhum).
 	Approval bool  `json:"approval,omitempty"`
 	Pending  int64 `json:"pending,omitempty"`
+	// Replaces: a atualização troca a instalação (a regularização): a atual sai e volta na
+	// versão nova. Servidores anteriores não mandam.
+	Replaces bool `json:"replaces,omitempty"`
 }
 
 // SelfServiceCatalog é a loja do usuário na máquina.

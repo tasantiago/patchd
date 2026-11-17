@@ -44,5 +44,10 @@ func newThirdParty(client *agent.Client, dataDir string, allowed []string) func(
 		Closer: &tpexec.AppCloser{Sessions: platform.Sessions, Notify: platform.NotifySession,
 			Ask: platform.AskClose, Kill: platform.KillProcess},
 	}
+	// Regularização: a instalação de outro tipo sai antes da aprovada (o comando vem do
+	// registro desta máquina, lido na hora).
+	u := &tpexec.Uninstaller{Run: platform.SilentRunner{Timeout: 40 * time.Minute}, Msiexec: e.Msiexec,
+		Lookup: tpexec.LookupUninstall, Split: tpexec.SplitCommandLine}
+	e.Remove = u.Remove
 	return e.Install
 }

@@ -1466,6 +1466,42 @@ argumentos, com a pasta de trabalho na pasta dele: nada é baixado nem executado
 anteriores ignoram a lista. O resultado fica no log do agente ("atalho na área de trabalho
 pública").
 
+## Regularizar instalações de terceiros
+
+Um programa instalado **de outro jeito** que o instalador aprovado não atualiza aparece na
+página da máquina e na Central como "nenhuma versão aprovada para esta instalação" (o Chrome
+instalado pelo `.exe`, e o aprovado é o MSI corporativo) ou "bundle" (o PowerShell 7 instalado
+pelo pacote do winget, e o aprovado é o MSI). Por padrão o patchd não mexe: um instalador de
+outro tipo por cima pode deixar duas entradas em Programas e Recursos.
+
+Com o parâmetro **Configuração › Parâmetros › Agentes › Regularizar instalações de terceiros**
+ligado, a atualização **troca a instalação** pelo instalador aprovado, para todos os programas
+com regra de instalação:
+
+- **Só para frente.** Regulariza só quando o aprovado é mais novo que o instalado; com o
+  instalado igual ou mais novo, fica "em dia" até a próxima versão aprovada. Nunca rebaixa.
+- **Por cima**, quando a regra diz que o instalador novo assume a instalação antiga (`"regularize":
+  "over"`; hoje, o Chrome: o MSI corporativo absorve o do `.exe`). O job é uma atualização comum.
+- **Remove e instala**, nos outros: o agente baixa e confere o instalador aprovado (SHA-256 e
+  assinatura), remove a instalação antiga **em silêncio** — `msiexec /x` com o ProductCode, o
+  `QuietUninstallString` que o fabricante registrou, ou o desinstalador do Inno Setup com
+  `/VERYSILENT` —, espera a entrada sair de Programas e Recursos (até 15 minutos) e só então
+  instala. Se a remoção falha, nada é instalado e o job falha com o motivo (o log da remoção fica
+  em `C:\ProgramData\patchd\logs\remover-job-N.log`). A instalação sem desinstalação
+  silenciosa registrada fica como está, com o motivo na página da máquina.
+- **Agente desta versão em diante.** A remoção é do agente novo (que anuncia `regularizar-v1`);
+  com o agente anterior, a máquina mostra "atualize o agente". O inventário do agente novo traz
+  como cada entrada se desinstala: espere a próxima coleta depois de atualizar.
+- **Onde vale:** a Central de software (o item aparece em "atualizar", com o aviso de que a
+  instalação é trocada e o programa some por alguns minutos), as campanhas, o botão da página da
+  máquina e a **padronização**, que age sozinha: ligue o parâmetro, faça a campanha do grupo
+  piloto, confira e só então deixe a padronização seguir.
+
+O agente confere na hora que a entrada ainda é a mesma (o nome que o servidor viu): se outro
+programa ocupou a chave, recusa. A remoção só usa as chaves de máquina do HKLM e o `msiexec` do
+sistema; o desinstalador precisa ser um caminho absoluto que existe no disco. O programa aberto
+segue a mesma regra das atualizações (adia, ou fecha com aviso na campanha).
+
 ## Programas de terceiros no Mac, pelo Installomator
 
 No macOS, o patchd instala e atualiza programas de terceiros pelo **Installomator**
@@ -1548,7 +1584,7 @@ programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tu
 - **Log:** a falha por prazo também diz onde está o log do instalador na máquina
   (`C:\ProgramData\patchd\logs\instalar-job-N.log`, do msiexec e do Inno); o fim dele mostra onde
   parou.
-- **Limpeza dos logs do agente:** os `instalar-job-N.log` ficam 30 dias e no máximo os 50 mais
+- **Limpeza dos logs do agente:** os `instalar-job-N.log` e `remover-job-N.log` ficam 30 dias e no máximo os 50 mais
   novos (a limpeza roda no começo de cada job de instalação); o `agent.log` gira em 10 MB e
   guarda 3 anteriores; o `update.log` (troca de versão) e, no macOS, o `stderr.log` do launchd
   viram `.1` ao passar de 1 MB. As pastas temporárias dos instaladores saem depois de 7 dias.
