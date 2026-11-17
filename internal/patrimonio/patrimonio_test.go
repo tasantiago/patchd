@@ -9,7 +9,7 @@ import (
 // Os dados são fictícios; o formato é o do sistema de patrimônio.
 const exemplo = "DEPREDIO,DESALA,UO,TOMBO,DEBEM,DESUBGRUPOBEM\n" +
 	"FORUM EXEMPLO,SALA 101 - CARTORIO,UOX,106259,WORKSTATION EXEMPLO 64GB,COMPUTADOR\n" +
-	"FORUM EXEMPLO,\"SALA 102, ANEXO\",UOX,088594,DESKTOP EXEMPLO,COMPUTADOR\n" +
+	"FORUM EXEMPLO,\"SALA 102, ANEXO\",UOX,077001,DESKTOP EXEMPLO,COMPUTADOR\n" +
 	"FORUM EXEMPLO,SALA 103,UOX,,MONITOR SEM TOMBO,MONITOR\n" +
 	"FORUM EXEMPLO,SALA 104,UOX,10A2,TOMBO ERRADO,COMPUTADOR\n" +
 	"\n" +
@@ -32,7 +32,7 @@ func TestParse(t *testing.T) {
 		t.Errorf("repetido: %+v", r.Items[0])
 	}
 	// Zeros à esquerda saem; a vírgula entre aspas fica no campo.
-	if r.Items[1].Tombo != "88594" || r.Items[1].Room != "SALA 102, ANEXO" {
+	if r.Items[1].Tombo != "77001" || r.Items[1].Room != "SALA 102, ANEXO" {
 		t.Errorf("zeros e aspas: %+v", r.Items[1])
 	}
 }
@@ -69,10 +69,10 @@ func TestParseRecusa(t *testing.T) {
 
 func TestTombosEMatch(t *testing.T) {
 	casos := map[string][]string{
-		"FJ088594":    {"88594"},
-		"FJ102874":    {"102874"},
-		"102874-NB":   {"102874"},
-		"NB-102874-2": {"102874", "2"},
+		"EQ077001":    {"77001"},
+		"EQ101002":    {"101002"},
+		"101002-NB":   {"101002"},
+		"NB-101002-2": {"101002", "2"},
 		"SRV0000":     nil,
 		"desktop-abc": nil,
 		"PC112345":    {"112345"},
@@ -82,9 +82,9 @@ func TestTombosEMatch(t *testing.T) {
 			t.Errorf("Tombos(%q) = %v, esperava %v", host, got, want)
 		}
 	}
-	bens := map[string]string{"88594": "sala A", "1234": "sala B", "2": "sala C"}
-	if v, ok := Match("FJ088594", bens); !ok || v != "sala A" {
-		t.Errorf("FJ088594: %q %t", v, ok)
+	bens := map[string]string{"77001": "sala A", "1234": "sala B", "2": "sala C"}
+	if v, ok := Match("EQ077001", bens); !ok || v != "sala A" {
+		t.Errorf("EQ077001: %q %t", v, ok)
 	}
 	// O tombo é a sequência inteira: 1234 não liga PC112345.
 	if v, ok := Match("PC112345", bens); ok {

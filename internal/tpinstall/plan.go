@@ -158,7 +158,7 @@ func groupFor(osID string, sw []protocol.Software, m thirdparty.Manifest) []*Dec
 		if s.SystemComponent || s.IsUpdate {
 			continue
 		}
-		i := slices.IndexFunc(rules, func(a thirdparty.App) bool { return a.Matches(s.Name, s.Publisher) })
+		i := slices.IndexFunc(rules, func(a thirdparty.App) bool { return a.MatchesSoftware(s) })
 		if i < 0 || rules[i].Install == nil {
 			continue
 		}

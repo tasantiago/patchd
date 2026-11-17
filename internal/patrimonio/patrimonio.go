@@ -6,7 +6,7 @@
 // ponto e vírgula); UTF-8, com ou sem BOM, ou Windows-1252 (o "CSV" do Excel no Windows).
 //
 // A máquina e o tombo se ligam pelo nome: cada sequência de dígitos do hostname, sem os zeros
-// à esquerda, é comparada com o tombo, também sem os zeros. FJ088594 é o tombo 88594; o
+// à esquerda, é comparada com o tombo, também sem os zeros. EQ077001 é o tombo 77001; o
 // prefixo e o sufixo de letras variam à vontade. A sequência inteira, e não um pedaço: o
 // tombo 1234 não liga a máquina PC112345.
 package patrimonio

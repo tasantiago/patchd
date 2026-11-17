@@ -261,7 +261,7 @@ func pasteToken(line string) string {
 	return line
 }
 
-// shortName: o nome sem o domínio, em minúsculas (PC01.tj.local → pc01).
+// shortName: o nome sem o domínio, em minúsculas (PC01.exemplo.local → pc01).
 func shortName(s string) string {
 	s = strings.ToLower(s)
 	if _, err := netip.ParseAddr(s); err == nil {

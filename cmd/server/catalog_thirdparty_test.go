@@ -104,9 +104,10 @@ func TestSyncThirdParty(t *testing.T) {
 		t.Errorf("gravadas: %v", banco.gravadas)
 	}
 	// As fontes sem resposta falham sem gravar nada; a limpeza mantém todas as regras com fonte.
-	// Falhas: 5 fontes principais, nenhuma conferência (a do 7-Zip respondeu; as outras nem são
-	// pedidas sem a principal) e 6 dos 7 produtos do endoflife.date.
-	if salvas != 6 || falhas != 11 || len(banco.mantidas) != 11 {
+	// Falhas: 19 fontes principais (5, mais as 14 das linhas do Python 3.11 a 3.13, do Node.js 22
+	// e do Temurin), nenhuma conferência (a do 7-Zip respondeu; as outras nem são pedidas sem a
+	// principal) e 6 dos 7 produtos do endoflife.date.
+	if salvas != 6 || falhas != 25 || len(banco.mantidas) != 25 {
 		t.Errorf("salvas %d, falhas %d, mantidas %d", salvas, falhas, len(banco.mantidas))
 	}
 	if banco.conferida["7zip/windows"] != "26.05 evergreen:7zip" || len(banco.conferida) != 1 {

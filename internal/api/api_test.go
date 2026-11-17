@@ -73,7 +73,7 @@ func registra(t *testing.T, h http.Handler, tok string) protocol.EnrollResponse 
 	t.Helper()
 	corpo, _ := json.Marshal(protocol.EnrollRequest{
 		AgentVersion: "v0.4.0-teste",
-		Evidence:     protocol.IdentityEvidence{InstallID: "guid-1", Hostname: "itom-teste", OSFamily: "linux"},
+		Evidence:     protocol.IdentityEvidence{InstallID: "guid-1", Hostname: "srv-teste", OSFamily: "linux"},
 	})
 	r := envia(h, "POST", "/api/v1/enroll", tok, corpo)
 	if r.Code != http.StatusCreated {
@@ -98,7 +98,7 @@ func inventario(t *testing.T, versao string) []byte {
 		SchemaVersion: protocol.InventorySchemaVersion,
 		AgentVersion:  "v0.4.0-teste",
 		CollectedAt:   time.Now().UTC(),
-		OS:            protocol.OSInfo{Family: "linux", ID: "ubuntu", Name: "Ubuntu", Version: "26.04", Hostname: "itom-teste"},
+		OS:            protocol.OSInfo{Family: "linux", ID: "ubuntu", Name: "Ubuntu", Version: "26.04", Hostname: "srv-teste"},
 		Software:      []protocol.Software{{Name: "libcares2", Version: versao, Scope: "machine", Source: "dpkg"}},
 	}
 	h, err := rep.ContentHash()

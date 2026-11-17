@@ -97,6 +97,14 @@ func TestInstall(t *testing.T) {
 		"7zip": "7zip.7zip exe", "notepad-plus-plus": "Notepad++.Notepad++ nullsoft", "vscode": "Microsoft.VisualStudioCode ",
 		"powershell-7": "Microsoft.PowerShell wix", "libreoffice": "TheDocumentFoundation.LibreOffice ",
 		"adobe-acrobat": "Adobe.Acrobat.Reader.64-bit exe", "python-3.14": "Python.Python.3.14 burn",
+		"python-3.13": "Python.Python.3.13 burn", "python-3.12": "Python.Python.3.12 burn", "python-3.11": "Python.Python.3.11 burn",
+		"nodejs-22": "OpenJS.NodeJS.22 wix",
+	}
+	// As linhas do Temurin (Java): JRE e JDK de cada uma, o MSI de 64 bits do winget.
+	for _, major := range []string{"8", "11", "17", "21", "25"} {
+		for _, kind := range []string{"JRE", "JDK"} {
+			want["temurin-"+major+"-"+strings.ToLower(kind)] = "EclipseAdoptium.Temurin." + major + "." + kind + " wix"
+		}
 	}
 	if len(com) != len(want) {
 		t.Errorf("regras com install: %v", com)
@@ -119,6 +127,19 @@ func TestInstall(t *testing.T) {
 		"google-chrome": "Google LLC", "notepad-plus-plus": "NOTEPAD++", "mozilla-firefox": "Mozilla Corporation", "mozilla-firefox-esr": "Mozilla Corporation",
 		"vscode": "Microsoft Corporation", "powershell-7": "Microsoft Corporation", "libreoffice": "The Document Foundation",
 		"adobe-acrobat": "Adobe Inc.", "python-3.14": "Python Software Foundation",
+		"python-3.13": "Python Software Foundation", "python-3.12": "Python Software Foundation", "python-3.11": "Python Software Foundation",
+		// Medidos na assinatura dos MSI (node-v22.23.5-x64.msi e o JRE 8u512 do Temurin, 17/11/2026).
+		"nodejs-22": "OpenJS Foundation",
+	}
+	wantProcs := map[string]string{"vscode": "Code.exe", "mozilla-firefox": "firefox.exe", "mozilla-firefox-esr": "firefox.exe",
+		"7zip": "7zFM.exe,7zG.exe", "notepad-plus-plus": "notepad++.exe", "libreoffice": "soffice.exe",
+		"adobe-acrobat": "Acrobat.exe,AcroRd32.exe", "python-3.14": "python.exe,pythonw.exe", "python-3.13": "python.exe,pythonw.exe",
+		"python-3.12": "python.exe,pythonw.exe", "python-3.11": "python.exe,pythonw.exe", "nodejs-22": "node.exe"}
+	for id := range want {
+		if strings.HasPrefix(id, "temurin-") {
+			wantSigners[id] = "Eclipse Foundation"
+			wantProcs[id] = "java.exe,javaw.exe"
+		}
 	}
 	if !maps.Equal(signers, wantSigners) {
 		t.Errorf("assinantes padrão: %v", signers)
@@ -131,9 +152,7 @@ func TestInstall(t *testing.T) {
 			procs[a.ID] = strings.Join(a.Install.Processes, ",")
 		}
 	}
-	if !maps.Equal(procs, map[string]string{"vscode": "Code.exe", "mozilla-firefox": "firefox.exe", "mozilla-firefox-esr": "firefox.exe",
-		"7zip": "7zFM.exe,7zG.exe", "notepad-plus-plus": "notepad++.exe", "libreoffice": "soffice.exe",
-		"adobe-acrobat": "Acrobat.exe,AcroRd32.exe", "python-3.14": "python.exe,pythonw.exe"}) {
+	if !maps.Equal(procs, wantProcs) {
 		t.Errorf("processos padrão: %v", procs)
 	}
 	regra := func(extra string) string {

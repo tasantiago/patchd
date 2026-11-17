@@ -44,7 +44,7 @@ func TestDescoberta(t *testing.T) {
 	// os outros não resolvem.
 	lookup := func(_ context.Context, ip string) string {
 		if strings.HasSuffix(ip, ".20") {
-			return "nb-exemplo.tjro.jus.br"
+			return "nb-exemplo.orgao.exemplo"
 		}
 		return ""
 	}

@@ -116,7 +116,7 @@ func TestGrupoPeloPredio(t *testing.T) {
 	_, _ = st.CreateEnrollmentToken(ctx, hash, "teste", time.Now().Add(time.Hour), 1)
 	maq := registra(t, h, tok)
 	rep := protocol.InventoryReport{SchemaVersion: protocol.InventorySchemaVersion, AgentVersion: "v0.18.0", CollectedAt: time.Now().UTC(),
-		Hash: "sha256:" + strings.Repeat("a", 64), OS: protocol.OSInfo{Family: "windows", Name: "Windows 11 Pro", Hostname: "FJ001004"},
+		Hash: "sha256:" + strings.Repeat("a", 64), OS: protocol.OSInfo{Family: "windows", Name: "Windows 11 Pro", Hostname: "EQ001004"},
 		Software: []protocol.Software{}}
 	corpo, _ := json.Marshal(rep)
 	if r := envia(h, "POST", "/api/v1/agent/inventory", maq.Credential, corpo); r.Code >= 300 {

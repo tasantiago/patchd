@@ -70,16 +70,23 @@ type Manifest struct {
 
 // App é a regra de um programa num SO.
 type App struct {
-	ID          string  `json:"id"`        // google-chrome
-	OS          string  `json:"os"`        // windows ou macos
-	Name        string  `json:"name"`      // rótulo
-	Category    string  `json:"category"`  // feed, minimum, os-vendor, eol, ignore
-	Publisher   string  `json:"publisher"` // expressão regular sobre o fabricante; vazia: qualquer
-	Match       string  `json:"match"`     // expressão regular sobre o nome
-	VersionFrom string  `json:"version_from,omitempty"`
-	Source      *Source `json:"source,omitempty"`
-	MinVersion  string  `json:"min_version,omitempty"`
-	Note        string  `json:"note,omitempty"`
+	ID          string `json:"id"`        // google-chrome
+	OS          string `json:"os"`        // windows ou macos
+	Name        string `json:"name"`      // rótulo
+	Category    string `json:"category"`  // feed, minimum, os-vendor, eol, ignore
+	Publisher   string `json:"publisher"` // expressão regular sobre o fabricante; vazia: qualquer
+	Match       string `json:"match"`     // expressão regular sobre o nome
+	VersionFrom string `json:"version_from,omitempty"`
+	// VersionMatch: expressão regular sobre a versão do inventário (o campo, não a do nome).
+	// Separa as linhas de um programa que tem o mesmo nome em todas (o Node.js: "^22\\.").
+	VersionMatch string `json:"version_match,omitempty"`
+	// Arch: só as instalações dessa arquitetura (x64 ou x86, a visão do registro). Separa o
+	// programa de 64 bits do de 32, quando o instalador da regra só serve a um: o MSI de
+	// outra arquitetura instalaria outro produto ao lado. Vazio: qualquer uma.
+	Arch       string  `json:"arch,omitempty"`
+	Source     *Source `json:"source,omitempty"`
+	MinVersion string  `json:"min_version,omitempty"`
+	Note       string  `json:"note,omitempty"`
 	// Check: uma segunda fonte da mesma versão (o Evergreen, que lê no fabricante), para saber
 	// quando a fonte principal (o winget-pkgs) está atrasada. A referência é a maior das duas.
 	Check *Source `json:"check,omitempty"`
@@ -94,7 +101,7 @@ type App struct {
 	// mantém enquanto o executável existir (protocol.DesktopShortcut).
 	Shortcut *Shortcut `json:"shortcut,omitempty"`
 
-	publisher, match *regexp.Regexp
+	publisher, match, versionMatch *regexp.Regexp
 }
 
 // Install diz de onde vem o instalador: um pacote do winget-pkgs, que não precisa ser o
@@ -121,6 +128,11 @@ type Install struct {
 	// agente não instala e o job falha dizendo qual: o instalador não substitui arquivo em
 	// uso, e o patchd não fecha o programa de quem está trabalhando. Só os medidos entram.
 	Processes []string `json:"processes,omitempty"`
+	// Arguments (Windows, winget): os argumentos da instalação silenciosa no lugar dos do
+	// manifesto do winget. Para quando o winget acrescenta o que a atualização não deve fazer
+	// (o ADDLOCAL=ALL do Temurin liga JAVA_HOME e as chaves do Java da Oracle). Vazio: os do
+	// winget.
+	Arguments string `json:"arguments,omitempty"`
 	// Upload (Windows): o instalador não vem do winget, é enviado pelo painel (o arquivo
 	// .msi ou .exe que o fabricante distribui, como o do IRPF). Exige o tipo e a fonte
 	// "upload"; os argumentos ficam em cada instalador enviado.
@@ -365,6 +377,24 @@ func (a *App) compile() error {
 			return fmt.Errorf("publisher: %w", err)
 		}
 	}
+	if a.VersionMatch != "" {
+		if a.versionMatch, err = regexp.Compile(a.VersionMatch); err != nil {
+			return fmt.Errorf("version_match: %w", err)
+		}
+	}
+	switch a.Arch {
+	case "", "x64", "x86", "arm64":
+	default:
+		return fmt.Errorf("arch %q: use x64, x86 ou arm64", a.Arch)
+	}
+	if in := a.Install; in != nil && in.Arguments != "" {
+		if in.Winget == "" || in.Type == "" {
+			return fmt.Errorf("install.arguments vale com install.winget e install.type (os argumentos são de um tipo de instalador)")
+		}
+		if _, err := jobs.SplitArgs(in.Type, in.Arguments); err != nil {
+			return fmt.Errorf("install.arguments: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -409,6 +439,19 @@ func (a App) Matches(name, publisher string) bool {
 		return false
 	}
 	return a.publisher == nil || a.publisher.MatchString(publisher)
+}
+
+// MatchesSoftware diz se a regra reconhece a entrada: o nome e o fabricante (Matches), a
+// versão (version_match) e a arquitetura (arch). Sem a arquitetura no inventário (agente
+// anterior), a regra com arch não reconhece: a entrada fica para a regra geral do programa.
+func (a App) MatchesSoftware(s protocol.Software) bool {
+	if !a.Matches(s.Name, s.Publisher) {
+		return false
+	}
+	if a.versionMatch != nil && !a.versionMatch.MatchString(s.Version) {
+		return false
+	}
+	return a.Arch == "" || a.Arch == s.Arch
 }
 
 // versionNumber: o começo numérico de uma versão ("140.17.0esr" → "140.17.0").

@@ -5,9 +5,9 @@ import "testing"
 // Aula 18.2: o nome do painel sem as aspas do .env; comprido demais é recusado (e avisado).
 func TestNomeDoPainel(t *testing.T) {
 	for v, quer := range map[string]string{
-		`patchd TJRO`:                        "patchd TJRO",
-		`"patchd TJRO"`:                      "patchd TJRO",
-		` 'patchd TJRO' `:                    "patchd TJRO",
+		`patchd EXEMPLO`:                     "patchd EXEMPLO",
+		`"patchd EXEMPLO"`:                   "patchd EXEMPLO",
+		` 'patchd EXEMPLO' `:                 "patchd EXEMPLO",
 		`"patchd`:                            `"patchd`,                            // aspas sem par ficam
 		`Tribunal de Justiça · Atualizações`: "Tribunal de Justiça · Atualizações", // 34 letras, mais bytes
 	} {
