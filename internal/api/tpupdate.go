@@ -62,6 +62,11 @@ func tpUpdateClass(state string) string {
 // tpPlan: o plano da máquina pelo último inventário. ok é falso quando não se aplica:
 // servidor sem as regras, máquina sem inventário do Windows ou de arquitetura desconhecida.
 func (a *api) tpPlan(ctx context.Context, id string) (ds []tpinstall.Decision, approved map[string]bool, ok bool, err error) {
+	return a.tpPlanWith(ctx, id, nil)
+}
+
+// tpPlanWith: o plano com outras opções (nil: as da máquina, pelo parâmetro).
+func (a *api) tpPlanWith(ctx context.Context, id string, o *tpinstall.Options) (ds []tpinstall.Decision, approved map[string]bool, ok bool, err error) {
 	if a.tpManifest == nil {
 		return nil, nil, false, nil
 	}
@@ -88,8 +93,10 @@ func (a *api) tpPlan(ctx context.Context, id string) (ds []tpinstall.Decision, a
 	for _, ap := range approvals {
 		approved[store.TPApprovalKey(ap.AppID, ap.Version)] = true
 	}
-	opts, err := a.planOptions(ctx, id)
-	if err != nil {
+	var opts tpinstall.Options
+	if o != nil {
+		opts = *o
+	} else if opts, err = a.planOptions(ctx, id); err != nil {
 		return nil, nil, false, err
 	}
 	return tpinstall.PlanWith(inv.Software, a.tpManifest.Get(), pkgs, arch, opts), approved, true, nil
@@ -171,6 +178,20 @@ func (a *api) tpUpdateView(r *http.Request, id string, v *machineView) error {
 			return err
 		}
 	}
+	// Com a regularização desligada: os programas que ela trocaria pelo instalador aprovado
+	// (instalados de outro jeito, com versão aprovada mais nova) ganham o caminho para ligá-la.
+	fixable := map[string]bool{}
+	if v.Admin && !Regularize(a.params) {
+		alt, _, _, err := a.tpPlanWith(r.Context(), id, &tpinstall.Options{Regularize: true, CanReplace: true})
+		if err != nil {
+			return err
+		}
+		for _, d := range alt {
+			if d.State == tpinstall.StateUpdate && d.Regularize != nil {
+				fixable[d.App.ID] = true
+			}
+		}
+	}
 	dir := a.packagesDir()
 	for _, d := range ds {
 		row := tpUpdateRow{App: d.App.ID, Program: d.App.Name, Href: tpProgramPath(d.App.ID), Installed: installedLabel(d),
@@ -187,6 +208,9 @@ func (a *api) tpUpdateView(r *http.Request, id string, v *machineView) error {
 				row.Action, row.ActionHref = a.tpUpdateAction(d, row.Approved, dir, v, card.Open)
 			}
 			row.CanInstall = row.Action == ""
+		}
+		if fixable[d.App.ID] && d.State != tpinstall.StateUpdate {
+			row.Action, row.ActionHref = "trocar pelo instalador aprovado: ligar a regularização", RegularizeHref
 		}
 		card.Rows = append(card.Rows, row)
 	}
