@@ -393,6 +393,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/inventario.csv", a.panelPage(a.equipmentCSV))
 	mux.Handle("GET /painel/inventario/programas", a.panelPage(a.programsPage)) // os programas instalados, por sistema
 	mux.Handle("GET /painel/inventario/programa", a.panelPage(a.programPage))   // um programa: versões e máquinas
+	mux.Handle("GET /painel/inventario/programas.csv", a.panelPage(a.programsCSV))
+	mux.Handle("GET /painel/inventario/programa.csv", a.panelPage(a.programCSV))
 	mux.Handle("GET /painel/patch", a.panelPage(a.patchPage))
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))
 	mux.Handle("GET /painel/patch/programa", a.panelPage(a.thirdPartyProgramPage))

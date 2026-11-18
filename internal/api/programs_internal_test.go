@@ -58,3 +58,18 @@ func TestJuncaoDosProgramas(t *testing.T) {
 		t.Errorf("versões: %q", got)
 	}
 }
+
+func TestNomeDoArquivoDoPrograma(t *testing.T) {
+	for in, want := range map[string]string{
+		"LibreOffice":                 "libreoffice",
+		"Microsoft Visual C++ 2015":   "microsoft-visual-c-2015",
+		"  ../..\\x  ":                "x",
+		"本":                           "programa",
+		"Adobe Acrobat Reader DC MUI": "adobe-acrobat-reader-dc-mui",
+		"a234567890b234567890c234567890d234567890e234": "a234567890b234567890c234567890d234567890",
+	} {
+		if got := fileSlug(in); got != want {
+			t.Errorf("fileSlug(%q) = %q, quer %q", in, got, want)
+		}
+	}
+}
