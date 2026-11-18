@@ -144,6 +144,9 @@ type Store interface {
 	HostState(ctx context.Context, machineID string) (store.HostState, bool, error)
 	// Lista de Equipamentos (Aula 12.2).
 	InventoryList(ctx context.Context) ([]store.InventoryRow, error)
+	// Programas instalados no parque (programs.go).
+	FleetSoftware(ctx context.Context) ([]store.SoftwareRow, error)
+	SoftwareInstalls(ctx context.Context, osFamily string, names []string, publisher string) ([]store.SoftwareInstall, error)
 	// Aprovação de patches (Aula 13.1).
 	PatchApprovals(ctx context.Context) ([]store.PatchApproval, error)
 	ApprovePatch(ctx context.Context, a store.PatchApproval) (bool, error)
@@ -313,6 +316,7 @@ type api struct {
 	channel     *canal.Hub                           // canal em tempo real (internal/canal); nil: só o check-in
 	winCache    *wucache.Cache                       // o cache das atualizações do Windows (docs/cache-windows.md); nil: desligado
 	items       itemsCache                           // a lista de pendências do parque, por um minuto (itemscache.go)
+	programs    programsCache                        // os programas instalados no parque, por alguns minutos (programs.go)
 	creds       credCache                            // a credencial de cada máquina, por um minuto (credcache.go)
 	gate        *agentGate                           // a fila dos agentes (agentgate.go); nil: sem fila
 	downloads   downloadTracker                      // os downloads em andamento, para a aba Saúde (downloads.go)
@@ -387,6 +391,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/inventario/aposentar", a.sameOrigin(a.adminAction(a.equipRetireAction))) // aposentar as encontradas que estão offline
 	mux.Handle("POST /painel/aposentadas/excluir", a.sameOrigin(a.adminAction(a.deleteRetiredAction)))
 	mux.Handle("GET /painel/inventario.csv", a.panelPage(a.equipmentCSV))
+	mux.Handle("GET /painel/inventario/programas", a.panelPage(a.programsPage)) // os programas instalados, por sistema
+	mux.Handle("GET /painel/inventario/programa", a.panelPage(a.programPage))   // um programa: versões e máquinas
 	mux.Handle("GET /painel/patch", a.panelPage(a.patchPage))
 	mux.Handle("GET /painel/patch/item", a.panelPage(a.patchItemPage))
 	mux.Handle("GET /painel/patch/programa", a.panelPage(a.thirdPartyProgramPage))

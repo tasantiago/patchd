@@ -775,6 +775,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 
 {{define "inventario"}}{{template "topo" .}}
 <h1>Inventário <span class="muted">› Equipamentos</span></h1>
+{{template "inventario-abas" "equipamentos"}}
 <ul class="kpis">
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Equipamentos</span><span class="kpi-val">{{.Total}}</span></a></li>
 <li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val {{cor "v-verde" .Online}}">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
@@ -819,6 +820,39 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{else if .HasFilter}}<p class="vazio"><strong>Nenhum equipamento com esse filtro.</strong> Confira a grafia ou troque o campo da busca. <a href="/painel/inventario">Limpar os filtros</a></p>
 {{else}}<p class="vazio"><strong>Nenhum equipamento ainda.</strong> O inventário chega no primeiro contato de cada agente.{{if .Admin}} O token de registro fica em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a>.{{end}}</p>{{end}}
 </div>
+{{template "fim"}}{{end}}
+
+{{define "inventario-abas"}}<nav class="abas" aria-label="abas do Inventário"><a href="/painel/inventario"{{if eq . "equipamentos"}} class="ativa" aria-current="page"{{end}}>Equipamentos</a><a href="/painel/inventario/programas"{{if eq . "programas"}} class="ativa" aria-current="page"{{end}}>Programas instalados</a></nav>{{end}}
+
+{{define "programas"}}{{template "topo" .}}
+<h1>Inventário <span class="muted">› Programas instalados</span></h1>
+{{template "inventario-abas" "programas"}}
+<nav class="abas" aria-label="sistema operacional">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}} <span class="muted">{{.Count}}</span></a>{{end}}</nav>
+<div class="card"><div class="card-cab"><h2>Programas no {{.OSLabel}}</h2><span class="muted">do inventário atual de cada máquina · calculado {{.At}}</span></div>
+<p class="muted">Cada linha junta as entradas do mesmo programa e fabricante, de qualquer versão ou arquitetura. Clique no programa para ver as versões e as máquinas.{{if .Hidden}} {{if .System}}<a href="{{.SystemHref}}">Esconder os {{.Hidden}} componentes do sistema e atualizações</a>.{{else}}{{.Hidden}} componente(s) do sistema e atualizações ficam fora: <a href="{{.SystemHref}}">mostrar</a>.{{end}}{{end}}</p>
+<form class="busca" method="get" action="/painel/inventario/programas"><input type="hidden" name="so" value="{{.OS}}">{{if .System}}<input type="hidden" name="sistema" value="1">{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Programa ou fabricante (chrome, adobe…)" aria-label="buscar programa"><button type="submit">Buscar</button>{{if .Q}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>
+{{if .Rows}}<div class="tabela"><table><thead><tr><th>Programa</th><th>Fabricante</th><th>Instalações</th><th>Versões</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Name}}</a>{{if .System}} <span class="muted">(sistema)</span>{{end}}</td><td>{{.Publisher}}</td><td class="num">{{.Installs}}</td><td><code>{{.Versions}}</code></td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="vazio"><strong>Nenhum programa{{if .Q}} com “{{.Q}}”{{end}} no {{.OSLabel}}.</strong>{{if .Q}} <a href="{{.ClearHref}}">Ver todos</a>{{end}}</p>{{end}}
+</div>
+{{template "fim"}}{{end}}
+
+{{define "programa-instalado"}}{{template "topo" .}}
+<p><a href="{{.BackHref}}">← Programas instalados no {{.OSLabel}}</a></p>
+{{if .NotFound}}<h1>Programa não encontrado</h1><p class="muted">Ele não está mais no inventário atual de nenhuma máquina do {{.OSLabel}} (a lista é de {{.At}}).</p>
+{{else}}<h1>{{.Name}}</h1>
+<div class="card"><dl class="dados"><dt>Sistema</dt><dd>{{.OSLabel}}</dd><dt>Fabricante</dt><dd>{{if .Publisher}}{{.Publisher}}{{else}}—{{end}}</dd><dt>Instalações</dt><dd>{{.Installs}}{{if .User}} ({{.User}} por usuário){{end}}{{if eq .OS "windows"}} · desinstalação silenciosa registrada em {{.Silent}}{{end}}</dd>
+<dt>Como aparece no inventário</dt><dd>{{range $i, $n := .Names}}{{if $i}}; {{end}}<code>{{$n}}</code>{{end}}</dd></dl>
+<p class="muted">Do inventário atual de cada máquina (calculado {{.At}}).</p></div>
+<div class="card"><div class="card-cab"><h2>Versões</h2></div><div class="tabela"><table><thead><tr><th>Versão</th><th>Instalações</th></tr></thead>
+<tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td><td class="num">{{.Installs}}</td></tr>{{end}}</tbody></table></div></div>
+<div class="card"><div class="card-cab"><h2>Máquinas</h2><span class="muted">{{.Shown}}</span></div>
+{{if .Machines}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Versão</th><th>Escopo</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}</tr></thead>
+<tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas">{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhuma máquina com ele agora.</p>{{end}}</div>{{end}}
 {{template "fim"}}{{end}}
 
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}

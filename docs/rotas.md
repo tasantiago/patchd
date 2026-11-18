@@ -52,7 +52,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | GET | `/api/v1/agent/wucache/{key}` |
 | POST | `/api/v1/agent/wucache` |
 
-## Sessão (página) (23)
+## Sessão (página) (25)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -71,6 +71,8 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/grupos-implantacao/{ring}` |
 | GET | `/painel/grupos-implantacao` |
 | GET | `/painel/inventario.csv` |
+| GET | `/painel/inventario/programa` |
+| GET | `/painel/inventario/programas` |
 | GET | `/painel/inventario` |
 | GET | `/painel/jobs` |
 | GET | `/painel/maquinas/{id}/pendencias.csv` |
