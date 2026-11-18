@@ -101,6 +101,8 @@ func syncCentralLink(logger *slog.Logger, name string) {
 		logger.Warn("atalho da Central na área de trabalho não criado", "nome", name, "error", err)
 	case state == shortcuts.AppLinkCreated:
 		logger.Info("atalho da Central criado na área de trabalho de todos os usuários", "nome", name)
+	case state == shortcuts.AppLinkUpdated:
+		logger.Info("atalho da Central refeito com o ícone novo", "nome", name)
 	}
 }
 

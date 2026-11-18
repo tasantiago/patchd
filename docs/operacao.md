@@ -516,7 +516,7 @@ versão. Para a equipe de segurança:
   Central e a chave Run de volta na próxima partida.
 
 - **Atalho na área de trabalho.** O serviço põe em `C:\Users\Public\Desktop` (a área de
-  trabalho de todos os usuários) o atalho da Central, com o escudo do Windows e o nome da
+  trabalho de todos os usuários) o atalho da Central, com o ícone dela e o nome da
   Central no painel (Configuração › Parâmetros › Aparência › Nome da Central de software; um
   nome que não vale como nome de arquivo fica "Central de software"). O atalho abre o
   `patchd-app.exe` sem argumentos, e a Central mostra a página no navegador; com a Central já
@@ -526,7 +526,13 @@ versão. Para a equipe de segurança:
   `-user-app=false` e com `patchd-agent service uninstall`, e fica na reinstalação da
   atualização automática (no lugar em que o usuário o pôs). Um atalho da regra de um programa
   com o mesmo nome da Central é ignorado, com aviso no log.
-- O app mostra o escudo perto do relógio. Clique abre a página no navegador padrão; o menu
+- **O ícone.** A Central tem ícone próprio (a grade de aplicativos com o "+", em
+  `cmd/app/icone/`): no Explorer, no atalho e perto do relógio. O `scripts/build.sh` o grava no
+  `patchd-app.exe`, com o recurso de versão; `PATCHD_APP_ICON` troca por outro `.ico` (o da
+  organização), de preferência com os tamanhos 16, 24, 32, 48 e 256. Os atalhos criados com o
+  escudo do Windows (a versão anterior) são refeitos com o ícone novo. Um `patchd-app.exe`
+  compilado sem o `build.sh` mostra o escudo perto do relógio.
+- O app mostra o ícone perto do relógio. Clique abre a página no navegador padrão; o menu
   (botão direito) tem "Fechar este ícone". Quando aparece atualização nova para o usuário,
   vem um aviso do Windows (até 2 min depois do logon e a cada 4 h).
 - A página é servida só em `127.0.0.1`, numa porta do sistema, sob um caminho com um segredo

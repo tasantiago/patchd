@@ -91,15 +91,17 @@ done
 # Central. O agente se chama "Agente patchd"; a Central (cmd/app), o nome do painel
 # (PATCHD_APP_NAME, que o deploy/agente.sh lê do servidor no ar). PATCHD_APP_COMPANY é a
 # organização (opcional). Os .syso e a Central embutida são gerados aqui, fora do git, e
-# apagados no fim.
+# apagados no fim. A Central leva o ícone (cmd/app/icone): o do Explorer, do atalho na área de
+# trabalho e o perto do relógio; PATCHD_APP_ICON troca por outro .ico.
 APP_NAME="${PATCHD_APP_NAME:-Central de software}"
+APP_ICON="${PATCHD_APP_ICON:-cmd/app/icone/central-de-software.ico}"
 limpa_gerados() {
   rm -f cmd/agent/versao_windows_*.syso cmd/app/versao_windows_*.syso cmd/agent/patchd-app.exe.gz cmd/agent/patchd-app.exe.sha256
 }
 trap limpa_gerados EXIT
 go run ./cmd/winres -version "$VERSAO" -name "Agente patchd" -company "${PATCHD_APP_COMPANY:-}" -out cmd/agent > /dev/null
-go run ./cmd/winres -version "$VERSAO" -name "$APP_NAME" -file patchd-app.exe -company "${PATCHD_APP_COMPANY:-}" -out cmd/app > /dev/null
-echo "recurso de versão do Windows gravado (Central: \"$APP_NAME\")"
+go run ./cmd/winres -version "$VERSAO" -name "$APP_NAME" -file patchd-app.exe -company "${PATCHD_APP_COMPANY:-}" -icon "$APP_ICON" -out cmd/app > /dev/null
+echo "recurso de versão do Windows gravado (Central: \"$APP_NAME\", ícone $APP_ICON)"
 
 ALVOS_AGENTE="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
 

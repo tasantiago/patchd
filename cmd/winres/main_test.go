@@ -25,3 +25,28 @@ func TestWinres(t *testing.T) {
 		}
 	}
 }
+
+// Com -icon: o .ico da Central entra no mesmo objeto; um arquivo que não é .ico é recusado.
+func TestWinresIcone(t *testing.T) {
+	dir := t.TempDir()
+	var o, e bytes.Buffer
+	sem := []string{"-version", "v0.17.13", "-file", "patchd-app.exe", "-out", dir}
+	if code := run(sem, &o, &e); code != 0 {
+		t.Fatalf("%d %s", code, e.String())
+	}
+	semIcone, _ := os.Stat(filepath.Join(dir, "versao_windows_amd64.syso"))
+	if code := run(append(sem, "-icon", filepath.Join("..", "app", "icone", "central-de-software.ico")), &o, &e); code != 0 {
+		t.Fatalf("%d %s", code, e.String())
+	}
+	comIcone, _ := os.Stat(filepath.Join(dir, "versao_windows_amd64.syso"))
+	if comIcone.Size() < semIcone.Size()+50000 {
+		t.Errorf("o ícone não entrou: %d → %d bytes", semIcone.Size(), comIcone.Size())
+	}
+	ruim := filepath.Join(dir, "x.ico")
+	_ = os.WriteFile(ruim, []byte("não é ícone"), 0o600)
+	for _, f := range []string{ruim, filepath.Join(dir, "nao-existe.ico")} {
+		if code := run(append(sem, "-icon", f), &o, &e); code != 2 {
+			t.Errorf("%s: %d", f, code)
+		}
+	}
+}
