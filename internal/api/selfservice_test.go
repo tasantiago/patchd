@@ -84,7 +84,8 @@ func TestAutoatendimentoPeloAgente(t *testing.T) {
 		t.Errorf("fora do grupo: %+v", c.Items)
 	}
 	c := loja(`EXEMPLO\Domain Users`, `EXEMPLO\GG-Exemplo`)
-	if len(c.Items) != 1 || c.Items[0].App != "7zip" || c.Items[0].Action != "atualizar" || c.Items[0].Installed != "26.01" || c.Items[0].Target != "26.04" {
+	if len(c.Items) != 1 || c.Items[0].App != "7zip" || c.Items[0].Action != "atualizar" || c.Items[0].Installed != "26.01" || c.Items[0].Target != "26.04" ||
+		c.Items[0].Category != "utilitarios" {
 		t.Fatalf("no grupo: %+v", c)
 	}
 

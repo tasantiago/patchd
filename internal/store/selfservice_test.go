@@ -16,9 +16,10 @@ type contratoAutoatendimento interface {
 func testarAutoatendimento(t *testing.T, st contratoAutoatendimento) {
 	ctx := context.Background()
 	for nome, o := range map[string]SelfServiceOffer{
-		"nada liberado": {AppID: "7zip"},
-		"grupo ruim":    {AppID: "7zip", CanUpdate: true, Groups: []string{"; drop"}},
-		"sem programa":  {CanUpdate: true},
+		"nada liberado":  {AppID: "7zip"},
+		"grupo ruim":     {AppID: "7zip", CanUpdate: true, Groups: []string{"; drop"}},
+		"sem programa":   {CanUpdate: true},
+		"categoria ruim": {AppID: "7zip", CanUpdate: true, Category: "jogos"},
 	} {
 		if err := st.SetSelfServiceOffer(ctx, o); err == nil {
 			t.Errorf("%s: deveria recusar", nome)
@@ -41,10 +42,10 @@ func testarAutoatendimento(t *testing.T, st contratoAutoatendimento) {
 		t.Fatalf("lista: %+v %v", l, err)
 	}
 	// Trocar: a mesma chave.
-	if err := st.SetSelfServiceOffer(ctx, SelfServiceOffer{AppID: "7zip", CanInstall: true, UpdatedBy: "ana"}); err != nil {
+	if err := st.SetSelfServiceOffer(ctx, SelfServiceOffer{AppID: "7zip", CanInstall: true, UpdatedBy: "ana", Category: "utilitarios"}); err != nil {
 		t.Fatal(err)
 	}
-	if l, _ := st.SelfServiceOffers(ctx); len(l) != 2 || l[0].CanUpdate || !l[0].CanInstall || l[0].UpdatedBy != "ana" {
+	if l, _ := st.SelfServiceOffers(ctx); len(l) != 2 || l[0].CanUpdate || !l[0].CanInstall || l[0].UpdatedBy != "ana" || l[0].Category != "utilitarios" || l[1].Category != "" {
 		t.Errorf("troca: %+v", l)
 	}
 	if ok, _ := st.DeleteSelfServiceOffer(ctx, "7zip"); !ok {

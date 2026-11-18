@@ -772,6 +772,24 @@ patchd-server selfservice refuse -id 13 -note "fora do escopo do setor"
   (agente removido, `-user-app=false`), a Central fecha. Vale a partir da release do agente
   com a Aula 18.8; a Central aberta antes dela ainda precisa de um último logon.
 
+### Categorias e busca na loja
+
+Na aba **Loja** da Central, o usuário vê **Todos** e cada categoria que tem programa para ele
+(Navegadores, Escritório e PDF, Comunicação, Imagem, áudio e vídeo, Desenvolvimento,
+Utilitários, Sistemas da instituição, Outros), com a contagem, e a busca pelo nome (sem
+diferença de maiúsculas nem de acentos). Tudo sem JavaScript: cada categoria é um link, a busca
+é um formulário.
+
+- **A categoria de cada programa** está na coluna **Categoria na loja** de Configuração ›
+  Autoatendimento. "Automática" é a padrão do programa: a do catálogo do patchd (o Chrome em
+  Navegadores, o LibreOffice em Escritório, o 7-Zip em Utilitários...) e, para os incluídos pelo
+  painel, a que o nome sugere (zoom → Comunicação, vlc → Imagem, áudio e vídeo, irpf → Sistemas
+  da instituição); sem pista, Outros. Escolha outra na linha, ou para vários de uma vez no **Em
+  lote** ("automática" volta à padrão). A auditoria leva a categoria escolhida.
+- A categoria só organiza a loja: não muda quem vê o programa (os grupos) nem a versão.
+- Precisa do servidor e do agente desta versão. Com o servidor anterior, a Central mostra a
+  lista sem as categorias (com a busca); com o agente anterior, a lista de sempre.
+
 ## Layout do tribunal e logotipo (Aula 19.1)
 
 - O painel segue o padrão das aplicações do tribunal: barra lateral azul-marinho com o
