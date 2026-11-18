@@ -1545,6 +1545,43 @@ programa ocupou a chave, recusa. A remoção só usa as chaves de máquina do HK
 sistema; o desinstalador precisa ser um caminho absoluto que existe no disco. O programa aberto
 segue a mesma regra das atualizações (adia, ou fecha com aviso na campanha).
 
+## Programas instalados e a remoção
+
+**Inventário › Programas instalados** junta, por sistema (Windows, Linux, macOS), tudo o que o
+inventário das máquinas mostra: o programa (o nome sem versão nem arquitetura), o fabricante, as
+versões e quantas máquinas têm cada uma. A busca acha pelo nome ou pelo fabricante; os
+componentes do sistema e as atualizações ficam escondidos até clicar em "mostrar". A lista é refeita a cada 10 minutos. Clicando no programa, a página dele mostra
+as versões, as máquinas e, no Windows, como cada instalação sai (MSI, silenciosa do fabricante,
+Inno Setup, ou "sem desinstalação silenciosa").
+
+**Remover de uma máquina.** O administrador (com a chave de jobs no servidor) vê **Remover**
+ao lado da instalação, na página do programa e na aba Software da máquina. O job `desinstalar`
+roda o desinstalador do próprio programa, sem nada na tela, do mesmo jeito da regularização:
+`msiexec /x` com o ProductCode, o `QuietUninstallString` registrado ou o Inno Setup com
+`/VERYSILENT`. O agente confere antes que a entrada ainda é a do pedido (o nome) e o job só
+conclui quando o inventário seguinte não mostra mais a entrada. O log fica em
+`C:\ProgramData\patchd\logs\remover-job-N.log`; o pedido fica na auditoria
+(`programa.remover`). Limites:
+
+- só **Windows**, só instalação **para a máquina toda** (HKLM); a instalação por usuário e a
+  sem desinstalação silenciosa aparecem sem o botão, com o motivo;
+- só o **agente desta versão em diante** (anuncia `desinstalar-v1`): com o anterior, a página
+  mostra "atualize o agente" (`./deploy/atualizar.sh` e `./deploy/agente.sh`, e espere os
+  agentes se atualizarem).
+
+**Campanha de remoção** (a estratégia para o parque todo). No fim da página do programa
+(Windows), o cartão **Campanha de remoção** monta a campanha: as versões a remover (todas
+marcadas valem também para as versões que aparecerem depois), os grupos de implantação em ordem
+(o piloto vem marcado), os reenvios, a observação e quando (horário fixo de madrugada, a janela
+de cada grupo ou já, com prazo). **Conferir** mostra, por grupo, quantas máquinas têm o programa e
+quantas o patchd consegue remover; nada é criado antes de **Criar campanha**. Daí em diante é uma
+campanha como as outras (Campanhas): o grupo seguinte só recebe quando o atual termina sem falha e
+a observação passa; a falha pausa (ou reenvia, se escolheu reenvios). Cada máquina recebe o job
+na hora em que o grupo dela é liberado, pelo inventário de então; as que não têm o programa, as
+de instalação por usuário, as sem desinstalação silenciosa e as de agente antigo ficam de fora,
+com o motivo nas notas do grupo. Sugestão: piloto com a observação de 24 h; conferido, os
+outros grupos.
+
 ## Programas de terceiros no Mac, pelo Installomator
 
 No macOS, o patchd instala e atualiza programas de terceiros pelo **Installomator**

@@ -91,6 +91,13 @@ func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, tp campaign.T
 			return approvedPending(ctx, cs.Detail, pg.PatchApprovals, id)
 		},
 		Scan: pg.LatestScan, // Aula 16.4: a campanha do Windows usa a busca atual da máquina
+		// A campanha de remoção acha no inventário atual a entrada a remover, e só a manda ao
+		// agente que remove.
+		Inventory: pg.LatestInventory,
+		CanUninstall: func(ctx context.Context, id string) (bool, error) {
+			caps, err := pg.MachineCapabilities(ctx, id)
+			return slices.Contains(caps, protocol.CapabilityUninstall), err
+		},
 		Window: func(ctx context.Context, id string, now time.Time) (time.Time, time.Time, bool, error) {
 			ring, ok, err := pg.MachineRing(ctx, id)
 			if err != nil || !ok {

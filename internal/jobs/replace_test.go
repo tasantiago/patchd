@@ -57,3 +57,21 @@ func TestReplaceEntry(t *testing.T) {
 		t.Error("installomator com replace")
 	}
 }
+
+// Os parâmetros do job desinstalar: a entrada da regularização, campo a campo, sem campo
+// desconhecido.
+func TestUninstallParams(t *testing.T) {
+	ok := `{"name":"Programa","version":"1.0","key":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Programa","method":"quiet"}`
+	if p, err := ParseUninstallParams([]byte(ok)); err != nil || p.Name != "Programa" || p.Method != "quiet" {
+		t.Fatalf("válido: %+v %v", p, err)
+	}
+	for _, ruim := range []string{`{"name":"x"}`, `{"name":"Programa","key":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\P","method":"quiet","cmd":"x"}`,
+		`{"name":"P","key":"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\P","method":"quiet"}`} {
+		if _, err := ParseUninstallParams([]byte(ruim)); err == nil {
+			t.Errorf("aceitou %s", ruim)
+		}
+	}
+	if !KnownType(TypeUninstall) {
+		t.Error("tipo desconhecido")
+	}
+}

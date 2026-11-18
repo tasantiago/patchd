@@ -137,3 +137,29 @@ func nameVersion(name, version string) string {
 	}
 	return name + " " + version
 }
+
+// judgeUninstall confere o job desinstalar pelo inventário: o agente manda um inventário
+// novo logo depois de remover, antes do resultado. Só vira "concluido" se o inventário atual
+// não mostra mais a entrada (a mesma chave com o mesmo nome).
+func (a *api) judgeUninstall(r *http.Request, job store.JobRow, res protocol.JobResult) (string, string) {
+	var payload jobs.Job
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+		return jobs.StateFailed, "o servidor não conseguiu ler o job"
+	}
+	p, err := jobs.ParseUninstallParams(payload.Params)
+	if err != nil {
+		return jobs.StateFailed, "parâmetros do job ilegíveis: " + err.Error()
+	}
+	agent := strings.TrimSpace(res.Detail)
+	inv, found, err := a.store.LatestInventory(r.Context(), job.MachineID)
+	if err != nil || !found {
+		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo; agente: " + agent
+	}
+	when := inv.CollectedAt.UTC().Format("2006-01-02 15:04:05")
+	for _, s := range inv.Software {
+		if strings.EqualFold(s.Source, p.Key) && strings.EqualFold(strings.TrimSpace(s.Name), p.Name) {
+			return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC ainda mostra %s; agente: %s", when, nameVersion(s.Name, s.Version), agent)
+		}
+	}
+	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC não mostra mais %s; agente: %s", when, nameVersion(p.Name, p.Version), agent)
+}

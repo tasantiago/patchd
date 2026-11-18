@@ -775,6 +775,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 
 {{define "inventario"}}{{template "topo" .}}
 <h1>Inventário <span class="muted">› Equipamentos</span></h1>
+{{template "inventario-abas" "equipamentos"}}
 <ul class="kpis">
 <li><a class="kpi{{if not .Status}} ativo{{end}}" href="{{.KPIAll}}"><span class="kpi-rot">Equipamentos</span><span class="kpi-val">{{.Total}}</span></a></li>
 <li><a class="kpi{{if eq .Status "online"}} ativo{{end}}" href="{{.KPIOnline}}"><span class="kpi-rot">Online</span><span class="kpi-val {{cor "v-verde" .Online}}">{{.Online}}</span><span class="kpi-sub">check-in nas últimas 2 h</span></a></li>
@@ -819,6 +820,60 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{else if .HasFilter}}<p class="vazio"><strong>Nenhum equipamento com esse filtro.</strong> Confira a grafia ou troque o campo da busca. <a href="/painel/inventario">Limpar os filtros</a></p>
 {{else}}<p class="vazio"><strong>Nenhum equipamento ainda.</strong> O inventário chega no primeiro contato de cada agente.{{if .Admin}} O token de registro fica em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a>.{{end}}</p>{{end}}
 </div>
+{{template "fim"}}{{end}}
+
+{{define "inventario-abas"}}<nav class="abas" aria-label="abas do Inventário"><a href="/painel/inventario"{{if eq . "equipamentos"}} class="ativa" aria-current="page"{{end}}>Equipamentos</a><a href="/painel/inventario/programas"{{if eq . "programas"}} class="ativa" aria-current="page"{{end}}>Programas instalados</a></nav>{{end}}
+
+{{define "programas"}}{{template "topo" .}}
+<h1>Inventário <span class="muted">› Programas instalados</span></h1>
+{{template "inventario-abas" "programas"}}
+<nav class="abas" aria-label="sistema operacional">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}} <span class="muted">{{.Count}}</span></a>{{end}}</nav>
+<div class="card"><div class="card-cab"><h2>Programas no {{.OSLabel}}</h2><span class="muted">do inventário atual de cada máquina · calculado {{.At}}</span></div>
+<p class="muted">Cada linha junta as entradas do mesmo programa e fabricante, de qualquer versão ou arquitetura. Clique no programa para ver as versões e as máquinas.{{if .Hidden}} {{if .System}}<a href="{{.SystemHref}}">Esconder os {{.Hidden}} componentes do sistema e atualizações</a>.{{else}}{{.Hidden}} componente(s) do sistema e atualizações ficam fora: <a href="{{.SystemHref}}">mostrar</a>.{{end}}{{end}}</p>
+<form class="busca" method="get" action="/painel/inventario/programas"><input type="hidden" name="so" value="{{.OS}}">{{if .System}}<input type="hidden" name="sistema" value="1">{{end}}
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Programa ou fabricante (chrome, adobe…)" aria-label="buscar programa"><button type="submit">Buscar</button>{{if .Q}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>
+{{if .Rows}}<div class="tabela"><table><thead><tr><th>Programa</th><th>Fabricante</th><th>Instalações</th><th>Versões</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><td><a href="{{.Href}}">{{.Name}}</a>{{if .System}} <span class="muted">(sistema)</span>{{end}}</td><td>{{.Publisher}}</td><td class="num">{{.Installs}}</td><td><code>{{.Versions}}</code></td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="vazio"><strong>Nenhum programa{{if .Q}} com “{{.Q}}”{{end}} no {{.OSLabel}}.</strong>{{if .Q}} <a href="{{.ClearHref}}">Ver todos</a>{{end}}</p>{{end}}
+</div>
+{{template "fim"}}{{end}}
+
+{{define "programa-instalado"}}{{template "topo" .}}
+<p><a href="{{.BackHref}}">← Programas instalados no {{.OSLabel}}</a></p>
+{{if .NotFound}}<h1>Programa não encontrado</h1><p class="muted">Ele não está mais no inventário atual de nenhuma máquina do {{.OSLabel}} (a lista é de {{.At}}).</p>
+{{else}}<h1>{{.Name}}</h1>
+<div class="card"><dl class="dados"><dt>Sistema</dt><dd>{{.OSLabel}}</dd><dt>Fabricante</dt><dd>{{if .Publisher}}{{.Publisher}}{{else}}—{{end}}</dd><dt>Instalações</dt><dd>{{.Installs}}{{if .User}} ({{.User}} por usuário){{end}}{{if eq .OS "windows"}} · desinstalação silenciosa registrada em {{.Silent}}{{end}}</dd>
+<dt>Como aparece no inventário</dt><dd>{{range $i, $n := .Names}}{{if $i}}; {{end}}<code>{{$n}}</code>{{end}}</dd></dl>
+<p class="muted">Do inventário atual de cada máquina (calculado {{.At}}).</p></div>
+<div class="card"><div class="card-cab"><h2>Versões</h2></div><div class="tabela"><table><thead><tr><th>Versão</th><th>Instalações</th></tr></thead>
+<tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td><td class="num">{{.Installs}}</td></tr>{{end}}</tbody></table></div></div>
+<div class="card"><div class="card-cab"><h2>Máquinas</h2><span class="muted">{{.Shown}}</span></div>
+{{if .Machines}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Versão</th><th>Escopo</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}{{if .CanRemove}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}{{if $.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Source}}"><input type="hidden" name="voltar" value="{{$.Self}}"><button class="perigo" type="submit">Remover desta máquina</button></form></details>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+<nav class="paginas" aria-label="páginas">{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhuma máquina com ele agora.</p>{{end}}</div>
+{{with .Campaign}}<div class="card" id="campanha"><div class="card-cab"><h2>Campanha de remoção</h2><span class="muted">pelos grupos de implantação, em ordem</span></div>
+<p class="muted">Tira o programa de todas as máquinas, um grupo de cada vez: o piloto primeiro; o grupo seguinte só recebe quando o atual termina sem falha e a observação passa. Cada máquina recebe o job na hora em que o grupo dela é liberado, se o inventário mostrar o programa instalado para a máquina toda e com desinstalação silenciosa. Nada é criado antes da conferência.</p>
+<form class="campanha" method="post" action="/painel/campanhas/nova">
+<input type="hidden" name="tipo" value="desinstalar"><input type="hidden" name="remover_so" value="{{$.OS}}"><input type="hidden" name="remover_nome" value="{{$.Key}}"><input type="hidden" name="remover_fab" value="{{$.Publisher}}">
+<div class="campo"><label for="rc-nome">Nome</label><input id="rc-nome" name="nome" value="{{.Name}}" maxlength="100" required></div>
+<fieldset class="campo"><legend>Versões a remover</legend><div class="chips">{{range $.Versions}}<label class="anel"><input type="checkbox" name="versao" value="{{.Version}}" checked> <code>{{.Version}}</code> <span class="muted">· {{.Installs}}</span></label>{{end}}</div>
+<small class="muted">todas marcadas: todas as versões, também as que aparecerem depois</small></fieldset>
+<fieldset class="campo"><legend>Grupos de implantação, em ordem</legend><div class="chips">{{range .Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
+<small class="muted">o piloto vem marcado; os outros marcados seguem depois dele, um de cada vez</small></fieldset>
+<div class="campo"><label for="rc-reenvios">Reenvios automáticos das falhas</label><select id="rc-reenvios" name="reenvios">{{range $n := .Resends}}<option value="{{$n}}" {{if eq $n $.Campaign.Resend}}selected{{end}}>{{if eq $n 0}}nenhum: a primeira falha pausa a campanha{{else}}até {{$n}} vez(es) por máquina{{end}}</option>{{end}}</select></div>
+<div class="campo"><label for="rc-observacao">Observação</label><select id="rc-observacao" name="observacao">{{range .Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<fieldset class="campo quando"><legend>Quando</legend>
+<label class="opcao"><input type="radio" name="quando" value="horario" checked><span><b>Em horário fixo, todo dia</b>
+<small class="linha">às <input type="time" name="hora" value="{{.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Campaign.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
+<small>de madrugada, com o programa fechado (fuso {{.TZ}})</small></span></label>
+<label class="opcao"><input type="radio" name="quando" value="janela"><span><b>Na janela de cada grupo de implantação</b></span></label>
+<label class="opcao"><input type="radio" name="quando" value="prazo"><span><b>Já, com prazo de</b>
+<select name="prazo" aria-label="prazo">{{range .TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
+</fieldset>
+<div class="acoes"><button type="submit">Conferir</button></div>
+</form></div>{{end}}{{end}}
 {{template "fim"}}{{end}}
 
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
@@ -1562,9 +1617,10 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <input type="search" name="q" value="{{.Software.Q}}" maxlength="100" placeholder="Nome, fabricante ou versão" aria-label="buscar software">
 <button type="submit">Buscar</button>{{if .Software.Q}} <a href="/painel/maquinas/{{.D.MachineID}}?aba=software">Limpar</a>{{end}}
 </form>
+{{if .Software.RemoveNote}}<p class="muted">{{.Software.RemoveNote}}</p>{{end}}
 {{if .Software.Rows}}<div class="tabela"><table>
-<thead><tr><th>Nome</th><th>Versão</th><th>Fabricante</th><th>Instalado em</th><th>Escopo</th><th>Arquitetura</th></tr></thead>
-<tbody>{{range .Software.Rows}}<tr><td>{{.Name}}{{if .Kind}} <span class="muted">· {{.Kind}}</span>{{end}}</td><td><code>{{.Version}}</code></td><td>{{.Publisher}}</td><td>{{.Installed}}</td><td>{{.Scope}}</td><td>{{.Arch}}</td></tr>{{end}}</tbody></table></div>
+<thead><tr><th>Nome</th><th>Versão</th><th>Fabricante</th><th>Instalado em</th><th>Escopo</th><th>Arquitetura</th>{{if .Software.CanRemove}}<th>Remover</th>{{end}}</tr></thead>
+<tbody>{{range .Software.Rows}}<tr><td>{{.Name}}{{if .Kind}} <span class="muted">· {{.Kind}}</span>{{end}}</td><td><code>{{.Version}}</code></td><td>{{.Publisher}}</td><td>{{.Installed}}</td><td>{{.Scope}}</td><td>{{.Arch}}</td>{{if $.Software.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{$.D.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Key}}"><button class="perigo" type="submit">Remover {{.Name}}</button> <span class="muted">em silêncio, pelo desinstalador do próprio programa</span></form></details>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Software.Shown}}</span>{{if .Software.Prev}}<a href="{{.Software.Prev}}">‹ anterior</a>{{end}}{{if .Software.Next}}<a href="{{.Software.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhum software com esse filtro.</p>{{end}}
 {{else}}<p class="muted">{{if .HasInventory}}O inventário desta máquina não lista software.{{else}}Nenhum inventário recebido desta máquina.{{end}}</p>{{end}}
@@ -1767,6 +1823,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">{{if .Form.Wake}}<input type="hidden" name="ligar" value="1">{{end}}
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
+{{if .Form.RemoveKey}}<input type="hidden" name="remover_so" value="{{.Form.RemoveOS}}"><input type="hidden" name="remover_nome" value="{{.Form.RemoveKey}}"><input type="hidden" name="remover_fab" value="{{.Form.RemovePub}}">{{range .Form.RemoveVersions}}<input type="hidden" name="versao" value="{{.}}">{{end}}{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
 <button class="sec" type="submit" name="corrigir" value="1">Corrigir</button>
 </form>

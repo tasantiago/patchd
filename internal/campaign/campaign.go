@@ -64,12 +64,15 @@ func isAll(t string) bool { return t == TypeOSAll || t == TypeThirdPartyAll }
 // do último grupo de implantação cujos jobs já foram criados (-1: nenhum); AcceptedIdx, a do grupo de implantação cujas
 // falhas o admin aceitou ao retomar (-1: nenhum).
 type Campaign struct {
-	ID          int64
-	Name        string
-	Type        string
-	Sources     []string      // update: as fontes (pacotes fonte); windows_update (Aula 16.4): os KBs ("KB5127648")
-	App         string        // thirdparty (Aula 14.7): a regra do programa (libreoffice)
-	Version     string        // thirdparty: a versão aprovada que a campanha leva a todos os grupos de implantação
+	ID      int64
+	Name    string
+	Type    string
+	Sources []string // update: as fontes (pacotes fonte); windows_update (Aula 16.4): os KBs ("KB5127648")
+	App     string   // thirdparty (Aula 14.7): a regra do programa (libreoffice)
+	Version string   // thirdparty: a versão aprovada que a campanha leva a todos os grupos de implantação
+	// Remove (desinstalar): o programa que a campanha tira das máquinas, onde ele está instalado
+	// para a máquina toda e tem desinstalação silenciosa.
+	Remove      *RemoveTarget
 	RebootDelay time.Duration // reboot (Aula 16.5): o aviso aos usuários antes do reinício
 	Rings       []int
 	UseWindow   bool
@@ -129,6 +132,9 @@ func (c Campaign) Target() string {
 	if c.Type == jobs.TypeReboot {
 		return fmt.Sprintf("onde houver reinício pendente, com aviso de %d min", int(c.RebootDelay/time.Minute))
 	}
+	if c.Type == jobs.TypeUninstall && c.Remove != nil {
+		return "remover " + c.Remove.Label()
+	}
 	return strings.Join(c.Sources, ", ")
 }
 
@@ -161,6 +167,10 @@ func (c Campaign) Validate() error {
 		return errors.New("a campanha de terceiros leva o programa e a versão aprovada (-app e -version)")
 	case c.Type != jobs.TypeThirdParty && (c.App != "" || c.Version != ""):
 		return errors.New("só a campanha de terceiros leva programa e versão")
+	case c.Type == jobs.TypeUninstall && c.Remove == nil:
+		return errors.New("a campanha de remoção leva o programa a remover")
+	case c.Type != jobs.TypeUninstall && c.Remove != nil:
+		return errors.New("só a campanha de remoção leva programa a remover")
 	case len(c.Rings) == 0:
 		return errors.New("informe os grupos de implantação, em ordem (ex.: 0,1)")
 	case c.Observe < 0 || c.Observe > MaxObserve:
@@ -181,6 +191,11 @@ func (c Campaign) Validate() error {
 	if c.Daily != nil {
 		if err := c.Daily.Validate(); err != nil {
 			return fmt.Errorf("horário fixo: %w", err)
+		}
+	}
+	if c.Remove != nil {
+		if err := c.Remove.Validate(); err != nil {
+			return err
 		}
 	}
 	if c.Type == jobs.TypeWinUpdate {
@@ -306,6 +321,11 @@ type Engine struct {
 	Wake func(ctx context.Context, machineID, by string) (requestID int64, problem string, err error)
 	// CanShutdown: o agente da máquina anunciou o job desligar. nil: ninguém.
 	CanShutdown func(ctx context.Context, machineID string) (bool, error)
+	// Inventory devolve o inventário atual da máquina (a campanha de remoção acha nele a entrada
+	// a remover). nil: as máquinas ficam fora.
+	Inventory func(ctx context.Context, machineID string) (protocol.InventoryReport, bool, error)
+	// CanUninstall: o agente da máquina anunciou o job desinstalar. nil: ninguém.
+	CanUninstall func(ctx context.Context, machineID string) (bool, error)
 	// WinCache: o job do Windows desta máquina vai pelo cache do servidor (docs/cache-windows.md).
 	// nil: nenhuma.
 	WinCache func(ctx context.Context, machineID string) (bool, error)
@@ -650,6 +670,14 @@ func (e *Engine) issue(ctx context.Context, c *Campaign, id string, now time.Tim
 			return false, "sem reinício pendente", nil
 		}
 		if req.Params, err = jobs.RebootParamsJSON(c.RebootDelay); err != nil {
+			return false, "", err
+		}
+	case jobs.TypeUninstall:
+		p, skip, err := e.uninstallJob(ctx, c, id)
+		if err != nil || p == nil {
+			return false, skip, err
+		}
+		if req.Params, err = json.Marshal(p); err != nil {
 			return false, "", err
 		}
 	case jobs.TypeThirdParty:

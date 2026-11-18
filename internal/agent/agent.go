@@ -66,6 +66,9 @@ type Agent struct {
 	// de terceiros. nil: o agente recusa esses jobs (só o Windows instala). Erro com
 	// jobs.ErrRefused vira "rejeitado" (nada foi executado).
 	ThirdParty func(ctx context.Context, jobID int64, p jobs.ThirdPartyParams) (string, error)
+	// Uninstall remove um programa em silêncio (job desinstalar). nil: o agente recusa esses
+	// jobs (só o Windows remove). jobs.ErrRefused vira "rejeitado"; jobs.ErrRetry, "adiado".
+	Uninstall func(ctx context.Context, jobID int64, p jobs.UninstallParams) (string, error)
 	// WinUpdate instala atualizações do Windows pelo WUA (job windows_update, Aula 16.1).
 	// nil: o agente recusa esses jobs (só o Windows). Erro com jobs.ErrNotPending vira
 	// "rejeitado"; com jobs.ErrRetry, "adiado". Nunca reinicia.
@@ -492,6 +495,22 @@ func (a *Agent) CheckIn(ctx context.Context) outcome {
 			if a.Client.SupportsStandardization() {
 				a.Wake()
 			}
+		}
+		a.saveStateOrLog(state)
+	}
+
+	// Remoção de programas: depois das instalações; o inventário de depois vai antes dos
+	// resultados (a página do programa e a campanha conferem por ele).
+	if len(accepted.uninstalls) > 0 {
+		res, ran := a.runUninstalls(ctx, accepted.uninstalls)
+		state.PendingJobResults = append(state.PendingJobResults, res...)
+		if ctx.Err() != nil {
+			state.InventoryFirst = state.InventoryFirst || ran
+			a.saveStateOrLog(state)
+			return outcomeTransient
+		}
+		if ran {
+			a.resendInventory(ctx, &state)
 		}
 		a.saveStateOrLog(state)
 	}

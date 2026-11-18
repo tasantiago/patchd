@@ -43,7 +43,7 @@ const (
 func KnownType(t string) bool {
 	return t == TypeRescan || t == TypeUpdate || t == TypeReboot || t == TypeServerURL || t == TypeThirdParty || t == TypeWinUpdate ||
 		t == TypeBIOSPassword || t == TypeScript || t == TypeBIOSSettings || t == TypeWakeOnLAN || t == TypeQuery ||
-		t == TypeCleanup || t == TypeShutdown || t == TypeCommand
+		t == TypeCleanup || t == TypeShutdown || t == TypeCommand || t == TypeUninstall
 }
 
 // Estados (RF-25). Vida de um job: pendente → entregue → concluido | falhou | rejeitado |
@@ -226,6 +226,9 @@ func checkParams(j Job) error {
 		return err
 	case TypeCommand:
 		_, err := ParseCommandParams(j.Params)
+		return err
+	case TypeUninstall:
+		_, err := ParseUninstallParams(j.Params)
 		return err
 	default:
 		if len(j.Params) > 0 && string(j.Params) != "null" {

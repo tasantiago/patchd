@@ -20,6 +20,7 @@ type acceptedJobs struct {
 	updates    []acceptedUpdate
 	reboots    []acceptedReboot
 	thirdParty []acceptedThirdParty
+	uninstalls []acceptedUninstall
 	winUpdates []acceptedWinUpdate
 	bios       []acceptedBIOS
 	scripts    []acceptedScript
@@ -75,6 +76,11 @@ type acceptedBIOS struct {
 type acceptedWinUpdate struct {
 	id int64
 	p  jobs.WinUpdateParams
+}
+
+type acceptedUninstall struct {
+	id int64
+	p  jobs.UninstallParams
 }
 
 type acceptedThirdParty struct {
@@ -145,6 +151,16 @@ func (a *Agent) acceptJobs(received []protocol.SignedJob, state *State) accepted
 			a.Logger.Info("job aceito: instalar programa de terceiros", "job_id", j.ID, "app", p.App, "version", p.Version,
 				"installer", p.Installer)
 			acc.thirdParty = append(acc.thirdParty, acceptedThirdParty{id: j.ID, p: p})
+		case jobs.TypeUninstall:
+			p, _ := jobs.ParseUninstallParams(j.Params) // o Verify já conferiu
+			if a.Uninstall == nil {
+				why := "este sistema não remove programas pelo patchd (só Windows)"
+				a.Logger.Warn("job recusado", "job_id", j.ID, "reason", why)
+				a.queueJobResult(state, j.ID, protocol.JobResultRejected, why)
+				continue
+			}
+			a.Logger.Info("job aceito: remover programa", "job_id", j.ID, "programa", p.Name, "versao", p.Version, "metodo", p.Method)
+			acc.uninstalls = append(acc.uninstalls, acceptedUninstall{id: j.ID, p: p})
 		case jobs.TypeScript:
 			p, _ := jobs.ParseScriptParams(j.Params) // o Verify já conferiu
 			if a.Script == nil {
@@ -341,6 +357,36 @@ func (a *Agent) runThirdParty(ctx context.Context, list []acceptedThirdParty) (o
 			a.Logger.Error("instalação de terceiros falhou", "job_id", j.id, "app", j.p.App, "error", detail)
 		default:
 			a.Logger.Info("instalação de terceiros concluída", "job_id", j.id, "app", j.p.App, "detail", detail,
+				"duration", a.now().Sub(start).Round(time.Second).String())
+		}
+		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})
+	}
+	return out, ran
+}
+
+// runUninstalls remove os programas, um por vez. ran diz se algum desinstalador chegou a
+// rodar: só então o inventário pode ter mudado.
+func (a *Agent) runUninstalls(ctx context.Context, list []acceptedUninstall) (out []PendingJobResult, ran bool) {
+	for _, j := range list {
+		a.Logger.Info("remoção de programa iniciada", "job_id", j.id, "programa", j.p.Name, "versao", j.p.Version)
+		start := a.now()
+		detail, err := a.Uninstall(ctx, j.id, j.p)
+		if !errors.Is(err, jobs.ErrRefused) && !errors.Is(err, jobs.ErrNotStarted) {
+			ran = true
+		}
+		status := protocol.JobResultOK
+		switch {
+		case errors.Is(err, jobs.ErrRefused):
+			status, detail = protocol.JobResultRejected, joinDetail(err.Error(), detail)
+			a.Logger.Warn("job recusado", "job_id", j.id, "reason", detail)
+		case errors.Is(err, jobs.ErrRetry):
+			status, detail = protocol.JobResultPostponed, joinDetail(err.Error(), detail)
+			a.Logger.Warn("remoção de programa adiada", "job_id", j.id, "programa", j.p.Name, "reason", detail)
+		case err != nil:
+			status, detail = protocol.JobResultFailed, joinDetail(err.Error(), detail)
+			a.Logger.Error("remoção de programa falhou", "job_id", j.id, "programa", j.p.Name, "error", detail)
+		default:
+			a.Logger.Info("remoção de programa concluída", "job_id", j.id, "programa", j.p.Name, "detail", detail,
 				"duration", a.now().Sub(start).Round(time.Second).String())
 		}
 		out = append(out, PendingJobResult{ID: j.id, Result: protocol.JobResult{Status: status, Detail: detail, FinishedAt: a.now().UTC()}})

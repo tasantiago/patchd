@@ -52,7 +52,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | GET | `/api/v1/agent/wucache/{key}` |
 | POST | `/api/v1/agent/wucache` |
 
-## Sessão (página) (23)
+## Sessão (página) (25)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -71,6 +71,8 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/grupos-implantacao/{ring}` |
 | GET | `/painel/grupos-implantacao` |
 | GET | `/painel/inventario.csv` |
+| GET | `/painel/inventario/programa` |
+| GET | `/painel/inventario/programas` |
 | GET | `/painel/inventario` |
 | GET | `/painel/jobs` |
 | GET | `/painel/maquinas/{id}/pendencias.csv` |
@@ -120,7 +122,7 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/scripts` |
 | GET | `/painel/terminal` |
 
-## Admin (ação) (84)
+## Admin (ação) (85)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -186,6 +188,7 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/maquinas/{id}/mesclar` |
 | POST | `/painel/maquinas/{id}/reiniciar` |
 | POST | `/painel/maquinas/{id}/restaurar` |
+| POST | `/painel/maquinas/{id}/software/remover` |
 | POST | `/painel/maquinas/{id}/terceiros/atualizar` |
 | POST | `/painel/maquinas/{id}/terminal/abrir` |
 | POST | `/painel/maquinas/{id}/terminal/comando` |
