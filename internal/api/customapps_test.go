@@ -79,6 +79,11 @@ func TestIncluirProgramaPeloPainel(t *testing.T) {
 	if r.Code != http.StatusSeeOther || !strings.Contains(local(r), "salvo=videolan-vlc") {
 		t.Fatalf("salvar: %d %s %s", r.Code, local(r), r.Body)
 	}
+	// Depois de salvar: o botão leva direto à página do programa (onde se baixa o instalador).
+	if b := pagina(h, "GET", local(r), sessaoAdmin, nil).Body.String(); !strings.Contains(b,
+		`<a class="btn" href="/painel/patch/programa?app=videolan-vlc">Abrir VLC e baixar o instalador</a>`) {
+		t.Error("sem o botão para abrir o programa salvo")
+	}
 	if !live.Get().Has("videolan-vlc/windows") {
 		t.Fatal("o manifesto vivo não recebeu o programa")
 	}

@@ -59,6 +59,9 @@ type customView struct {
 	Types   []string
 	CanUse  bool // o painel pode incluir (o servidor tem o manifesto vivo)
 	CanFind bool // a busca no winget está ligada
+	// O programa que acabou de ser salvo: o botão para a página dele (baixar ou enviar o
+	// instalador, aprovar).
+	SavedHref, SavedName string
 }
 
 type customRow struct {
@@ -227,11 +230,16 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 			v.Form.Type = d.Types[0]
 		}
 	}
+	if id := q.Get("salvo"); id != "" {
+		if rule := a.installRule(id); rule != nil {
+			v.SavedHref, v.SavedName = tpProgramPath(id), rule.Name
+		}
+	}
 	switch {
 	case q.Has("salvo") && q.Get("proprio") == "1":
-		v.Flash = "Programa salvo. Abra-o e envie o instalador (.msi ou .exe) com a versão; depois ofereça no autoatendimento (Configuração › Autoatendimento)."
+		v.Flash = "Programa salvo. Abra-o (botão abaixo) e envie o instalador (.msi ou .exe) com a versão; depois ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("salvo"):
-		v.Flash = "Programa salvo. Ele já vale no painel: abra-o, baixe o instalador, aprove a versão e ofereça no autoatendimento (Configuração › Autoatendimento)."
+		v.Flash = "Programa salvo. Ele já vale no painel: abra-o (botão abaixo), baixe o instalador em Instaladores guardados, aprove a versão e ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("excluido"):
 		v.Flash = "Programa excluído. Os instaladores guardados continuam em disco até você apagá-los na página do programa (antes de excluir) ou com o package."
 	}
