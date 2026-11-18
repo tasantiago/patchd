@@ -34,7 +34,7 @@ val() { env_get "$1" | tr -d '\r"'"'"; }
 rel="$(val PATCHD_RELEASES_HOST_DIR)"; rel="${rel:-../releases}"
 case "$rel" in /*) ;; *) rel="$REPO/deploy/$rel" ;; esac
 RELEASES="$(realpath -m "$rel")"
-BACKUPS="$(val PATCHD_BACKUP_DIR)"; BACKUPS="${BACKUPS:-deploy/backups}"
+BACKUPS="$(backup_dir)"
 GRAPH="$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
 
 tam() { { du -sh "$@" 2>/dev/null || true; } | awk 'NR==1 {print $1}'; }

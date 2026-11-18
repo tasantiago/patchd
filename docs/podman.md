@@ -318,8 +318,23 @@ e as versões do agente antigas (ficam a publicada e as duas mais novas além de
 `agente.sh --publicar` de volta). Os agentes instalados só baixam a publicada.
 
 O que fica: o banco, as cópias do banco (o `backup.sh` apaga as de mais de
-`PATCHD_BACKUP_KEEP_DAYS` dias; se elas pesam no `/home`, aponte `PATCHD_BACKUP_DIR` para um
-disco maior), o conteúdo, a imagem do Go e a cache de módulos.
+`PATCHD_BACKUP_KEEP_DAYS` dias), o conteúdo, a imagem do Go e a cache de módulos.
+
+**As cópias do banco no `/home`**: o `deploy/backups` fica no repositório, e 14 cópias diárias
+do banco de um parque grande passam de vários GB. Leve-as para o disco maior:
+
+```bash
+# como root (a pasta no disco da raiz, só do usuário do serviço)
+install -d -m 700 -o patchd -g patchd /srv/patchd/backups
+# como o usuário do serviço
+cd ~/patchd
+echo 'PATCHD_BACKUP_DIR=/srv/patchd/backups' >> deploy/.env
+mv deploy/backups/patchd-* /srv/patchd/backups/
+./deploy/backup.sh             # confere: a cópia nova sai na pasta nova
+```
+
+O `backup.sh` (e o timer), o `atualizar.sh` e o `limpar.sh` leem a pasta do `.env`; o
+`atualizar.sh --voltar --confirmo` acha a cópia de antes da atualização também na pasta nova.
 
 Se mesmo assim o disco do `/home` não der (o banco também mora nele, em
 `~/.local/share/containers`), o caminho é aumentar o volume lógico do `/home` ou levar o

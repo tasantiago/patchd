@@ -23,7 +23,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 . deploy/comum.sh   # pg: o Postgres do motor do deploy/.env (Aulas 10.4 e 23.1)
-DEST="${1:-${PATCHD_BACKUP_DIR:-deploy/backups}}"
+DEST="${1:-$(backup_dir)}"   # PATCHD_BACKUP_DIR: do ambiente ou do deploy/.env
 RECIPIENTS="${PATCHD_BACKUP_RECIPIENTS_FILE:-deploy/secrets/backup_recipients}"
 KEEP_DAYS="${PATCHD_BACKUP_KEEP_DAYS:-14}"
 case "$KEEP_DAYS" in ''|*[!0-9]*) echo "PATCHD_BACKUP_KEEP_DAYS deve ser um número de dias" >&2; exit 2 ;; esac

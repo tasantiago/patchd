@@ -138,6 +138,11 @@ Voltar exige restaurar a cópia de antes ($copia), e tudo o que aconteceu depois
 MSG
       exit 1
     fi
+    # A pasta das cópias pode ter mudado depois da atualização (PATCHD_BACKUP_DIR): o mesmo
+    # arquivo na pasta de agora.
+    if [ ! -s "$copia" ] && [ -n "$copia" ] && [ -s "$(backup_dir)/$(basename "$copia")" ]; then
+      copia="$(backup_dir)/$(basename "$copia")"
+    fi
     [ -s "$copia" ] || { echo "a cópia de antes não está mais em $copia" >&2; exit 1; }
     case "$copia" in
       *.age) [ -r "${PATCHD_BACKUP_IDENTITY_FILE:-}" ] || { echo "a cópia é cifrada: defina PATCHD_BACKUP_IDENTITY_FILE com a chave privada" >&2; exit 1; } ;;
@@ -183,7 +188,7 @@ if [ "$mig_antes" = 0 ]; then
   echo "banco vazio (primeira subida): sem cópia"
 else
   ./deploy/backup.sh
-  copia="$(ls -t "${PATCHD_BACKUP_DIR:-deploy/backups}"/patchd-*.dump* 2>/dev/null | grep -E '\.dump(\.age)?$' | head -1)"
+  copia="$(ls -t "$(backup_dir)"/patchd-*.dump* 2>/dev/null | grep -E '\.dump(\.age)?$' | head -1)"
 fi
 
 umask 077
