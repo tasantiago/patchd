@@ -1499,7 +1499,9 @@ outro tipo por cima pode deixar duas entradas em Programas e Recursos.
 
 Com o parâmetro **Configuração › Parâmetros › Agentes › Regularizar instalações de terceiros**
 ligado, a atualização **troca a instalação** pelo instalador aprovado, para todos os programas
-com regra de instalação:
+com regra de instalação (desligado, a página da máquina mostra, ao lado do programa que ele
+resolveria, o link "trocar pelo instalador aprovado: ligar a regularização", que leva ao
+campo):
 
 - **Só para frente.** Regulariza só quando o aprovado é mais novo que o instalado; com o
   instalado igual ou mais novo, fica "em dia" até a próxima versão aprovada. Nunca rebaixa.

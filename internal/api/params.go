@@ -79,6 +79,9 @@ const MicrosoftFallbackKey = "PATCHD_WINUPDATE_MICROSOFT"
 // aprovado, em todos os programas com regra de instalação.
 const RegularizeKey = "PATCHD_TP_REGULARIZE"
 
+// RegularizeHref: o campo do parâmetro, na aba Parâmetros.
+const RegularizeHref = "/painel/configuracao?aba=parametros#p-" + RegularizeKey
+
 // Regularize: o parâmetro da regularização está ligado.
 func Regularize(p interface{ Value(string) string }) bool {
 	return p != nil && p.Value(RegularizeKey) == "1"

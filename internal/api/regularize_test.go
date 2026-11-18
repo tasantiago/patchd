@@ -97,3 +97,29 @@ func TestRegularizacaoPelaCentral(t *testing.T) {
 		})
 	}
 }
+
+// Na página da máquina: com a regularização desligada, o programa que ela trocaria (o Chrome
+// do exe, com o MSI aprovado mais novo) mostra o caminho para ligá-la; ligada, vira atualização.
+func TestRegularizacaoNaPaginaDaMaquina(t *testing.T) {
+	m, _ := thirdparty.Default()
+	_, priv, _ := jobs.GenerateKey()
+	for _, valor := range []string{"0", "1"} {
+		h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithContent(t.TempDir(), nil), api.WithThirdPartyManifest(thirdparty.NewLive(m)),
+			api.WithSettings(parametrosFixos{api.RegularizeKey: valor}))
+		ctx := context.Background()
+		const id = "92fc3b93-0003" // uma máquina do ambiente de páginas
+		_, _ = st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "w", OS: protocol.OSInfo{ID: "windows", Arch: "amd64"},
+			Software: []protocol.Software{{Name: "Google Chrome", Version: "156.0.7000.1", Publisher: "Google LLC", Scope: "machine",
+				Source: `HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome`}}})
+		_, _ = st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: "google-chrome", Version: "157.0.8103.79", Architecture: "x64",
+			Type: "wix", URL: "https://x", SHA256: strings.Repeat("c", 64), Size: 1, Arguments: "/quiet /norestart"})
+		b := pagina(h, "GET", "/painel/maquinas/"+id+"?aba=pendencias", sessaoAdmin, nil).Body.String()
+		link := `<a href="` + strings.ReplaceAll(api.RegularizeHref, "&", "&amp;") + `">trocar pelo instalador aprovado: ligar a regularização</a>`
+		if valor == "0" && !strings.Contains(b, link) {
+			t.Errorf("desligada: sem o caminho para ligar")
+		}
+		if valor == "1" && (strings.Contains(b, "ligar a regularização") || !strings.Contains(b, "instala por cima")) {
+			t.Errorf("ligada: o plano não regulariza")
+		}
+	}
+}
