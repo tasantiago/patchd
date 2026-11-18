@@ -1114,6 +1114,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{define "terceiros-incluir"}}{{template "topo" .}}
 <p><a href="/painel/patch?aba=terceiros">← Programas de terceiros</a></p>
 <h1>{{if .Editing}}Editar programa{{else}}Incluir programa{{end}}</h1>
+{{if .SavedHref}}<p><a class="btn" href="{{.SavedHref}}">Abrir {{.SavedName}} e {{if .Upload}}enviar{{else}}baixar{{end}} o instalador</a></p>{{end}}
 {{if not .CanUse}}<p class="aviso erro">Este servidor não tem os programas de terceiros ligados (precisa do PostgreSQL).</p>{{else}}
 {{if not .Editing}}<nav class="abas" aria-label="origem do instalador"><a href="/painel/patch/terceiros/incluir"{{if not .Upload}} class="ativa" aria-current="page"{{end}}>Do winget</a><a href="/painel/patch/terceiros/incluir?proprio=1"{{if .Upload}} class="ativa" aria-current="page"{{end}}>Instalador próprio (.msi ou .exe)</a></nav>{{end}}
 {{if .Upload}}<div class="card"><div class="card-cab"><h2>{{if .Editing}}<code>{{.Editing}}</code>{{else}}Um instalador próprio{{end}}</h2><span class="muted">Windows · o arquivo que o fabricante distribui, enviado por você</span></div>
