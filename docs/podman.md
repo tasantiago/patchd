@@ -297,25 +297,34 @@ muda o que o painel e as máquinas novas recebem). Retirar a oferta, sem versão
 
 ## Liberar espaço: versões antigas do agente e imagens antigas
 
-Cada versão assinada do agente fica numa pasta de `releases/` (uns 100 MB), e cada versão do
-servidor deixa uma imagem. Nada disso sai sozinho. A linha "Versões do agente" da aba Saúde
-mede o disco onde está o `/home` do usuário do serviço: as imagens e as caches do build
-(`~/.local/share/containers`, `~/.cache`) contam junto.
+Cada versão assinada do agente fica numa pasta de `releases/` (uns 100 MB), cada
+`atualizar.sh` deixa uma imagem do servidor e as camadas da compilação (o estágio do Go, de 1 a
+2 GB), e o build do agente guarda a cache do Go num volume. Nada disso sai sozinho. A linha
+"Versões do agente" da aba Saúde mede o disco onde está o `/home` do usuário do serviço: as
+imagens e as caches do build (`~/.local/share/containers`, `~/.cache`) contam junto. Com esse
+disco cheio, o `agente.sh` para no começo ("pouco espaço em disco") em vez de quebrar no meio
+com "no space left on device".
 
 ```bash
 cd ~/patchd
-cat releases/current                 # a versão publicada: esta NÃO se apaga
-du -sh releases/v* | sort -h         # o tamanho de cada uma
-# apagar todas menos a publicada e as 2 mais novas (confira a lista antes; depois troque o echo por rm -rf)
-ls -d releases/v* | sort -V | head -n -3 | grep -v "/$(cat releases/current)\$" | xargs -r echo
+./deploy/limpar.sh             # mostra o que ocupa e o que sairia; não apaga nada
+./deploy/limpar.sh --aplicar   # apaga
 ```
 
-Os agentes já instalados não precisam das versões antigas: eles só baixam a publicada. Apagar
-uma versão antiga só tira a possibilidade de voltar a oferecê-la (`agente.sh --publicar`).
+O que sai: os restos de builds do agente interrompidos (`~/.cache/patchd-agente.*`), as camadas
+sem nome do Podman, as imagens `patchd-server` antigas (ficam a em uso e a anterior, que o
+`atualizar.sh --voltar` usa), o volume `patchd-gocache` (o próximo build do agente demora mais)
+e as versões do agente antigas (ficam a publicada e as duas mais novas além dela, para um
+`agente.sh --publicar` de volta). Os agentes instalados só baixam a publicada.
 
-As imagens antigas do servidor: `podman images` lista; guarde a atual e a anterior (o
-`atualizar.sh --voltar` precisa dela) e apague as outras com `podman rmi patchd-server:vX.Y.Z`.
-`podman image prune` tira as camadas sem nome que sobram dos builds.
+O que fica: o banco, as cópias do banco (o `backup.sh` apaga as de mais de
+`PATCHD_BACKUP_KEEP_DAYS` dias; se elas pesam no `/home`, aponte `PATCHD_BACKUP_DIR` para um
+disco maior), o conteúdo, a imagem do Go e a cache de módulos.
+
+Se mesmo assim o disco do `/home` não der (o banco também mora nele, em
+`~/.local/share/containers`), o caminho é aumentar o volume lógico do `/home` ou levar o
+armazenamento do Podman para um disco maior, como em "Disco", acima (com o banco criado, isso
+exige migrar os volumes: combine uma janela).
 
 ## Problemas comuns
 
