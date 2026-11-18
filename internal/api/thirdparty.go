@@ -156,6 +156,7 @@ type tpView struct {
 	MaxBatch               int
 	Hidden                 []optView
 	AllHref, ProblemsHref  string
+	NoRef                  int // com problema, mas sem versão de referência: só em "todos"
 	WaitingHref, ClearHref string
 }
 
@@ -219,7 +220,8 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	v.Hosts = len(hosts)
-	shown := filterTP(progs, inst, q)
+	shown, noRef := filterTP(progs, inst, q)
+	v.NoRef = noRef
 	v.Found = len(shown)
 	for _, p := range shown {
 		if tpInstallerOf(inst, p.AppID).State == tpInstWaiting {
