@@ -33,19 +33,7 @@ func removableEntry(s protocol.Software) error {
 
 // uninstallParamsFor: os parâmetros do job para a entrada do inventário.
 func uninstallParamsFor(s protocol.Software) (jobs.UninstallParams, error) {
-	switch {
-	case s.Scope != "machine":
-		return jobs.UninstallParams{}, errors.New("instalação por usuário: o patchd remove só o que está instalado para a máquina toda")
-	case s.SystemComponent || s.IsUpdate:
-		return jobs.UninstallParams{}, errors.New("componente do sistema ou atualização: sai com o programa principal")
-	case s.Uninstall == "":
-		return jobs.UninstallParams{}, errors.New("o programa não registrou desinstalação silenciosa (ou o agente ainda não informou como ele sai)")
-	}
-	p := jobs.UninstallParams{ReplaceEntry: jobs.ReplaceEntry{Name: strings.TrimSpace(s.Name), Version: s.Version, Key: s.Source, Method: s.Uninstall}}
-	if s.Uninstall == protocol.UninstallMSI {
-		p.ProductCode = s.ProductCode
-	}
-	return p, p.Validate()
+	return jobs.UninstallParamsFor(s)
 }
 
 // canRemove: o painel mostra o botão Remover (admin já conferido): a chave de jobs e o agente

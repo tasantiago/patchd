@@ -143,3 +143,82 @@ func TestRemoverProgramaPeloPainel(t *testing.T) {
 		t.Error("aviso na página do programa")
 	}
 }
+
+// A campanha de remoção nasce na página do programa: o formulário (só admin), a conferência
+// com a previsão por grupo e a criação com o programa e as versões.
+func TestCampanhaDeRemocaoPeloPainel(t *testing.T) {
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
+	ctx := context.Background()
+	const id = "92fc3b93-0003"
+	chave := `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{11111111-2222-3333-4444-555555555555}`
+	_, _ = st.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: "w",
+		OS: protocol.OSInfo{Family: "windows", ID: "windows", Name: "Windows 11", Arch: "amd64", Hostname: "pc-x"},
+		Software: []protocol.Software{{Name: "Programa MSI", Version: "2.0", Publisher: "X", Scope: "machine", Uninstall: "msi",
+			ProductCode: "{11111111-2222-3333-4444-555555555555}", Source: chave}}})
+	st.SetMachineRing(ctx, id, 0)
+	if err := st.SetMachineCapabilities(ctx, id, []string{protocol.CapabilityJobs, protocol.CapabilityUninstall}); err != nil {
+		t.Fatal(err)
+	}
+	prog := "/painel/inventario/programa?so=windows&nome=programa+msi&fab=X"
+	b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	for _, tr := range []string{`<div class="card" id="campanha">`, `name="tipo" value="desinstalar"`, `name="remover_nome" value="programa msi"`,
+		`name="remover_fab" value="X"`, `name="versao" value="2.0" checked`, `value="Remover Programa MSI"`} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("formulário: faltou %q", tr)
+		}
+	}
+	if strings.Contains(pagina(h, "GET", prog, sessaoTeste, nil).Body.String(), `id="campanha"`) {
+		t.Error("leitura vê a campanha")
+	}
+
+	form := formCampanha("nome", "remover programa msi", "tipo", "desinstalar", "remover_so", "windows", "remover_nome", "programa msi",
+		"remover_fab", "X", "versao", "2.0", "anel", "0")
+	// Nenhuma versão marcada, ou programa forjado: volta à página do programa com o motivo.
+	sem := formCampanha("tipo", "desinstalar", "remover_so", "windows", "remover_nome", "programa msi", "remover_fab", "X", "anel", "0")
+	l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, sem))
+	if !strings.HasPrefix(l, "/painel/inventario/programa?") || !strings.Contains(l, "erro=campanha") || !strings.HasSuffix(l, "#campanha") {
+		t.Fatalf("sem versão: %s", l)
+	}
+	if b := pagina(h, "GET", strings.TrimSuffix(l, "#campanha"), sessaoAdmin, nil).Body.String(); !strings.Contains(b, "A campanha de remoção não foi criada: Marque ao menos uma versão a remover.") {
+		t.Error("o motivo na página do programa")
+	}
+	forjado := formCampanha("tipo", "desinstalar", "remover_so", "windows", "remover_nome", "outro", "remover_fab", "X", "versao", "2.0", "anel", "0")
+	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, forjado)); !strings.Contains(l, "erro=campanha") {
+		t.Errorf("forjado: %s", l)
+	}
+	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "desinstalar", "remover_so", "linux",
+		"remover_nome", "programa msi", "remover_fab", "X", "versao", "2.0", "anel", "0"))); !strings.Contains(l, "erro=campanha") {
+		t.Errorf("linux: %s", l)
+	}
+
+	// Conferência: a previsão; nada criado.
+	b = pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form).Body.String()
+	for _, tr := range []string{"remover Programa MSI (X), todas as versões", "1 com o programa · 1 removível(is) pelo patchd",
+		`name="remover_nome" value="programa msi"`, `name="versao" value="2.0"`, "Na remoção, cada máquina"} {
+		if !strings.Contains(b, tr) {
+			t.Errorf("conferência: faltou %q\n%s", tr, b)
+		}
+	}
+	if l, _ := st.Campaigns(ctx, 5); len(l) != 0 {
+		t.Fatal("a conferência criou campanha")
+	}
+	form.Set("confirmar", "1")
+	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form)); l != "/painel/campanhas/1?criada=1" {
+		t.Fatalf("criar: %s", l)
+	}
+	c, _, _ := st.Campaign(ctx, 1)
+	if c.Type != jobs.TypeUninstall || c.Remove == nil || c.Remove.Program != "Programa MSI" || c.Remove.Publisher != "X" ||
+		len(c.Remove.Names) != 1 || c.Remove.Names[0] != "Programa MSI" || c.Remove.Versions != nil || c.CreatedBy != "thyago" {
+		t.Fatalf("criada: %+v %+v", c, c.Remove)
+	}
+	if b := pagina(h, "GET", "/painel/campanhas/1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "remover Programa MSI (X), todas as versões") {
+		t.Errorf("página da campanha:\n%s", b)
+	}
+	// Corrigir volta à página do programa.
+	form.Del("confirmar")
+	form.Set("corrigir", "1")
+	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form)); !strings.HasPrefix(l, "/painel/inventario/programa?") || strings.Contains(l, "erro=") {
+		t.Errorf("corrigir: %s", l)
+	}
+}

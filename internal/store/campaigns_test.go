@@ -290,6 +290,19 @@ func testarLigarNaJanela(t *testing.T, st contratoCampanhas) {
 	if c, _, _ := st.Campaign(ctx, id); !c.Wake {
 		t.Error("sem o Wake")
 	}
+	// A campanha de remoção guarda o programa e as versões.
+	alvo := campaign.RemoveTarget{Program: "Leitor X", Publisher: "Fab", Names: []string{"Leitor X 3", "Leitor X 3 (x64)"}, Versions: []string{"3.1"}}
+	rid0, err := st.CreateCampaign(ctx, campaign.Campaign{Name: "remover", Type: "desinstalar", Rings: []int{0}, TTL: time.Hour, CreatedBy: "t", Remove: &alvo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _, _ := st.Campaign(ctx, rid0); c.Remove == nil || c.Remove.Program != "Leitor X" || !slices.Equal(c.Remove.Names, alvo.Names) ||
+		!slices.Equal(c.Remove.Versions, alvo.Versions) || c.Remove.Publisher != "Fab" {
+		t.Errorf("programa a remover: %+v", c.Remove)
+	}
+	if c, _, _ := st.Campaign(ctx, id); c.Remove != nil {
+		t.Error("campanha sem remoção com programa")
+	}
 	agora := time.Now().UTC().Truncate(time.Second)
 	rid, err := st.CreateWakeRequest(ctx, WakeRequest{MachineID: "camp-a", RequestedAt: agora, RequestedBy: "campanha", Network: "192.0.2.0/24",
 		MACs: []string{"00:11:22:33:44:55"}, Relays: []string{"camp-a"}, JobIDs: []int64{1}})

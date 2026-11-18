@@ -852,7 +852,28 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{if .Machines}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Versão</th><th>Escopo</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}{{if .CanRemove}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}{{if $.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Source}}"><input type="hidden" name="voltar" value="{{$.Self}}"><button class="perigo" type="submit">Remover desta máquina</button></form></details>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas">{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
-{{else}}<p class="muted">Nenhuma máquina com ele agora.</p>{{end}}</div>{{end}}
+{{else}}<p class="muted">Nenhuma máquina com ele agora.</p>{{end}}</div>
+{{with .Campaign}}<div class="card" id="campanha"><div class="card-cab"><h2>Campanha de remoção</h2><span class="muted">pelos grupos de implantação, em ordem</span></div>
+<p class="muted">Tira o programa de todas as máquinas, um grupo de cada vez: o piloto primeiro; o grupo seguinte só recebe quando o atual termina sem falha e a observação passa. Cada máquina recebe o job na hora em que o grupo dela é liberado, se o inventário mostrar o programa instalado para a máquina toda e com desinstalação silenciosa. Nada é criado antes da conferência.</p>
+<form class="campanha" method="post" action="/painel/campanhas/nova">
+<input type="hidden" name="tipo" value="desinstalar"><input type="hidden" name="remover_so" value="{{$.OS}}"><input type="hidden" name="remover_nome" value="{{$.Key}}"><input type="hidden" name="remover_fab" value="{{$.Publisher}}">
+<div class="campo"><label for="rc-nome">Nome</label><input id="rc-nome" name="nome" value="{{.Name}}" maxlength="100" required></div>
+<fieldset class="campo"><legend>Versões a remover</legend><div class="chips">{{range $.Versions}}<label class="anel"><input type="checkbox" name="versao" value="{{.Version}}" checked> <code>{{.Version}}</code> <span class="muted">· {{.Installs}}</span></label>{{end}}</div>
+<small class="muted">todas marcadas: todas as versões, também as que aparecerem depois</small></fieldset>
+<fieldset class="campo"><legend>Grupos de implantação, em ordem</legend><div class="chips">{{range .Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
+<small class="muted">o piloto vem marcado; os outros marcados seguem depois dele, um de cada vez</small></fieldset>
+<div class="campo"><label for="rc-reenvios">Reenvios automáticos das falhas</label><select id="rc-reenvios" name="reenvios">{{range $n := .Resends}}<option value="{{$n}}" {{if eq $n $.Campaign.Resend}}selected{{end}}>{{if eq $n 0}}nenhum: a primeira falha pausa a campanha{{else}}até {{$n}} vez(es) por máquina{{end}}</option>{{end}}</select></div>
+<div class="campo"><label for="rc-observacao">Observação</label><select id="rc-observacao" name="observacao">{{range .Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<fieldset class="campo quando"><legend>Quando</legend>
+<label class="opcao"><input type="radio" name="quando" value="horario" checked><span><b>Em horário fixo, todo dia</b>
+<small class="linha">às <input type="time" name="hora" value="{{.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Campaign.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
+<small>de madrugada, com o programa fechado (fuso {{.TZ}})</small></span></label>
+<label class="opcao"><input type="radio" name="quando" value="janela"><span><b>Na janela de cada grupo de implantação</b></span></label>
+<label class="opcao"><input type="radio" name="quando" value="prazo"><span><b>Já, com prazo de</b>
+<select name="prazo" aria-label="prazo">{{range .TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
+</fieldset>
+<div class="acoes"><button type="submit">Conferir</button></div>
+</form></div>{{end}}{{end}}
 {{template "fim"}}{{end}}
 
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
@@ -1802,6 +1823,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">{{if .Form.Wake}}<input type="hidden" name="ligar" value="1">{{end}}
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
 {{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
+{{if .Form.RemoveKey}}<input type="hidden" name="remover_so" value="{{.Form.RemoveOS}}"><input type="hidden" name="remover_nome" value="{{.Form.RemoveKey}}"><input type="hidden" name="remover_fab" value="{{.Form.RemovePub}}">{{range .Form.RemoveVersions}}<input type="hidden" name="versao" value="{{.}}">{{end}}{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
 <button class="sec" type="submit" name="corrigir" value="1">Corrigir</button>
 </form>

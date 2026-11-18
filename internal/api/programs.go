@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
@@ -329,6 +331,9 @@ type programView struct {
 	NotFound        bool
 	CanRemove       bool   // admin com a chave de jobs: o Remover de cada máquina
 	Self            string // esta página (o voltar do formulário)
+	// A campanha de remoção: o formulário (só admin, Windows, com a chave de jobs).
+	Campaign *campaignForm
+	Key      string // a chave do nome do programa (o campo remover_nome)
 }
 
 // removalLabel: como a entrada sai sem perguntar nada (Windows).
@@ -367,6 +372,10 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 	if q.Get("erro") == "remover" {
 		v.Error = "A remoção não foi pedida: " + q.Get("motivo") + "."
 	}
+	if q.Get("erro") == "campanha" {
+		v.Error = "A campanha de remoção não foi criada: " + q.Get("motivo")
+	}
+	v.Key = key
 	i := slices.IndexFunc(list, func(p fleetProgram) bool { return p.OS == osID && p.Key == key && p.Publisher == pub })
 	if i < 0 {
 		v.NotFound = true
@@ -379,6 +388,19 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 		v.Versions = append(v.Versions, programVersion{Version: dash(ver), Installs: n})
 	}
 	slices.SortFunc(v.Versions, func(a, b programVersion) int { return compareTPVersion(b.Version, a.Version) })
+	if v.CanRemove {
+		f := campaignForm{Type: jobs.TypeUninstall, Name: "Remover " + p.Name, When: "horario", ObserveH: 24, TTLH: 24, Resends: resendChoices,
+			Resend: 1, DailyStart: "02:00", DailyDur: 180, TZ: a.panelLocation().String()}
+		if f.Rings, err = a.ringChoices(r, []int{store.PilotRing}); err != nil {
+			a.internalError(w, r, "listar grupos de implantação", err)
+			return
+		}
+		f.Observe, f.TTL = hourOptions(observeHours, f.ObserveH), hourOptions(ttlHours, f.TTLH)
+		for _, m := range windowDurations {
+			f.Durations = append(f.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
+		}
+		v.Campaign = &f
+	}
 	installs, err := a.store.SoftwareInstalls(r.Context(), osID, p.Names, p.Publisher)
 	if err != nil {
 		a.internalError(w, r, "listar as máquinas do programa", err)
@@ -413,4 +435,90 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 		v.Machines = append(v.Machines, m)
 	}
 	a.render(w, r, http.StatusOK, "programa-instalado", v)
+}
+
+// removeTargetFromForm: o programa da campanha de remoção, achado na lista do parque pelo que
+// o formulário diz (o sistema, a chave do nome e o fabricante); os nomes exatos vêm da lista,
+// não do formulário. As versões marcadas; todas marcadas: todas (também as que aparecerem).
+func (a *api) removeTargetFromForm(r *http.Request, f *campaignForm) (*campaign.RemoveTarget, string) {
+	f.RemoveOS, f.RemoveKey, f.RemovePub = r.PostFormValue("remover_so"), r.PostFormValue("remover_nome"), r.PostFormValue("remover_fab")
+	if f.RemoveOS != "windows" {
+		return nil, "A remoção pelo patchd é só no Windows."
+	}
+	list, _, err := a.fleetPrograms(r.Context())
+	if err != nil {
+		return nil, "Não foi possível ler os programas do parque: " + err.Error()
+	}
+	i := slices.IndexFunc(list, func(p fleetProgram) bool {
+		return p.OS == f.RemoveOS && p.Key == f.RemoveKey && p.Publisher == f.RemovePub
+	})
+	if i < 0 {
+		return nil, "O programa não está mais no inventário de nenhuma máquina."
+	}
+	p := list[i]
+	var versions []string
+	for _, v := range r.PostForm["versao"] {
+		if _, ok := p.Versions[v]; ok && !slices.Contains(versions, v) {
+			versions = append(versions, v)
+		}
+	}
+	f.RemoveVersions = versions
+	if len(versions) == 0 {
+		return nil, "Marque ao menos uma versão a remover."
+	}
+	if len(versions) == len(p.Versions) {
+		versions = nil
+	}
+	slices.SortFunc(versions, func(a, b string) int { return compareTPVersion(a, b) })
+	if len(p.Names) > campaign.MaxRemoveNames {
+		return nil, fmt.Sprintf("O programa aparece com %d nomes diferentes no inventário; a campanha leva até %d. Remova por versão.", len(p.Names), campaign.MaxRemoveNames)
+	}
+	return &campaign.RemoveTarget{Program: p.Name, Publisher: p.Publisher, Names: slices.Clone(p.Names), Versions: versions}, ""
+}
+
+// removePreview: em cada grupo marcado, quantas máquinas têm o programa e quantas o patchd
+// consegue remover agora (instalação de máquina com desinstalação silenciosa).
+func (a *api) removePreview(r *http.Request, f campaignForm, c campaign.Campaign) (map[int]string, error) {
+	installs, err := a.store.SoftwareInstalls(r.Context(), f.RemoveOS, c.Remove.Names, c.Remove.Publisher)
+	if err != nil {
+		return nil, err
+	}
+	machines, err := a.store.Machines(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	ring := map[string]int{}
+	for _, m := range machines {
+		ring[m.ID] = m.Ring
+	}
+	type pair struct{ has, can map[string]bool }
+	by := map[int]*pair{}
+	for _, in := range installs {
+		sw := protocol.Software{Name: in.Name, Version: in.Version, Publisher: c.Remove.Publisher, Scope: in.Scope, Uninstall: in.Uninstall,
+			Source: in.Source, ProductCode: in.ProductCode}
+		if !c.Remove.Matches(sw) {
+			continue
+		}
+		rg, ok := ring[in.MachineID]
+		if !ok {
+			continue
+		}
+		if by[rg] == nil {
+			by[rg] = &pair{map[string]bool{}, map[string]bool{}}
+		}
+		by[rg].has[in.MachineID] = true
+		if removableEntry(sw) == nil {
+			by[rg].can[in.MachineID] = true
+		}
+	}
+	out := map[int]string{}
+	for _, rg := range f.Chosen {
+		p := by[rg]
+		if p == nil {
+			out[rg] = "nenhuma máquina com o programa"
+			continue
+		}
+		out[rg] = fmt.Sprintf("%d com o programa · %d removível(is) pelo patchd", len(p.has), len(p.can))
+	}
+	return out, nil
 }

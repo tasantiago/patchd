@@ -96,6 +96,10 @@ type campaignForm struct {
 	// Microsoft: a campanha do Windows usa a fonte reserva; MicrosoftOn: a reserva está ligada em Parâmetros.
 	Microsoft   bool
 	MicrosoftOn bool
+	// A campanha de remoção (desinstalar): o programa de Inventário › Programas instalados (o
+	// sistema, a chave do nome e o fabricante) e as versões marcadas.
+	RemoveOS, RemoveKey, RemovePub string
+	RemoveVersions                 []string
 }
 
 type campaignsView struct {
@@ -301,6 +305,13 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	if f.Type == jobs.TypeReboot {
 		c.RebootDelay = time.Duration(f.Delay) * time.Minute
 	}
+	if f.Type == jobs.TypeUninstall {
+		t, problem := a.removeTargetFromForm(r, &f)
+		if problem != "" {
+			return c, f, problem
+		}
+		c.Remove = t
+	}
 	if f.Type == jobs.TypeThirdParty {
 		// O select manda "programa versão"; nos outros tipos ele vai junto e é ignorado.
 		parts := strings.Fields(f.Program)
@@ -311,7 +322,7 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	}
 	switch {
 	case f.Type != jobs.TypeRescan && f.Type != jobs.TypeUpdate && f.Type != jobs.TypeWinUpdate && f.Type != jobs.TypeReboot &&
-		f.Type != campaign.TypeOSAll && ((f.Type != jobs.TypeThirdParty && f.Type != campaign.TypeThirdPartyAll) || a.tpManifest == nil):
+		f.Type != campaign.TypeOSAll && f.Type != jobs.TypeUninstall && ((f.Type != jobs.TypeThirdParty && f.Type != campaign.TypeThirdPartyAll) || a.tpManifest == nil):
 		return c, f, "Escolha o tipo: todas as atualizações do sistema, todos os programas aprovados, buscar atualizações, atualizar pacotes, instalar atualizações do Windows, reiniciar ou instalar programa de terceiros."
 	case f.Type == jobs.TypeReboot && !containsInt(rebootDelays, f.Delay):
 		return c, f, "Escolha o aviso do reinício da lista."
@@ -443,6 +454,15 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 			problem = "Grupo de implantação sem janela de manutenção: " + strings.Join(missing, ", ") + ". Defina a janela em Grupos de implantação ou escolha \"com prazo\"."
 		}
 	}
+	if c.Type == jobs.TypeUninstall && (problem != "" || r.PostFormValue("corrigir") == "1") {
+		// A campanha de remoção nasce na página do programa: é lá que se corrige.
+		back := programHref(f.RemoveOS, f.RemoveKey, f.RemovePub)
+		if problem != "" {
+			back += "&" + url.Values{"erro": {"campanha"}, "motivo": {problem}}.Encode()
+		}
+		http.Redirect(w, r, back+"#campanha", http.StatusSeeOther)
+		return
+	}
 	if problem != "" || r.PostFormValue("corrigir") == "1" {
 		v := campaignsView{pageBase: a.baseFor(r.Context(), s, "Campanhas", "campanhas"), CanNew: true}
 		v.Error = problem
@@ -464,6 +484,14 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		v := campaignConfirmView{pageBase: a.baseFor(r.Context(), s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
 			SourcesList: strings.Join(c.Sources, ", "), ObserveL: hoursLabel(f.ObserveH)}
 		var preview map[int]string
+		if c.Type == jobs.TypeUninstall {
+			v.ProgramL = c.Target()
+			if preview, err = a.removePreview(r, f, c); err != nil {
+				a.internalError(w, r, "prever a campanha", err)
+				return
+			}
+			v.Warnings = append(v.Warnings, "Na remoção, cada máquina do grupo recebe o job na hora em que o grupo for liberado, se o inventário dela mostrar o programa instalado para a máquina toda e com desinstalação silenciosa: o agente roda o desinstalador do próprio programa, sem nada na tela, e confere antes que a entrada ainda é dele. Instalações por usuário, sem desinstalação silenciosa e agentes antigos ficam de fora, com o motivo nas liberações. A coluna \"Hoje\" é a previsão de agora. Programa aberto: o desinstalador pode fechá-lo ou falhar; prefira a janela ou o horário fixo.")
+		}
 		if c.Type == jobs.TypeThirdParty {
 			v.ProgramL = "programa: " + c.Target()
 			if preview, err = a.thirdPartyPreview(r, c); err != nil {

@@ -19,7 +19,7 @@ import (
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
 	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
-	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, archived_at, wake`
+	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, archived_at, wake, remove_target`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
@@ -28,11 +28,19 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var cur, launched, accepted, autoResend int16
 	var dStart, dDur *int
 	var dTZ *string
+	var remove []byte
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
 		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
-		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend, &c.ArchivedAt, &c.Wake)
+		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend, &c.ArchivedAt, &c.Wake, &remove)
 	if err != nil {
 		return c, err
+	}
+	if len(remove) > 0 {
+		var t campaign.RemoveTarget
+		if err := json.Unmarshal(remove, &t); err != nil {
+			return c, fmt.Errorf("campanha %d: programa a remover ilegível: %w", c.ID, err)
+		}
+		c.Remove = &t
 	}
 	if dStart != nil && dDur != nil && dTZ != nil {
 		loc, err := time.LoadLocation(*dTZ)
@@ -71,13 +79,21 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 		st, du, tz := int(c.Daily.Start/time.Minute), int(c.Daily.Duration/time.Minute), c.Daily.Location.String()
 		dStart, dDur, dTZ = &st, &du, &tz
 	}
+	var remove []byte
+	if c.Remove != nil {
+		var err error
+		if remove, err = json.Marshal(c.Remove); err != nil {
+			return 0, err
+		}
+	}
 	var id int64
 	err := p.pool.QueryRow(ctx, `
 		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec,
-			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, wake)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
+			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, wake, remove_target)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
 		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
-		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second), c.AutoResend, c.Wake).Scan(&id)
+		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second), c.AutoResend, c.Wake,
+		remove).Scan(&id)
 	return id, err
 }
 
