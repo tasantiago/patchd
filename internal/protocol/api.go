@@ -78,6 +78,10 @@ const CapabilityCloseApps = "fechar-programa-v1"
 // aprovada (o campo replace do job de terceiros). Os anteriores recusam o campo.
 const CapabilityRegularize = "regularizar-v1"
 
+// CapabilityUninstall: o agente remove programas em silêncio (o job desinstalar, de Inventário ›
+// Programas instalados). O servidor só o manda a quem anuncia.
+const CapabilityUninstall = "desinstalar-v1"
+
 // CapabilityShutdown (Aula 22.3): o agente entende o job desligar (sem ninguém conectado). O
 // servidor só o manda a quem anuncia.
 const CapabilityShutdown = "desligar-v1"

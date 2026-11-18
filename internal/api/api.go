@@ -464,6 +464,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/maquinas/{id}/windows/instalar", a.sameOrigin(a.adminAction(a.winUpdateAction))) // Aula 16.3
 	mux.Handle("POST /painel/maquinas/{id}/https", a.sameOrigin(a.adminAction(a.serverURLAction)))
 	mux.Handle("POST /painel/maquinas/{id}/terceiros/atualizar", a.sameOrigin(a.adminAction(a.thirdPartyUpdateAction)))
+	mux.Handle("POST /painel/maquinas/{id}/software/remover", a.sameOrigin(a.adminAction(a.removeSoftwareAction)))    // remover um programa (job desinstalar)
 	mux.Handle("POST /painel/maquinas/{id}/bios/preparar", a.sameOrigin(a.adminAction(a.prepareBIOSAction)))          // Aula 21.4
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/revelar", a.sameOrigin(a.adminAction(a.revealBIOSAction)))   // Aula 21.4
 	mux.Handle("POST /painel/maquinas/{id}/bios/{guarda}/gravar", a.sameOrigin(a.adminAction(a.writeBIOSAction)))     // Aula 21.5

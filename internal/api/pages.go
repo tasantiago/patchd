@@ -849,8 +849,8 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <div class="card"><div class="card-cab"><h2>Versões</h2></div><div class="tabela"><table><thead><tr><th>Versão</th><th>Instalações</th></tr></thead>
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td><td class="num">{{.Installs}}</td></tr>{{end}}</tbody></table></div></div>
 <div class="card"><div class="card-cab"><h2>Máquinas</h2><span class="muted">{{.Shown}}</span></div>
-{{if .Machines}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Versão</th><th>Escopo</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}</tr></thead>
-<tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{if .Machines}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Versão</th><th>Escopo</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}{{if .CanRemove}}<th></th>{{end}}</tr></thead>
+<tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}{{if $.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Source}}"><input type="hidden" name="voltar" value="{{$.Self}}"><button class="perigo" type="submit">Remover desta máquina</button></form></details>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas">{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhuma máquina com ele agora.</p>{{end}}</div>{{end}}
 {{template "fim"}}{{end}}
@@ -1596,9 +1596,10 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <input type="search" name="q" value="{{.Software.Q}}" maxlength="100" placeholder="Nome, fabricante ou versão" aria-label="buscar software">
 <button type="submit">Buscar</button>{{if .Software.Q}} <a href="/painel/maquinas/{{.D.MachineID}}?aba=software">Limpar</a>{{end}}
 </form>
+{{if .Software.RemoveNote}}<p class="muted">{{.Software.RemoveNote}}</p>{{end}}
 {{if .Software.Rows}}<div class="tabela"><table>
-<thead><tr><th>Nome</th><th>Versão</th><th>Fabricante</th><th>Instalado em</th><th>Escopo</th><th>Arquitetura</th></tr></thead>
-<tbody>{{range .Software.Rows}}<tr><td>{{.Name}}{{if .Kind}} <span class="muted">· {{.Kind}}</span>{{end}}</td><td><code>{{.Version}}</code></td><td>{{.Publisher}}</td><td>{{.Installed}}</td><td>{{.Scope}}</td><td>{{.Arch}}</td></tr>{{end}}</tbody></table></div>
+<thead><tr><th>Nome</th><th>Versão</th><th>Fabricante</th><th>Instalado em</th><th>Escopo</th><th>Arquitetura</th>{{if .Software.CanRemove}}<th>Remover</th>{{end}}</tr></thead>
+<tbody>{{range .Software.Rows}}<tr><td>{{.Name}}{{if .Kind}} <span class="muted">· {{.Kind}}</span>{{end}}</td><td><code>{{.Version}}</code></td><td>{{.Publisher}}</td><td>{{.Installed}}</td><td>{{.Scope}}</td><td>{{.Arch}}</td>{{if $.Software.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{$.D.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Key}}"><button class="perigo" type="submit">Remover {{.Name}}</button> <span class="muted">em silêncio, pelo desinstalador do próprio programa</span></form></details>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Software.Shown}}</span>{{if .Software.Prev}}<a href="{{.Software.Prev}}">‹ anterior</a>{{end}}{{if .Software.Next}}<a href="{{.Software.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhum software com esse filtro.</p>{{end}}
 {{else}}<p class="muted">{{if .HasInventory}}O inventário desta máquina não lista software.{{else}}Nenhum inventário recebido desta máquina.{{end}}</p>{{end}}

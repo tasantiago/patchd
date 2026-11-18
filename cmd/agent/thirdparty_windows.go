@@ -51,3 +51,16 @@ func newThirdParty(client *agent.Client, dataDir string, allowed []string) func(
 	e.Remove = u.Remove
 	return e.Install
 }
+
+// newUninstall liga o job desinstalar no Windows: a mesma remoção silenciosa da regularização.
+func newUninstall(dataDir string) func(ctx context.Context, jobID int64, p jobs.UninstallParams) (string, error) {
+	root := os.Getenv("SystemRoot")
+	if root == "" {
+		root = `C:\Windows`
+	}
+	msiexec := filepath.Join(root, "System32", "msiexec.exe")
+	u := &tpexec.Uninstaller{Run: platform.SilentRunner{Timeout: 40 * time.Minute}, Msiexec: msiexec,
+		Lookup: tpexec.LookupUninstall, Split: tpexec.SplitCommandLine}
+	e := &tpexec.Executor{LogDir: filepath.Join(dataDir, "logs"), Msiexec: msiexec, InstallerBusy: platform.WindowsInstallerBusy, Remove: u.Remove}
+	return e.Uninstall
+}

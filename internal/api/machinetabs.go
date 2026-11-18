@@ -170,6 +170,8 @@ const softwarePerPage = 50
 
 type swRow struct {
 	Name, Version, Publisher, Installed, Scope, Arch, Kind string
+	Key                                                    string // a chave Uninstall (Source): o que o formulário de remover leva
+	Removable                                              bool   // instalação de máquina com desinstalação silenciosa registrada
 }
 
 type softwareView struct {
@@ -178,6 +180,8 @@ type softwareView struct {
 	Rows              []swRow
 	Shown, Prev, Next string
 	Collected         string
+	CanRemove         bool   // admin, chave de jobs e agente que remove: o botão Remover
+	RemoveNote        string // por que não há o botão (o agente antigo, por exemplo)
 }
 
 func softwareTab(id string, inv protocol.InventoryReport, q url.Values, stamp func(time.Time) string) softwareView {
@@ -239,6 +243,7 @@ func softwareTab(id string, inv protocol.InventoryReport, q url.Values, stamp fu
 		case s.Held:
 			row.Kind = "travado"
 		}
+		row.Key, row.Removable = s.Source, removableEntry(s) == nil
 		v.Rows = append(v.Rows, row)
 	}
 	return v
@@ -293,6 +298,11 @@ func (a *api) inventoryView(r *http.Request, id string, v *machineView) error {
 	v.SoftwareCount = len(inv.Software)
 	if v.Tab == "software" {
 		v.Software = softwareTab(id, inv, r.URL.Query(), a.stamp)
+		if v.Admin && inv.OS.Family == "windows" {
+			if v.Software.CanRemove, v.Software.RemoveNote, err = a.canRemove(r.Context(), id); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

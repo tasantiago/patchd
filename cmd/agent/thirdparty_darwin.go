@@ -21,3 +21,8 @@ func newThirdParty(client *agent.Client, dataDir string, _ []string) func(ctx co
 	}
 	return e.Install
 }
+
+// newUninstall: só o Windows remove programas pelo patchd.
+func newUninstall(string) func(ctx context.Context, jobID int64, p jobs.UninstallParams) (string, error) {
+	return nil
+}

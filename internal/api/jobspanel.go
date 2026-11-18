@@ -74,6 +74,8 @@ func typeLabel(t string) string {
 		return "desligar (ligada pelo patchd)"
 	case jobs.TypeCleanup:
 		return "limpar temporários"
+	case jobs.TypeUninstall:
+		return "remover programa"
 	case campaign.TypeOSAll: // tipos de campanha, não de job
 		return "todas as atualizações do sistema"
 	case campaign.TypeThirdPartyAll:
@@ -170,6 +172,8 @@ func jobFlash(q map[string][]string, b *pageBase, loc *time.Location) {
 		b.Error = tpUpdateFlash(get("erro"), n)
 	case get("erro") == "job-aberto" && n > 0:
 		b.Error = fmt.Sprintf("Já existe uma busca pedida e ainda em aberto para esta máquina (job %d). Espere o resultado ou cancele o job.", n)
+	case get("erro") == "remover":
+		b.Error = "A remoção não foi pedida: " + get("motivo") + "."
 	case get("erro") == "sem-chave":
 		b.Error = "O servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE); nada foi criado."
 	case get("erro") == "update-aberto" && n > 0:

@@ -507,3 +507,30 @@ func joinNote(a, b string) string {
 	}
 	return a + "; " + b
 }
+
+// Uninstall executa o job desinstalar (Inventário › Programas instalados): remove em silêncio a
+// entrada, pelo mesmo caminho da regularização (o comando sai do registro desta máquina, lido
+// na hora; o nome tem de conferir). Outra instalação MSI em andamento: adiado.
+func (e *Executor) Uninstall(ctx context.Context, jobID int64, p jobs.UninstallParams) (string, error) {
+	if err := p.Validate(); err != nil {
+		return "", fmt.Errorf("%w: %v", jobs.ErrRefused, err)
+	}
+	if e.Remove == nil {
+		return "", fmt.Errorf("%w: este agente não remove programas", jobs.ErrRefused)
+	}
+	if err := e.checkBusy("nada foi removido"); err != nil {
+		return "", err
+	}
+	log := ""
+	if e.LogDir != "" {
+		log = filepath.Join(e.LogDir, "remover-job-"+strconv.FormatInt(jobID, 10)+".log")
+	}
+	note, err := e.Remove(ctx, p.ReplaceEntry, log)
+	if err != nil {
+		return "", err
+	}
+	if note == "a instalação anterior já não estava registrada" {
+		note = p.Name + " já não estava instalado"
+	}
+	return joinNote(note, p.Name+" "+p.Version+" removido"), nil
+}

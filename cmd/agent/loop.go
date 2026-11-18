@@ -246,6 +246,11 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 	}
 	// Job thirdparty (Aula 14.4): no Windows, com o instalador do winget-pkgs guardado no
 	// servidor; no macOS, pelo Installomator.
+	// Remover programas (Inventário › Programas instalados): só no Windows.
+	if un := newUninstall(opts.DataDir); un != nil {
+		ag.Uninstall = un
+		client.Capabilities = append(client.Capabilities, protocol.CapabilityUninstall)
+	}
 	if tp := newThirdParty(client, opts.DataDir, opts.AllowedSigners); tp != nil {
 		ag.ThirdParty = tp
 		// Tentar assim que fechar: o job adiado por programa aberto é vigiado.

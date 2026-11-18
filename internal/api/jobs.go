@@ -149,6 +149,9 @@ func (a *api) judge(r *http.Request, job store.JobRow, res protocol.JobResult) (
 	if job.Type == jobs.TypeThirdParty {
 		return a.judgeThirdParty(r, job, res)
 	}
+	if job.Type == jobs.TypeUninstall {
+		return a.judgeUninstall(r, job, res)
+	}
 	if job.Type == jobs.TypeBIOSPassword { // Aula 21.5
 		return a.judgeBIOS(r, job, res)
 	}

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/texto"
 )
@@ -309,6 +310,7 @@ type programVersion struct {
 type programMachine struct {
 	store.SoftwareInstall
 	Href, Scope, Removal string
+	Removable            bool // instalação de máquina com desinstalação silenciosa
 }
 
 type programView struct {
@@ -325,6 +327,8 @@ type programView struct {
 	At              string
 	Silent, User    int
 	NotFound        bool
+	CanRemove       bool   // admin com a chave de jobs: o Remover de cada máquina
+	Self            string // esta página (o voltar do formulário)
 }
 
 // removalLabel: como a entrada sai sem perguntar nada (Windows).
@@ -355,6 +359,14 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.At = a.stamp(at)
+	v.CanRemove = v.Admin && a.jobKey != nil && osID == "windows"
+	v.Self = "/painel/inventario/programa?" + url.Values{"so": {osID}, "nome": {key}, "fab": {pub}, "pagina": {q.Get("pagina")}}.Encode()
+	if n := q.Get("job"); q.Get("criado") != "" && n != "" {
+		v.Flash = "Remoção pedida (job " + n + "). O agente remove no próximo check-in e manda o inventário; a máquina sai desta lista quando a lista do parque for recalculada (até 10 minutos)."
+	}
+	if q.Get("erro") == "remover" {
+		v.Error = "A remoção não foi pedida: " + q.Get("motivo") + "."
+	}
 	i := slices.IndexFunc(list, func(p fleetProgram) bool { return p.OS == osID && p.Key == key && p.Publisher == pub })
 	if i < 0 {
 		v.NotFound = true
@@ -395,6 +407,8 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 		}
 		if osID == "windows" {
 			m.Removal = removalLabel(in.Uninstall)
+			m.Removable = removableEntry(protocol.Software{Name: in.Name, Version: in.Version, Scope: in.Scope, Uninstall: in.Uninstall,
+				Source: in.Source, ProductCode: in.ProductCode}) == nil
 		}
 		v.Machines = append(v.Machines, m)
 	}
