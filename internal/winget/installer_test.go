@@ -181,3 +181,19 @@ func TestDescartes(t *testing.T) {
 		t.Errorf("escopo declarado: %s", in.Type)
 	}
 }
+
+// Nenhum instalador serve: o erro diz o que o manifesto tem e, se for só por usuário, por que
+// o patchd não instala (o caso do Postman: exe x64 escopo user).
+func TestNenhumServeDizOQueHa(t *testing.T) {
+	m := Manifest{PackageIdentifier: "Postman.Postman", PackageVersion: "12.37.2",
+		Installers: []Installer{{Architecture: "x64", Type: "exe", Scope: "user", URL: "https://x", SHA256: strings.Repeat("a", 64)}}}
+	_, _, err := m.Select(Want{Arch: "x64", Type: "msi"})
+	if err == nil || !strings.Contains(err.Error(), "o manifesto tem: exe x64 escopo user") || !strings.Contains(err.Error(), "só instalação por usuário") {
+		t.Fatalf("erro: %v", err)
+	}
+	m.Installers = append(m.Installers, Installer{Architecture: "x86", Type: "msi", Scope: "machine", URL: "https://y", SHA256: strings.Repeat("b", 64)})
+	if _, _, err := m.Select(Want{Arch: "arm64", Type: "inno"}); err == nil || strings.Contains(err.Error(), "só instalação por usuário") ||
+		!strings.Contains(err.Error(), "msi x86 escopo machine") {
+		t.Errorf("misto: %v", err)
+	}
+}
