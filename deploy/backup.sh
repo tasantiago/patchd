@@ -2,12 +2,15 @@
 # Cópia do banco de produção, no compose ou no Podman (Aulas 10.1, 10.3 e 23.1).
 #
 #   ./deploy/backup.sh [PASTA]
+#   ./deploy/backup.sh --limpar     só apaga as cópias além do limite (sem cópia nova)
 #
 # pg_dump no formato custom (-Fc: comprimido, restaurável tabela a tabela) de dentro do
 # container do Postgres, sem parar o servidor: o pg_dump lê uma foto consistente do banco.
 # A cópia é conferida (pg_restore --list lê o arquivo inteiro) antes de ganhar o nome final,
 # recebe um .sha256 ao lado e as contagens do momento; cópias mais velhas que
-# PATCHD_BACKUP_KEEP_DAYS (padrão 14) são apagadas. Duas execuções ao mesmo tempo: a
+# PATCHD_BACKUP_KEEP_DAYS (padrão 14) são apagadas. Com PATCHD_BACKUP_KEEP_COUNT=N (do
+# ambiente ou do deploy/.env), ficam também só as N mais recentes (e a de antes da última
+# atualização, que o atualizar.sh --voltar --confirmo usa). Duas execuções ao mesmo tempo: a
 # segunda espera.
 #
 # A cópia tem tudo o que está no banco (hashes de senha, de credenciais, a fila de jobs).
@@ -23,10 +26,54 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 . deploy/comum.sh   # pg: o Postgres do motor do deploy/.env (Aulas 10.4 e 23.1)
+so_limpar=false
+if [ "${1:-}" = --limpar ]; then so_limpar=true; shift; fi
 DEST="${1:-$(backup_dir)}"   # PATCHD_BACKUP_DIR: do ambiente ou do deploy/.env
 RECIPIENTS="${PATCHD_BACKUP_RECIPIENTS_FILE:-deploy/secrets/backup_recipients}"
 KEEP_DAYS="${PATCHD_BACKUP_KEEP_DAYS:-14}"
 case "$KEEP_DAYS" in ''|*[!0-9]*) echo "PATCHD_BACKUP_KEEP_DAYS deve ser um número de dias" >&2; exit 2 ;; esac
+KEEP_COUNT="${PATCHD_BACKUP_KEEP_COUNT:-$(env_get PATCHD_BACKUP_KEEP_COUNT | tr -d '\r"'"'")}"
+case "$KEEP_COUNT" in ''|0) KEEP_COUNT=0 ;; *[!0-9]*) echo "PATCHD_BACKUP_KEEP_COUNT deve ser um número de cópias" >&2; exit 2 ;; esac
+
+# podar: apaga as cópias com mais de KEEP_DAYS dias e, com KEEP_COUNT, as além das
+# KEEP_COUNT mais recentes (o nome leva a data: a ordem do nome é a da cópia). A cópia de
+# antes da última atualização (não desfeita) fica: é a do atualizar.sh --voltar --confirmo.
+removed=0
+podar() {
+  local old f i=0 protegida=""
+  while IFS= read -r -d '' old; do
+    rm -f "$old" "$old.sha256" "$old.contagens"
+    removed=$((removed + 1))
+  done < <(find "$DEST" -maxdepth 1 \( -name 'patchd-*.dump' -o -name 'patchd-*.dump.age' \) -mtime +"$KEEP_DAYS" -print0)
+  [ "$KEEP_COUNT" -gt 0 ] || return 0
+  if [ -s deploy/.atualizacao ] && ! grep -q '^DESFEITA=' deploy/.atualizacao; then
+    protegida="$(sed -n 's/^COPIA=//p' deploy/.atualizacao | tail -1)"
+    protegida="${protegida##*/}"
+  fi
+  while IFS= read -r f; do
+    i=$((i + 1))
+    [ "$i" -le "$KEEP_COUNT" ] && continue
+    if [ -n "$protegida" ] && [ "$f" = "$protegida" ]; then
+      echo "fica também $f: a cópia de antes da última atualização (atualizar.sh --voltar --confirmo)"
+      continue
+    fi
+    rm -f "$DEST/$f" "$DEST/$f.sha256" "$DEST/$f.contagens"
+    removed=$((removed + 1))
+  done < <(find "$DEST" -maxdepth 1 -type f \( -name 'patchd-*.dump' -o -name 'patchd-*.dump.age' \) -printf '%f\n' | sort -r)
+}
+limite() {
+  if [ "$KEEP_COUNT" -gt 0 ]; then echo "além das $KEEP_COUNT mais recentes ou com mais de $KEEP_DAYS dias"; else echo "com mais de $KEEP_DAYS dias"; fi
+}
+
+if $so_limpar; then
+  [ -d "$DEST" ] || { echo "a pasta das cópias $DEST não existe" >&2; exit 1; }
+  exec 9>"$DEST/.lock"
+  flock 9
+  podar
+  echo "$removed cópia(s) $(limite) removida(s) de $DEST; ficaram:"
+  find "$DEST" -maxdepth 1 -type f \( -name 'patchd-*.dump' -o -name 'patchd-*.dump.age' \) -printf '%f\n' | sort -r | sed 's/^/  /'
+  exit 0
+fi
 
 
 # Cifra: decidida e conferida antes do pg_dump (destinatário inválido falha já, sem cópia).
@@ -84,12 +131,8 @@ then
   echo "aviso: a cópia não foi registrada no banco (o servidor já aplicou a migration 0023?)" >&2
 fi
 
-removed=0
-while IFS= read -r -d '' old; do
-  rm -f "$old" "$old.sha256" "$old.contagens"
-  removed=$((removed + 1))
-done < <(find "$DEST" -maxdepth 1 \( -name 'patchd-*.dump' -o -name 'patchd-*.dump.age' \) -mtime +"$KEEP_DAYS" -print0)
+podar
 
 size="$(du -h "$DEST/$name" | cut -f1)"
 if $encrypt; then cifra="cifrada para $nrec destinatário(s)"; else cifra="SEM cifra"; fi
-echo "cópia $DEST/$name ($size, $cifra) conferida; $removed cópia(s) com mais de $KEEP_DAYS dias removida(s)"
+echo "cópia $DEST/$name ($size, $cifra) conferida; $removed cópia(s) $(limite) removida(s)"

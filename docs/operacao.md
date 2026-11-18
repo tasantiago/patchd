@@ -54,7 +54,10 @@ sincronização.
   `pg_dump` roda dentro do container do Postgres, com o servidor no ar, e grava no formato
   custom. A cópia é conferida (`pg_restore --list`) antes de ganhar o nome final e recebe um
   `.sha256` e as contagens do momento ao lado. Cópias com mais de
-  `PATCHD_BACKUP_KEEP_DAYS` dias (padrão 14) são apagadas. Cada cópia é registrada no banco
+  `PATCHD_BACKUP_KEEP_DAYS` dias (padrão 14) são apagadas; com `PATCHD_BACKUP_KEEP_COUNT=N`
+  (no ambiente ou no `deploy/.env`), ficam só as N mais recentes, mais a de antes da última
+  atualização enquanto ela não for desfeita (a do `atualizar.sh --voltar --confirmo`).
+  `./deploy/backup.sh --limpar` aplica o limite na hora, sem fazer cópia. Cada cópia é registrada no banco
   (tabela `backup_runs`) e aparece nas métricas (`patchd_backup_last_*`).
 - **Agenda:** `deploy/systemd/patchd-backup.{service,timer}` (todo dia às 02:30, com até
   15 minutos de sorteio; ajuste `WorkingDirectory`).

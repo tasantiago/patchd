@@ -333,6 +333,13 @@ mv deploy/backups/patchd-* /srv/patchd/backups/
 ./deploy/backup.sh             # confere: a cópia nova sai na pasta nova
 ```
 
+Para guardar só as cópias mais recentes (as 3, por exemplo):
+
+```bash
+echo 'PATCHD_BACKUP_KEEP_COUNT=3' >> deploy/.env
+./deploy/backup.sh --limpar    # apaga as outras agora; o timer mantém o limite
+```
+
 O `backup.sh` (e o timer), o `atualizar.sh` e o `limpar.sh` leem a pasta do `.env`; o
 `atualizar.sh --voltar --confirmo` acha a cópia de antes da atualização também na pasta nova.
 
