@@ -30,6 +30,13 @@ sem_patchd() {
 
 # env_get CHAVE: o valor da chave no deploy/.env (vazio se não houver).
 env_get() { sed -n "s/^$1=//p" deploy/.env 2>/dev/null | tail -1; }
+# backup_dir: a pasta das cópias do banco. PATCHD_BACKUP_DIR do ambiente, senão a do
+# deploy/.env, senão deploy/backups. (Antes só o ambiente valia: a do .env era ignorada.)
+backup_dir() {
+  local d="${PATCHD_BACKUP_DIR:-}"
+  [ -n "$d" ] || d="$(env_get PATCHD_BACKUP_DIR | tr -d '\r"'"'")"
+  echo "${d:-deploy/backups}"
+}
 # env_tem CHAVE: a chave está no deploy/.env (mesmo vazia).
 env_tem() { grep -q "^$1=" deploy/.env 2>/dev/null; }
 

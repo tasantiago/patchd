@@ -47,7 +47,10 @@ jobs, campanhas, grupos de implantação e janelas, tokens de registro, usuário
 catálogo (MSRC, USN, Fedora, Apple, KEV) também está, mas se refaz sozinho na próxima
 sincronização.
 
-- **Cópia:** `./deploy/backup.sh [PASTA]` (padrão `deploy/backups`, fora do git). O
+- **Cópia:** `./deploy/backup.sh [PASTA]` (sem PASTA: `PATCHD_BACKUP_DIR`, do ambiente ou do
+  `deploy/.env`; sem ela, `deploy/backups`, fora do git). Cada cópia tem o tamanho do banco
+  comprimido, e ficam as de 14 dias: com o repositório num `/home` pequeno, aponte
+  `PATCHD_BACKUP_DIR` para um disco maior (`PATCHD_BACKUP_DIR=/srv/patchd/backups` no `.env`). O
   `pg_dump` roda dentro do container do Postgres, com o servidor no ar, e grava no formato
   custom. A cópia é conferida (`pg_restore --list`) antes de ganhar o nome final e recebe um
   `.sha256` e as contagens do momento ao lado. Cópias com mais de
