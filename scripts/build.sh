@@ -137,11 +137,15 @@ for alvo in $ALVOS_AGENTE; do
   echo "ok  $saida"
 done
 
-for arch in amd64 arm64; do
-  saida="dist/patchd-server-linux-${arch}"
-  GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$saida" ./cmd/server
-  echo "ok  $saida"
-done
+# PATCHD_BUILD_SERVER=0: só o agente (o deploy/agente.sh: o servidor sai da imagem do
+# atualizar.sh, e os dois binários dele custariam uns 80 MB no disco do build).
+if [ "${PATCHD_BUILD_SERVER:-1}" != 0 ]; then
+  for arch in amd64 arm64; do
+    saida="dist/patchd-server-linux-${arch}"
+    GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$saida" ./cmd/server
+    echo "ok  $saida"
+  done
+fi
 
 # O script de instalação da frota Windows vai junto: dist/ vira o pacote do ITOM e da GPO.
 cp deploy/agent/windows/instalar.cmd dist/

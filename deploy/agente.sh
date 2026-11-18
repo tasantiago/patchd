@@ -90,6 +90,23 @@ GOIMG="$(sed -n 's/^FROM \(docker\.io\/library\/golang:[^ ]*\).*/\1/p' deploy/Do
 # Um clone limpo do commit atual: o build não toca no repositório do servidor.
 # Em ~/.cache, e não no /run/user (um tmpfs pequeno): o build gera uns 200 MB.
 mkdir -p "$HOME/.cache"
+
+# Espaço antes de começar: o build (o clone, o dist e as caches do Go nos volumes do Podman)
+# e a cópia da versão assinada. Sem ele, o build parava no meio com "no space left on device".
+livre_mb() { df -Pm "$1" 2>/dev/null | awk 'NR==2 {print $4}'; }
+falta=""
+for par in "$HOME/.cache:1500" "$RELEASES:400" "$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || echo "$HOME"):1500"; do
+  dir="${par%:*}"; min="${par##*:}"
+  l="$(livre_mb "$dir")"
+  if [ -n "$l" ] && [ "$l" -lt "$min" ]; then
+    falta="$falta\n  $dir: ${l} MB livres (o build precisa de uns $min MB)"
+  fi
+done
+if [ -n "$falta" ]; then
+  printf 'pouco espaço em disco:%b\n' "$falta" >&2
+  echo "veja o que ocupa e libere com: ./deploy/limpar.sh (mostra) e ./deploy/limpar.sh --aplicar" >&2
+  exit 1
+fi
 T="$(mktemp -d "$HOME/.cache/patchd-agente.XXXXXX")"
 apaga_chave=false
 case "$(realpath "$KEY")" in /dev/shm/*|"${XDG_RUNTIME_DIR:-/nenhum}"/*) apaga_chave=true ;; esac
@@ -114,7 +131,7 @@ podman run --rm -i \
   -e VERSAO="$VERSAO" -e PATCHD_JOB_PUBKEY="$JOBPUB" \
   -e PATCHD_UPDATE_PUBKEY_NEXT="$(val PATCHD_UPDATE_PUBKEY_NEXT)" \
   -e PATCHD_JOB_PUBKEY_NEXT="$(val PATCHD_JOB_PUBKEY_NEXT)" \
-  -e PATCHD_APP_COMPANY="$(val PATCHD_APP_COMPANY)" -e PATCHD_APP_NAME="$APPNAME" \
+  -e PATCHD_APP_COMPANY="$(val PATCHD_APP_COMPANY)" -e PATCHD_APP_NAME="$APPNAME" -e PATCHD_BUILD_SERVER=0 \
   -e HTTPS_PROXY="${HTTPS_PROXY:-$(val HTTPS_PROXY)}" -e HTTP_PROXY="${HTTP_PROXY:-$(val HTTP_PROXY)}" \
   -e NO_PROXY="${NO_PROXY:-$(val NO_PROXY)}" \
   "$GOIMG" bash -c '
