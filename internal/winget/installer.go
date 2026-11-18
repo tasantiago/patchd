@@ -245,6 +245,42 @@ func ArchRank(machine, inst string) int {
 	return slices.Index(archOrder[machine], inst)
 }
 
+// offered: o que o manifesto oferece, para o erro de nenhum servir ("; o manifesto tem: exe x64
+// escopo user"). Só escopo user: o agente instala como SYSTEM, para a máquina toda.
+func offered(list []Installer) string {
+	if len(list) == 0 {
+		return ""
+	}
+	var parts []string
+	userOnly := true
+	for _, in := range list {
+		scope := in.Scope
+		if scope == "" {
+			scope = "não declarado"
+		}
+		userOnly = userOnly && in.Scope == "user"
+		p := fmt.Sprintf("%s %s escopo %s", dash(in.Type), dash(in.Architecture), scope)
+		if !slices.Contains(parts, p) {
+			parts = append(parts, p)
+		}
+		if len(parts) == 6 {
+			break
+		}
+	}
+	out := "; o manifesto tem: " + strings.Join(parts, ", ")
+	if userOnly {
+		out += " (só instalação por usuário: o patchd instala para a máquina toda; o programa se atualiza sozinho em cada perfil, ou use o instalador corporativo do fabricante como instalador próprio)"
+	}
+	return out
+}
+
+func dash(s string) string {
+	if s == "" {
+		return "?"
+	}
+	return s
+}
+
 // Select escolhe o instalador: a arquitetura mais próxima da máquina, o escopo declarado
 // igual ao pedido antes do não declarado, e, no empate, o primeiro do manifesto (como o
 // winget). Devolve também os outros, com o motivo de cada um.
@@ -266,8 +302,8 @@ func (m Manifest) Select(w Want) (Installer, []Skipped, error) {
 		cands = append(cands, in)
 	}
 	if len(cands) == 0 {
-		return Installer{}, skipped, fmt.Errorf("%s %s: nenhum instalador serve (%s, escopo %s%s)",
-			m.PackageIdentifier, m.PackageVersion, w.Arch, w.Scope, typeHint(w.Type))
+		return Installer{}, skipped, fmt.Errorf("%s %s: nenhum instalador serve (%s, escopo %s%s)%s",
+			m.PackageIdentifier, m.PackageVersion, w.Arch, w.Scope, typeHint(w.Type), offered(m.Installers))
 	}
 	rank := func(in Installer) (int, int) {
 		scope := 0
