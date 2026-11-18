@@ -1554,6 +1554,15 @@ componentes do sistema e as atualizações ficam escondidos até clicar em "most
 as versões, as máquinas e, no Windows, como cada instalação sai (MSI, silenciosa do fabricante,
 Inno Setup, ou "sem desinstalação silenciosa").
 
+**CSV.** O botão **CSV** da lista baixa todos os programas do sistema da aba, com a mesma busca
+e o mesmo "mostrar os do sistema" da tela, sem páginas: um programa por linha, com as
+instalações, todas as versões (e quantas de cada), as instalações por usuário, os nomes exatos do
+inventário e, no Windows, quantas têm desinstalação silenciosa. Na página do programa, o **CSV**
+das máquinas traz uma linha por instalação: a máquina, a versão, o escopo, o usuário (na
+instalação por usuário) e, no Windows, como sai, se o patchd remove, o ProductCode e a chave do
+registro. Os arquivos saem como os outros do painel (UTF-8 com BOM, separados por `;`, para o
+Excel) e cada exportação fica na auditoria (`exportar.csv`).
+
 **Remover de uma máquina.** O administrador (com a chave de jobs no servidor) vê **Remover**
 ao lado da instalação, na página do programa e na aba Software da máquina. O job `desinstalar`
 roda o desinstalador do próprio programa, sem nada na tela, do mesmo jeito da regularização:

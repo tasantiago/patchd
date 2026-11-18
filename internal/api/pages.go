@@ -828,7 +828,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <h1>Inventário <span class="muted">› Programas instalados</span></h1>
 {{template "inventario-abas" "programas"}}
 <nav class="abas" aria-label="sistema operacional">{{range .Tabs}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}} <span class="muted">{{.Count}}</span></a>{{end}}</nav>
-<div class="card"><div class="card-cab"><h2>Programas no {{.OSLabel}}</h2><span class="muted">do inventário atual de cada máquina · calculado {{.At}}</span></div>
+<div class="card"><div class="card-cab"><h2>Programas no {{.OSLabel}}</h2><span><span class="muted">do inventário atual de cada máquina · calculado {{.At}}</span>{{if .Rows}} <a class="btn" href="{{.CSVHref}}">CSV</a>{{end}}</span></div>
 <p class="muted">Cada linha junta as entradas do mesmo programa e fabricante, de qualquer versão ou arquitetura. Clique no programa para ver as versões e as máquinas.{{if .Hidden}} {{if .System}}<a href="{{.SystemHref}}">Esconder os {{.Hidden}} componentes do sistema e atualizações</a>.{{else}}{{.Hidden}} componente(s) do sistema e atualizações ficam fora: <a href="{{.SystemHref}}">mostrar</a>.{{end}}{{end}}</p>
 <form class="busca" method="get" action="/painel/inventario/programas"><input type="hidden" name="so" value="{{.OS}}">{{if .System}}<input type="hidden" name="sistema" value="1">{{end}}
 <input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Programa ou fabricante (chrome, adobe…)" aria-label="buscar programa"><button type="submit">Buscar</button>{{if .Q}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>
@@ -848,7 +848,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <p class="muted">Do inventário atual de cada máquina (calculado {{.At}}).</p></div>
 <div class="card"><div class="card-cab"><h2>Versões</h2></div><div class="tabela"><table><thead><tr><th>Versão</th><th>Instalações</th></tr></thead>
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td><td class="num">{{.Installs}}</td></tr>{{end}}</tbody></table></div></div>
-<div class="card"><div class="card-cab"><h2>Máquinas</h2><span class="muted">{{.Shown}}</span></div>
+<div class="card"><div class="card-cab"><h2>Máquinas</h2><span><span class="muted">{{.Shown}}</span>{{if .Machines}} <a class="btn" href="{{.CSVHref}}">CSV</a>{{end}}</span></div>
 {{if .Machines}}<div class="tabela"><table><thead><tr><th>Máquina</th><th>Versão</th><th>Escopo</th>{{if eq .OS "windows"}}<th>Remoção</th>{{end}}{{if .CanRemove}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}{{if $.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Source}}"><input type="hidden" name="voltar" value="{{$.Self}}"><button class="perigo" type="submit">Remover desta máquina</button></form></details>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas">{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/campaign"
+	"github.com/tasantiago/patchd/internal/export"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
@@ -217,6 +219,7 @@ type programsView struct {
 	SystemHref    string
 	At, ClearHref string
 	Unavailable   string
+	CSVHref       string // a lista inteira em CSV, com o mesmo filtro
 }
 
 // programsPage: GET /painel/inventario/programas?so=windows&q=&sistema=1&pagina=N.
@@ -252,25 +255,9 @@ func (a *api) programsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.At = a.stamp(at)
-	counts := map[string]int{}
-	needle := strings.ToLower(search)
-	var shown []fleetProgram
-	for _, p := range list {
-		if p.System && !system {
-			if p.OS == osID {
-				v.Hidden++
-			}
-			continue
-		}
-		counts[p.OS]++
-		if p.OS != osID {
-			continue
-		}
-		if needle != "" && !strings.Contains(p.Key, needle) && !strings.Contains(strings.ToLower(p.Publisher), needle) {
-			continue
-		}
-		shown = append(shown, p)
-	}
+	v.CSVHref = programsCSVHref(osID, search, system)
+	shown, counts, hidden := filterPrograms(list, osID, search, system)
+	v.Hidden = hidden
 	for _, o := range programOS {
 		v.Tabs = append(v.Tabs, programTab{Label: o.Label, Href: link(o.ID, system, search, 1), Count: counts[o.ID], Active: o.ID == osID})
 	}
@@ -287,21 +274,174 @@ func (a *api) programsPage(w http.ResponseWriter, r *http.Request) {
 		v.Next = link(osID, system, search, page+1)
 	}
 	for _, p := range shown[from:to] {
-		row := programRow{Name: p.Name, Publisher: dash(p.Publisher), Href: programHref(p.OS, p.Key, p.Publisher), Installs: p.Installs,
-			Versions: versionsText(p.Versions, 3), VersionCount: len(p.Versions), System: p.System}
-		if p.OS == "windows" {
-			switch {
-			case p.Silent == p.Installs:
-				row.Removal = "silenciosa"
-			case p.Silent > 0:
-				row.Removal = fmt.Sprintf("silenciosa em %d de %d", p.Silent, p.Installs)
-			default:
-				row.Removal = "sem desinstalação silenciosa"
-			}
-		}
-		v.Rows = append(v.Rows, row)
+		v.Rows = append(v.Rows, programRow{Name: p.Name, Publisher: dash(p.Publisher), Href: programHref(p.OS, p.Key, p.Publisher), Installs: p.Installs,
+			Versions: versionsText(p.Versions, 3), VersionCount: len(p.Versions), System: p.System, Removal: programRemoval(p)})
 	}
 	a.render(w, r, http.StatusOK, "programas", v)
+}
+
+// filterPrograms: os programas do sistema com a busca (no nome e no fabricante), como a tela
+// mostra; counts, os de cada sistema (as abas); hidden, os componentes do sistema que ficaram
+// fora (sem ?sistema=1).
+func filterPrograms(list []fleetProgram, osID, search string, system bool) (shown []fleetProgram, counts map[string]int, hidden int) {
+	counts = map[string]int{}
+	needle := strings.ToLower(search)
+	for _, p := range list {
+		if p.System && !system {
+			if p.OS == osID {
+				hidden++
+			}
+			continue
+		}
+		counts[p.OS]++
+		if p.OS != osID {
+			continue
+		}
+		if needle != "" && !strings.Contains(p.Key, needle) && !strings.Contains(strings.ToLower(p.Publisher), needle) {
+			continue
+		}
+		shown = append(shown, p)
+	}
+	return shown, counts, hidden
+}
+
+// programRemoval: como o programa sai, no Windows ("" nos outros sistemas).
+func programRemoval(p fleetProgram) string {
+	switch {
+	case p.OS != "windows":
+		return ""
+	case p.Silent == p.Installs:
+		return "silenciosa"
+	case p.Silent > 0:
+		return fmt.Sprintf("silenciosa em %d de %d", p.Silent, p.Installs)
+	}
+	return "sem desinstalação silenciosa"
+}
+
+// programsCSVHref: o CSV da lista com o mesmo filtro da tela.
+func programsCSVHref(osID, search string, system bool) string {
+	u := url.Values{"so": {osID}}
+	if search != "" {
+		u.Set("q", search)
+	}
+	if system {
+		u.Set("sistema", "1")
+	}
+	return "/painel/inventario/programas.csv?" + u.Encode()
+}
+
+// programsCSV: GET /painel/inventario/programas.csv?so=&q=&sistema=1, a lista inteira (sem
+// páginas) com o filtro da tela, um programa por linha, com todas as versões.
+func (a *api) programsCSV(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	osID := q.Get("so")
+	if programOSLabel(osID) == osID {
+		osID = "windows"
+	}
+	search := texto.Clip(strings.TrimSpace(q.Get("q")), maxSearchLen)
+	system := q.Get("sistema") == "1"
+	list, at, err := a.fleetPrograms(r.Context())
+	if a.canceled(r, err) {
+		return
+	}
+	if err != nil {
+		a.internalError(w, r, "listar os programas do parque", err)
+		return
+	}
+	shown, _, _ := filterPrograms(list, osID, search, system)
+	rows := make([][]string, 0, len(shown))
+	for _, p := range shown {
+		versions := make([]string, 0, len(p.Versions))
+		for ver := range p.Versions {
+			versions = append(versions, ver)
+		}
+		slices.SortFunc(versions, func(a, b string) int { return compareTPVersion(b, a) })
+		for i, ver := range versions {
+			versions[i] = fmt.Sprintf("%s (%d)", cmp.Or(ver, "sem versão"), p.Versions[ver])
+		}
+		row := []string{programOSLabel(p.OS), p.Name, p.Publisher, strconv.Itoa(p.Installs), strconv.Itoa(len(p.Versions)),
+			strings.Join(versions, ", "), strconv.Itoa(p.User), yesNo(p.System), strings.Join(p.Names, " | ")}
+		if osID == "windows" {
+			row = append(row, strconv.Itoa(p.Silent), programRemoval(p))
+		}
+		rows = append(rows, row)
+	}
+	header := []string{"sistema", "programa", "fabricante", "instalacoes", "qtd_versoes", "versoes", "por_usuario", "componente_do_sistema", "nomes_no_inventario"}
+	if osID == "windows" {
+		header = append(header, "com_desinstalacao_silenciosa", "remocao")
+	}
+	suffix := ""
+	if search != "" {
+		suffix = "-busca"
+	}
+	name := fmt.Sprintf("patchd-programas-%s%s-%s.csv", osID, suffix, at.UTC().Format("20060102-1504"))
+	a.sendCSV(w, r, name, len(rows), func(b *bytes.Buffer) error { return export.Table(b, header, rows) })
+}
+
+// programCSV: GET /painel/inventario/programa.csv?so=&nome=&fab=, as instalações do programa,
+// uma por linha (todas, sem páginas).
+func (a *api) programCSV(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	osID, key, pub := q.Get("so"), q.Get("nome"), q.Get("fab")
+	list, at, err := a.fleetPrograms(r.Context())
+	if a.canceled(r, err) {
+		return
+	}
+	if err != nil {
+		a.internalError(w, r, "listar os programas do parque", err)
+		return
+	}
+	i := slices.IndexFunc(list, func(p fleetProgram) bool { return p.OS == osID && p.Key == key && p.Publisher == pub })
+	if i < 0 {
+		http.NotFound(w, r)
+		return
+	}
+	p := list[i]
+	installs, err := a.store.SoftwareInstalls(r.Context(), osID, p.Names, p.Publisher)
+	if err != nil {
+		a.internalError(w, r, "listar as máquinas do programa", err)
+		return
+	}
+	header := []string{"maquina", "id", "programa", "fabricante", "nome_no_inventario", "versao", "escopo", "usuario"}
+	if osID == "windows" {
+		header = append(header, "remocao", "removivel_pelo_patchd", "product_code", "chave")
+	}
+	rows := make([][]string, 0, len(installs))
+	for _, in := range installs {
+		scope := "máquina"
+		if in.Scope == "user" {
+			scope = "usuário"
+		}
+		row := []string{in.Hostname, in.MachineID, p.Name, p.Publisher, in.Name, in.Version, scope, in.User}
+		if osID == "windows" {
+			ok := removableEntry(protocol.Software{Name: in.Name, Version: in.Version, Scope: in.Scope, Uninstall: in.Uninstall,
+				Source: in.Source, ProductCode: in.ProductCode}) == nil
+			row = append(row, removalLabel(in.Uninstall), yesNo(ok), in.ProductCode, in.Source)
+		}
+		rows = append(rows, row)
+	}
+	name := fmt.Sprintf("patchd-programa-%s-%s-%s.csv", osID, fileSlug(p.Name), at.UTC().Format("20060102-1504"))
+	a.sendCSV(w, r, name, len(rows), func(b *bytes.Buffer) error { return export.Table(b, header, rows) })
+}
+
+// fileSlug: o nome do programa no nome do arquivo (só letras, números e hífen; até 40).
+func fileSlug(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+			dash = false
+		case !dash && b.Len() > 0:
+			b.WriteByte('-')
+			dash = true
+		}
+		if b.Len() >= 40 {
+			break
+		}
+	}
+	return cmp.Or(strings.Trim(b.String(), "-"), "programa")
 }
 
 type programVersion struct {
@@ -334,6 +474,7 @@ type programView struct {
 	// A campanha de remoção: o formulário (só admin, Windows, com a chave de jobs).
 	Campaign *campaignForm
 	Key      string // a chave do nome do programa (o campo remover_nome)
+	CSVHref  string // as máquinas em CSV (todas)
 }
 
 // removalLabel: como a entrada sai sem perguntar nada (Windows).
@@ -376,6 +517,7 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 		v.Error = "A campanha de remoção não foi criada: " + q.Get("motivo")
 	}
 	v.Key = key
+	v.CSVHref = "/painel/inventario/programa.csv?" + url.Values{"so": {osID}, "nome": {key}, "fab": {pub}}.Encode()
 	i := slices.IndexFunc(list, func(p fleetProgram) bool { return p.OS == osID && p.Key == key && p.Publisher == pub })
 	if i < 0 {
 		v.NotFound = true

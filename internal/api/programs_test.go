@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/export"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
@@ -62,6 +63,38 @@ func TestProgramasInstalados(t *testing.T) {
 	}
 	if r := pagina(h, "GET", "/painel/inventario/programa?so=windows&nome=nada&fab=", sessaoAdmin, nil); r.Code != http.StatusNotFound {
 		t.Errorf("programa que não existe: %d", r.Code)
+	}
+	// Os CSVs: a lista com o filtro da tela, e as máquinas do programa.
+	if !strings.Contains(b, `href="/painel/inventario/programa.csv?fab=The&#43;Document&#43;Foundation&amp;nome=libreoffice&amp;so=windows"`) {
+		t.Error("link do CSV do programa")
+	}
+	if b := pagina(h, "GET", "/painel/inventario/programas?q=libre", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `href="/painel/inventario/programas.csv?q=libre&amp;so=windows"`) {
+		t.Error("link do CSV da lista")
+	}
+	r = pagina(h, "GET", "/painel/inventario/programas.csv?so=windows", sessaoTeste, nil)
+	c := r.Body.String()
+	if r.Code != http.StatusOK || !strings.HasPrefix(r.Header().Get("Content-Disposition"), `attachment; filename="patchd-programas-windows-`) ||
+		!strings.Contains(c, "sistema;programa;fabricante;instalacoes;qtd_versoes;versoes;por_usuario;componente_do_sistema;nomes_no_inventario;com_desinstalacao_silenciosa;remocao\r\n") ||
+		!strings.Contains(c, "Windows;LibreOffice;The Document Foundation;2;2;26.8.3.1 (1), 25.2.1.1 (1);0;não;LibreOffice 25.2.1.1 | LibreOffice 26.8.3.1;2;silenciosa\r\n") ||
+		!strings.Contains(c, "Windows;Ferramenta;X;1;1;2.0 (1);1;não;Ferramenta;0;sem desinstalação silenciosa\r\n") || strings.Contains(c, "Edge Update") {
+		t.Errorf("CSV da lista: %d %q\n%s", r.Code, r.Header().Get("Content-Disposition"), c)
+	}
+	if c := pagina(h, "GET", "/painel/inventario/programas.csv?so=windows&q=ferr&sistema=1", sessaoTeste, nil).Body.String(); strings.Contains(c, "LibreOffice") || !strings.Contains(c, "Ferramenta") {
+		t.Errorf("CSV com a busca:\n%s", c)
+	}
+	r = pagina(h, "GET", "/painel/inventario/programa.csv?so=windows&nome=libreoffice&fab=The+Document+Foundation", sessaoTeste, nil)
+	c = r.Body.String()
+	if r.Code != http.StatusOK || !strings.HasPrefix(r.Header().Get("Content-Disposition"), `attachment; filename="patchd-programa-windows-libreoffice-`) ||
+		!strings.HasPrefix(c, export.BOM+"maquina;id;programa;fabricante;nome_no_inventario;versao;escopo;usuario;remocao;removivel_pelo_patchd;product_code;chave\r\n") ||
+		!strings.Contains(c, "PC-A;92fc3b93-0003;LibreOffice;The Document Foundation;LibreOffice 25.2.1.1;25.2.1.1;máquina;;MSI (msiexec /x);") ||
+		strings.Count(c, "\r\n") != 3 {
+		t.Errorf("CSV do programa: %d\n%s", r.Code, c)
+	}
+	if r := pagina(h, "GET", "/painel/inventario/programa.csv?so=windows&nome=nada&fab=", sessaoTeste, nil); r.Code != http.StatusNotFound {
+		t.Errorf("CSV de programa que não existe: %d", r.Code)
+	}
+	if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "exportar.csv"}); len(ev) < 3 {
+		t.Errorf("auditoria da exportação: %d", len(ev))
 	}
 	// O Inventário tem as duas abas.
 	if b := pagina(h, "GET", "/painel/inventario", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `href="/painel/inventario/programas">Programas instalados</a>`) {
