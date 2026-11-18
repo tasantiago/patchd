@@ -30,6 +30,8 @@ var (
 	procPostMessageW           = user32.NewProc("PostMessageW")
 	procPostQuitMessage        = user32.NewProc("PostQuitMessage")
 	procLoadIconW              = user32.NewProc("LoadIconW")
+	procLoadImageW             = user32.NewProc("LoadImageW")
+	procGetSystemMetrics       = user32.NewProc("GetSystemMetrics")
 	procCreatePopupMenu        = user32.NewProc("CreatePopupMenu")
 	procAppendMenuW            = user32.NewProc("AppendMenuW")
 	procTrackPopupMenu         = user32.NewProc("TrackPopupMenu")
@@ -65,6 +67,11 @@ const (
 	niifInfo   = 0x1
 
 	idiShield = 32518 // o escudo do Windows: "segurança, atualização"
+	// O ícone da Central no executável: o grupo 1 (winres.IconGroup), tamanho pequeno.
+	appIconGroup = 1
+	imageIcon    = 1
+	smCxSmIcon   = 49
+	smCySmIcon   = 50
 
 	mfString    = 0x0
 	mfSeparator = 0x800
@@ -160,6 +167,18 @@ func SingleInstance() (release func(), ok bool) {
 	return func() { _ = windows.CloseHandle(h) }, true
 }
 
+// appIcon: o ícone da Central gravado no executável (o grupo 1, no tamanho pequeno do
+// sistema); sem ele (um build sem o scripts/build.sh), o escudo do Windows.
+func appIcon(inst windows.Handle) uintptr {
+	cx, _, _ := procGetSystemMetrics.Call(smCxSmIcon)
+	cy, _, _ := procGetSystemMetrics.Call(smCySmIcon)
+	if icon, _, _ := procLoadImageW.Call(uintptr(inst), appIconGroup, imageIcon, cx, cy, 0); icon != 0 {
+		return icon
+	}
+	icon, _, _ := procLoadIconW.Call(0, idiShield)
+	return icon
+}
+
 // RunTray mostra o ícone e roda o laço de mensagens até o contexto acabar ou o usuário
 // escolher Sair.
 func RunTray(ctx context.Context, opts TrayOptions) error {
@@ -190,7 +209,7 @@ func RunTray(ctx context.Context, opts TrayOptions) error {
 	// #nosec G115 -- o Win32 devolve um UINT no uintptr
 	t.taskbarCreated = uint32(m)
 
-	icon, _, _ := procLoadIconW.Call(0, idiShield)
+	icon := appIcon(inst)
 	t.nid.Size = uint32(unsafe.Sizeof(t.nid))
 	t.nid.Wnd = t.wnd
 	t.nid.ID = 1

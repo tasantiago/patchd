@@ -215,3 +215,114 @@ func TestDescricao(t *testing.T) {
 		t.Errorf("dois espaços: %v", err)
 	}
 }
+
+// icoTeste: um .ico com uma imagem PNG (falsa, só a assinatura) e um DIB.
+func icoTeste() []byte {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, 40)...)
+	dib := make([]byte, 40+16*16*4+16*4)
+	binary.LittleEndian.PutUint32(dib, 40)
+	var b bytes.Buffer
+	_ = binary.Write(&b, binary.LittleEndian, [3]uint16{0, 1, 2})
+	off := uint32(6 + 32)
+	for _, e := range []struct {
+		w    byte
+		data []byte
+	}{{0, png}, {16, dib}} {
+		_ = binary.Write(&b, binary.LittleEndian, struct {
+			W, H, C, R byte
+			P, B       uint16
+			Size, Off  uint32
+		}{e.w, e.w, 0, 0, 1, 32, uint32(len(e.data)), off})
+		off += uint32(len(e.data))
+	}
+	b.Write(png)
+	b.Write(dib)
+	return b.Bytes()
+}
+
+// arvore lê a árvore de recursos da seção como o Windows: tipo → número → idioma → dados.
+func arvore(t *testing.T, sec []byte, rva uint32) map[[2]uint32][]byte {
+	t.Helper()
+	le32 := func(i uint32) uint32 { return binary.LittleEndian.Uint32(sec[i:]) }
+	le16 := func(i uint32) uint16 { return binary.LittleEndian.Uint16(sec[i:]) }
+	entradas := func(d uint32) [][2]uint32 {
+		n := uint32(le16(d+12)) + uint32(le16(d+14))
+		var out [][2]uint32
+		for i := uint32(0); i < n; i++ {
+			out = append(out, [2]uint32{le32(d + 16 + 8*i), le32(d + 20 + 8*i)})
+		}
+		return out
+	}
+	got := map[[2]uint32][]byte{}
+	for _, tp := range entradas(0) {
+		for _, id := range entradas(tp[1] &^ 0x80000000) {
+			ls := entradas(id[1] &^ 0x80000000)
+			if len(ls) != 1 || ls[0][1]&0x80000000 != 0 {
+				t.Fatalf("%d/%d: idiomas %v", tp[0], id[0], ls)
+			}
+			leaf := ls[0][1]
+			off, size := le32(leaf)-rva, le32(leaf+4)
+			if off%8 != 0 {
+				t.Errorf("%d/%d: dados desalinhados", tp[0], id[0])
+			}
+			got[[2]uint32{tp[0], id[0]}] = sec[off : off+size]
+		}
+	}
+	return got
+}
+
+// O ícone da Central: as imagens do .ico viram RT_ICON 1, 2..., e o grupo 1 as lista; tudo
+// na mesma seção do recurso de versão, com uma relocação por folha.
+func TestIcone(t *testing.T) {
+	ico := icoTeste()
+	res, err := IconResources(ico)
+	if err != nil || len(res) != 3 {
+		t.Fatalf("recursos: %d %v", len(res), err)
+	}
+	vi, _ := VersionInfo(Info{Version: "v1.2.3", FileDescription: "Central de software", ProductName: "patchd"})
+	o, err := SysoResources("amd64", append(res, VersionResource(vi)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	le16 := func(i int) uint16 { return binary.LittleEndian.Uint16(o[i:]) }
+	le32 := func(i int) uint32 { return binary.LittleEndian.Uint32(o[i:]) }
+	raw, rawLen, relocs, n := int(le32(40)), int(le32(36)), int(le32(44)), int(le16(52))
+	sec := o[raw : raw+rawLen]
+	if n != 4 {
+		t.Fatalf("relocações: %d", n)
+	}
+	// As relocações somam o endereço da seção; aqui a seção começa em 0.
+	got := arvore(t, sec, 0)
+	if len(got) != 4 || string(got[[2]uint32{16, 1}]) != string(vi) || string(got[[2]uint32{3, 1}]) != string(ico[38:38+48]) ||
+		len(got[[2]uint32{3, 2}]) != 40+16*16*4+16*4 {
+		t.Fatalf("árvore: %d recursos", len(got))
+	}
+	g := got[[2]uint32{14, 1}]
+	if binary.LittleEndian.Uint16(g[4:]) != 2 || len(g) != 6+14*2 || g[6+14] != 16 || binary.LittleEndian.Uint16(g[6+12:]) != 1 ||
+		binary.LittleEndian.Uint16(g[6+14+12:]) != 2 || binary.LittleEndian.Uint32(g[6+8:]) != 48 {
+		t.Errorf("grupo: %x", g)
+	}
+	for i := 0; i < n; i++ {
+		if le16(relocs+10*i+8) != 3 || le32(relocs+10*i+4) != 0 {
+			t.Errorf("relocação %d", i)
+		}
+	}
+	if le32(8) != uint32(relocs+10*n) {
+		t.Error("tabela de símbolos fora do lugar")
+	}
+	// A Central lê o nome do próprio executável: o ícone não atrapalha a busca.
+	if d, ok := Description(o); !ok || d != "Central de software" {
+		t.Errorf("descrição com o ícone: %q %v", d, ok)
+	}
+	// Recusas: .ico que não é .ico, imagem fora do arquivo, recurso repetido.
+	ruim := bytes.Clone(ico)
+	binary.LittleEndian.PutUint32(ruim[6+12:], 1<<20)
+	for nome, b := range map[string][]byte{"vazio": nil, "texto": []byte("não é ícone"), "fora": ruim} {
+		if _, err := IconResources(b); err == nil {
+			t.Errorf("%s: aceito", nome)
+		}
+	}
+	if _, err := SysoResources("amd64", []Resource{VersionResource(vi), VersionResource(vi)}); err == nil {
+		t.Error("repetido aceito")
+	}
+}

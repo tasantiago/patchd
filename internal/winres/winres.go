@@ -11,10 +11,12 @@ package winres
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"unicode"
 	"unicode/utf16"
@@ -173,57 +175,150 @@ var machines = map[string]struct{ machine, reloc uint16 }{
 // ErrArch: arquitetura sem formato conhecido.
 var ErrArch = errors.New("arquitetura do Windows desconhecida (amd64, arm64 ou 386)")
 
-const rtVersion = 16
+// Tipos de recurso usados.
+const (
+	rtIcon      = 3
+	rtGroupIcon = 14
+	rtVersion   = 16
+)
+
+// Resource é uma folha da árvore de recursos: tipo, número e idioma.
+type Resource struct {
+	Type, ID, Lang uint16
+	Data           []byte
+}
 
 // Syso devolve o objeto COFF com o recurso de versão (tipo RT_VERSION, número 1, pt-BR).
 func Syso(goarch string, versionInfo []byte) ([]byte, error) {
+	return SysoResources(goarch, []Resource{{Type: rtVersion, ID: 1, Lang: LangPTBR, Data: versionInfo}})
+}
+
+// VersionResource: o recurso de versão para SysoResources.
+func VersionResource(versionInfo []byte) Resource {
+	return Resource{Type: rtVersion, ID: 1, Lang: LangPTBR, Data: versionInfo}
+}
+
+// maxSection: o maior .rsrc (o ícone com os tamanhos até 256 cabe com folga).
+const maxSection = 4 << 20
+
+// SysoResources devolve o objeto COFF com a árvore de recursos (o linker do Go aceita uma
+// seção .rsrc: tudo vai junto). Um idioma por tipo e número.
+func SysoResources(goarch string, res []Resource) ([]byte, error) {
 	m, ok := machines[goarch]
 	if !ok {
 		return nil, ErrArch
 	}
-	// A seção .rsrc: três níveis de diretório (tipo, número, idioma), a folha e os dados.
+	if len(res) == 0 || len(res) > 64 {
+		return nil, errors.New("de 1 a 64 recursos")
+	}
+	res = slices.Clone(res)
+	slices.SortFunc(res, func(a, b Resource) int { return cmp.Or(cmp.Compare(a.Type, b.Type), cmp.Compare(a.ID, b.ID)) })
+	var types []uint16
+	for i, r := range res {
+		if i > 0 && r.Type == res[i-1].Type && r.ID == res[i-1].ID {
+			return nil, fmt.Errorf("recurso %d/%d repetido", r.Type, r.ID)
+		}
+		if len(r.Data) == 0 {
+			return nil, fmt.Errorf("recurso %d/%d vazio", r.Type, r.ID)
+		}
+		if len(types) == 0 || types[len(types)-1] != r.Type {
+			types = append(types, r.Type)
+		}
+	}
+	// A seção .rsrc: os diretórios (raiz → tipo → número → idioma), as folhas e os dados.
+	const dirHeader, dirEntry, leafSize = 16, 8, 16
+	typeOff := map[uint16]int{}
+	at := dirHeader + dirEntry*len(types)
+	for _, t := range types {
+		typeOff[t] = at
+		at += dirHeader + dirEntry*countType(res, t)
+	}
+	idOff := make([]int, len(res))
+	for i := range res {
+		idOff[i] = at
+		at += dirHeader + dirEntry
+	}
+	leafOff := make([]int, len(res))
+	for i := range res {
+		leafOff[i] = at
+		at += leafSize
+	}
 	var sec bytes.Buffer
-	dir := func(id uint32, offset uint32) {
+	dir := func(entries [][2]uint32) {
 		_ = binary.Write(&sec, binary.LittleEndian, struct {
 			Characteristics, TimeDateStamp uint32
 			Major, Minor, Named, IDs       uint16
-			ID, Offset                     uint32
-		}{IDs: 1, ID: id, Offset: offset})
+		}{IDs: uint16(len(entries))}) // #nosec G115 -- até 64
+		for _, e := range entries {
+			_ = binary.Write(&sec, binary.LittleEndian, e)
+		}
 	}
-	const dirSize = 24
-	dir(rtVersion, 0x80000000|dirSize) // tipo → nível 2
-	dir(1, 0x80000000|2*dirSize)       // número 1 → nível 3
-	dir(LangPTBR, 3*dirSize)           // idioma → a folha (sem o bit alto)
-	const leaf, data = 3 * dirSize, 3*dirSize + 16
-	_ = binary.Write(&sec, binary.LittleEndian, [4]uint32{data, uint32(len(versionInfo)), 0, 0}) // #nosec G115 -- recurso pequeno
-	sec.Write(versionInfo)
+	var root [][2]uint32
+	for _, t := range types {
+		root = append(root, [2]uint32{uint32(t), 0x80000000 | uint32(typeOff[t])}) // #nosec G115 -- seção pequena
+	}
+	dir(root)
+	for _, t := range types {
+		var ids [][2]uint32
+		for i, r := range res {
+			if r.Type == t {
+				ids = append(ids, [2]uint32{uint32(r.ID), 0x80000000 | uint32(idOff[i])}) // #nosec G115 -- seção pequena
+			}
+		}
+		dir(ids)
+	}
+	for i, r := range res {
+		dir([][2]uint32{{uint32(r.Lang), uint32(leafOff[i])}}) // #nosec G115 -- seção pequena; idioma sem o bit alto: a folha
+	}
+	// Os dados vêm depois das folhas, cada um alinhado a 8.
+	dataOff := make([]int, len(res))
+	pos := at
+	for i, r := range res {
+		pos = (pos + 7) &^ 7
+		dataOff[i] = pos
+		pos += len(r.Data)
+	}
+	if pos > maxSection {
+		return nil, errors.New("recursos grandes demais")
+	}
+	for i, r := range res {
+		_ = binary.Write(&sec, binary.LittleEndian, [4]uint32{uint32(dataOff[i]), uint32(len(r.Data)), 0, 0}) // #nosec G115 -- maxSection
+	}
+	for i, r := range res {
+		for sec.Len() < dataOff[i] {
+			sec.WriteByte(0)
+		}
+		sec.Write(r.Data)
+	}
 	pad4(&sec)
 
 	const fileHeader, sectionHeader, relocSize, symSize = 20, 40, 10, 18
 	raw := fileHeader + sectionHeader
 	relocs := raw + sec.Len()
-	syms := relocs + relocSize
+	syms := relocs + relocSize*len(res)
 	var out bytes.Buffer
 	w := func(v any) { _ = binary.Write(&out, binary.LittleEndian, v) }
 	w(struct {
 		Machine, Sections               uint16
 		Time, SymbolTable, Symbols      uint32
 		OptionalHeader, Characteristics uint16
-	}{Machine: m.machine, Sections: 1, SymbolTable: uint32(syms), Symbols: 1}) // #nosec G115 -- recurso pequeno
+	}{Machine: m.machine, Sections: 1, SymbolTable: uint32(syms), Symbols: 1}) // #nosec G115 -- maxSection
 	w(struct {
 		Name                                        [8]byte
 		VirtualSize, VirtualAddress, SizeOfRaw, Raw uint32
 		Relocs, Lines                               uint32
 		NRelocs, NLines                             uint16
 		Characteristics                             uint32
-	}{Name: [8]byte{'.', 'r', 's', 'r', 'c'}, SizeOfRaw: uint32(sec.Len()), Raw: uint32(raw), // #nosec G115 -- recurso pequeno
-		Relocs: uint32(relocs), NRelocs: 1, Characteristics: 0x40000040}) // #nosec G115 -- recurso pequeno
+	}{Name: [8]byte{'.', 'r', 's', 'r', 'c'}, SizeOfRaw: uint32(sec.Len()), Raw: uint32(raw), // #nosec G115 -- maxSection
+		Relocs: uint32(relocs), NRelocs: uint16(len(res)), Characteristics: 0x40000040}) // #nosec G115 -- maxSection, até 64
 	out.Write(sec.Bytes())
-	// A folha aponta para os dados pelo endereço na imagem final: o linker soma o da seção.
-	w(struct {
-		VirtualAddress, Symbol uint32
-		Type                   uint16
-	}{VirtualAddress: leaf, Symbol: 0, Type: m.reloc})
+	// Cada folha aponta para os dados pelo endereço na imagem final: o linker soma o da seção.
+	for _, l := range leafOff {
+		w(struct {
+			VirtualAddress, Symbol uint32
+			Type                   uint16
+		}{VirtualAddress: uint32(l), Symbol: 0, Type: m.reloc}) // #nosec G115 -- seção pequena
+	}
 	w(struct {
 		Name                 [8]byte
 		Value                uint32
@@ -236,6 +331,59 @@ func Syso(goarch string, versionInfo []byte) ([]byte, error) {
 		return nil, fmt.Errorf("tamanho do objeto inesperado: %d", out.Len())
 	}
 	return out.Bytes(), nil
+}
+
+func countType(res []Resource, t uint16) int {
+	n := 0
+	for _, r := range res {
+		if r.Type == t {
+			n++
+		}
+	}
+	return n
+}
+
+// IconGroup é o número do grupo do ícone do executável: o primeiro grupo é o que o Explorer
+// mostra, e a Central o carrega para o ícone perto do relógio.
+const IconGroup = 1
+
+// maxIcon: o maior .ico aceito.
+const maxIcon = 2 << 20
+
+var pngMagic = []byte("\x89PNG\r\n\x1a\n")
+
+// IconResources lê um .ico e devolve os recursos do ícone do executável: uma imagem RT_ICON
+// por tamanho (números 1, 2...) e o RT_GROUP_ICON IconGroup que as lista. Cada imagem é um
+// PNG ou um DIB (BITMAPINFOHEADER), como no .ico.
+func IconResources(ico []byte) ([]Resource, error) {
+	if len(ico) < 6 || len(ico) > maxIcon {
+		return nil, errors.New("ícone: arquivo vazio ou maior que 2 MiB")
+	}
+	le16 := func(i int) uint16 { return binary.LittleEndian.Uint16(ico[i:]) }
+	le32 := func(i int) uint32 { return binary.LittleEndian.Uint32(ico[i:]) }
+	n := int(le16(4))
+	if le16(0) != 0 || le16(2) != 1 || n == 0 || n > 32 || len(ico) < 6+16*n {
+		return nil, errors.New("ícone: não é um .ico (cabeçalho)")
+	}
+	var group bytes.Buffer
+	_ = binary.Write(&group, binary.LittleEndian, [3]uint16{0, 1, uint16(n)}) // #nosec G115 -- até 32
+	var out []Resource
+	for i := 0; i < n; i++ {
+		e := 6 + 16*i
+		size, off := le32(e+8), le32(e+12)
+		if size < 40 || uint64(off)+uint64(size) > uint64(len(ico)) {
+			return nil, fmt.Errorf("ícone: a imagem %d sai do arquivo", i+1)
+		}
+		img := ico[off : off+size]
+		if !bytes.HasPrefix(img, pngMagic) && binary.LittleEndian.Uint32(img) != 40 {
+			return nil, fmt.Errorf("ícone: a imagem %d não é PNG nem DIB", i+1)
+		}
+		id := uint16(i + 1) // #nosec G115 -- até 32
+		out = append(out, Resource{Type: rtIcon, ID: id, Data: bytes.Clone(img)})
+		group.Write(ico[e : e+12]) // largura, altura, cores, reservado, planos, bits, tamanho
+		_ = binary.Write(&group, binary.LittleEndian, id)
+	}
+	return append(out, Resource{Type: rtGroupIcon, ID: IconGroup, Data: group.Bytes()}), nil
 }
 
 // ErrNoSlot: o executável não tem o recurso de versão com o espaço da descrição (um build

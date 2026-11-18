@@ -14,14 +14,18 @@ func lnkFalso(t *testing.T) (AppLink, string) {
 	t.Helper()
 	desk := t.TempDir()
 	app := filepath.Join(t.TempDir(), "patchd-app.exe")
-	return AppLink{Desktop: desk, Target: app, Icon: `C:\Windows\System32\imageres.dll,73`,
-		Read: func(p string) (string, error) {
+	return AppLink{Desktop: desk, Target: app,
+		Read: func(p string) (string, string, error) {
 			b, err := os.ReadFile(p)
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
-			alvo, _, _ := strings.Cut(string(b), "|")
-			return alvo, nil
+			campos := strings.Split(string(b), "|")
+			icon := ""
+			if len(campos) == 3 {
+				icon = campos[2]
+			}
+			return campos[0], icon, nil
 		},
 		Write: func(p, target, desc, icon string) error {
 			return os.WriteFile(p, []byte(target+"|"+desc+"|"+icon), 0o600)
@@ -52,11 +56,25 @@ func TestAtalhoDaCentral(t *testing.T) {
 		t.Fatalf("criar: %s %v %v", st, rem, err)
 	}
 	b, _ := os.ReadFile(filepath.Join(desk, "Central de software.lnk"))
-	if string(b) != l.Target+"|Central de software|"+l.Icon {
+	if string(b) != l.Target+"|Central de software|"+l.Target+",0" {
 		t.Errorf("atalho: %q", b)
 	}
 	if st, _, err := l.Sync("Central de software"); err != nil || st != AppLinkCurrent {
 		t.Errorf("de novo: %s %v", st, err)
+	}
+	// O atalho de uma versão anterior, com o escudo do Windows: refeito com o ícone da Central.
+	antigo := filepath.Join(desk, "Central de software.lnk")
+	_ = os.WriteFile(antigo, []byte(l.Target+`|Central de software|C:\Windows\System32\imageres.dll,73`), 0o600)
+	if st, _, err := l.Sync("Central de software"); err != nil || st != AppLinkUpdated {
+		t.Errorf("ícone antigo: %s %v", st, err)
+	}
+	if b, _ := os.ReadFile(antigo); !strings.HasSuffix(string(b), "|"+l.Target+",0") {
+		t.Errorf("ícone não trocado: %q", b)
+	}
+	// O mesmo ícone com outra caixa no caminho: em dia.
+	_ = os.WriteFile(antigo, []byte(l.Target+"|Central de software|"+strings.ToUpper(l.Target)+",0"), 0o600)
+	if st, _, _ := l.Sync("Central de software"); st != AppLinkCurrent {
+		t.Errorf("caixa diferente: %s", st)
 	}
 	// O nome mudou no painel: um só, com o nome novo.
 	st, rem, err = l.Sync("Loja da TI")

@@ -3,6 +3,7 @@ package shortcuts
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,9 +24,9 @@ import (
 type AppLink struct {
 	Desktop string // a área de trabalho pública
 	Target  string // o patchd-app.exe
-	Icon    string // arquivo,índice do ícone; vazio: o do executável
-	// Read: o executável para onde o .lnk aponta.
-	Read func(path string) (string, error)
+	Icon    string // arquivo,índice do ícone; vazio: o do executável (Target,0)
+	// Read: o executável para onde o .lnk aponta e o ícone dele (arquivo,índice).
+	Read func(path string) (target, icon string, err error)
 	// Write cria o .lnk em path apontando para target, com a descrição e o ícone.
 	Write func(path, target, description, icon string) error
 }
@@ -33,6 +34,7 @@ type AppLink struct {
 // Estados do atalho da Central.
 const (
 	AppLinkCreated = "criado"
+	AppLinkUpdated = "refeito" // o mesmo atalho, com o ícone novo
 	AppLinkCurrent = "em_dia"
 )
 
@@ -46,25 +48,40 @@ func (l AppLink) check() error {
 	return nil
 }
 
-// ours: os .lnk da pasta que apontam para o executável da Central.
-func (l AppLink) ours() ([]string, error) {
+// ours: os .lnk da pasta que apontam para o executável da Central, com o ícone de cada um.
+func (l AppLink) ours() (map[string]string, error) {
 	entries, err := os.ReadDir(l.Desktop)
 	if err != nil {
 		return nil, err
 	}
-	var out []string
+	out := map[string]string{}
 	for _, e := range entries {
 		if !e.Type().IsRegular() || !strings.EqualFold(filepath.Ext(e.Name()), ".lnk") || strings.HasPrefix(e.Name(), ".patchd-") {
 			continue
 		}
-		if t, err := l.Read(filepath.Join(l.Desktop, e.Name())); err == nil && samePath(t, l.Target) {
-			out = append(out, e.Name())
+		if t, icon, err := l.Read(filepath.Join(l.Desktop, e.Name())); err == nil && samePath(t, l.Target) {
+			out[e.Name()] = icon
 		}
 	}
 	return out, nil
 }
 
 func samePath(a, b string) bool { return strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) }
+
+// icon: o ícone que o atalho deve ter.
+func (l AppLink) icon() string {
+	if l.Icon == "" {
+		return l.Target + ",0"
+	}
+	return l.Icon
+}
+
+// sameIcon compara "arquivo,índice" sem diferença de maiúsculas no arquivo.
+func sameIcon(a, b string) bool {
+	fa, ia := protocol.SplitIcon(a)
+	fb, ib := protocol.SplitIcon(b)
+	return ia == ib && samePath(fa, fb)
+}
 
 // Sync deixa um atalho só, com o nome name (sem .lnk). Devolve o estado e os atalhos antigos
 // apagados (o nome anterior da Central).
@@ -80,8 +97,15 @@ func (l AppLink) Sync(name string) (state string, removed []string, err error) {
 	if err != nil {
 		return "", nil, err
 	}
-	for _, f := range have {
+	names := slices.Sorted(maps.Keys(have))
+	state = AppLinkCreated
+	for _, f := range names {
 		if strings.EqualFold(f, file) {
+			if sameIcon(have[f], l.icon()) {
+				state = AppLinkCurrent
+			} else {
+				state = AppLinkUpdated // o atalho de uma versão anterior, com outro ícone
+			}
 			continue
 		}
 		if err := os.Remove(filepath.Join(l.Desktop, f)); err != nil {
@@ -89,13 +113,13 @@ func (l AppLink) Sync(name string) (state string, removed []string, err error) {
 		}
 		removed = append(removed, strings.TrimSuffix(f, filepath.Ext(f)))
 	}
-	if slices.ContainsFunc(have, func(f string) bool { return strings.EqualFold(f, file) }) {
-		return AppLinkCurrent, removed, nil
+	if state == AppLinkCurrent {
+		return state, removed, nil
 	}
 	if err := l.write(filepath.Join(l.Desktop, file), name); err != nil {
 		return "", removed, err
 	}
-	return AppLinkCreated, removed, nil
+	return state, removed, nil
 }
 
 // Remove apaga os atalhos da Central (a Central desligada, o agente desinstalado).
@@ -109,7 +133,7 @@ func (l AppLink) Remove() ([]string, error) {
 	}
 	var removed []string
 	var errs []error
-	for _, f := range have {
+	for _, f := range slices.Sorted(maps.Keys(have)) {
 		if err := os.Remove(filepath.Join(l.Desktop, f)); err != nil {
 			errs = append(errs, err)
 			continue
@@ -129,11 +153,7 @@ func (l AppLink) write(path, name string) error {
 	_ = tmp.Close()
 	_ = os.Remove(t) // o gravador cria o arquivo
 	defer os.Remove(t)
-	icon := l.Icon
-	if icon == "" {
-		icon = l.Target + ",0"
-	}
-	if err := l.Write(t, l.Target, name, icon); err != nil {
+	if err := l.Write(t, l.Target, name, l.icon()); err != nil {
 		return err
 	}
 	return os.Rename(t, path)
