@@ -55,7 +55,7 @@ func TestTerceirosEmLote(t *testing.T) {
 		`<span class="estado reboot_pendente">aguardando 26.04</span>`,
 		`<span class="estado em_dia">aprovado 8.9</span>`,
 		`<span class="estado sem_dado_recente">nada guardado</span>`,
-		`<span class="muted">o patchd não instala</span>`,
+		"1 programa(s) com problema sem versão de referência",
 		`action="/painel/patch/terceiros/aprovar-lote"`, "Conferir todos os 2 aguardando",
 	} {
 		if !strings.Contains(b, tr) {
@@ -64,6 +64,15 @@ func TestTerceirosEmLote(t *testing.T) {
 	}
 	if strings.Count(b, `name="sel"`) != 2 {
 		t.Errorf("caixas: %d", strings.Count(b, `name="sel"`))
+	}
+	// Em ordem alfabética; o sem referência (Visual C++ 2008) só em "mostrar todos".
+	i7, iC, iN, iV := strings.Index(b, ">7-Zip</a>"), strings.Index(b, ">Google Chrome</a>"), strings.Index(b, ">Notepad&#43;&#43;</a>"), strings.Index(b, ">Visual Studio Code</a>")
+	if i7 < 0 || !(i7 < iC && iC < iN && iN < iV) || strings.Contains(b, ">Visual C&#43;&#43; 2008</a>") {
+		t.Errorf("ordem ou o sem referência: %d %d %d %d", i7, iC, iN, iV)
+	}
+	if b := pagina(h, "GET", "/painel/patch?aba=terceiros&todos=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, ">Visual C&#43;&#43; 2008</a>") ||
+		!strings.Contains(b, `<span class="muted">o patchd não instala</span>`) || strings.Contains(b, "sem versão de referência (fora") {
+		t.Error("todos: sem o Visual C++ 2008")
 	}
 	// Leitura não tem o lote, nem consegue aprovar.
 	if b := pagina(h, "GET", "/painel/patch?aba=terceiros", sessaoTeste, nil).Body.String(); strings.Contains(b, "aprovar-lote") {
@@ -82,7 +91,7 @@ func TestTerceirosEmLote(t *testing.T) {
 	if !strings.Contains(b, ">7-Zip</a>") || strings.Contains(b, ">Google Chrome</a>") {
 		t.Error("busca por nome")
 	}
-	b = pagina(h, "GET", "/painel/patch?aba=terceiros&instalador=manual", sessaoAdmin, nil).Body.String()
+	b = pagina(h, "GET", "/painel/patch?aba=terceiros&instalador=manual&todos=1", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, ">Visual C&#43;&#43; 2008</a>") || strings.Contains(b, "aprovar-lote") {
 		t.Error("filtro manual")
 	}

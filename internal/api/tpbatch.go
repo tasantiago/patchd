@@ -170,9 +170,11 @@ func tpInstallerOf(m map[string]tpInstaller, app string) tpInstaller {
 }
 
 // filterTP: os programas da lista, pelo filtro.
-func filterTP(progs []tpProgram, inst map[string]tpInstaller, q tpQuery) []tpProgram {
+// Sem ?todos=1, só os com problema e com versão de referência (os sem referência, como o
+// Visual C++ 2008 ou o .NET, só aparecem em "mostrar todos os identificados"). Em ordem
+// alfabética. noRef: quantos sem referência ficaram de fora (com os outros filtros valendo).
+func filterTP(progs []tpProgram, inst map[string]tpInstaller, q tpQuery) (out []tpProgram, noRef int) {
 	needle := strings.ToLower(q.Q)
-	var out []tpProgram
 	for _, p := range progs {
 		if p.Problems == 0 && !q.All {
 			continue
@@ -183,9 +185,17 @@ func filterTP(progs []tpProgram, inst map[string]tpInstaller, q tpQuery) []tpPro
 		if q.Inst != "" && tpInstallerOf(inst, p.AppID).State != q.Inst {
 			continue
 		}
+		if p.Reference == "" && !q.All {
+			noRef++
+			continue
+		}
 		out = append(out, p)
 	}
-	return out
+	slices.SortStableFunc(out, func(a, b tpProgram) int {
+		return cmp.Or(cmp.Compare(strings.ToLower(strings.TrimLeft(a.Program, ".")), strings.ToLower(strings.TrimLeft(b.Program, "."))),
+			cmp.Compare(a.AppID, b.AppID))
+	})
+	return out, noRef
 }
 
 // tpSel é o valor de um programa no formulário do lote: programa e versão, como numa URL.
@@ -262,7 +272,8 @@ func (a *api) tpBatchAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 	var chosen []tpBatchRow
 	skipped := 0
 	if byFilter {
-		for _, p := range filterTP(progs, inst, q) {
+		shown, _ := filterTP(progs, inst, q)
+		for _, p := range shown {
 			if in := tpInstallerOf(inst, p.AppID); in.State == tpInstWaiting {
 				chosen = append(chosen, row(p, in.Newest))
 			}
