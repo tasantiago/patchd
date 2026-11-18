@@ -82,7 +82,7 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	}
 	for _, it := range items {
 		x := protocol.SelfServiceItem{App: it.AppID, Name: it.Name, Installed: it.Installed, Target: it.Target,
-			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval, Replaces: it.Replaces}
+			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval, Replaces: it.Replaces, Category: it.Category}
 		for _, q := range waiting {
 			if q.AppID == it.AppID && q.State == store.RequestWaiting {
 				x.Pending = q.ID

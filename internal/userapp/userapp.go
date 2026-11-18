@@ -285,6 +285,15 @@ type Item struct {
 	Queued, Running bool
 	// Replaces: a atualização troca a instalação (a atual sai e volta na versão nova).
 	Replaces bool
+	// Category: a categoria na loja (protocol.StoreCategories); vazia com servidor anterior.
+	Category string
+}
+
+// catLink é um link da loja: "Todos" ou uma categoria com programas.
+type catLink struct {
+	Label, Href string
+	Count       int
+	Active      bool
 }
 
 // reqView é um pedido em "Meus pedidos".
@@ -310,9 +319,102 @@ type pageData struct {
 	Updates, Current                []Item
 	Install, Installed, Unavailable []Item
 	Confirm                         *Item
-	Requests                        []reqView
-	Reboot                          *rebootView
-	Busy                            int64
+	// A loja: "Todos" e as categorias com programas (vazio com servidor anterior, sem
+	// categorias), a escolhida e a busca pelo nome. Filtered: a lista está filtrada.
+	Cats                 []catLink
+	Category, Search     string
+	StoreAll, StoreClear string // os endereços de "Todos" e da categoria escolhida, sem busca
+	Filtered             bool
+	Requests             []reqView
+	Reboot               *rebootView
+	Busy                 int64
+}
+
+// maxStoreSearch: o tamanho da busca na loja.
+const maxStoreSearch = 60
+
+// storeCategory: a categoria do item na loja ("outros" para a vazia ou desconhecida).
+func storeCategory(it Item) string {
+	if protocol.ValidStoreCategory(it.Category) {
+		return it.Category
+	}
+	return protocol.StoreOther
+}
+
+// storeFilter: a loja em "Todos" e nas categorias com programas, e a busca pelo nome (sem
+// diferença de maiúsculas nem de acentos). Com servidor anterior (nenhum item com
+// categoria), só a busca.
+func (a *App) storeFilter(d *pageData, q url.Values) {
+	lists := []*[]Item{&d.Install, &d.Installed, &d.Unavailable}
+	counts, total, has := map[string]int{}, 0, false
+	for _, l := range lists {
+		for _, it := range *l {
+			total++
+			counts[storeCategory(it)]++
+			has = has || it.Category != ""
+		}
+	}
+	search := strings.Join(strings.Fields(q.Get("busca")), " ")
+	if r := []rune(search); len(r) > maxStoreSearch {
+		search = string(r[:maxStoreSearch])
+	}
+	d.Search = search
+	cat := q.Get("categoria")
+	if !has || counts[cat] == 0 {
+		cat = ""
+	}
+	d.Category = cat
+	link := func(c string) string {
+		v := url.Values{"aba": {tabStore}}
+		if c != "" {
+			v.Set("categoria", c)
+		}
+		return a.base() + "?" + v.Encode()
+	}
+	d.StoreAll, d.StoreClear = link(""), link(cat)
+	if has && total > 0 {
+		d.Cats = append(d.Cats, catLink{Label: "Todos", Href: d.StoreAll, Count: total, Active: cat == ""})
+		for _, c := range protocol.StoreCategories {
+			if counts[c.ID] > 0 {
+				d.Cats = append(d.Cats, catLink{Label: c.Label, Href: link(c.ID), Count: counts[c.ID], Active: cat == c.ID})
+			}
+		}
+	}
+	if cat == "" && search == "" {
+		return
+	}
+	d.Filtered = true
+	needle := fold(search)
+	for _, l := range lists {
+		var keep []Item
+		for _, it := range *l {
+			if (cat == "" || storeCategory(it) == cat) && strings.Contains(fold(it.Name), needle) {
+				keep = append(keep, it)
+			}
+		}
+		*l = keep
+	}
+}
+
+// fold: minúsculas e sem acentos, para a busca.
+func fold(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case 'á', 'à', 'â', 'ã', 'ä':
+			return 'a'
+		case 'é', 'è', 'ê', 'ë':
+			return 'e'
+		case 'í', 'ì', 'î', 'ï':
+			return 'i'
+		case 'ó', 'ò', 'ô', 'õ', 'ö':
+			return 'o'
+		case 'ú', 'ù', 'û', 'ü':
+			return 'u'
+		case 'ç':
+			return 'c'
+		}
+		return r
+	}, strings.ToLower(s))
 }
 
 func (a *App) page(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +447,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		refresh = d.Busy > 0
 		for _, it := range resp.Catalog.Items {
 			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
-				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces}
+				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category}
 			switch it.Action {
 			case protocol.SelfServiceUpdate:
 				d.Updates = append(d.Updates, x)
@@ -398,6 +500,9 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 			}
 			d.Reboot = v
 		}
+	}
+	if d.Tab == tabStore {
+		a.storeFilter(&d, r.URL.Query())
 	}
 	d.Tabs = []tab{
 		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
@@ -875,9 +980,12 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{else}}<p>A versão <b>{{.Target}}</b> será instalada neste computador, em segundo plano, aprovada pela equipe de TI. Leva poucos minutos; você pode continuar trabalhando.</p>{{end}}
 <div class="botoes"><form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="instalar">
 <button type="submit"{{if and $.Busy (not .Approval)}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Instalar agora{{end}}</button></form><a class="sec" href="{{$.Base}}?aba=loja">Cancelar</a></div></section>{{end}}
+{{if or .Cats .Install .Installed .Unavailable .Search}}<div class="loja-filtro">{{if .Cats}}<nav class="cats" aria-label="categorias da loja">{{range .Cats}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}<span class="n">{{.Count}}</span></a>{{end}}</nav>{{end}}
+<form class="busca-loja" method="get" action="{{$.Base}}" role="search"><input type="hidden" name="aba" value="loja">{{if .Category}}<input type="hidden" name="categoria" value="{{.Category}}">{{end}}<label for="busca-loja" class="sr">Buscar programa pelo nome</label><input id="busca-loja" type="search" name="busca" value="{{.Search}}" placeholder="Buscar programa pelo nome" maxlength="60"><button type="submit">Buscar</button>{{if .Search}}<a class="sec" href="{{.StoreClear}}">Limpar</a>{{end}}</form></div>{{end}}
 <section><h1>Programas para instalar</h1>
 {{if .Install}}<ul class="lista">{{range .Install}}<li><div><strong>{{.Name}}</strong><span class="ver">versão {{.Target}}{{if .Approval}} · com aprovação da TI{{end}}</span></div>
 {{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else}}<a class="btn" href="{{$.Base}}?aba=loja&amp;confirmar={{.App}}">{{if .Approval}}Pedir à TI{{else}}Instalar{{end}}</a>{{end}}</li>{{end}}</ul>
+{{else if .Filtered}}<p class="vazio">Nenhum programa para instalar {{if .Search}}com “{{.Search}}” no nome{{if .Category}} nesta categoria{{end}}{{else}}nesta categoria{{end}}. <a href="{{.StoreAll}}">Ver todos</a></p>
 {{else}}<p class="vazio">Nenhum programa novo disponível para você neste computador.</p>{{end}}
 </section>
 {{if .Installed}}<section><h2>Já instalados</h2><ul class="lista">{{range .Installed}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">instalado</span></li>{{end}}</ul></section>{{end}}
@@ -956,4 +1064,11 @@ form.horas label:has(input:checked){border-color:var(--azul);background:#eef5fd}
 .aviso.erro{background:#fbe9e9;border-color:#ecb3b3;color:#7f1d1d}.aviso.andamento{background:#eef5fd;border-color:#c3dbf5;color:#0b3f73;display:flex;align-items:center;gap:.6rem}
 .gira{width:14px;height:14px;border:2px solid #9cc3ec;border-top-color:var(--azul);border-radius:50%;animation:g 1s linear infinite;flex:none}
 @keyframes g{to{transform:rotate(360deg)}}
+.loja-filtro{display:flex;flex-direction:column;gap:.6rem;margin:0 0 1rem}
+nav.cats{display:flex;flex-wrap:wrap;gap:.4rem}
+nav.cats a{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .8rem;border:1px solid var(--borda);border-radius:999px;background:#fff;color:var(--texto);text-decoration:none;font-size:.88rem}
+nav.cats a:hover{background:#f1f3f7}nav.cats a.ativa{background:var(--azul);border-color:var(--azul);color:#fff}
+nav.cats .n{font-size:.75rem;color:var(--muted)}nav.cats a.ativa .n{color:#dbe9fb}
+form.busca-loja{display:flex;align-items:center;gap:.5rem}
+form.busca-loja input[type=search]{flex:1;font:inherit;font-size:.9rem;padding:.45rem .7rem;border:1px solid var(--borda);border-radius:6px;min-width:0}
 `

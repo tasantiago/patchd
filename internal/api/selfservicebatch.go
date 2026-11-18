@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 )
 
@@ -33,7 +34,7 @@ func triState(v string, cur bool) bool {
 }
 
 func sameOffer(a, b store.SelfServiceOffer) bool {
-	return a.CanUpdate == b.CanUpdate && a.CanInstall == b.CanInstall && a.NeedsApproval == b.NeedsApproval &&
+	return a.CanUpdate == b.CanUpdate && a.CanInstall == b.CanInstall && a.NeedsApproval == b.NeedsApproval && a.Category == b.Category &&
 		strings.Join(a.Groups, "\x00") == strings.Join(b.Groups, "\x00")
 }
 
@@ -63,7 +64,8 @@ func (a *api) selfServiceBatchAction(w http.ResponseWriter, r *http.Request, s p
 		order = append(order, app)
 		desired[app] = store.SelfServiceOffer{AppID: app, CanUpdate: r.PostFormValue("atualizar."+app) == "1",
 			CanInstall: r.PostFormValue("instalar."+app) == "1", NeedsApproval: r.PostFormValue("aprovacao."+app) == "1",
-			Groups: splitGroups(r.PostFormValue("grupos." + app)), UpdatedBy: s.Username}
+			Groups: splitGroups(r.PostFormValue("grupos." + app)), UpdatedBy: s.Username,
+			Category: offerCategory(r.PostFormValue("categoria." + app))}
 	}
 	selected := map[string]bool{}
 	for _, app := range r.PostForm["sel"] {
@@ -76,6 +78,11 @@ func (a *api) selfServiceBatchAction(w http.ResponseWriter, r *http.Request, s p
 	if r.PostFormValue("modo") == "lote" {
 		upd, inst, appr := r.PostFormValue("lote_atualizar"), r.PostFormValue("lote_instalar"), r.PostFormValue("lote_aprovacao")
 		replaceGroups := r.PostFormValue("lote_grupos_modo") == "trocar"
+		// A categoria no lote: "" mantém, "auto" volta à padrão, ou uma da lista.
+		cat := r.PostFormValue("lote_categoria")
+		if cat != "auto" && !protocol.ValidStoreCategory(cat) {
+			cat = ""
+		}
 		groups := splitGroups(r.PostFormValue("lote_grupos"))
 		if r.PostFormValue("lote_alvo") == "todos" {
 			for _, app := range order {
@@ -83,7 +90,7 @@ func (a *api) selfServiceBatchAction(w http.ResponseWriter, r *http.Request, s p
 			}
 		}
 		switch {
-		case upd == "" && inst == "" && appr == "" && !replaceGroups:
+		case upd == "" && inst == "" && appr == "" && !replaceGroups && cat == "":
 			problem = "Em lote: escolha o que aplicar (cada campo começa em \"manter\"). Nada foi gravado."
 		case len(selected) == 0:
 			problem = "Em lote: marque ao menos um programa na primeira coluna, ou escolha \"todos os programas\". Nada foi gravado."
@@ -93,6 +100,13 @@ func (a *api) selfServiceBatchAction(w http.ResponseWriter, r *http.Request, s p
 			o.CanUpdate, o.CanInstall, o.NeedsApproval = triState(upd, o.CanUpdate), triState(inst, o.CanInstall), triState(appr, o.NeedsApproval)
 			if replaceGroups {
 				o.Groups = slices.Clone(groups)
+			}
+			switch cat {
+			case "":
+			case "auto":
+				o.Category = ""
+			default:
+				o.Category = cat
 			}
 			desired[app] = o
 		}
@@ -154,6 +168,9 @@ func (a *api) selfServiceBatchAction(w http.ResponseWriter, r *http.Request, s p
 			if want.NeedsApproval {
 				detail += " · com aprovação da TI"
 			}
+			if want.Category != "" {
+				detail += " · categoria " + protocol.StoreCategoryLabel(want.Category)
+			}
 			a.audit(r, s, "autoatendimento.oferta", app, detail+" · em lote")
 			saved = append(saved, app)
 		}
@@ -185,7 +202,7 @@ func (a *api) renderSelfServiceBatch(w http.ResponseWriter, r *http.Request, s p
 	for i := range v.SelfService.Rows {
 		row := &v.SelfService.Rows[i]
 		if o, ok := desired[row.AppID]; ok {
-			row.CanUpdate, row.CanInstall, row.NeedsApproval = o.CanUpdate, o.CanInstall, o.NeedsApproval
+			row.CanUpdate, row.CanInstall, row.NeedsApproval, row.Category = o.CanUpdate, o.CanInstall, o.NeedsApproval, o.Category
 			row.Groups = strings.Join(o.Groups, ", ")
 		}
 		row.Selected = selected[row.AppID]

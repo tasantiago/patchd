@@ -24,13 +24,14 @@ import (
 // de uma máquina para uma lista de grupos, antes de existir o app do usuário (17.4).
 
 type ssOfferRow struct {
-	AppID, Name, Approved string
-	CanUpdate, CanInstall bool
-	NeedsApproval         bool // Aula 18.3
-	Groups, Updated       string
-	Active                bool
-	Selected              bool   // Aula 18.8: marcada para o lote (volta marcada se nada foi gravado)
-	Problem               string // Aula 18.8: o problema desta linha, quando nada foi gravado
+	AppID, Name, Approved  string
+	CanUpdate, CanInstall  bool
+	NeedsApproval          bool // Aula 18.3
+	Groups, Updated        string
+	Active                 bool
+	Category, AutoCategory string // a categoria na loja ("" = a padrão) e o nome da padrão
+	Selected               bool   // Aula 18.8: marcada para o lote (volta marcada se nada foi gravado)
+	Problem                string // Aula 18.8: o problema desta linha, quando nada foi gravado
 }
 
 type ssItem struct {
@@ -40,6 +41,7 @@ type ssItem struct {
 
 type selfServiceView struct {
 	NoManifest bool
+	Categories []protocol.StoreCategory // as da loja, para o campo de cada linha e o lote
 	Rows       []ssOfferRow
 	Machine    string // a máquina da prévia, como foi digitada (nome ou ID)
 	Groups     string
@@ -54,7 +56,7 @@ var ssActionLabels = map[string]string{
 }
 
 func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
-	sv := &selfServiceView{}
+	sv := &selfServiceView{Categories: protocol.StoreCategories}
 	v.SelfService = sv
 	if a.tpManifest == nil {
 		sv.NoManifest = true
@@ -77,9 +79,11 @@ func (a *api) selfServiceTab(r *http.Request, v *settingsView) error {
 		if rule.Install == nil {
 			continue
 		}
-		row := ssOfferRow{AppID: rule.ID, Name: rule.Name, Approved: newestApproved(approvals, rule.ID)}
+		row := ssOfferRow{AppID: rule.ID, Name: rule.Name, Approved: newestApproved(approvals, rule.ID),
+			AutoCategory: protocol.StoreCategoryLabel(thirdparty.DefaultStoreCategory(rule.ID))}
 		if o, ok := byApp[rule.ID]; ok {
 			row.Active, row.CanUpdate, row.CanInstall, row.NeedsApproval = true, o.CanUpdate, o.CanInstall, o.NeedsApproval
+			row.Category = o.Category
 			row.Groups = strings.Join(o.Groups, ", ")
 			row.Updated = a.stamp(o.UpdatedAt) + " · " + o.UpdatedBy
 		}
@@ -181,7 +185,8 @@ func (a *api) selfServiceOfferAction(w http.ResponseWriter, r *http.Request, s p
 		return
 	}
 	o := store.SelfServiceOffer{AppID: app, CanUpdate: r.PostFormValue("atualizar") == "1", CanInstall: r.PostFormValue("instalar") == "1",
-		NeedsApproval: r.PostFormValue("aprovacao") == "1", Groups: splitGroups(r.PostFormValue("grupos")), UpdatedBy: s.Username}
+		NeedsApproval: r.PostFormValue("aprovacao") == "1", Groups: splitGroups(r.PostFormValue("grupos")), UpdatedBy: s.Username,
+		Category: offerCategory(r.PostFormValue("categoria"))}
 	if !o.CanUpdate && !o.CanInstall {
 		removed, err := a.store.DeleteSelfServiceOffer(r.Context(), app)
 		if err != nil {
@@ -207,10 +212,21 @@ func (a *api) selfServiceOfferAction(w http.ResponseWriter, r *http.Request, s p
 	if o.NeedsApproval {
 		detail += " · com aprovação da TI"
 	}
+	if o.Category != "" {
+		detail += " · categoria " + protocol.StoreCategoryLabel(o.Category)
+	}
 	a.audit(r, s, "autoatendimento.oferta", app, detail)
 	a.logger.Info("autoatendimento: oferta gravada", "app", app, "atualizar", o.CanUpdate, "instalar", o.CanInstall, "grupos", len(o.Groups),
 		"username", s.Username, "request_id", RequestID(r.Context()))
 	http.Redirect(w, r, back+"&salvo="+url.QueryEscape(app), http.StatusSeeOther)
+}
+
+// offerCategory: a categoria do formulário ("" = a padrão do programa; fora da lista, também).
+func offerCategory(v string) string {
+	if protocol.ValidStoreCategory(v) {
+		return v
+	}
+	return ""
 }
 
 func yesNo(b bool) string {

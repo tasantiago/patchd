@@ -152,4 +152,24 @@ func TestOfertaEmLote(t *testing.T) {
 	if w := pagina(h, "POST", "/painel/configuracao/autoatendimento", sessaoTeste, tela(linhas, url.Values{"modo": {"salvar"}})); w.Code != http.StatusForbidden {
 		t.Errorf("leitura: %d", w.Code)
 	}
+
+	// A categoria na loja: por linha, e no lote (uma da lista, ou volta à automática).
+	if r := envia(url.Values{"modo": {"salvar"}, "apps": {"7zip", "vscode"}, "atualizar.7zip": {"1"}, "categoria.7zip": {"sistemas"},
+		"instalar.vscode": {"1"}}); r.StatusCode != http.StatusSeeOther {
+		t.Fatalf("categoria: %d", r.StatusCode)
+	}
+	if o := ofertas(); o["7zip"].Category != "sistemas" || o["vscode"].Category != "" {
+		t.Errorf("categoria por linha: %+v", o)
+	}
+	b = pagina(h, "GET", "/painel/configuracao?aba=autoatendimento", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `<option value="sistemas" selected>Sistemas da instituição</option>`) || !strings.Contains(b, `automática: Desenvolvimento`) {
+		t.Error("tela sem a categoria escolhida ou a automática")
+	}
+	if r := envia(url.Values{"modo": {"lote"}, "apps": {"7zip", "vscode"}, "atualizar.7zip": {"1"}, "categoria.7zip": {"sistemas"},
+		"instalar.vscode": {"1"}, "lote_alvo": {"todos"}, "lote_categoria": {"auto"}}); r.StatusCode != http.StatusSeeOther {
+		t.Fatalf("lote: %d", r.StatusCode)
+	}
+	if o := ofertas(); o["7zip"].Category != "" {
+		t.Errorf("lote automática: %+v", o["7zip"])
+	}
 }

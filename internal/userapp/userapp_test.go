@@ -615,3 +615,56 @@ func TestAbaReinicioPorqueEOQue(t *testing.T) {
 		}
 	}
 }
+
+// A loja em "Todos" e nas categorias com programas, e a busca pelo nome (sem acento nem
+// maiúscula). Sem categorias (servidor anterior), só a busca.
+func TestLojaPorCategoria(t *testing.T) {
+	loja := localapi.Response{OK: true, Account: `EXEMPLO\teste`, Catalog: &protocol.SelfServiceCatalog{Items: []protocol.SelfServiceItem{
+		{App: "vscode", Name: "Visual Studio Code", Action: "instalar", Target: "1.105.1", Category: "desenvolvimento"},
+		{App: "python-3.13", Name: "Python 3.13", Action: "instalar", Target: "3.13.9", Category: "desenvolvimento"},
+		{App: "libreoffice", Name: "LibreOffice", Action: "instalar", Target: "26.8.3.1", Category: "escritorio"},
+		{App: "editor-texto", Name: "Editor de Ação", Action: "instalar", Target: "1.0", Category: "inventada"},
+		{App: "7zip", Name: "7-Zip", Installed: "26.04", Action: "instalado", Category: "utilitarios"},
+	}}}
+	a := appDeTeste(&canal{loja: loja})
+	b := get(a, a.base()+"?aba=loja").Body.String()
+	for _, quer := range []string{
+		`aria-current="page">Todos<span class="n">5</span>`, `categoria=desenvolvimento">Desenvolvimento<span class="n">2</span>`,
+		`>Escritório e PDF<span class="n">1</span>`, `>Utilitários<span class="n">1</span>`, `>Outros<span class="n">1</span>`,
+		"Visual Studio Code", "LibreOffice", "7-Zip",
+	} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("todos: faltou %q", quer)
+		}
+	}
+	if strings.Contains(b, ">Navegadores<") {
+		t.Error("categoria sem programa aparece")
+	}
+	b = get(a, a.base()+"?aba=loja&categoria=desenvolvimento").Body.String()
+	if !strings.Contains(b, "Visual Studio Code") || !strings.Contains(b, "Python 3.13") || strings.Contains(b, "LibreOffice") || strings.Contains(b, "<strong>7-Zip</strong>") ||
+		!strings.Contains(b, `class="ativa" aria-current="page">Desenvolvimento`) || !strings.Contains(b, `name="categoria" value="desenvolvimento"`) {
+		t.Errorf("desenvolvimento:\n%s", b)
+	}
+	// A busca, sem acento e na categoria escolhida; nada achado: o caminho para todos.
+	b = get(a, a.base()+"?aba=loja&busca=acao").Body.String()
+	if !strings.Contains(b, "Editor de Ação") || strings.Contains(b, "Visual Studio Code") || !strings.Contains(b, `value="acao"`) {
+		t.Errorf("busca sem acento:\n%s", b)
+	}
+	b = get(a, a.base()+"?aba=loja&categoria=escritorio&busca=python").Body.String()
+	if !strings.Contains(b, "Nenhum programa para instalar com “python” no nome nesta categoria") || strings.Contains(b, "<strong>Python") {
+		t.Errorf("busca vazia:\n%s", b)
+	}
+	// Categoria desconhecida: Todos.
+	if b := get(a, a.base()+"?aba=loja&categoria=xyz").Body.String(); !strings.Contains(b, `aria-current="page">Todos`) || !strings.Contains(b, "LibreOffice") {
+		t.Error("categoria desconhecida")
+	}
+	// Servidor anterior (sem categoria): sem os links, com a busca.
+	for i := range loja.Catalog.Items {
+		loja.Catalog.Items[i].Category = ""
+	}
+	a = appDeTeste(&canal{loja: loja})
+	b = get(a, a.base()+"?aba=loja").Body.String()
+	if strings.Contains(b, `class="cats"`) || !strings.Contains(b, `name="busca"`) {
+		t.Errorf("sem categorias:\n%s", b)
+	}
+}

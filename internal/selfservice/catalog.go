@@ -38,6 +38,16 @@ type Item struct {
 	NeedsApproval bool
 	// Replaces: a atualização troca a instalação (tpinstall.Decision.Regularize).
 	Replaces bool
+	// Category: a categoria na loja (protocol.StoreCategories).
+	Category string
+}
+
+// StoreCategory: a categoria da oferta na loja, ou a padrão do programa.
+func StoreCategory(o store.SelfServiceOffer) string {
+	if o.Category != "" {
+		return o.Category
+	}
+	return thirdparty.DefaultStoreCategory(o.AppID)
 }
 
 // Machine é o que o catálogo usa da máquina.
@@ -73,7 +83,7 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 			continue
 		}
 		rule := rules[i]
-		it := Item{AppID: rule.ID, Name: rule.Name, NeedsApproval: o.NeedsApproval}
+		it := Item{AppID: rule.ID, Name: rule.Name, NeedsApproval: o.NeedsApproval, Category: StoreCategory(o)}
 		if j := slices.IndexFunc(plan, func(d tpinstall.Decision) bool { return d.App.ID == rule.ID }); j >= 0 {
 			d := plan[j]
 			it.Installed = d.Installed

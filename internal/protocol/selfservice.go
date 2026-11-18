@@ -76,6 +76,9 @@ type SelfServiceItem struct {
 	// Replaces: a atualização troca a instalação (a regularização): a atual sai e volta na
 	// versão nova. Servidores anteriores não mandam.
 	Replaces bool `json:"replaces,omitempty"`
+	// Category: a categoria na loja (StoreCategories). Servidores anteriores não mandam: a
+	// Central mostra a lista sem as categorias.
+	Category string `json:"category,omitempty"`
 }
 
 // SelfServiceCatalog é a loja do usuário na máquina.
@@ -223,4 +226,46 @@ type SelfServiceResponse struct {
 	JobID     int64  `json:"job_id,omitempty"`
 	RequestID int64  `json:"request_id,omitempty"` // Aula 18.3: o pedido que espera a TI
 	Message   string `json:"message"`
+}
+
+// StoreCategory é uma categoria da loja da Central de software: o usuário vê "Todos" e cada
+// categoria com programas, e escolhe uma para achar o programa mais rápido.
+type StoreCategory struct {
+	ID, Label string
+}
+
+// StoreCategories: as categorias, na ordem da loja. A última (StoreOther) recebe o que não tem
+// categoria.
+var StoreCategories = []StoreCategory{
+	{"navegadores", "Navegadores"},
+	{"escritorio", "Escritório e PDF"},
+	{"comunicacao", "Comunicação"},
+	{"multimidia", "Imagem, áudio e vídeo"},
+	{"desenvolvimento", "Desenvolvimento"},
+	{"utilitarios", "Utilitários"},
+	{"sistemas", "Sistemas da instituição"},
+	{StoreOther, "Outros"},
+}
+
+// StoreOther: a categoria de quem não tem outra.
+const StoreOther = "outros"
+
+// ValidStoreCategory: o ID é de uma categoria da lista.
+func ValidStoreCategory(id string) bool {
+	for _, c := range StoreCategories {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// StoreCategoryLabel: o nome da categoria ("" para um ID desconhecido).
+func StoreCategoryLabel(id string) string {
+	for _, c := range StoreCategories {
+		if c.ID == id {
+			return c.Label
+		}
+	}
+	return ""
 }
