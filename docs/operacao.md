@@ -1442,7 +1442,8 @@ sem editar arquivo no servidor:
    dos programas do manifesto: o agente recusa instalador com outro assinante.
    O valor é o **O=** do certificado, exatamente como está, não o nome do produto: no
    PowerShell, `(Get-AuthenticodeSignature .\instalador.exe).SignerCertificate.Subject` mostra
-   `CN=…, O=…`; copie o que vem depois de `O=` (sem as aspas). O job recusado também diz
+   `CN=…, O=…`; copie o que vem depois de `O=` (sem as aspas), ou cole o Subject inteiro: o
+   painel guarda só o O=. O job recusado também diz
    quem assinou ("assinado por … (O=…)").
    **0x800B010A** ("a cadeia do certificado não chega a uma raiz confiável"): o Windows não
    montou a cadeia do certificado até uma raiz que ele conhece. O agente confere primeiro sem

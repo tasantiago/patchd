@@ -135,3 +135,18 @@ func TestInstaladorProprioNaRegra(t *testing.T) {
 		}
 	}
 }
+
+func TestOrganizacaoDoAssinante(t *testing.T) {
+	for in, want := range map[string]string{
+		"VideoLAN":      "VideoLAN",
+		"  Google LLC ": "Google LLC",
+		"C=US, O=Vault Id Solucoes em Criptografia e Identificacao Ltda ME, OU=7L8T5CHD8K, CN=Developer ID Application: Vault Id Solucoes em Criptografia e Identificacao Ltda ME (7L8T5CHD8K), OID.0.9.2342.19200300.100.1.1=7L8T5CHD8K": "Vault Id Solucoes em Criptografia e Identificacao Ltda ME",
+		`CN="Foo, Inc.", O="Foo, Inc.", L=Rio, C=BR`: "Foo, Inc.",
+		`CN=X, o=minúsculo`:                          "minúsculo",
+		"CN=Só o nome, C=BR":                         "CN=Só o nome, C=BR",
+	} {
+		if got := SignerOrganization(in); got != want {
+			t.Errorf("SignerOrganization(%q) = %q, quer %q", in, got, want)
+		}
+	}
+}

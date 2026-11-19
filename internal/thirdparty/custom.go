@@ -201,3 +201,41 @@ func WithCustom(base Manifest, rules []json.RawMessage) (Manifest, []error) {
 	out := Manifest{Version: base.Version, Apps: append(slices.Clone(base.Apps), ok...)}
 	return out, errs
 }
+
+// SignerOrganization: o campo "organização que assina" aceita o Subject inteiro, como o
+// PowerShell mostra (Get-AuthenticodeSignature … .SignerCertificate.Subject: "C=US, O=Vault
+// Id …, OU=…, CN=…"), e fica só com o valor de O= (sem aspas). Sem O= no texto, volta igual.
+func SignerOrganization(s string) string {
+	s = strings.TrimSpace(s)
+	if !strings.Contains(s, "=") {
+		return s
+	}
+	var parts []string
+	var cur strings.Builder
+	quoted := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			quoted = !quoted
+			cur.WriteRune(r)
+		case (r == ',' || r == ';') && !quoted:
+			parts = append(parts, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	parts = append(parts, cur.String())
+	for _, p := range parts {
+		k, v, ok := strings.Cut(strings.TrimSpace(p), "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(k), "O") {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+			v = strings.ReplaceAll(v[1:len(v)-1], `""`, `"`)
+		}
+		return v
+	}
+	return s
+}

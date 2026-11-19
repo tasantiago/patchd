@@ -58,7 +58,9 @@ func TestIncluirProgramaPeloPainel(t *testing.T) {
 		t.Error("pacote fora da forma")
 	}
 	form := url.Values{"nome": {"VLC"}, "winget": {"VideoLAN.VLC"}, "inventario": {"VLC media player"}, "modo": {"igual"},
-		"fabricante": {"VideoLAN"}, "tipo": {"nullsoft"}, "assinatura": {"sim"}, "assinante": {"VideoLAN"}, "processos": {"vlc.exe"}}
+		"fabricante": {"VideoLAN"}, "tipo": {"nullsoft"}, "assinatura": {"sim"}, "processos": {"vlc.exe"},
+		// O Subject inteiro colado do PowerShell: fica só o O=.
+		"assinante": {"C=FR, L=Paris, O=VideoLAN, CN=VideoLAN"}}
 	// Sem assinante: volta com o formulário preenchido.
 	ruim := url.Values{}
 	for k, v := range form {
@@ -111,7 +113,7 @@ func TestIncluirProgramaPeloPainel(t *testing.T) {
 	}
 	// A lista e a edição (o nome no inventário volta como texto).
 	b = pagina(h, "GET", pagina_+"?editar=videolan-vlc", sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, `name="editar" value="videolan-vlc"`) || !strings.Contains(b, `name="inventario" value="VLC media player"`) ||
+	if !strings.Contains(b, `name="editar" value="videolan-vlc"`) || !strings.Contains(b, `name="inventario" value="VLC media player"`) || !strings.Contains(b, `name="assinante" value="VideoLAN"`) ||
 		!strings.Contains(b, `name="processos" value="vlc.exe"`) || !strings.Contains(b, "Incluídos pelo painel") {
 		t.Error("edição")
 	}

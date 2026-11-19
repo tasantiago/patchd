@@ -124,7 +124,8 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 	if f.NoSignature {
 		in.UnsignedReason = f.Unsigned
 	} else {
-		in.Signer = f.Signer
+		in.Signer = thirdparty.SignerOrganization(f.Signer)
+		f.Signer = in.Signer
 	}
 	for _, p := range strings.FieldsFunc(f.Processes, func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\r' }) {
 		if !slices.Contains(in.Processes, p) {
