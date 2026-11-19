@@ -34,6 +34,8 @@ type CustomInput struct {
 	Signer         string // a organização (O=) da assinatura do instalador
 	UnsignedReason string // ou: por que o instalador não tem assinatura
 	Processes      []string
+	// UninstallFirst: a atualização remove a instalação de agora antes de instalar.
+	UninstallFirst bool
 	// Upload: o instalador próprio, enviado pelo painel (sem winget). O id vem do nome, ou é
 	// ID (a edição mantém o id de quando foi incluído).
 	Upload bool
@@ -121,8 +123,9 @@ func BuildCustom(in CustomInput) (App, error) {
 		return App{}, fmt.Errorf("modo de comparar o nome %q: use %s ou %s", in.NameMode, NameEquals, NamePrefix)
 	}
 	a := App{ID: id, OS: "windows", Name: in.Name, Category: CategoryFeed, Match: match,
-		Source:  &Source{Type: SourceWinget, ID: in.WingetID},
-		Install: &Install{Winget: in.WingetID, Type: in.InstallType, Signer: in.Signer, UnsignedReason: in.UnsignedReason, Processes: in.Processes}}
+		Source: &Source{Type: SourceWinget, ID: in.WingetID},
+		Install: &Install{Winget: in.WingetID, Type: in.InstallType, Signer: in.Signer, UnsignedReason: in.UnsignedReason, Processes: in.Processes,
+			UninstallFirst: in.UninstallFirst}}
 	if in.Upload {
 		if !slices.Contains(UploadTypes, in.InstallType) {
 			return App{}, fmt.Errorf("o tipo do instalador próprio: %s", strings.Join(UploadTypes, ", "))

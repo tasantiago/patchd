@@ -91,7 +91,7 @@ func Regularize(p interface{ Value(string) string }) bool {
 // e se o agente dela remove a instalação antiga).
 func (a *api) planOptions(ctx context.Context, machineID string) (tpinstall.Options, error) {
 	o := tpinstall.Options{Regularize: a.params != nil && Regularize(a.params)}
-	if !o.Regularize {
+	if !o.Regularize && (a.tpManifest == nil || !tpinstall.NeedsReplace(a.tpManifest.Get())) {
 		return o, nil
 	}
 	caps, err := a.store.MachineCapabilities(ctx, machineID)

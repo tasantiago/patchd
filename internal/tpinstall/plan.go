@@ -163,6 +163,9 @@ func PlanWith(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdP
 		if o.Regularize && (d.State == StateNoPackage || d.State == StateBundle) {
 			regularize(d, pkgs, arch, o)
 		}
+		if d.State == StateUpdate && d.Regularize == nil && d.App.Install != nil && d.App.Install.UninstallFirst {
+			uninstallFirst(d, o)
+		}
 		out = append(out, *d)
 	}
 	slices.SortStableFunc(out, func(a, b Decision) int {
@@ -351,6 +354,37 @@ func regularize(d *Decision, pkgs []store.ThirdPartyPackage, arch string, o Opti
 		how = "instala por cima da " + KindLabel(e.Kind)
 	}
 	d.Reason = fmt.Sprintf("%s → %s · %s · %s · regularizar: %s", e.Installed, pk.Version, pk.Type, pk.Architecture, how)
+}
+
+// uninstallFirst: a atualização do mesmo tipo que a regra manda fazer removendo antes a
+// instalação de agora (Install.UninstallFirst), com a mesma remoção silenciosa da
+// regularização. Sem como remover, a atualização fica comum e o motivo diz o que falta.
+func uninstallFirst(d *Decision, o Options) {
+	if len(d.Entries) != 1 {
+		return
+	}
+	e := d.Entries[0]
+	switch {
+	case e.Software.Uninstall == "":
+		d.Reason += "; a regra pede remover antes, mas a instalação de agora não tem desinstalação silenciosa registrada (ou o agente ainda não informa: atualize o agente): vai por cima"
+		return
+	case !o.CanReplace:
+		d.Reason += "; a regra pede remover antes: atualize o agente desta máquina (até lá, vai por cima)"
+		return
+	}
+	d.Regularize = &Regularization{From: e.Kind, Old: e.Software}
+	d.Reason += " · remove a instalação de agora e instala"
+}
+
+// NeedsReplace: o plano precisa saber se o agente remove a instalação antiga (Options.CanReplace)
+// mesmo com a regularização desligada, porque alguma regra pede remover antes.
+func NeedsReplace(m thirdparty.Manifest) bool {
+	for _, a := range m.For("windows") {
+		if a.Install != nil && a.Install.UninstallFirst {
+			return true
+		}
+	}
+	return false
 }
 
 // Counts: quantas decisões em cada estado.

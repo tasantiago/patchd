@@ -24,6 +24,9 @@ type Description struct {
 	// SignerOrg e SignerSubject: quem assinou o instalador (o O= e o Subject inteiro), lidos
 	// pelo servidor sem conferir; SignerNote: por que não deu para ler, ou que não é assinado.
 	SignerOrg, SignerSubject, SignerNote string
+	// UninstallPrevious: o instalador sugerido declara UpgradeBehavior uninstallPrevious (o
+	// fabricante pede remover a versão anterior antes de instalar).
+	UninstallPrevious bool
 }
 
 // Describe lê a versão mais nova do pacote: o manifesto de instalador e o de idioma padrão.
@@ -52,6 +55,7 @@ func (c *Client) Describe(ctx context.Context, id string) (Description, error) {
 		}
 		if d.InstallerURL == "" && len(d.Types) > 0 && in.Type == d.Types[0] {
 			d.InstallerURL = in.URL
+			d.UninstallPrevious = in.UpgradeBehavior == "uninstallPrevious"
 		}
 	}
 	path, _ := PackagePath(id)

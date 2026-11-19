@@ -137,6 +137,12 @@ type Install struct {
 	// instalador aprovado. Vazio: remove a antiga e instala; "over": instala por cima, sem
 	// remover (o MSI corporativo do Chrome assume a instalação feita pelo exe).
 	Regularize string `json:"regularize,omitempty"`
+	// UninstallFirst (Windows): a atualização remove a instalação de agora (em silêncio, como a
+	// regularização) e só então instala a nova. Para os instaladores que não atualizam por
+	// cima: o GlobalProtect instalado de um MSI que não está mais no disco (o Windows Installer
+	// pede o MSI original e falha com 1603), ou o fabricante que pede "uninstallPrevious" no
+	// winget.
+	UninstallFirst bool `json:"uninstall_first,omitempty"`
 	// Upload (Windows): o instalador não vem do winget, é enviado pelo painel (o arquivo
 	// .msi ou .exe que o fabricante distribui, como o do IRPF). Exige o tipo e a fonte
 	// "upload"; os argumentos ficam em cada instalador enviado.

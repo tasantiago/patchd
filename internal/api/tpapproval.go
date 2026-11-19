@@ -22,6 +22,7 @@ import (
 type tpInstallInfo struct {
 	Winget, Type, Signer, Unsigned, Processes string
 	Upload                                    bool   // instalador próprio (tpupload.go)
+	UninstallFirst                            bool   // a atualização remove antes a versão instalada
 	Shortcut                                  string // o atalho da regra, para mostrar
 }
 
@@ -64,7 +65,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		return nil
 	}
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
-		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded()}
+		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded(), UninstallFirst: rule.Install.UninstallFirst}
 	if sc := rule.Shortcut; sc != nil {
 		v.Install.Shortcut = fmt.Sprintf("%s → %s", sc.Name, sc.Target)
 		if sc.Icon != "" {

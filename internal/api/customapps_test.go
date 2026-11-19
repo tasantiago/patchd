@@ -161,3 +161,50 @@ func TestIncluirProgramaPeloPainel(t *testing.T) {
 		}
 	}
 }
+
+// "Remover a versão instalada antes de instalar a nova": a busca do winget marca quando o
+// fabricante pede (uninstallPrevious), a regra guarda e a página do programa mostra.
+func TestIncluirComRemoverAntes(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	descrever := func(_ context.Context, id string) (winget.Description, error) {
+		return winget.Description{ID: id, Version: "6.3.3", Name: "GlobalProtect", Publisher: "Palo Alto Networks", Types: []string{"msi"},
+			DisplayName: "GlobalProtect", DisplayPublisher: "Palo Alto Networks", UninstallPrevious: true, SignerOrg: "Palo Alto Networks, Inc"}, nil
+	}
+	h, _, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, descrever, nil), api.WithCompliance(&complianceFalso{}))
+	b := pagina(h, "GET", "/painel/patch/terceiros/incluir?winget=PaloAltoNetworks.GlobalProtect", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `name="remover_antes" value="1" checked`) || !strings.Contains(b, "O fabricante pede remover a versão anterior") {
+		t.Errorf("busca:\n%s", b)
+	}
+	form := url.Values{"nome": {"GlobalProtect"}, "winget": {"PaloAltoNetworks.GlobalProtect"}, "inventario": {"GlobalProtect"}, "modo": {"igual"},
+		"fabricante": {"Palo Alto Networks"}, "tipo": {"msi"}, "assinatura": {"sim"}, "assinante": {"Palo Alto Networks, Inc"}, "remover_antes": {"1"}}
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("salvar: %d %s", r.Code, r.Body)
+	}
+	var rule thirdparty.App
+	for _, a := range live.For("windows") {
+		if a.ID == "paloaltonetworks-globalprotect" {
+			rule = a
+		}
+	}
+	if rule.Install == nil || !rule.Install.UninstallFirst {
+		t.Fatalf("regra: %+v", rule.Install)
+	}
+	if b := pagina(h, "GET", "/painel/patch/terceiros/incluir?editar=paloaltonetworks-globalprotect", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `name="remover_antes" value="1" checked`) {
+		t.Error("edição sem a opção marcada")
+	}
+	if b := pagina(h, "GET", "/painel/patch/programa?app=paloaltonetworks-globalprotect", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "atualiza removendo antes a versão instalada") {
+		t.Error("página do programa")
+	}
+	// Desmarcar na edição tira a opção.
+	form.Set("editar", "paloaltonetworks-globalprotect")
+	form.Del("remover_antes")
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("editar: %d", r.Code)
+	}
+	for _, a := range live.For("windows") {
+		if a.ID == "paloaltonetworks-globalprotect" && a.Install.UninstallFirst {
+			t.Error("a opção ficou")
+		}
+	}
+}
