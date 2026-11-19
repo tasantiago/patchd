@@ -215,9 +215,9 @@ func TestInstaladorProprioPeloPainel(t *testing.T) {
 	}
 }
 
-// O instalador enviado diz quem o assinou: a página mostra, sugere exigir a assinatura do
-// arquivo (o programa estava "sem assinatura") e, com o botão, a regra passa a exigi-la.
-// Com a assinatura trocada, avisa que o agente vai recusar.
+// O instalador enviado diz quem o assinou. Com o programa "sem assinatura", só mostra (quem
+// marcou deu o motivo, e a assinatura lida pode não valer no Windows); com outra organização
+// exigida, avisa que o agente vai recusar e oferece exigir a do arquivo.
 func TestAssinaturaDoInstaladorEnviado(t *testing.T) {
 	ctx := context.Background()
 	base, _ := thirdparty.Default()
@@ -236,11 +236,20 @@ func TestAssinaturaDoInstaladorEnviado(t *testing.T) {
 	}
 	prog := "/painel/patch/programa?app=assistente-teste"
 	b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
-	for _, quer := range []string{"assinado por Fabricante Teste Ltda", "O instalador da 2.4.4 é assinado por Fabricante Teste Ltda</strong>",
-		`<input type="hidden" name="sha" value="` + shaDe(exe) + `"><button type="submit">Exigir a assinatura de Fabricante Teste Ltda</button>`} {
-		if !strings.Contains(b, quer) {
-			t.Errorf("página: falta %q", quer)
-		}
+	if !strings.Contains(b, "assinado por Fabricante Teste Ltda") || strings.Contains(b, "Exigir a assinatura de") || strings.Contains(b, "vai recusar") {
+		t.Errorf("sem assinatura:\n%s", b)
+	}
+	// Programa exigindo outra organização: o aviso de que o agente vai recusar, e o botão.
+	form.Set("editar", "assistente-teste")
+	form.Set("assinatura", "sim")
+	form.Set("assinante", "Outra Empresa")
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("editar: %d %s", r.Code, r.Body)
+	}
+	b = pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "O agente vai recusar o instalador da 2.4.4 (nullsoft).</strong> O programa exige a assinatura de <b>Outra Empresa</b>, e o arquivo é assinado por <b>Fabricante Teste Ltda</b>") ||
+		!strings.Contains(b, `<input type="hidden" name="sha" value="`+shaDe(exe)+`"><button type="submit">Exigir a assinatura de Fabricante Teste Ltda</button>`) {
+		t.Errorf("divergência:\n%s", b)
 	}
 	if strings.Contains(pagina(h, "GET", prog, sessaoTeste, nil).Body.String(), "Exigir a assinatura de") {
 		t.Error("leitura vê o botão")
@@ -267,17 +276,5 @@ func TestAssinaturaDoInstaladorEnviado(t *testing.T) {
 	b = pagina(h, "GET", prog+"&assinante=1", sessaoAdmin, nil).Body.String()
 	if !strings.Contains(b, "Assinatura atualizada") || strings.Contains(b, "Exigir a assinatura de") {
 		t.Error("depois de adotar")
-	}
-	// Programa exigindo outra organização: o aviso de que o agente vai recusar.
-	form.Set("editar", "assistente-teste")
-	form.Set("assinatura", "sim")
-	form.Set("assinante", "Outra Empresa")
-	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
-		t.Fatalf("editar: %d %s", r.Code, r.Body)
-	}
-	b = pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, "O agente vai recusar o instalador da 2.4.4 (nullsoft).</strong> O programa exige a assinatura de <b>Outra Empresa</b>, e o arquivo é assinado por <b>Fabricante Teste Ltda</b>") ||
-		!strings.Contains(b, "Exigir a assinatura de Fabricante Teste Ltda") {
-		t.Errorf("divergência:\n%s", b)
 	}
 }

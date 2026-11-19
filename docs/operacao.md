@@ -1435,7 +1435,9 @@ sem editar arquivo no servidor:
 1. **Buscar no winget**: digite o pacote (`VideoLAN.VLC`; o identificador está em winget.run ou
    no `winget search nome` de um Windows). A busca lê o winget-pkgs e preenche o nome, o nome
    e o fabricante em Programas e Recursos (quando o pacote declara) e o tipo do instalador.
-   Confira antes de salvar: o **nome no inventário** tem de ser o que aparece na aba Software
+   Confira antes de salvar (hífen e espaço contam: "Assistente-Desktop-BirdID" não é
+   "Assistente Desktop BirdID"; o job que não acha o programa aponta o nome parecido): o
+   **nome no inventário** tem de ser o que aparece na aba Software
    de uma máquina com o programa ("igual" ou "começa com", para quando o nome traz a versão).
 2. **Assinatura**: a organização que assina o instalador (Propriedades › Assinaturas digitais,
    ou `Get-AuthenticodeSignature`), ou, se o fabricante não assina, o motivo. É a mesma regra
@@ -1448,7 +1450,10 @@ sem editar arquivo no servidor:
    agente recusaria). Nos programas incluídos pelo painel, o botão **Exigir a assinatura de …**
    grava o O= do arquivo na regra (também para o instalador próprio, depois de enviado). A
    leitura no servidor não confere nada: quem confere a cadeia é o agente, no Windows; antes
-   de exigir, confira com `Get-AuthenticodeSignature` (Status `Valid`).
+   de exigir, confira com `Get-AuthenticodeSignature` (Status `Valid`). O programa marcado
+   "sem assinatura" não ganha sugestão: há instaladores assinados com certificado que o
+   Windows não valida (o BirdID, com um Developer ID da Apple: `UnknownError`), e para eles o
+   certo é continuar "sem assinatura", com o motivo.
    O valor é o **O=** do certificado, exatamente como está, não o nome do produto: no
    PowerShell, `(Get-AuthenticodeSignature .\instalador.exe).SignerCertificate.Subject` mostra
    `CN=…, O=…`; copie o que vem depois de `O=` (sem as aspas), ou cole o Subject inteiro: o

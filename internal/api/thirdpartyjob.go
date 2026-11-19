@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/tasantiago/patchd/internal/httpx"
 	"github.com/tasantiago/patchd/internal/installomator"
@@ -97,12 +98,18 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		}
 	}
 	agent := strings.TrimSpace(res.Detail)
-	if changed == nil || changed.InventoryChangedAt == nil || job.DeliveredAt == nil || !changed.InventoryChangedAt.After(*job.DeliveredAt) {
-		return jobs.StateFailed, "o agente informou sucesso, mas o inventário não mudou depois da entrega; agente: " + agent
-	}
+	unchanged := changed == nil || changed.InventoryChangedAt == nil || job.DeliveredAt == nil || !changed.InventoryChangedAt.After(*job.DeliveredAt)
 	inv, found, err := a.store.LatestInventory(r.Context(), job.MachineID)
 	if err != nil || !found {
+		if unchanged {
+			return jobs.StateFailed, "o agente informou sucesso, mas o inventário não mudou depois da entrega; agente: " + agent
+		}
 		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo"
+	}
+	if unchanged {
+		// O inventário é o mesmo de antes: o instalador reinstalou a mesma versão (ou não fez
+		// nada). Conclui se o programa já está visível na versão do job; senão, diz por quê.
+		return a.judgeUnchanged(inv, p, agent)
 	}
 	when := changed.InventoryChangedAt.UTC().Format("2006-01-02 15:04:05")
 	machine, user := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
@@ -130,6 +137,24 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC mostra %s (%s); agente: %s", when, nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
 }
 
+// judgeUnchanged: o job com o inventário igual ao de antes da entrega.
+func (a *api) judgeUnchanged(inv protocol.InventoryReport, p jobs.ThirdPartyParams, agent string) (string, string) {
+	machine, user := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
+	if len(machine) == 1 {
+		e := machine[0]
+		target, ok := thirdparty.Normalize(p.Version)
+		if c, err := version.CompareDotted(e.Installed, target); ok && e.Installed != "" && err == nil && c >= 0 {
+			return jobs.StateDone, fmt.Sprintf("o programa já estava instalado: o inventário, igual ao de antes, mostra %s (%s); agente: %s",
+				nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
+		}
+	}
+	why := "o inventário continua mostrando a versão de antes"
+	if len(machine) == 0 {
+		why = "e não mostra o programa instalado para a máquina toda: " + missingWhy(inv, a.tpManifest.Get(), p.App, user)
+	}
+	return jobs.StateFailed, "o agente informou sucesso, mas o inventário não mudou depois da entrega, " + why + "; agente: " + agent
+}
+
 // missingWhy: por que o inventário não mostra o programa depois de o instalador terminar bem.
 // A instalação só para um usuário (o instalador do Electron, sem /allusers, instala no perfil
 // de quem roda: o SYSTEM, que o inventário não lê), ou a entrada com o nome da regra e outro
@@ -153,9 +178,30 @@ func missingWhy(inv protocol.InventoryReport, m thirdparty.Manifest, app string,
 					"corrija o fabricante no inventário (ou deixe em branco)", s.Name, s.Publisher)
 			}
 		}
+		// O nome quase igual: só muda a pontuação ou os espaços ("Assistente-Desktop-BirdID
+		// 2.4.4" e "Assistente Desktop BirdID").
+		if key := looseName(rule.Name); len(key) >= 4 {
+			for _, s := range inv.Software {
+				if strings.HasPrefix(looseName(s.Name), key) {
+					return fmt.Sprintf("o inventário tem %q (fabricante %q), parecido com o programa mas com outro nome: "+
+						"corrija o \"Nome no inventário\" do programa para como aparece em Programas e Recursos", s.Name, s.Publisher)
+				}
+			}
+		}
 	}
 	return "nenhuma entrada com o nome do programa em Programas e Recursos da máquina; se o instalador instala por usuário, " +
 		"ele foi para o perfil do SYSTEM (o agente), que o inventário não lê: use os argumentos que instalam para todos os usuários (ex.: /allusers)"
+}
+
+// looseName: o nome só com letras e números, em minúsculas (para achar o parecido).
+func looseName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // nameVersion: o nome com a versão, sem repetir quando o nome já a traz ("LibreOffice
