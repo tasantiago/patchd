@@ -86,17 +86,18 @@ func (a *api) packageSigner(p store.ThirdPartyPackage) (pkgSigner, bool) {
 	return out, true
 }
 
-// tpSignerNote: o aviso do cartão de instaladores. Mismatch: o programa exige uma organização
-// e um instalador guardado tem outra (ou nenhuma): o agente vai recusar. Suggest: o programa
-// está "sem assinatura" e o instalador é assinado. Adopt: o O= que o botão grava (só nos
-// incluídos pelo painel), com o SHA-256 do arquivo de onde veio.
+// tpSignerNote: o aviso do cartão de instaladores: o programa exige uma organização e um
+// instalador guardado tem outra (ou nenhuma), e o agente vai recusar. Adopt: o O= que o botão
+// grava (só nos incluídos pelo painel), com o SHA-256 do arquivo de onde veio. O programa
+// "sem assinatura" não ganha aviso: quem marcou deu o motivo, e uma assinatura que o servidor
+// lê pode não valer no Windows (a do BirdID, de um certificado da Apple).
 type tpSignerNote struct {
-	Mismatch, Suggest bool
-	Required          string // o que a regra exige ("" sem assinatura)
-	Found             string // o O= do instalador (ou o motivo)
-	Version, Type     string
-	AdoptSHA          string
-	CanAdopt          bool
+	Mismatch      bool
+	Required      string // o que a regra exige ("" sem assinatura)
+	Found         string // o O= do instalador (ou o motivo)
+	Version, Type string
+	AdoptSHA      string
+	CanAdopt      bool
 }
 
 // signerNote: a primeira divergência entre a regra e os instaladores guardados, da versão mais
@@ -119,9 +120,6 @@ func signerNote(rule thirdparty.App, pkgs []store.ThirdPartyPackage, read func(s
 			return n
 		case rule.Install.Signer != "" && s.Signer.Organization != rule.Install.Signer:
 			n.Mismatch, n.AdoptSHA = true, p.SHA256
-			return n
-		case rule.Install.Signer == "" && s.Signer.Organization != "":
-			n.Suggest, n.AdoptSHA = true, p.SHA256
 			return n
 		}
 	}

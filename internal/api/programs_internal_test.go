@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
@@ -126,5 +128,44 @@ func TestMotivoProgramaAusente(t *testing.T) {
 	}
 	if got := missingWhy(inv(), m, "notepad-plus-plus", nil); !strings.Contains(got, "perfil do SYSTEM") {
 		t.Errorf("nada: %s", got)
+	}
+}
+
+// O nome no inventário com outra pontuação ("Assistente-Desktop-BirdID 2.4.4" e o programa
+// "Assistente Desktop BirdID"): o motivo aponta o nome; e o job com o inventário igual ao de
+// antes conclui quando o programa já está na versão.
+func TestProgramaComNomeParecidoEJaInstalado(t *testing.T) {
+	base, _ := thirdparty.Default()
+	mk := func(inv string) thirdparty.Manifest {
+		app, err := thirdparty.BuildCustom(thirdparty.CustomInput{Name: "Assistente Desktop BirdID", InventoryName: inv, NameMode: thirdparty.NamePrefix,
+			InstallType: "nullsoft", UnsignedReason: "teste", Upload: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(app)
+		m, errs := thirdparty.WithCustom(base, []json.RawMessage{raw})
+		if len(errs) > 0 {
+			t.Fatal(errs)
+		}
+		return m
+	}
+	inv := protocol.InventoryReport{OS: protocol.OSInfo{ID: "windows"}, Software: []protocol.Software{
+		{Name: "Assistente-Desktop-BirdID 2.4.4", Version: "2.4.4", Publisher: "Vaultid", Scope: "machine"}}}
+	errado := mk("Assistente Desktop BirdID")
+	if got := missingWhy(inv, errado, "assistente-desktop-birdid", nil); !strings.Contains(got, `"Assistente-Desktop-BirdID 2.4.4"`) || !strings.Contains(got, "Nome no inventário") {
+		t.Errorf("parecido: %s", got)
+	}
+	p := jobs.ThirdPartyParams{App: "assistente-desktop-birdid", Version: "2.4.4"}
+	a := &api{tpManifest: thirdparty.NewLive(errado)}
+	if st, d := a.judgeUnchanged(inv, p, "código 0"); st != jobs.StateFailed || !strings.Contains(d, "não mudou depois da entrega, e não mostra o programa") || !strings.Contains(d, "Nome no inventário") {
+		t.Errorf("nome errado: %s %s", st, d)
+	}
+	a = &api{tpManifest: thirdparty.NewLive(mk("Assistente-Desktop-BirdID"))}
+	if st, d := a.judgeUnchanged(inv, p, "código 0"); st != jobs.StateDone || !strings.Contains(d, "o programa já estava instalado") {
+		t.Errorf("já instalado: %s %s", st, d)
+	}
+	p.Version = "2.5"
+	if st, d := a.judgeUnchanged(inv, p, "código 0"); st != jobs.StateFailed || !strings.Contains(d, "continua mostrando a versão de antes") {
+		t.Errorf("versão de antes: %s %s", st, d)
 	}
 }
