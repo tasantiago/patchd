@@ -123,7 +123,32 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	}
 	// A versão mais nova primeiro.
 	slices.SortFunc(v.Versions, func(x, y tpVersionRow) int { return compareTPVersion(y.Version, x.Version) })
+	v.NoRuleType = noRuleTypeNote(rule.Install.Type, v.P.AppID, v.Versions, pkgs)
 	return nil
+}
+
+// noRuleTypeNote: a instalação nova (a Central, nas máquinas sem o programa) usa o tipo da
+// regra; com versão aprovada mas sem o instalador desse tipo guardado, a Central mostra o
+// programa como indisponível. "" quando há (ou a regra não tem tipo, ou nada aprovado).
+func noRuleTypeNote(ruleType, app string, versions []tpVersionRow, pkgs []store.ThirdPartyPackage) string {
+	if ruleType == "" {
+		return ""
+	}
+	var newest string
+	for _, row := range versions { // a mais nova primeiro
+		if !row.Approved {
+			continue
+		}
+		if slices.ContainsFunc(pkgs, func(p store.ThirdPartyPackage) bool {
+			return p.AppID == app && p.Version == row.Version && p.Type == ruleType
+		}) {
+			return ""
+		}
+		if newest == "" {
+			newest = row.Version
+		}
+	}
+	return newest
 }
 
 // approveThirdPartyAction aprova uma versão guardada de um programa com install.

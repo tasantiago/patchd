@@ -269,4 +269,19 @@ func TestBaixarTiposDaRegra(t *testing.T) {
 	if got := <-pedidas; strings.Join(got, " ") != "msi wix" {
 		t.Errorf("tipos pedidos: %v", got)
 	}
+	// Só o MSI guardado e aprovado: a Central não oferece a instalação nova (a regra é exe).
+	sha := strings.Repeat("b", 64)
+	st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: "7zip", WingetID: "7zip.7zip", Version: "26.05", Architecture: "x64", Type: "msi",
+		URL: "https://x", SHA256: sha, Size: 1})
+	st.ApproveThirdParty(ctx, store.ThirdPartyApproval{AppID: "7zip", Version: "26.05", ApprovedBy: "ana"})
+	b = pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "A Central de software não oferece a instalação nova.</strong> A regra instala o tipo <b>exe</b>") ||
+		!strings.Contains(b, `Baixe a 26.05 com "o da regra (exe)" abaixo`) {
+		t.Errorf("aviso do tipo da regra:\n%s", b)
+	}
+	st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: "7zip", WingetID: "7zip.7zip", Version: "26.05", Architecture: "x64", Type: "exe",
+		URL: "https://x", SHA256: strings.Repeat("c", 64), Size: 1})
+	if b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String(); strings.Contains(b, "não oferece a instalação nova") {
+		t.Error("aviso com o exe guardado")
+	}
 }

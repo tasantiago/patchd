@@ -1406,6 +1406,17 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
   sozinha até terminar (pode sair dela). Reiniciar o servidor interrompe o download; o que
   já foi registrado fica. O servidor precisa de saída para o GitHub e para o site do
   fabricante (no Podman, o `HTTPS_PROXY` do `deploy/.env`, docs/podman.md).
+  **Espelho em http**: alguns fabricantes (o VLC, pelo `get.videolan.org`) mandam para o
+  espelho mais perto, e alguns espelhos são http. O download tenta o mesmo arquivo por https
+  no espelho; sem resposta em 30 s, baixa por http. Nos dois casos o arquivo só fica se o
+  SHA-256 for o do manifesto do winget (e o agente confere de novo, com a assinatura, antes
+  de executar). O andamento mostra as duas linhas ("mandou para http", "baixando por http").
+- **A Central não oferece a instalação nova**: nas máquinas **sem** o programa, a Central
+  instala o tipo da regra. Se a versão aprovada só tem o instalador de outro tipo guardado (o
+  VLC aprovado com o MSI, e a regra é nullsoft), a loja mostra o programa em "Indisponíveis
+  agora", com "a versão aprovada (…) ainda não tem o instalador para esta máquina no
+  servidor", e a página do programa avisa. Baixe a mesma versão com "o da regra": a
+  aprovação já vale para ele.
 - **Excluir esta versão**: apaga os registros dos instaladores da versão e os arquivos da
   pasta `pacotes/` que nenhuma outra versão usa. Recusa a versão **aprovada** (revogue antes:
   a aprovação é uma decisão registrada), a que tem **job em aberto** com um dos instaladores

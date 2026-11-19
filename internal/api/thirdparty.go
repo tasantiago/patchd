@@ -307,11 +307,14 @@ type tpProgramView struct {
 	Versions []tpVersionRow
 	MaxNote  int
 	// Aula 23.3: baixar pelo painel e o andamento do download deste programa.
-	CanFetch  bool
-	Kinds     []tpKindOption // Aula 23.5: os tipos além do da regra
-	RuleType  string
-	Fetch     *tpFetchStatus
-	OtherBusy string // outro programa baixando agora (um download por vez)
+	CanFetch bool
+	Kinds    []tpKindOption // Aula 23.5: os tipos além do da regra
+	RuleType string
+	// NoRuleType: a versão aprovada sem o instalador do tipo da regra (a instalação nova na
+	// Central fica indisponível); "" quando não falta.
+	NoRuleType string
+	Fetch      *tpFetchStatus
+	OtherBusy  string // outro programa baixando agora (um download por vez)
 	// Upload: o envio do instalador próprio (tpupload.go); nil: o programa vem do winget.
 	Upload *tpUploadView
 }

@@ -36,6 +36,8 @@ func fabricante(t *testing.T) (*httptest.Server, *Fetcher, []byte, *atomic.Int32
 			w.Write(append([]byte("build nova "), instalador...))
 		case "/para-http":
 			http.Redirect(w, r, "http://exemplo.invalid/setup.exe", http.StatusFound)
+		case "/para-http-mesmo-host": // o espelho tem https: o Fetch troca e nem pede por http
+			http.Redirect(w, r, "http://"+r.Host+"/setup.exe", http.StatusFound)
 		case "/redireciona":
 			http.Redirect(w, r, "/setup.exe", http.StatusFound)
 		case "/instavel":
@@ -96,12 +98,13 @@ func TestFetch(t *testing.T) {
 	if _, err := f.Fetch(ctx, t.TempDir(), srv.URL+"/instavel", want, false, prog); err != nil || falhas.Load() != 3 {
 		t.Errorf("instável: %v (%d pedidos)", err, falhas.Load())
 	}
-	for path, msg := range map[string]string{"/nao-existe": "404 Not Found", "/para-http": "fora do https"} {
-		falhas.Store(0)
-		if _, err := f.Fetch(ctx, t.TempDir(), srv.URL+path, want, false, nil); err == nil || !strings.Contains(err.Error(), msg) ||
-			strings.Contains(err.Error(), "tentativa") {
-			t.Errorf("%s: %v", path, err)
-		}
+	if _, err := f.Fetch(ctx, t.TempDir(), srv.URL+"/nao-existe", want, false, nil); err == nil || !strings.Contains(err.Error(), "404 Not Found") ||
+		strings.Contains(err.Error(), "tentativa") {
+		t.Errorf("404: %v", err)
+	}
+	// Redirecionamento para http num espelho sem nada: nem https nem http respondem.
+	if _, err := f.Fetch(ctx, t.TempDir(), srv.URL+"/para-http", want, false, nil); err == nil || !strings.Contains(err.Error(), "exemplo.invalid") {
+		t.Errorf("para http sem espelho: %v", err)
 	}
 
 	// Limite de tamanho: pelo Content-Length, antes de baixar; sem ele, durante a cópia.
@@ -159,5 +162,56 @@ func TestPresent(t *testing.T) {
 	}
 	if err := Present(dir, s, true, 0); err == nil || !strings.Contains(err.Error(), "não é um arquivo comum") {
 		t.Errorf("pasta: %v", err)
+	}
+}
+
+// O get.videolan.org manda para o espelho mais perto, e alguns são http: o Fetch tenta o mesmo
+// arquivo por https; sem https, baixa por http e só guarda se o SHA-256 conferir.
+func TestFetchEspelhoHTTP(t *testing.T) {
+	srv, f, inst, _ := fabricante(t)
+	ctx := context.Background()
+	want := sum(inst)
+	espelho := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/vlc.exe":
+			w.Write(inst)
+		case "/outro.exe":
+			w.Write([]byte("trocado no caminho"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(espelho.Close)
+	// O endereço do manifesto (https) manda para o espelho http.
+	redir := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, espelho.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(redir.Close)
+	g := *f
+	g.HTTP = redir.Client()
+	g.HTTP.CheckRedirect = HTTPSOnly
+	var linhas []string
+	prog := func(s string) { linhas = append(linhas, s) }
+
+	r, err := g.Fetch(ctx, t.TempDir(), redir.URL+"/vlc.exe", want, false, prog)
+	log := strings.Join(linhas, "\n")
+	if err != nil || r.Size != int64(len(inst)) || !strings.Contains(log, "mandou para http") || !strings.Contains(log, "baixando por http") {
+		t.Fatalf("espelho http: %+v %v\n%s", r, err, log)
+	}
+	// O que o http entregou não confere: recusado, sem repetir.
+	dir := t.TempDir()
+	_, err = g.Fetch(ctx, dir, redir.URL+"/outro.exe", want, false, nil)
+	var hm *HashMismatchError
+	if !errors.As(err, &hm) {
+		t.Fatalf("http trocado: %v", err)
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 0 {
+		t.Errorf("ficou arquivo: %v", ents)
+	}
+	// O espelho com https: baixa por https, sem pedir por http.
+	linhas = nil
+	if r, err := f.Fetch(ctx, t.TempDir(), srv.URL+"/para-http-mesmo-host", want, false, prog); err != nil || r.Size != int64(len(inst)) ||
+		strings.Contains(strings.Join(linhas, "\n"), "baixando por http") {
+		t.Errorf("espelho com https: %+v %v %v", r, err, linhas)
 	}
 }
