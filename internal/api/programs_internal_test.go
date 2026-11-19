@@ -1,9 +1,13 @@
 package api
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpinstall"
 )
 
 // O nome do programa sem a versão e a arquitetura.
@@ -97,5 +101,30 @@ func TestAvisoSemInstaladorDaRegra(t *testing.T) {
 	}
 	if got := noRuleTypeNote("nullsoft", "vlc", []tpVersionRow{{Version: "3.0.24"}}, []store.ThirdPartyPackage{pk("3.0.24", "wix")}); got != "" {
 		t.Errorf("nada aprovado: %q", got)
+	}
+}
+
+// Por que o inventário não mostra o programa depois de o instalador terminar bem.
+func TestMotivoProgramaAusente(t *testing.T) {
+	m, err := thirdparty.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := func(sw ...protocol.Software) protocol.InventoryReport {
+		return protocol.InventoryReport{OS: protocol.OSInfo{ID: "windows"}, Software: sw}
+	}
+	npp := protocol.Software{Name: "Notepad++ (64-bit x64)", Version: "8.9.8.1", Publisher: "Notepad++ Team", Scope: "user"}
+	r := inv(npp)
+	_, user := tpinstall.Entries("windows", r.Software, m, "notepad-plus-plus")
+	if got := missingWhy(r, m, "notepad-plus-plus", user); !strings.Contains(got, "1 instalação(ões) só para um usuário (Notepad++ (64-bit x64) 8.9.8.1)") ||
+		!strings.Contains(got, "/allusers") {
+		t.Errorf("por usuário: %s", got)
+	}
+	npp.Scope, npp.Publisher = "machine", "Outro Fabricante"
+	if got := missingWhy(inv(npp), m, "notepad-plus-plus", nil); !strings.Contains(got, `"Notepad++ (64-bit x64)" com o fabricante "Outro Fabricante"`) {
+		t.Errorf("fabricante: %s", got)
+	}
+	if got := missingWhy(inv(), m, "notepad-plus-plus", nil); !strings.Contains(got, "perfil do SYSTEM") {
+		t.Errorf("nada: %s", got)
 	}
 }

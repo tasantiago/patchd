@@ -1531,6 +1531,18 @@ argumentos, com a pasta de trabalho na pasta dele: nada é baixado nem executado
 anteriores ignoram a lista. O resultado fica no log do agente ("atalho na área de trabalho
 pública").
 
+### Instalador que instala só para o usuário
+
+O agente roda os instaladores como SYSTEM. Instaladores que por padrão instalam **para o
+usuário** (os de programas feitos em Electron, como o Assistente Desktop BirdID, e outros
+NSIS) instalam então no perfil do SYSTEM: o código de saída é 0, mas o programa não aparece
+para ninguém, nem no inventário, e o job falha com "não mostra o programa instalado para a
+máquina toda", dizendo o motivo. Nos argumentos da instalação silenciosa, peça a instalação
+para todos os usuários: no instalador Electron (electron-builder), `/S /allusers`; nos
+outros, o que o fabricante documenta. A instalação que ficou no perfil do SYSTEM
+(`C:\Windows\System32\config\systemprofile\AppData\Local\Programs\…`) não atrapalha;
+dá para tirar rodando o desinstalador dela como administrador.
+
 ## Regularizar instalações de terceiros
 
 Um programa instalado **de outro jeito** que o instalador aprovado não atualiza aparece na
