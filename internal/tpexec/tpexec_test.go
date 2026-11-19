@@ -154,6 +154,13 @@ func TestInstalarRecusas(t *testing.T) {
 	if _, err := e.Install(ctx, 1, p); !errors.Is(err, jobs.ErrRefused) || run.prog != "" {
 		t.Errorf("sem assinatura: %v", err)
 	}
+	// A cadeia não fechou, mas o Windows leu quem assinou: o detalhe diz (para acertar o O=).
+	lido := wintrust.Signature{Chain: []wintrust.Cert{{CommonName: "VAULTID CRIPTOGRAFIA", Organization: "VAULTID CRIPTOGRAFIA E IDENTIFICACAO S.A."}}}
+	e, _ = executor(t, inst, run, lido, errors.New("a cadeia do certificado não chega a uma raiz confiável (WinVerifyTrust: 0x800B010A)"))
+	if d, err := e.Install(ctx, 1, p); !errors.Is(err, jobs.ErrRefused) || run.prog != "" ||
+		!strings.Contains(d, "; assinado por VAULTID CRIPTOGRAFIA (O=VAULTID CRIPTOGRAFIA E IDENTIFICACAO S.A.)") {
+		t.Errorf("cadeia: %q %v", d, err)
+	}
 	// Sem assinante exigido, a falta de assinatura só é informada.
 	e, _ = executor(t, inst, run, wintrust.Signature{}, errors.New("o arquivo não tem assinatura"))
 	p.Signer = ""

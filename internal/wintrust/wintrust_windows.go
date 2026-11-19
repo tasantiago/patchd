@@ -42,11 +42,32 @@ type cryptProviderSgnr struct {
 
 // VerifyChain confere a assinatura Authenticode de path com o WinVerifyTrust e devolve a
 // cadeia, sem política de assinante (Aula 14.4: os instaladores de terceiros são de cada
-// fabricante; Verify, para o wsusscn2, aplica a política da Microsoft). A revogação não é consultada (WTD_REVOKE_NONE, só o cache): o
-// agente pode estar numa rede sem acesso às listas de revogação, e a busca offline existe
-// justamente para esse caso. A Signature volta preenchida sempre que a cadeia foi lida,
-// inclusive quando a política recusa (para o log dizer quem assinou).
+// fabricante; Verify, para o wsusscn2, aplica a política da Microsoft). A revogação não é
+// consultada (WTD_REVOKE_NONE, só o cache): o agente pode estar numa rede sem acesso às
+// listas de revogação, e a busca offline existe justamente para esse caso.
+//
+// A primeira conferência não sai da máquina (só o cache de certificados). Se a cadeia não
+// fecha (CERT_E_CHAINING: o instalador não traz o certificado intermediário e este Windows
+// não o tem), confere de novo deixando o Windows buscar o intermediário no endereço que o
+// próprio certificado indica (AIA), como faz o Explorer ao abrir "Assinaturas digitais". A
+// raiz continua tendo de estar no repositório de raízes confiáveis.
+//
+// A Signature volta preenchida sempre que a cadeia foi lida, inclusive quando a conferência
+// ou a política recusa (para o log dizer quem assinou).
 func VerifyChain(path string) (Signature, error) {
+	sig, err := verifyOnce(path, true)
+	if errors.Is(err, windows.Errno(windows.CERT_E_CHAINING)) {
+		sig, err = verifyOnce(path, false)
+	}
+	if err != nil {
+		return sig, trustError(err)
+	}
+	return sig, nil
+}
+
+// verifyOnce é uma chamada do WinVerifyTrust; cacheOnly: sem buscar certificados na rede.
+// Com a conferência recusada, devolve o erro cru e, se der para ler, quem assinou.
+func verifyOnce(path string, cacheOnly bool) (Signature, error) {
 	p16, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return Signature{}, err
@@ -59,7 +80,9 @@ func VerifyChain(path string) (Signature, error) {
 		UnionChoice:                     windows.WTD_CHOICE_FILE,
 		StateAction:                     windows.WTD_STATEACTION_VERIFY,
 		FileOrCatalogOrBlobOrSgnrOrCert: unsafe.Pointer(file),
-		ProvFlags:                       windows.WTD_CACHE_ONLY_URL_RETRIEVAL,
+	}
+	if cacheOnly {
+		data.ProvFlags = windows.WTD_CACHE_ONLY_URL_RETRIEVAL
 	}
 	verr := windows.WinVerifyTrustEx(windows.InvalidHWND, &windows.WINTRUST_ACTION_GENERIC_VERIFY_V2, data)
 	// O estado (e a cadeia apontada por ele) só existe até o CLOSE: tudo é copiado antes.
@@ -68,7 +91,11 @@ func VerifyChain(path string) (Signature, error) {
 		_ = windows.WinVerifyTrustEx(windows.InvalidHWND, &windows.WINTRUST_ACTION_GENERIC_VERIFY_V2, data)
 	}()
 	if verr != nil {
-		return Signature{}, trustError(verr)
+		var sig Signature
+		if data.StateData != 0 {
+			sig, _ = signerChain(data.StateData) // só para o log: quem assinou, se o Windows leu
+		}
+		return sig, verr
 	}
 	return signerChain(data.StateData)
 }
@@ -85,6 +112,8 @@ func trustError(err error) error {
 		msg = "o conteúdo não confere com a assinatura (arquivo alterado)"
 	case errors.Is(err, windows.Errno(windows.CERT_E_UNTRUSTEDROOT)):
 		msg = "a cadeia termina numa raiz que este Windows não reconhece"
+	case errors.Is(err, windows.Errno(windows.CERT_E_CHAINING)):
+		msg = "a cadeia do certificado não chega a uma raiz confiável deste Windows (falta o certificado intermediário, que o Windows também não conseguiu baixar, ou a raiz da autoridade certificadora)"
 	case errors.Is(err, windows.Errno(windows.TRUST_E_EXPLICIT_DISTRUST)):
 		msg = "o certificado foi marcado como não confiável neste Windows"
 	case errors.Is(err, windows.Errno(windows.CERT_E_REVOKED)):

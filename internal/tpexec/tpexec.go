@@ -352,6 +352,10 @@ func (e *Executor) checkSignature(file, signer string) (string, error) {
 		note = "assinatura não conferida (sistema sem WinVerifyTrust)"
 	case err != nil:
 		note = "assinatura: " + err.Error()
+		if len(sig.Chain) > 0 { // o Windows leu quem assinou, mas recusou a conferência
+			s := sig.Signer()
+			note += fmt.Sprintf("; assinado por %s (O=%s)", s.CommonName, s.Organization)
+		}
 	default:
 		s := sig.Signer()
 		note = fmt.Sprintf("assinatura válida: %s (O=%s)", s.CommonName, s.Organization)
