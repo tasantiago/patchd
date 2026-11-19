@@ -451,6 +451,10 @@ func (a App) Matches(name, publisher string) bool {
 	return a.publisher == nil || a.publisher.MatchString(publisher)
 }
 
+// MatchesName: o nome da entrada é o da regra, sem olhar o fabricante (para dizer, quando o
+// programa não é reconhecido, que o nome bate e o fabricante não).
+func (a App) MatchesName(name string) bool { return a.match != nil && a.match.MatchString(name) }
+
 // MatchesSoftware diz se a regra reconhece a entrada: o nome e o fabricante (Matches), a
 // versão (version_match) e a arquitetura (arch). Sem a arquitetura no inventário (agente
 // anterior), a regra com arch não reconhece: a entrada fica para a regra geral do programa.

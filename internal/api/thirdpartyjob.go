@@ -105,10 +105,11 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo"
 	}
 	when := changed.InventoryChangedAt.UTC().Format("2006-01-02 15:04:05")
-	machine, _ := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
+	machine, user := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
 	switch len(machine) {
 	case 0:
-		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC não mostra mais o programa %s; agente: %s", when, p.App, agent)
+		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC não mostra o programa %s instalado para a máquina toda: %s; agente: %s",
+			when, p.App, missingWhy(inv, a.tpManifest.Get(), p.App, user), agent)
 	case 1:
 	default:
 		var parts []string
@@ -127,6 +128,34 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC mostra %s %s, abaixo de %s; agente: %s", when, p.App, e.Software.Version, p.Version, agent)
 	}
 	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC mostra %s (%s); agente: %s", when, nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
+}
+
+// missingWhy: por que o inventário não mostra o programa depois de o instalador terminar bem.
+// A instalação só para um usuário (o instalador do Electron, sem /allusers, instala no perfil
+// de quem roda: o SYSTEM, que o inventário não lê), ou a entrada com o nome da regra e outro
+// fabricante (o fabricante no programa não é o do Programas e Recursos).
+func missingWhy(inv protocol.InventoryReport, m thirdparty.Manifest, app string, user []tpinstall.Entry) string {
+	if len(user) > 0 {
+		return fmt.Sprintf("há %d instalação(ões) só para um usuário (%s %s): o instalador instalou por usuário; "+
+			"use os argumentos que instalam para todos os usuários (ex.: /allusers)", len(user), user[0].Software.Name, user[0].Software.Version)
+	}
+	var rule *thirdparty.App
+	for _, r := range m.For(inv.OS.ID) {
+		if r.ID == app {
+			rule = &r
+			break
+		}
+	}
+	if rule != nil {
+		for _, s := range inv.Software {
+			if rule.MatchesName(s.Name) {
+				return fmt.Sprintf("o inventário tem %q com o fabricante %q, que não é o do programa no patchd: "+
+					"corrija o fabricante no inventário (ou deixe em branco)", s.Name, s.Publisher)
+			}
+		}
+	}
+	return "nenhuma entrada com o nome do programa em Programas e Recursos da máquina; se o instalador instala por usuário, " +
+		"ele foi para o perfil do SYSTEM (o agente), que o inventário não lê: use os argumentos que instalam para todos os usuários (ex.: /allusers)"
 }
 
 // nameVersion: o nome com a versão, sem repetir quando o nome já a traz ("LibreOffice
