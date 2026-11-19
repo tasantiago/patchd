@@ -1440,6 +1440,18 @@ sem editar arquivo no servidor:
 2. **Assinatura**: a organização que assina o instalador (Propriedades › Assinaturas digitais,
    ou `Get-AuthenticodeSignature`), ou, se o fabricante não assina, o motivo. É a mesma regra
    dos programas do manifesto: o agente recusa instalador com outro assinante.
+   O valor é o **O=** do certificado, exatamente como está, não o nome do produto: no
+   PowerShell, `(Get-AuthenticodeSignature .\instalador.exe).SignerCertificate.Subject` mostra
+   `CN=…, O=…`; copie o que vem depois de `O=` (sem as aspas). O job recusado também diz
+   quem assinou ("assinado por … (O=…)").
+   **0x800B010A** ("a cadeia do certificado não chega a uma raiz confiável"): o Windows não
+   montou a cadeia do certificado até uma raiz que ele conhece. O agente confere primeiro sem
+   sair da máquina e, nesse erro, de novo deixando o Windows baixar o certificado
+   intermediário do endereço que o próprio certificado indica. Se ainda falhar, falta a raiz
+   da autoridade certificadora no Windows (comum em certificados ICP-Brasil, cuja raiz não
+   vem com o Windows): instale a raiz (e a intermediária) em "Autoridades de Certificação
+   Raiz Confiáveis" (e "Intermediárias") da máquina, por GPO, ou escolha "o instalador não é
+   assinado" com o motivo.
 3. **Processos** (opcional): os executáveis do programa; com um deles aberto, o agente adia.
 4. **Salvar**: o programa vale na hora, sem reiniciar o servidor, no painel, na avaliação do
    parque, nas campanhas, na Padronização e no autoatendimento. O servidor busca a versão de
