@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/authsig"
 	"github.com/tasantiago/patchd/internal/catalog/retry"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/store"
@@ -55,10 +59,44 @@ func withCustomApps(base thirdparty.Manifest, list []store.CustomApp) (thirdpart
 // wingetDescriber: a busca do formulário "Incluir programa", no winget-pkgs público (o mesmo
 // cliente do package fetch).
 func wingetDescriber(version string) api.WingetDescriber {
-	c := winget.NewClient("patchd-server/" + version)
+	ua := "patchd-server/" + version
+	c := winget.NewClient(ua)
 	c.HTTP = retry.Wrap(c.HTTP, nil)
-	return c.Describe
+	// Quem assinou: só os pedaços do instalador com a assinatura (Range), sem baixá-lo. É para
+	// preencher o formulário; quem confere é o agente (o http do espelho não muda isso).
+	sigHTTP := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
+			return fmt.Errorf("redirecionamento para %q", req.URL.Scheme)
+		}
+		if len(via) >= 10 {
+			return errors.New("mais de 10 redirecionamentos")
+		}
+		return nil
+	}}
+	return func(ctx context.Context, id string) (winget.Description, error) {
+		d, err := c.Describe(ctx, id)
+		if err != nil || d.InstallerURL == "" {
+			return d, err
+		}
+		sctx, cancel := context.WithTimeout(ctx, signerTimeout)
+		defer cancel()
+		s, err := authsig.Remote(sctx, sigHTTP, d.InstallerURL, ua)
+		switch {
+		case errors.Is(err, authsig.ErrUnsigned):
+			d.SignerNote = "o instalador não é assinado"
+		case err != nil:
+			d.SignerNote = "não deu para ler a assinatura do instalador: " + err.Error()
+		case s.Organization == "":
+			d.SignerNote = "o certificado que assinou não tem O= (" + s.Subject + ")"
+		default:
+			d.SignerOrg, d.SignerSubject = s.Organization, s.Subject
+		}
+		return d, nil
+	}
 }
+
+// signerTimeout: a leitura da assinatura do instalador na busca do "Incluir programa".
+const signerTimeout = 20 * time.Second
 
 // customAppSync: a versão de referência do programa recém-incluído, sem esperar a próxima
 // sincronização do catálogo (que pode estar a horas). Grava só a versão dele: o

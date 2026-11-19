@@ -25,7 +25,7 @@ type tpInstallInfo struct {
 	Shortcut                                  string // o atalho da regra, para mostrar
 }
 
-type tpPackageRow struct{ Type, Arch, Size, SHA, Fetched, Args, File string }
+type tpPackageRow struct{ Type, Arch, Size, SHA, Fetched, Args, File, Signer string }
 
 // tpUploadView: o cartão de envio do instalador próprio.
 type tpUploadView struct {
@@ -116,6 +116,12 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		if p.Uploaded() {
 			pr.File, pr.Args = strings.TrimPrefix(p.URL, store.UploadPrefix), p.Arguments
 		}
+		if sig, ok := a.packageSigner(p); ok {
+			pr.Signer = sig.Note
+			if sig.Note == "" {
+				pr.Signer = "assinado por " + sig.Signer.Organization
+			}
+		}
 		row.Packages = append(row.Packages, pr)
 	}
 	for _, row := range byVersion {
@@ -124,6 +130,9 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	// A versão mais nova primeiro.
 	slices.SortFunc(v.Versions, func(x, y tpVersionRow) int { return compareTPVersion(y.Version, x.Version) })
 	v.NoRuleType = noRuleTypeNote(rule.Install.Type, v.P.AppID, v.Versions, pkgs)
+	if v.Signer = signerNote(*rule, pkgs, a.packageSigner); v.Signer != nil {
+		v.Signer.CanAdopt = v.Admin && v.Custom && v.Signer.AdoptSHA != ""
+	}
 	return nil
 }
 
@@ -216,6 +225,12 @@ func tpApprovalFlash(q url.Values) (flash, errMsg string) {
 		return "Aprovação revogada. Jobs já criados seguem o prazo deles (cancele os pendentes em Jobs).", ""
 	case q.Get("erro") == "ja-aprovado":
 		return "", "Esta versão já estava aprovada; a aprovação original foi mantida."
+	case q.Has("assinante"):
+		return "Assinatura atualizada: o programa passa a exigir a organização que assina o instalador guardado. Os próximos jobs já levam a regra nova.", ""
+	case q.Get("erro") == "assinante-arquivo":
+		return "", "O instalador escolhido não está no servidor ou não tem assinatura com O=; nada mudou."
+	case q.Get("erro") == "assinante-regra":
+		return "", "Só os programas incluídos pelo painel mudam a assinatura por aqui (os do manifesto, no arquivo do manifesto); nada mudou."
 	case q.Get("erro") == "nao-guardado":
 		return "", "Esta versão não tem instalador guardado no servidor; nada foi aprovado."
 	case q.Get("erro") == "nota":

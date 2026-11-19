@@ -1440,6 +1440,15 @@ sem editar arquivo no servidor:
 2. **Assinatura**: a organização que assina o instalador (Propriedades › Assinaturas digitais,
    ou `Get-AuthenticodeSignature`), ou, se o fabricante não assina, o motivo. É a mesma regra
    dos programas do manifesto: o agente recusa instalador com outro assinante.
+   **Preenchido sozinho**: a busca do winget lê a assinatura do próprio instalador (só os
+   pedaços com o cabeçalho e a assinatura, sem baixar o arquivo; servidores que não entregam
+   pedaços ficam sem a leitura, e o campo vem vazio) e já põe o O= no campo; instalador sem
+   assinatura vem marcado como "não assinado". Na página do programa, cada instalador guardado
+   mostra quem o assinou, e o painel avisa quando a assinatura exigida não é a do arquivo (o
+   agente recusaria). Nos programas incluídos pelo painel, o botão **Exigir a assinatura de …**
+   grava o O= do arquivo na regra (também para o instalador próprio, depois de enviado). A
+   leitura no servidor não confere nada: quem confere a cadeia é o agente, no Windows; antes
+   de exigir, confira com `Get-AuthenticodeSignature` (Status `Valid`).
    O valor é o **O=** do certificado, exatamente como está, não o nome do produto: no
    PowerShell, `(Get-AuthenticodeSignature .\instalador.exe).SignerCertificate.Subject` mostra
    `CN=…, O=…`; copie o que vem depois de `O=` (sem as aspas), ou cole o Subject inteiro: o
