@@ -1540,6 +1540,18 @@ argumentos, com a pasta de trabalho na pasta dele: nada é baixado nem executado
 anteriores ignoram a lista. O resultado fica no log do agente ("atalho na área de trabalho
 pública").
 
+### Falha do msiexec (1603 e outros)
+
+O 1603 é o "erro fatal" genérico do Windows Installer: o motivo está no log verboso do job
+(`C:\ProgramData\patchd\logs\instalar-job-N.log`). O agente lê o fim desse log e põe no
+detalhe do job, depois de "no log:", até três linhas: as mensagens de erro do Windows
+Installer ("Error 1722.", "Product: … -- Error 1708"), a ação personalizada que falhou
+("CustomAction … returned actual error code") e a ação que parou a instalação ("Return value
+3"). Causas comuns: uma versão mais nova (ou a mesma, de outro pacote) já instalada, uma
+ação personalizada do fabricante que exige parâmetros (o GlobalProtect, por exemplo, pede o
+`PORTAL=` em algumas versões), reinício pendente ou outro instalador em andamento. A Central
+de software mostra o detalhe inteiro, sem cortar.
+
 ### Instalador que instala só para o usuário
 
 O agente roda os instaladores como SYSTEM. Instaladores que por padrão instalam **para o

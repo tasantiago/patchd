@@ -130,14 +130,14 @@ func (s *Service) requests(ctx context.Context, machineID, account string) ([]pr
 		}
 		if j.Type == jobs.TypeReboot { // Aula 17.6
 			out = append(out, protocol.SelfServiceJob{ID: j.ID, App: "reinicio", Name: RebootName, State: j.State,
-				CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, 200)})
+				CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, MaxJobDetail)})
 			continue
 		}
 		full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID)
 		if err != nil {
 			return nil, err
 		}
-		item := protocol.SelfServiceJob{ID: j.ID, State: j.State, CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, 200)}
+		item := protocol.SelfServiceJob{ID: j.ID, State: j.State, CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, MaxJobDetail)}
 		var payload jobs.Job
 		if found && json.Unmarshal([]byte(full.Payload), &payload) == nil {
 			if p, err := jobs.ParseThirdPartyParams(payload.Params); err == nil {
@@ -187,6 +187,10 @@ var RequestStateLabels = map[string]string{
 
 // MaxNote: o motivo da recusa.
 const MaxNote = 200
+
+// MaxJobDetail: o detalhe do job no app (o resultado do agente, com o motivo da falha e o
+// caminho do log). Inteiro na prática: o app quebra a linha.
+const MaxJobDetail = 1500
 
 // userRequests: os pedidos do usuário na máquina que passaram pela TI, depois de expirar os
 // velhos.
