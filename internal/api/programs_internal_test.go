@@ -73,3 +73,29 @@ func TestNomeDoArquivoDoPrograma(t *testing.T) {
 		}
 	}
 }
+
+// A versão aprovada sem o instalador do tipo da regra: a página do programa avisa que a
+// Central não oferece a instalação nova.
+func TestAvisoSemInstaladorDaRegra(t *testing.T) {
+	pk := func(ver, typ string) store.ThirdPartyPackage {
+		return store.ThirdPartyPackage{AppID: "vlc", Version: ver, Type: typ}
+	}
+	rows := []tpVersionRow{{Version: "3.0.25"}, {Version: "3.0.24", Approved: true}, {Version: "3.0.23", Approved: true}}
+	for _, c := range []struct {
+		rule string
+		pkgs []store.ThirdPartyPackage
+		want string
+	}{
+		{"nullsoft", []store.ThirdPartyPackage{pk("3.0.24", "wix"), pk("3.0.23", "wix")}, "3.0.24"},
+		{"nullsoft", []store.ThirdPartyPackage{pk("3.0.24", "wix"), pk("3.0.23", "nullsoft")}, ""},       // a 3.0.23 serve
+		{"nullsoft", []store.ThirdPartyPackage{pk("3.0.25", "nullsoft"), pk("3.0.24", "wix")}, "3.0.24"}, // a 3.0.25 não está aprovada
+		{"", []store.ThirdPartyPackage{pk("3.0.24", "wix")}, ""},
+	} {
+		if got := noRuleTypeNote(c.rule, "vlc", rows, c.pkgs); got != c.want {
+			t.Errorf("%s %v: %q, quer %q", c.rule, c.pkgs, got, c.want)
+		}
+	}
+	if got := noRuleTypeNote("nullsoft", "vlc", []tpVersionRow{{Version: "3.0.24"}}, []store.ThirdPartyPackage{pk("3.0.24", "wix")}); got != "" {
+		t.Errorf("nada aprovado: %q", got)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -60,17 +61,28 @@ func NewFetcher(userAgent string) *Fetcher {
 // ErrNotHTTPS: um redirecionamento levou para fora do https.
 var ErrNotHTTPS = errors.New("redirecionamento para fora do https")
 
+// insecureRedirect: o redirecionamento para http, com o endereço (o Fetch tenta o mesmo
+// arquivo por https e, sem ele, por http, conferido pelo SHA-256).
+type insecureRedirect struct{ to *url.URL }
+
+func (e *insecureRedirect) Error() string        { return ErrNotHTTPS.Error() + ": " + e.to.Redacted() }
+func (e *insecureRedirect) Is(target error) bool { return target == ErrNotHTTPS }
+
 // HTTPSOnly recusa redirecionamento para fora do https (o GitHub manda para outro host; a
-// Mozilla, para a CDN): o hash protege o conteúdo, mas um http no meio é sinal de erro.
+// Mozilla, para a CDN). É a regra de quem baixa sem SHA-256 para conferir (o script do
+// Installomator, os catálogos); o Fetch, que confere o SHA-256, trata o http à parte.
 func HTTPSOnly(req *http.Request, via []*http.Request) error {
 	if req.URL.Scheme != "https" {
-		return fmt.Errorf("%w: %s", ErrNotHTTPS, req.URL.Redacted())
+		return &insecureRedirect{to: req.URL}
 	}
 	if len(via) >= 10 {
 		return errors.New("mais de 10 redirecionamentos")
 	}
 	return nil
 }
+
+// upgradeWait: quanto o Fetch espera a resposta do https do espelho que mandou para http.
+const upgradeWait = 30 * time.Second
 
 // Result é o instalador guardado.
 type Result struct {
@@ -152,21 +164,81 @@ func (f *Fetcher) Fetch(ctx context.Context, dir, url, want string, msi bool, pr
 	return Result{}, fmt.Errorf("download falhou depois de %d tentativa(s): %w", f.tries(), lastErr)
 }
 
+// get pede o endereço com o cliente do Fetcher, ou com check no lugar da regra de
+// redirecionamento dele.
+func (f *Fetcher) get(ctx context.Context, addr string, check func(*http.Request, []*http.Request) error) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr, nil)
+	if err != nil {
+		return nil, permanent{err}
+	}
+	req.Header.Set("User-Agent", f.UserAgent)
+	c := f.HTTP
+	if check != nil {
+		cc := *f.HTTP
+		cc.CheckRedirect = check
+		c = &cc
+	}
+	return c.Do(req)
+}
+
+// httpOrHTTPS: os redirecionamentos depois de o espelho mandar para http (só http ou https).
+func httpOrHTTPS(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
+		return fmt.Errorf("redirecionamento para %q", req.URL.Scheme)
+	}
+	if len(via) >= 10 {
+		return errors.New("mais de 10 redirecionamentos")
+	}
+	return nil
+}
+
+// open pede o instalador. Se um redirecionamento leva para http (o get.videolan.org manda
+// para o espelho mais perto, e alguns são http), tenta o mesmo arquivo por https no mesmo
+// espelho; sem resposta, baixa por http: o arquivo só fica se o SHA-256 for o do manifesto
+// (e o agente confere de novo, com a assinatura, antes de executar).
+func (f *Fetcher) open(ctx context.Context, addr string, progress func(string)) (*http.Response, error) {
+	resp, err := f.get(ctx, addr, nil)
+	var ir *insecureRedirect
+	if err == nil || !errors.As(err, &ir) {
+		return resp, err
+	}
+	plain := *ir.to
+	secure := plain
+	secure.Scheme = "https"
+	if secure.Port() == "80" {
+		secure.Host = secure.Hostname()
+	}
+	progress(fmt.Sprintf("o endereço mandou para http (%s): tentando o mesmo arquivo por https", plain.Redacted()))
+	try, cancel := context.WithCancel(ctx)
+	t := time.AfterFunc(upgradeWait, cancel)
+	resp, err = f.get(try, secure.String(), nil)
+	if t.Stop() && err == nil && resp.StatusCode == http.StatusOK {
+		context.AfterFunc(ctx, cancel) // o corpo segue até o fim do download
+		return resp, nil
+	}
+	cancel()
+	why := "sem resposta em " + upgradeWait.String()
+	switch {
+	case err != nil && ctx.Err() == nil && try.Err() == nil:
+		why = err.Error()
+	case err == nil:
+		why = resp.Status
+		resp.Body.Close()
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	progress(fmt.Sprintf("https no espelho não deu (%s): baixando por http, conferido pelo SHA-256 do manifesto", why))
+	return f.get(ctx, plain.String(), httpOrHTTPS)
+}
+
 // download baixa para um arquivo temporário na mesma pasta, calculando o SHA-256 no
 // caminho, e só renomeia para o nome final se conferir.
 func (f *Fetcher) download(ctx context.Context, dir, final, url, want string, progress func(string)) (int64, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := f.open(ctx, url, progress)
 	if err != nil {
-		return 0, permanent{err}
-	}
-	req.Header.Set("User-Agent", f.UserAgent)
-	resp, err := f.HTTP.Do(req)
-	if err != nil {
-		if errors.Is(err, ErrNotHTTPS) {
-			return 0, permanent{err}
-		}
 		return 0, err
 	}
 	defer resp.Body.Close()

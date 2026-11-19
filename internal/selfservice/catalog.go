@@ -14,6 +14,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
+	"github.com/tasantiago/patchd/internal/version"
 )
 
 // Ações de um item.
@@ -109,7 +110,7 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 			if p := tpinstall.ForNewInstall(rule, approved, m.Arch); p != nil {
 				it.Action, it.Target = ActionInstall, p.Version
 			} else {
-				it.Action, it.Reason = ActionBlocked, "nenhuma versão aprovada para esta máquina"
+				it.Action, it.Reason = ActionBlocked, noInstallerReason(rule.ID, approved)
 			}
 		}
 		out = append(out, it)
@@ -118,6 +119,31 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 		return cmp.Or(cmp.Compare(slices.Index(actionOrder, a.Action), slices.Index(actionOrder, b.Action)), strings.Compare(a.Name, b.Name))
 	})
 	return out
+}
+
+// noInstallerReason: por que a instalação nova não sai. Com versão aprovada, o que falta é o
+// instalador do tipo da regra (ou da arquitetura da máquina) no servidor, e não a aprovação.
+func noInstallerReason(app string, approved []store.ThirdPartyPackage) string {
+	var newest string
+	for _, p := range approved {
+		if p.AppID == app && (newest == "" || newerVersion(p.Version, newest)) {
+			newest = p.Version
+		}
+	}
+	if newest == "" {
+		return "nenhuma versão aprovada para esta máquina"
+	}
+	return "a versão aprovada (" + newest + ") ainda não tem o instalador para esta máquina no servidor: fale com a TI"
+}
+
+// newerVersion: x é mais nova que y (pela versão normalizada; sem entender, pelo texto).
+func newerVersion(x, y string) bool {
+	nx, _ := thirdparty.Normalize(x)
+	ny, _ := thirdparty.Normalize(y)
+	if c, err := version.CompareDotted(nx, ny); err == nil && c != 0 {
+		return c > 0
+	}
+	return x > y
 }
 
 // allowed: oferta sem grupo vale para qualquer usuário; com grupos, basta um.

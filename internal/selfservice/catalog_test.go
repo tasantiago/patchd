@@ -64,3 +64,28 @@ func TestCatalogo(t *testing.T) {
 		}
 	}
 }
+
+// Versão aprovada sem o instalador do tipo da regra (o Notepad++ instala o nullsoft, e só um MSI
+// foi guardado): o motivo diz que falta o instalador, não a aprovação.
+func TestCatalogoSemInstaladorDoTipoDaRegra(t *testing.T) {
+	m, err := thirdparty.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofertas := []store.SelfServiceOffer{{AppID: "notepad-plus-plus", CanInstall: true}}
+	pkgs := []store.ThirdPartyPackage{pacote("notepad-plus-plus", "8.9.7", "wix"), pacote("notepad-plus-plus", "8.9.8.1", "wix")}
+	aprov := []store.ThirdPartyApproval{{AppID: "notepad-plus-plus", Version: "8.9.7"}, {AppID: "notepad-plus-plus", Version: "8.9.8.1"}}
+	l := Catalog(ofertas, ListMember(nil), Machine{Arch: "x64"}, m, pkgs, aprov)
+	if len(l) != 1 || l[0].Action != ActionBlocked || l[0].Reason != "a versão aprovada (8.9.8.1) ainda não tem o instalador para esta máquina no servidor: fale com a TI" {
+		t.Fatalf("sem o nullsoft: %+v", l)
+	}
+	// Com o da regra guardado, a mesma aprovação vale: instalar.
+	pkgs = append(pkgs, pacote("notepad-plus-plus", "8.9.8.1", "nullsoft"))
+	if l := Catalog(ofertas, ListMember(nil), Machine{Arch: "x64"}, m, pkgs, aprov); len(l) != 1 || l[0].Action != ActionInstall || l[0].Target != "8.9.8.1" {
+		t.Errorf("com o nullsoft: %+v", l)
+	}
+	// Nada aprovado: o motivo de sempre.
+	if l := Catalog(ofertas, ListMember(nil), Machine{Arch: "x64"}, m, pkgs, nil); len(l) != 1 || l[0].Reason != "nenhuma versão aprovada para esta máquina" {
+		t.Errorf("sem aprovação: %+v", l)
+	}
+}
