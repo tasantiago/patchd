@@ -28,7 +28,7 @@ func TestIncluirProgramaPeloPainel(t *testing.T) {
 			return winget.Description{}, errors.New("não existe")
 		}
 		return winget.Description{ID: id, Version: "3.0.21", Name: "VLC media player", Publisher: "VideoLAN", Types: []string{"nullsoft", "wix"},
-			DisplayName: "VLC media player", DisplayPublisher: "VideoLAN"}, nil
+			DisplayName: "VLC media player", DisplayPublisher: "VideoLAN", SignerOrg: "VideoLAN", SignerSubject: "CN=VideoLAN, O=VideoLAN, L=Paris, C=FR"}, nil
 	}
 	var mu sync.Mutex
 	var sincronizados []string
@@ -46,7 +46,9 @@ func TestIncluirProgramaPeloPainel(t *testing.T) {
 	// A busca preenche.
 	b := pagina(h, "GET", pagina_+"?winget=VideoLAN.VLC", sessaoAdmin, nil).Body.String()
 	for _, quer := range []string{"Achado: <b>VLC media player</b> 3.0.21", `name="nome" value="VLC media player"`, `name="inventario" value="VLC media player"`,
-		`name="fabricante" value="VideoLAN"`, `<option value="nullsoft" selected>`} {
+		`name="fabricante" value="VideoLAN"`, `<option value="nullsoft" selected>`,
+		// A assinatura, lida do instalador pelo servidor, já no campo.
+		`name="assinante" value="VideoLAN"`, "Assinatura do instalador: <b>VideoLAN</b>"} {
 		if !strings.Contains(b, quer) {
 			t.Errorf("busca: falta %q", quer)
 		}

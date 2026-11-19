@@ -18,6 +18,12 @@ type Description struct {
 	DisplayName      string   // AppsAndFeaturesEntries[0].DisplayName, se houver
 	DisplayPublisher string   // AppsAndFeaturesEntries[0].Publisher, se houver
 	Unsupported      []string // os tipos que o patchd não instala (msix, zip...)
+	// InstallerURL: o endereço do primeiro instalador x64 (ou neutro) do primeiro tipo de
+	// Types, o que o formulário sugere; o servidor lê nele quem assinou (SignerOrg).
+	InstallerURL string
+	// SignerOrg e SignerSubject: quem assinou o instalador (o O= e o Subject inteiro), lidos
+	// pelo servidor sem conferir; SignerNote: por que não deu para ler, ou que não é assinado.
+	SignerOrg, SignerSubject, SignerNote string
 }
 
 // Describe lê a versão mais nova do pacote: o manifesto de instalador e o de idioma padrão.
@@ -43,6 +49,9 @@ func (c *Client) Describe(ctx context.Context, id string) (Description, error) {
 			}
 		case !slices.Contains(d.Types, in.Type):
 			d.Types = append(d.Types, in.Type)
+		}
+		if d.InstallerURL == "" && len(d.Types) > 0 && in.Type == d.Types[0] {
+			d.InstallerURL = in.URL
 		}
 	}
 	path, _ := PackagePath(id)

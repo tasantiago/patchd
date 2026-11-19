@@ -230,6 +230,13 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 		if len(d.Types) > 0 {
 			v.Form.Type = d.Types[0]
 		}
+		// Quem assina, lido do próprio instalador: o O= que o agente vai exigir.
+		switch {
+		case d.SignerOrg != "":
+			v.Form.Signer, v.Form.NoSignature = d.SignerOrg, false
+		case d.SignerNote == unsignedNote:
+			v.Form.NoSignature, v.Form.Unsigned = true, "o fabricante publica o instalador sem assinatura (conferido pelo patchd no instalador do winget)"
+		}
 	}
 	if id := q.Get("salvo"); id != "" {
 		if rule := a.installRule(id); rule != nil {
@@ -249,6 +256,9 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 	}
 	a.render(w, r, http.StatusOK, "terceiros-incluir", v)
 }
+
+// unsignedNote: o que a busca diz do instalador sem assinatura (cmd/server, wingetDescriber).
+const unsignedNote = "o instalador não é assinado"
 
 // wingetTypes: os tipos de instalador que o patchd instala, na ordem do formulário.
 var wingetTypes = []string{"msi", "wix", "nullsoft", "inno", "burn", "exe"}

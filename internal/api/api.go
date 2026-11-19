@@ -317,6 +317,7 @@ type api struct {
 	winCache    *wucache.Cache                       // o cache das atualizações do Windows (docs/cache-windows.md); nil: desligado
 	items       itemsCache                           // a lista de pendências do parque, por um minuto (itemscache.go)
 	programs    programsCache                        // os programas instalados no parque, por alguns minutos (programs.go)
+	signers     signerCache                          // quem assinou cada instalador guardado (tpsigner.go)
 	creds       credCache                            // a credencial de cada máquina, por um minuto (credcache.go)
 	gate        *agentGate                           // a fila dos agentes (agentgate.go); nil: sem fila
 	downloads   downloadTracker                      // os downloads em andamento, para a aba Saúde (downloads.go)
@@ -404,6 +405,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/patch/terceiros/aprovar", a.sameOrigin(a.adminAction(a.approveThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/aprovar-lote", a.sameOrigin(a.adminAction(a.tpBatchAction)))
 	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/assinante", a.sameOrigin(a.adminAction(a.adoptSignerAction)))
 	mux.Handle("POST /painel/patch/terceiros/baixar", a.sameOrigin(a.adminAction(a.fetchThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/excluir", a.sameOrigin(a.adminAction(a.deleteThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/enviar", a.sameOrigin(a.adminAction(a.uploadInstallerAction))) // instalador próprio (multipart)

@@ -313,8 +313,10 @@ type tpProgramView struct {
 	// NoRuleType: a versão aprovada sem o instalador do tipo da regra (a instalação nova na
 	// Central fica indisponível); "" quando não falta.
 	NoRuleType string
-	Fetch      *tpFetchStatus
-	OtherBusy  string // outro programa baixando agora (um download por vez)
+	// Signer: a assinatura dos instaladores guardados contra a que o programa exige.
+	Signer    *tpSignerNote
+	Fetch     *tpFetchStatus
+	OtherBusy string // outro programa baixando agora (um download por vez)
 	// Upload: o envio do instalador próprio (tpupload.go); nil: o programa vem do winget.
 	Upload *tpUploadView
 }

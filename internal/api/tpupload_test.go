@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/authsig/authsigtest"
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
@@ -211,5 +212,72 @@ func TestInstaladorProprioPeloPainel(t *testing.T) {
 		if acoes[a] == 0 {
 			t.Errorf("auditoria sem %s: %v", a, acoes)
 		}
+	}
+}
+
+// O instalador enviado diz quem o assinou: a página mostra, sugere exigir a assinatura do
+// arquivo (o programa estava "sem assinatura") e, com o botão, a regra passa a exigi-la.
+// Com a assinatura trocada, avisa que o agente vai recusar.
+func TestAssinaturaDoInstaladorEnviado(t *testing.T) {
+	ctx := context.Background()
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, nil, nil),
+		api.WithCompliance(&complianceFalso{}), api.WithContent(t.TempDir(), nil))
+	form := url.Values{"origem": {"proprio"}, "nome": {"Assistente Teste"}, "inventario": {"Assistente Teste"}, "modo": {"comeca"}, "tipo": {"nullsoft"},
+		"assinatura": {"nao"}, "sem_assinatura": {"a conferir"}}
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("incluir: %d %s", r.Code, r.Body)
+	}
+	exe := authsigtest.Exe("Fabricante Teste Ltda")
+	campos := url.Values{"versao": {"2.4.4"}, "arquitetura": {"x64"}, "aprovar": {"1"}}
+	if r := enviaInstalador(h, sessaoAdmin, "assistente-teste", campos, "assistente.exe", exe); r.Code != http.StatusSeeOther || strings.Contains(local(r), "erro=") {
+		t.Fatalf("enviar: %d %s", r.Code, local(r))
+	}
+	prog := "/painel/patch/programa?app=assistente-teste"
+	b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"assinado por Fabricante Teste Ltda", "O instalador da 2.4.4 é assinado por Fabricante Teste Ltda</strong>",
+		`<input type="hidden" name="sha" value="` + shaDe(exe) + `"><button type="submit">Exigir a assinatura de Fabricante Teste Ltda</button>`} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("página: falta %q", quer)
+		}
+	}
+	if strings.Contains(pagina(h, "GET", prog, sessaoTeste, nil).Body.String(), "Exigir a assinatura de") {
+		t.Error("leitura vê o botão")
+	}
+	// SHA-256 que não é de um instalador do programa: nada muda.
+	if l := local(pagina(h, "POST", "/painel/patch/terceiros/assinante", sessaoAdmin, url.Values{"app": {"assistente-teste"}, "sha": {strings.Repeat("0", 64)}})); !strings.Contains(l, "erro=assinante-arquivo") {
+		t.Errorf("sha forjado: %s", l)
+	}
+	if l := local(pagina(h, "POST", "/painel/patch/terceiros/assinante", sessaoAdmin, url.Values{"app": {"assistente-teste"}, "sha": {shaDe(exe)}})); !strings.HasSuffix(l, "&assinante=1") {
+		t.Fatalf("adotar: %s", l)
+	}
+	var rule thirdparty.App
+	for _, a := range live.For("windows") {
+		if a.ID == "assistente-teste" {
+			rule = a
+		}
+	}
+	if rule.Install == nil || rule.Install.Signer != "Fabricante Teste Ltda" || rule.Install.UnsignedReason != "" || !rule.Uploaded() {
+		t.Fatalf("regra: %+v", rule.Install)
+	}
+	if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "terceiros.editar"}); len(ev) == 0 || !strings.Contains(ev[0].Detail, "assinatura Fabricante Teste Ltda (do instalador 2.4.4 nullsoft") {
+		t.Errorf("auditoria: %+v", ev)
+	}
+	b = pagina(h, "GET", prog+"&assinante=1", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "Assinatura atualizada") || strings.Contains(b, "Exigir a assinatura de") {
+		t.Error("depois de adotar")
+	}
+	// Programa exigindo outra organização: o aviso de que o agente vai recusar.
+	form.Set("editar", "assistente-teste")
+	form.Set("assinatura", "sim")
+	form.Set("assinante", "Outra Empresa")
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("editar: %d %s", r.Code, r.Body)
+	}
+	b = pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "O agente vai recusar o instalador da 2.4.4 (nullsoft).</strong> O programa exige a assinatura de <b>Outra Empresa</b>, e o arquivo é assinado por <b>Fabricante Teste Ltda</b>") ||
+		!strings.Contains(b, "Exigir a assinatura de Fabricante Teste Ltda") {
+		t.Errorf("divergência:\n%s", b)
 	}
 }
