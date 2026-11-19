@@ -1552,6 +1552,21 @@ ação personalizada do fabricante que exige parâmetros (o GlobalProtect, por e
 `PORTAL=` em algumas versões), reinício pendente ou outro instalador em andamento. A Central
 de software mostra o detalhe inteiro, sem cortar.
 
+**O MSI original não está mais no disco.** Um caso comum de 1603 na atualização: o log mostra
+`SOURCEDIR ==> <pasta>`, `Note: 1: 2203 2: <pasta>\programa.msi 3: -2147287038`,
+`SECREPAIR: Error determining package source type` e uma ação que devolve "Return value 3".
+O Windows Installer quer o MSI de onde a versão de agora foi instalada (uma pasta temporária,
+um compartilhamento, uma cópia apagada) para atualizar por cima, e não acha. A saída é
+**remover a versão instalada antes de instalar a nova**: no **Editar programa**, marque
+"Remover a versão instalada antes de instalar a nova" (a busca do winget já marca quando o
+fabricante declara `uninstallPrevious`). A atualização passa a remover em silêncio (como a
+regularização: `msiexec /x` com o ProductCode, o `QuietUninstallString` ou o Inno), esperar a
+entrada sair e só então instalar; a Central avisa que o programa some por alguns minutos.
+Precisa do agente que remove (`regularizar-v1`) e da desinstalação silenciosa registrada; sem
+eles, vai por cima, com o motivo na página da máquina. Programas de VPN (o GlobalProtect):
+no meio do job a VPN cai; o agente segue sozinho e manda o resultado quando voltar a conexão,
+mas faça o piloto numa máquina na rede local.
+
 ### Instalador que instala só para o usuário
 
 O agente roda os instaladores como SYSTEM. Instaladores que por padrão instalam **para o

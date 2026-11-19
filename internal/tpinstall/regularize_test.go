@@ -1,6 +1,7 @@
 package tpinstall
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -85,5 +86,58 @@ func TestRegularizacao(t *testing.T) {
 	sw[0] = maquina("Google Chrome", "158.0.8127.37", "Google LLC", fonte("Google Chrome"))
 	if c := plano(Options{Regularize: true})["google-chrome"]; c.State != StateCurrent || c.Regularize != nil || !strings.Contains(c.Reason, "próxima versão aprovada") {
 		t.Errorf("mais nova: %s %q", c.State, c.Reason)
+	}
+}
+
+// Remover antes (Install.UninstallFirst): a atualização do mesmo tipo remove a instalação de
+// agora e instala, com o agente que remove e a desinstalação silenciosa registrada; sem eles,
+// vai por cima, com o motivo.
+func TestRemoverAntesDeAtualizar(t *testing.T) {
+	base, _ := thirdparty.Default()
+	app, err := thirdparty.BuildCustom(thirdparty.CustomInput{Name: "GlobalProtect", WingetID: "PaloAltoNetworks.GlobalProtect", InventoryName: "GlobalProtect",
+		NameMode: thirdparty.NameEquals, Publisher: "Palo Alto Networks", InstallType: "msi", Signer: "Palo Alto Networks, Inc", UninstallFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(app)
+	m, errs := thirdparty.WithCustom(base, []json.RawMessage{raw})
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if !NeedsReplace(m) || NeedsReplace(base) {
+		t.Error("NeedsReplace")
+	}
+	pc := "{32093C1C-778C-4524-8142-608176F5E804}"
+	gp := maquina("GlobalProtect", "6.2.8", "Palo Alto Networks", msi, silencioso(protocol.UninstallMSI), fonte(pc), func(s *protocol.Software) { s.ProductCode = pc })
+	pkgs := []store.ThirdPartyPackage{pacote(app.ID, "6.3.3", "msi", "x64")}
+	pkgs[0].Size, pkgs[0].Arguments = 1<<20, "/quiet /norestart"
+	plano := func(o Options, sw protocol.Software) Decision {
+		for _, d := range PlanWith([]protocol.Software{sw}, m, pkgs, "x64", o) {
+			if d.App.ID == app.ID {
+				return d
+			}
+		}
+		t.Fatal("sem a decisão")
+		return Decision{}
+	}
+	d := plano(Options{CanReplace: true}, gp)
+	if d.State != StateUpdate || d.Regularize == nil || d.Regularize.Over || !strings.Contains(d.Reason, "remove a instalação de agora e instala") {
+		t.Fatalf("com o agente: %+v", d)
+	}
+	p, err := JobParams(d)
+	if err != nil || p.Replace == nil || p.Replace.Method != "msi" || p.Replace.ProductCode != pc || p.Replace.Name != "GlobalProtect" || p.Version != "6.3.3" {
+		t.Fatalf("job: %+v %v", p.Replace, err)
+	}
+	if d := plano(Options{}, gp); d.State != StateUpdate || d.Regularize != nil || !strings.Contains(d.Reason, "atualize o agente") {
+		t.Errorf("agente antigo: %+v", d)
+	}
+	semRemocao := maquina("GlobalProtect", "6.2.8", "Palo Alto Networks", msi, fonte(pc))
+	if d := plano(Options{CanReplace: true}, semRemocao); d.Regularize != nil || !strings.Contains(d.Reason, "não tem desinstalação silenciosa") {
+		t.Errorf("sem desinstalação: %+v", d)
+	}
+	// Em dia: nada a remover.
+	emDia := maquina("GlobalProtect", "6.3.3", "Palo Alto Networks", msi, silencioso(protocol.UninstallMSI), fonte(pc))
+	if d := plano(Options{CanReplace: true}, emDia); d.State != StateCurrent || d.Regularize != nil {
+		t.Errorf("em dia: %+v", d)
 	}
 }
