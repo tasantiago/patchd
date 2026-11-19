@@ -311,6 +311,11 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	case winget.OutcomeRetry:
 		return detail, fmt.Errorf("%w: %s", ErrRetry, cmpOr(resp, "código "+strconv.Itoa(code)))
 	}
+	if jobs.MSIInstaller(p.Installer) && e.LogDir != "" {
+		if cause := msiCause(e.logPath(jobID)); cause != "" {
+			detail += "; no log: " + cause
+		}
+	}
 	return detail, fmt.Errorf("o instalador terminou com o código %d", code)
 }
 

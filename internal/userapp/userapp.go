@@ -1038,7 +1038,7 @@ h1{font-size:1.15rem;font-weight:600;margin:0 0 .75rem}h2{font-size:1rem;font-we
 ul.lista{list-style:none;margin:0;padding:0}
 ul.lista li{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem 0;border-top:1px solid var(--borda)}
 ul.lista li:first-child{border-top:0}
-ul.lista li div{display:flex;flex-direction:column}
+ul.lista li div{display:flex;flex-direction:column;min-width:0}
 .ver{color:var(--muted);font-size:.85rem}.ver b{color:var(--texto)}
 form{margin:0}
 button{font:inherit;font-size:.9rem;padding:.45rem 1.1rem;border-radius:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;cursor:pointer;white-space:nowrap}
@@ -1048,7 +1048,7 @@ button:hover{background:var(--azul-2)}button:disabled{background:#c7d2df;border-
 .selo.sucesso{color:#14532d;background:#eaf7ee}.selo.andamento{color:#0b3f73;background:#eef5fd}.selo.atencao{color:#7a4b00;background:#fff6e0}
 .selo.erro{color:#7f1d1d;background:#fbe9e9}.selo.neutro{color:var(--muted);background:#f1f3f5}
 ul.motivos{margin:.25rem 0 0;padding-left:1.2rem}ul.motivos li{margin:.2rem 0}
-.det{color:var(--muted);font-size:.8rem;margin-top:.15rem}
+.det{color:var(--muted);font-size:.8rem;margin-top:.15rem;overflow-wrap:anywhere;white-space:normal}
 a.btn{display:inline-block;padding:.45rem 1.1rem;border:1px solid var(--azul);border-radius:6px;color:var(--azul);text-decoration:none;font-size:.9rem;background:#fff;white-space:nowrap}
 a.btn:hover{background:#eef5fd}
 section.confirma{border-color:#9cc3ec;background:#f7fbff}.confirma p{margin:.25rem 0 1rem}
