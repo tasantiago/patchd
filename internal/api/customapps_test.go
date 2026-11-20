@@ -240,3 +240,59 @@ func TestIncluirInstaladorPorUsuario(t *testing.T) {
 		t.Error("edição sem os argumentos")
 	}
 }
+
+// A ajuda dos parâmetros: o que o manifesto do winget declara de cada instalador, na busca e
+// no Editar (?ajuda=1).
+func TestAjudaDosParametrosDoWinget(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	m, err := winget.ParseInstaller([]byte(`PackageIdentifier: Flameshot.Flameshot
+PackageVersion: 15.0.0
+InstallerType: wix
+Scope: machine
+InstallModes:
+- interactive
+- silent
+InstallerSwitches:
+  InstallLocation: INSTALL_ROOT="<INSTALLPATH>"
+UpgradeBehavior: uninstallPrevious
+ExpectedReturnCodes:
+- InstallerReturnCode: 1618
+  ReturnResponse: installInProgress
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/flameshot-org/flameshot/releases/download/v15.0.0/Flameshot-15.0.0-win64.msi
+  InstallerSha256: 69B8245AB4CB060E70716F493A7B2319E0421649D3E1B194A1B81503F3199A2D
+ManifestType: installer
+ManifestVersion: 1.28.0
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	descrever := func(_ context.Context, id string) (winget.Description, error) {
+		return winget.Description{ID: id, Version: "15.0.0", Name: "Flameshot", Publisher: "flameshot-org", Types: []string{"wix"},
+			UninstallPrevious: true, Help: winget.HelpFor(m)}, nil
+	}
+	h, _, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, descrever, nil), api.WithCompliance(&complianceFalso{}))
+	b := pagina(h, "GET", "/painel/patch/terceiros/incluir?winget=Flameshot.Flameshot", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"Parâmetros do instalador, do manifesto do winget", "<b>wix</b> · x64 · escopo machine · atualização: uninstallPrevious · modos: interactive, silent",
+		"<td>InstallLocation</td><td><code>INSTALL_ROOT=&#34;&lt;INSTALLPATH&gt;&#34;</code></td>", "<code>/quiet /norestart</code>",
+		"<code>1618</code> outro instalador rodando", "Conhecidos do tipo wix:", "REBOOT=ReallySuppress"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("busca: faltou %q", quer)
+		}
+	}
+	form := url.Values{"nome": {"Flameshot"}, "winget": {"Flameshot.Flameshot"}, "inventario": {"Flameshot"}, "modo": {"comeca"}, "tipo": {"wix"},
+		"assinatura": {"nao"}, "sem_assinatura": {"teste"}, "remover_antes": {"1"}}
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("salvar: %d %s", r.Code, r.Body)
+	}
+	ed := "/painel/patch/terceiros/incluir?editar=flameshot-flameshot"
+	if b := pagina(h, "GET", ed, sessaoAdmin, nil).Body.String(); !strings.Contains(b, `href="/painel/patch/terceiros/incluir?editar=flameshot-flameshot&amp;ajuda=1">Ver os parâmetros`) ||
+		strings.Contains(b, "Parâmetros do instalador, do manifesto") {
+		t.Error("edição sem o link")
+	}
+	if b := pagina(h, "GET", ed+"&ajuda=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `<details class="ajuda" open>`) || !strings.Contains(b, "<td>InstallLocation</td>") {
+		t.Error("edição com a ajuda")
+	}
+}

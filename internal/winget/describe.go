@@ -30,6 +30,8 @@ type Description struct {
 	// UserScope: os instaladores do tipo sugerido são todos de escopo usuário (Scope: user): o
 	// agente, como SYSTEM, instalaria no perfil do SYSTEM; o formulário pede os argumentos.
 	UserScope bool
+	// Help: os parâmetros de cada instalador x64 do manifesto, para a ajuda do formulário.
+	Help []Help
 }
 
 // Describe lê a versão mais nova do pacote: o manifesto de instalador e o de idioma padrão.
@@ -70,6 +72,7 @@ func (c *Client) Describe(ctx context.Context, id string) (Description, error) {
 	if len(d.Types) > 0 {
 		d.UserScope = userOnly[d.Types[0]]
 	}
+	d.Help = HelpFor(m)
 	path, _ := PackagePath(id)
 	base := fmt.Sprintf("%s/%s/%s/%s", c.RawURL, path, url.PathEscape(d.Version), url.PathEscape(id))
 	// O manifesto de versão diz o idioma padrão; o do idioma traz o nome e o fabricante.

@@ -35,6 +35,7 @@ type Installer struct {
 	ProductCode  string
 	MinOS        string
 	Platform     []string
+	InstallModes []string // interactive, silent, silentWithProgress (o que o instalador declara)
 	// UpgradeBehavior: install (padrão: instala por cima), uninstallPrevious (desinstala
 	// antes) ou deny (não atualiza pelo winget).
 	UpgradeBehavior string
@@ -48,7 +49,7 @@ type Installer struct {
 
 // Campos que o instalador herda da raiz quando não os declara (o esquema do winget).
 var inherited = []string{"InstallerType", "NestedInstallerType", "Scope", "InstallerLocale", "ProductCode",
-	"MinimumOSVersion", "UpgradeBehavior"}
+	"MinimumOSVersion", "UpgradeBehavior", "InstallModes"}
 
 var sha256Hex = regexp.MustCompile(`^[0-9A-Fa-f]{64}$`)
 
@@ -105,6 +106,7 @@ func ParseInstaller(data []byte) (Manifest, error) {
 			}
 		}
 		inst.Platform = strList(in, "Platform")
+		inst.InstallModes = strList(in, "InstallModes")
 		if inst.Architecture == "" || inst.URL == "" || !sha256Hex.MatchString(inst.SHA256) {
 			return m, fmt.Errorf("instalador %d: Architecture, InstallerUrl e InstallerSha256 (64 hex) são obrigatórios", i+1)
 		}
