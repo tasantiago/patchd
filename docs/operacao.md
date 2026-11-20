@@ -1468,6 +1468,15 @@ sem editar arquivo no servidor:
    Raiz Confiáveis" (e "Intermediárias") da máquina, por GPO, ou escolha "o instalador não é
    assinado" com o motivo.
 3. **Processos** (opcional): os executáveis do programa; com um deles aberto, o agente adia.
+   **Argumentos** (opcional): no lugar dos do winget, para o tipo escolhido; valem no próximo
+   Baixar. **Instalador só por usuário** (o winget diz `Scope: user`, como o Canva): o agente
+   roda como SYSTEM e o instalaria no perfil do SYSTEM, onde ninguém o vê; por isso o patchd
+   não baixa esse instalador, a não ser com argumentos que o façam instalar para todos. A
+   busca avisa e, nos instaladores NSIS (os de programas Electron), já põe `/S /allusers`:
+   confira numa máquina antes de oferecer (o job que não acha o programa diz se ele foi para
+   um usuário só). **Remover antes**: o fabricante que declara `UpgradeBehavior:
+   uninstallPrevious` (o Flameshot) só é baixado com "Remover a versão instalada antes de
+   instalar a nova" marcado; a busca já marca.
 4. **Salvar**: o programa vale na hora, sem reiniciar o servidor, no painel, na avaliação do
    parque, nas campanhas, na Padronização e no autoatendimento. O servidor busca a versão de
    referência em seguida (sem esperar a sincronização do catálogo).

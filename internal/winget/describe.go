@@ -27,6 +27,9 @@ type Description struct {
 	// UninstallPrevious: o instalador sugerido declara UpgradeBehavior uninstallPrevious (o
 	// fabricante pede remover a versão anterior antes de instalar).
 	UninstallPrevious bool
+	// UserScope: os instaladores do tipo sugerido são todos de escopo usuário (Scope: user): o
+	// agente, como SYSTEM, instalaria no perfil do SYSTEM; o formulário pede os argumentos.
+	UserScope bool
 }
 
 // Describe lê a versão mais nova do pacote: o manifesto de instalador e o de idioma padrão.
@@ -41,9 +44,15 @@ func (c *Client) Describe(ctx context.Context, id string) (Description, error) {
 	if err != nil {
 		return d, err
 	}
+	userOnly := map[string]bool{} // tipo → todos os instaladores dele são por usuário
 	for _, in := range m.Installers {
 		if in.Architecture != "x64" && in.Architecture != "neutral" {
 			continue
+		}
+		if prev, ok := userOnly[in.Type]; ok {
+			userOnly[in.Type] = prev && in.Scope == "user"
+		} else {
+			userOnly[in.Type] = in.Scope == "user"
 		}
 		switch {
 		case !Supported(in.Type):
@@ -57,6 +66,9 @@ func (c *Client) Describe(ctx context.Context, id string) (Description, error) {
 			d.InstallerURL = in.URL
 			d.UninstallPrevious = in.UpgradeBehavior == "uninstallPrevious"
 		}
+	}
+	if len(d.Types) > 0 {
+		d.UserScope = userOnly[d.Types[0]]
 	}
 	path, _ := PackagePath(id)
 	base := fmt.Sprintf("%s/%s/%s/%s", c.RawURL, path, url.PathEscape(d.Version), url.PathEscape(id))

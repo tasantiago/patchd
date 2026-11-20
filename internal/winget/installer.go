@@ -224,6 +224,12 @@ type Want struct {
 	Arch  string // arquitetura da máquina: x64, x86 ou arm64
 	Scope string // machine (o agente roda como SYSTEM; o escopo usuário fica para depois)
 	Type  string // tipo exigido pela regra (o mesmo do que está instalado); vazio: qualquer
+	// UninstallFirst: a regra remove a versão instalada antes de instalar (aceita o instalador
+	// com UpgradeBehavior uninstallPrevious).
+	UninstallFirst bool
+	// UserScope: a regra tem os argumentos próprios que fazem o instalador de escopo usuário
+	// instalar para todos (o "/S /allusers" dos instaladores Electron): aceita o escopo user.
+	UserScope bool
 }
 
 // Skipped é um instalador que não foi o escolhido, com o motivo.
@@ -350,12 +356,22 @@ func (in Installer) unusable(w Want, order []string) string {
 		return "exe sem o Silent no manifesto: não se sabe como instalar em silêncio"
 	case !known && in.Type != "exe":
 		return "tipo " + in.Type + " não é executado pelo patchd"
+	case in.Scope == "user" && w.Scope == "machine" && w.UserScope:
+		// Os argumentos da regra fazem instalar para todos: segue.
 	case in.Scope != "" && in.Scope != w.Scope:
+		if in.Scope == "user" {
+			return "escopo user: o agente instala como SYSTEM, e o instalador por usuário iria para o perfil do SYSTEM " +
+				"(ninguém veria); se ele aceita instalar para todos (os instaladores Electron: /S /allusers), ponha os argumentos no programa"
+		}
 		return "escopo " + in.Scope + "; o agente instala para a máquina"
+	}
+	switch {
 	case in.UpgradeBehavior == "deny":
 		return "UpgradeBehavior deny: o fabricante não quer atualização por fora"
-	case in.UpgradeBehavior != "" && in.UpgradeBehavior != "install":
-		return "UpgradeBehavior " + in.UpgradeBehavior + ": exige desinstalar antes (ainda não)"
+	case in.UpgradeBehavior == "uninstallPrevious" && !w.UninstallFirst:
+		return "UpgradeBehavior uninstallPrevious: o fabricante pede remover a versão anterior antes; marque \"Remover a versão instalada antes de instalar a nova\" no programa"
+	case in.UpgradeBehavior != "" && in.UpgradeBehavior != "install" && in.UpgradeBehavior != "uninstallPrevious":
+		return "UpgradeBehavior " + in.UpgradeBehavior + ": não suportado"
 	case len(in.Platform) > 0 && !slices.Contains(in.Platform, "Windows.Desktop"):
 		return "plataforma " + strings.Join(in.Platform, ", ")
 	case !strings.HasPrefix(in.URL, "https://"):

@@ -73,7 +73,8 @@ type customRow struct {
 type customForm struct {
 	Name, Winget, Inventory, Mode, Publisher, Type, Signer, Unsigned, Processes string
 	NoSignature                                                                 bool
-	UninstallFirst                                                              bool // remover a versão instalada antes de atualizar
+	UninstallFirst                                                              bool   // remover a versão instalada antes de atualizar
+	Arguments                                                                   string // os argumentos no lugar dos do winget
 	// O atalho na área de trabalho de todos os usuários.
 	ShortName, ShortTarget, ShortIcon string
 }
@@ -101,6 +102,7 @@ func formOf(r thirdparty.App) customForm {
 		f.Processes = strings.Join(r.Install.Processes, ", ")
 		f.NoSignature = r.Install.Signer == ""
 		f.UninstallFirst = r.Install.UninstallFirst
+		f.Arguments = r.Install.Arguments
 	}
 	if r.Shortcut != nil {
 		f.ShortName, f.ShortTarget, f.ShortIcon = r.Shortcut.Name, r.Shortcut.Target, r.Shortcut.Icon
@@ -115,11 +117,11 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 		Publisher: strings.TrimSpace(r.PostFormValue("fabricante")), Type: r.PostFormValue("tipo"),
 		Signer: strings.TrimSpace(r.PostFormValue("assinante")), Unsigned: strings.TrimSpace(r.PostFormValue("sem_assinatura")),
 		Processes: strings.TrimSpace(r.PostFormValue("processos")), NoSignature: r.PostFormValue("assinatura") == "nao",
-		UninstallFirst: r.PostFormValue("remover_antes") == "1",
-		ShortName:      strings.TrimSpace(r.PostFormValue("atalho_nome")), ShortTarget: strings.TrimSpace(r.PostFormValue("atalho_executavel")),
+		UninstallFirst: r.PostFormValue("remover_antes") == "1", Arguments: strings.TrimSpace(r.PostFormValue("argumentos")),
+		ShortName: strings.TrimSpace(r.PostFormValue("atalho_nome")), ShortTarget: strings.TrimSpace(r.PostFormValue("atalho_executavel")),
 		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone"))}
 	in := thirdparty.CustomInput{Name: f.Name, WingetID: f.Winget, InventoryName: f.Inventory, NameMode: f.Mode, Publisher: f.Publisher,
-		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio", UninstallFirst: f.UninstallFirst,
+		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio", UninstallFirst: f.UninstallFirst, Arguments: f.Arguments,
 		ShortcutName: f.ShortName, ShortcutTarget: f.ShortTarget, ShortcutIcon: f.ShortIcon}
 	if in.Upload {
 		in.WingetID, f.Winget = "", ""
@@ -234,6 +236,10 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 			v.Form.Type = d.Types[0]
 		}
 		v.Form.UninstallFirst = d.UninstallPrevious
+		if d.UserScope && v.Form.Type == "nullsoft" {
+			// O instalador NSIS do Electron (Canva, BirdID...) instala para todos com /allusers.
+			v.Form.Arguments = "/S /allusers"
+		}
 		// Quem assina, lido do próprio instalador: o O= que o agente vai exigir.
 		switch {
 		case d.SignerOrg != "":

@@ -38,7 +38,7 @@ func TestEscolhaNosManifestosReais(t *testing.T) {
 		{"Mozilla.Firefox.pt-BR", "", "#2 nullsoft x64 machine", `"<f>" /S /PreventRebootRequired=true`, nil},
 		// O de usuário fica de fora; o Custom da raiz vai junto do padrão do Inno.
 		{"Microsoft.VisualStudioCode", "", "#2 inno x64 machine", `"<f>" /SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /mergetasks=!runcode`,
-			[]string{"#1 escopo user; o agente instala para a máquina"}},
+			[]string{"#1 escopo user: o agente instala como SYSTEM"}},
 		// O Custom é do instalador de máquina (InstallAllUsers=1), não o do de usuário.
 		{"Python.Python.3.14", "", "#4 burn x64 machine", `"<f>" /quiet /norestart InstallAllUsers=1 PrependPath=1`,
 			[]string{"#3 escopo user", "#8 tipo zip não é executado"}},
@@ -161,7 +161,8 @@ func TestDescartes(t *testing.T) {
 	for nome, c := range map[string]struct{ in, motivo string }{
 		"exe sem Silent":    {inst("  InstallerType: exe\n"), "exe sem o Silent"},
 		"http":              {strings.Replace(inst("  InstallerType: msi\n"), "https", "http", 1), "sem https"},
-		"uninstallPrevious": {inst("  InstallerType: msi\n  UpgradeBehavior: uninstallPrevious\n"), "exige desinstalar antes"},
+		"uninstallPrevious": {inst("  InstallerType: msi\n  UpgradeBehavior: uninstallPrevious\n"), "Remover a versão instalada antes"},
+		"escopo user":       {inst("  InstallerType: nullsoft\n  Scope: user\n"), "perfil do SYSTEM"},
 		"deny":              {inst("  InstallerType: msi\n  UpgradeBehavior: deny\n"), "não quer atualização por fora"},
 		"portable":          {inst("  InstallerType: portable\n"), "portable não é executado"},
 		"plataforma":        {inst("  InstallerType: msi\n  Platform:\n  - Windows.Universal\n"), "plataforma Windows.Universal"},
@@ -175,8 +176,18 @@ func TestDescartes(t *testing.T) {
 			t.Errorf("%s: %v %+v", nome, err, sk)
 		}
 	}
+	// Com a regra que remove antes, o uninstallPrevious serve; com os argumentos que instalam
+	// para todos, o escopo user serve.
+	m, _ := ParseInstaller([]byte(base + inst("  InstallerType: wix\n  Scope: machine\n  UpgradeBehavior: uninstallPrevious\n")))
+	if in, _, err := m.Select(Want{Arch: "x64", UninstallFirst: true}); err != nil || in.Type != "wix" {
+		t.Errorf("uninstallPrevious com remover antes: %v", err)
+	}
+	m, _ = ParseInstaller([]byte(base + inst("  InstallerType: nullsoft\n  Scope: user\n")))
+	if in, _, err := m.Select(Want{Arch: "x64", UserScope: true}); err != nil || in.Type != "nullsoft" {
+		t.Errorf("escopo user com argumentos: %v", err)
+	}
 	// Escopo declarado igual ao pedido vence o não declarado, mesmo vindo depois.
-	m, _ := ParseInstaller([]byte(base + inst("  InstallerType: nullsoft\n") + inst("  InstallerType: msi\n  Scope: machine\n")))
+	m, _ = ParseInstaller([]byte(base + inst("  InstallerType: nullsoft\n") + inst("  InstallerType: msi\n  Scope: machine\n")))
 	if in, _, _ := m.Select(Want{Arch: "x64"}); in.Type != "msi" {
 		t.Errorf("escopo declarado: %s", in.Type)
 	}
