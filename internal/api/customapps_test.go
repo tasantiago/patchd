@@ -208,3 +208,35 @@ func TestIncluirComRemoverAntes(t *testing.T) {
 		}
 	}
 }
+
+// Instalador do winget só por usuário (o Canva, Electron): a busca avisa e já põe o "/S
+// /allusers"; os argumentos ficam na regra (e exigem o tipo).
+func TestIncluirInstaladorPorUsuario(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	descrever := func(_ context.Context, id string) (winget.Description, error) {
+		return winget.Description{ID: id, Version: "1.129.0", Name: "Canva", Publisher: "Canva Pty Ltd", Types: []string{"nullsoft"}, UserScope: true}, nil
+	}
+	h, _, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, descrever, nil), api.WithCompliance(&complianceFalso{}))
+	b := pagina(h, "GET", "/painel/patch/terceiros/incluir?winget=Canva.Canva", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `name="argumentos" value="/S /allusers"`) || !strings.Contains(b, "O instalador do winget é só por usuário") {
+		t.Errorf("busca:\n%s", b)
+	}
+	form := url.Values{"nome": {"Canva"}, "winget": {"Canva.Canva"}, "inventario": {"Canva"}, "modo": {"comeca"}, "tipo": {""},
+		"assinatura": {"sim"}, "assinante": {"Canva Pty Ltd"}, "argumentos": {"/S /allusers"}}
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "escolha o tipo do instalador") {
+		t.Errorf("sem tipo: %d", r.Code)
+	}
+	form.Set("tipo", "nullsoft")
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("salvar: %d %s", r.Code, r.Body)
+	}
+	for _, a := range live.For("windows") {
+		if a.ID == "canva-canva" && (a.Install.Arguments != "/S /allusers" || a.Install.Type != "nullsoft") {
+			t.Errorf("regra: %+v", a.Install)
+		}
+	}
+	if b := pagina(h, "GET", "/painel/patch/terceiros/incluir?editar=canva-canva", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `name="argumentos" value="/S /allusers"`) {
+		t.Error("edição sem os argumentos")
+	}
+}

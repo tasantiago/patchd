@@ -36,6 +36,9 @@ type CustomInput struct {
 	Processes      []string
 	// UninstallFirst: a atualização remove a instalação de agora antes de instalar.
 	UninstallFirst bool
+	// Arguments (winget): os argumentos da instalação silenciosa no lugar dos do winget (o
+	// "/S /allusers" que faz o instalador Electron de escopo usuário instalar para todos).
+	Arguments string
 	// Upload: o instalador próprio, enviado pelo painel (sem winget). O id vem do nome, ou é
 	// ID (a edição mantém o id de quando foi incluído).
 	Upload bool
@@ -126,6 +129,12 @@ func BuildCustom(in CustomInput) (App, error) {
 		Source: &Source{Type: SourceWinget, ID: in.WingetID},
 		Install: &Install{Winget: in.WingetID, Type: in.InstallType, Signer: in.Signer, UnsignedReason: in.UnsignedReason, Processes: in.Processes,
 			UninstallFirst: in.UninstallFirst}}
+	if !in.Upload && strings.TrimSpace(in.Arguments) != "" {
+		if in.InstallType == "" {
+			return App{}, fmt.Errorf("com argumentos próprios, escolha o tipo do instalador (os argumentos são de um tipo)")
+		}
+		a.Install.Arguments = strings.TrimSpace(in.Arguments)
+	}
 	if in.Upload {
 		if !slices.Contains(UploadTypes, in.InstallType) {
 			return App{}, fmt.Errorf("o tipo do instalador próprio: %s", strings.Join(UploadTypes, ", "))
