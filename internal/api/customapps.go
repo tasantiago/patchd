@@ -56,6 +56,8 @@ type customView struct {
 	Upload  bool   // o formulário do instalador próprio (?proprio=1)
 	Editing string // o id do programa em edição ("" = novo)
 	Found   *winget.Description
+	Help    []winget.Help // os parâmetros do instalador no winget (na busca e em Editar com ?ajuda=1)
+	Tips    map[string][]string
 	Types   []string
 	CanUse  bool // o painel pode incluir (o servidor tem o manifesto vivo)
 	CanFind bool // a busca no winget está ligada
@@ -177,7 +179,7 @@ func (a *api) reloadRules(ctx context.Context) error {
 // customPage: GET /painel/patch/terceiros/incluir. A lista dos incluídos e o formulário;
 // ?editar=ID abre um para editar; ?winget=ID busca o pacote e preenche.
 func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session) {
-	v := customView{pageBase: a.baseFor(r.Context(), s, "Incluir programa", "patch"), Types: append([]string{""}, wingetTypes...)}
+	v := customView{pageBase: a.baseFor(r.Context(), s, "Incluir programa", "patch"), Types: append([]string{""}, wingetTypes...), Tips: winget.TypeTips}
 	v.CanUse = a.custom != nil && a.tpManifest != nil
 	v.Form.Mode = thirdparty.NameEquals
 	if !v.CanUse {
@@ -207,6 +209,17 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 			if v.Upload {
 				v.Types = thirdparty.UploadTypes
 			}
+			// ?ajuda=1: os parâmetros do instalador no winget, para escolher os argumentos.
+			if q.Get("ajuda") == "1" && !v.Upload && v.CanFind && rule.Install != nil && rule.Install.Winget != "" {
+				ctx, cancel := context.WithTimeout(r.Context(), customTimeout)
+				defer cancel()
+				d, err := a.custom.describe(ctx, rule.Install.Winget)
+				if err != nil {
+					v.Error = "Não deu para ler o pacote no winget-pkgs: " + err.Error()
+				} else {
+					v.Help = d.Help
+				}
+			}
 		}
 	case q.Get("winget") != "" && v.CanFind:
 		id := strings.TrimSpace(q.Get("winget"))
@@ -223,6 +236,7 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 			break
 		}
 		v.Found = &d
+		v.Help = d.Help
 		v.Form.Name = d.Name
 		v.Form.Inventory, v.Form.Publisher = d.DisplayName, d.DisplayPublisher
 		if v.Form.Inventory == "" {

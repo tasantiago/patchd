@@ -1469,7 +1469,12 @@ sem editar arquivo no servidor:
    assinado" com o motivo.
 3. **Processos** (opcional): os executáveis do programa; com um deles aberto, o agente adia.
    **Argumentos** (opcional): no lugar dos do winget, para o tipo escolhido; valem no próximo
-   Baixar. **Instalador só por usuário** (o winget diz `Scope: user`, como o Canva): o agente
+   Baixar. A busca abre a ajuda **"Parâmetros do instalador, do manifesto do winget"**: de cada
+   instalador x64, o tipo, o escopo, o comportamento na atualização, os modos, os
+   InstallerSwitches que o fabricante declarou (Silent, Custom, Upgrade, InstallLocation, Log…),
+   o que o patchd usa sem argumentos próprios, os códigos de saída e os argumentos conhecidos do
+   tipo (MSI, NSIS, Inno, burn). No Editar, o link "Ver os parâmetros do instalador no winget"
+   mostra o mesmo. **Instalador só por usuário** (o winget diz `Scope: user`, como o Canva): o agente
    roda como SYSTEM e o instalaria no perfil do SYSTEM, onde ninguém o vê; por isso o patchd
    não baixa esse instalador, a não ser com argumentos que o façam instalar para todos. A
    busca avisa e, nos instaladores NSIS (os de programas Electron), já põe `/S /allusers`:

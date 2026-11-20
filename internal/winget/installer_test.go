@@ -208,3 +208,25 @@ func TestNenhumServeDizOQueHa(t *testing.T) {
 		t.Errorf("misto: %v", err)
 	}
 }
+
+func TestAjudaDoInstalador(t *testing.T) {
+	m, err := ParseInstaller([]byte("PackageIdentifier: a.b\nPackageVersion: 1\nManifestType: installer\nInstallerType: inno\nInstallModes:\n- silent\n" +
+		"InstallerSwitches:\n  Custom: /MERGETASKS=!runcode\nInstallers:\n" +
+		"- Architecture: x64\n  InstallerUrl: https://x/a.exe\n  InstallerSha256: " + strings.Repeat("a", 64) + "\n" +
+		"- Architecture: arm64\n  InstallerUrl: https://x/b.exe\n  InstallerSha256: " + strings.Repeat("b", 64) + "\n" +
+		"- Architecture: x64\n  Scope: user\n  InstallerType: nullsoft\n  InstallerUrl: https://x/c.exe\n  InstallerSha256: " + strings.Repeat("c", 64) + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := HelpFor(m)
+	if len(h) != 2 || h[0].Type != "inno" || h[0].Default != "/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS=!runcode" ||
+		len(h[0].Modes) != 1 || len(h[0].Switches) != 1 || h[0].Switches[0].Meaning == "" || h[0].Unusable != "" {
+		t.Fatalf("inno: %+v", h)
+	}
+	if h[1].Type != "nullsoft" || h[1].Scope != "user" || !strings.Contains(h[1].Unusable, "escopo user") {
+		t.Errorf("por usuário: %+v", h[1])
+	}
+	if len(TypeTips["wix"]) == 0 || len(TypeTips["nullsoft"]) == 0 {
+		t.Error("dicas do tipo")
+	}
+}
