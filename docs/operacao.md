@@ -1225,6 +1225,36 @@ a comunicação normal. A cópia distribuída na imagem continua reutilizável. 
 offline individuais, omita `-image`: o serviço tenta registrar imediatamente em segundo plano,
 sem precisar de activate.
 
+### Offline, registrando pelo servidor ou pelo relé
+
+Para o notebook preparado sem rede que, ao ligar, pode estar dentro ou fora da rede: junte o
+`-relay` ao `install -offline` (sem `-image`). O serviço tenta registrar em segundo plano; a
+cada tentativa, fala com o servidor direto (3 s) e, sem resposta, disca o relé. O TLS confere
+o nome do servidor com a CA (`-ca-file`), pelos dois caminhos. Depois do registro, o relé fica
+no estado do agente e os check-ins seguem a regra de sempre (direto dentro da rede, relé fora).
+
+```powershell
+.\patchd-agent-windows-amd64.exe install -offline `
+  -server https://NOME_DO_SERVIDOR:8443 `
+  -enroll-token-file C:\Preparacao\patchd-token.txt `
+  -ca-file C:\Preparacao\ca.crt `
+  -relay IP_DO_RELE:8443
+```
+
+O token decide por onde o registro vale:
+
+- **rede interna** (o comum): só registra dentro da rede (pelo relé, é recusado). Pode ser
+  sem vencimento e de usos ilimitados: serve à imagem padrão;
+- **pelo relé**: só registra de fora, uma máquina, vence em até 7 dias;
+- **rede interna e relé**: registra pelos dois caminhos, de 1 a 50 máquinas, vence em até 7
+  dias. É o indicado para este caso (o lote de notebooks preparados que serão entregues nesta
+  semana, onde quer que estejam).
+
+O notebook que só conectar depois do vencimento do token fica esperando (o log diz
+"aguardando registro"): gere outro token e rode de novo o mesmo `install -offline` com o
+arquivo do token novo; a instalação individual que ainda não registrou troca o token (e o
+relé). A imagem (`-image`) não troca: prepare outra.
+
 ## Mesclar registros duplicados de um equipamento
 
 Quando uma reinstalação gera outra identidade para o mesmo equipamento, um administrador

@@ -238,8 +238,11 @@ nunca passa pela rede, há o **token pelo relé**:
   certificado no nome do servidor, com a CA interna (`-ca-file`): um relé falso não se passa
   pelo servidor. O relé fica gravado no estado do agente (não na linha do serviço), e o
   primeiro check-in já sai por ele; depois, vale o que o servidor manda no check-in.
-- `-relay` não vai com `-offline` (o registro pelo relé é na hora). Agente anterior a esta
-  versão não conhece o `-relay`.
+- `-relay` vai também com `-offline` (o notebook preparado sem rede, que se registra quando
+  conectar, de dentro ou de fora): veja "Instalação offline" em `docs/operacao.md`. O token
+  pelo relé vence em até 7 dias: o notebook tem de conectar dentro desse prazo. Agente
+  anterior a esta versão não conhece o `-relay` (e o anterior recusa `-relay` com
+  `-offline`).
 - No log do servidor, o registro traz `pelo_rele=true`; uma recusa diz o motivo ("é de
   registro pelo relé e só vale pela porta do relé", "é da rede interna e não vale pelo relé").
 

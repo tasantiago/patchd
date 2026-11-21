@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,5 +103,72 @@ func TestOfflineWaitCancellation(t *testing.T) {
 	_, err := waitOfflineEnrollment(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), dir, "test")
 	if err != context.Canceled {
 		t.Fatalf("shutdown ignored: %v", err)
+	}
+}
+
+// Instalação offline com -relay: a configuração guarda o relé; o registro adiado tenta o
+// servidor direto e, sem resposta, o relé; o relé fica no estado para os check-ins.
+func TestOfflineComRele(t *testing.T) {
+	oldTransport, oldRelay := enrollTransport, enrollRelay
+	t.Cleanup(func() { enrollTransport, enrollRelay = oldTransport, oldRelay })
+	look := ambienteFalso(nil)
+	if _, err := loadAgentConfig([]string{"-offline", "-relay", "203.0.113.10:8443"}, look, io.Discard); err != nil {
+		t.Fatalf("-offline com -relay recusado: %v", err)
+	}
+	st := store.NewMemory()
+	ctx := context.Background()
+	token, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	if _, err := st.CreateEnrollmentToken(ctx, hash, "lote", time.Time{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer server.Close()
+	dir := t.TempDir()
+	ca := filepath.Join(t.TempDir(), "ca.crt")
+	os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600)
+	file := filepath.Join(t.TempDir(), "token.txt")
+	os.WriteFile(file, []byte(token), 0600)
+	cfg := agentConfig{ServerURL: server.URL, DataDir: dir, EnrollTokenFile: file, CAFile: ca, OfflineInstall: true, Relay: "203.0.113.10:8443"}
+	args, err := prepareOfflineInstall(cfg, []string{"-offline", "-relay", "203.0.113.10:8443", "-ca-file", ca}, look)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range args {
+		if a == "-relay" || a == "203.0.113.10:8443" {
+			t.Errorf("o relé foi para a linha do serviço: %v", args)
+		}
+	}
+	if p, err := readOffline(dir); err != nil || p.Relay != "203.0.113.10:8443" {
+		t.Fatalf("configuração offline sem o relé: %+v %v", p, err)
+	}
+	// Rodar de novo com outro relé (ou outro token, o que venceu antes de o notebook conectar):
+	// a instalação individual ainda não registrada aceita; outro servidor, não.
+	other := cfg
+	other.Relay = "203.0.113.11:8443"
+	if _, err := prepareOfflineInstall(other, nil, look); err != nil {
+		t.Errorf("recusou o relé novo: %v", err)
+	}
+	if p, _ := readOffline(dir); p.Relay != "203.0.113.11:8443" {
+		t.Errorf("o relé novo não ficou: %+v", p)
+	}
+	if _, err := prepareOfflineInstall(cfg, nil, look); err != nil {
+		t.Fatal(err)
+	}
+	outroServidor := cfg
+	outroServidor.ServerURL = "https://outro.exemplo:8443"
+	if _, err := prepareOfflineInstall(outroServidor, nil, look); err == nil {
+		t.Error("aceitou outro servidor")
+	}
+	// O servidor responde direto: registra direto, e o relé fica no estado.
+	c, err := offlineAttempt(ctx, dir, "v-test")
+	if err != nil || c.MachineID == "" {
+		t.Fatalf("registro: %v", err)
+	}
+	if enrollRelay != "203.0.113.10:8443" {
+		t.Errorf("o registro adiado não usou o relé: %q", enrollRelay)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil || !strings.Contains(string(b), "203.0.113.10:8443") {
+		t.Errorf("o relé não ficou no estado: %s %v", b, err)
 	}
 }
