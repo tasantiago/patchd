@@ -130,9 +130,6 @@ func loadAgentConfig(args []string, look config.Lookup, usage io.Writer) (agentC
 		if err := protocol.CheckRelayAddr(cfg.Relay); err != nil {
 			problems = append(problems, fmt.Errorf("-relay/PATCHD_RELAY: %w", err))
 		}
-		if cfg.OfflineInstall {
-			problems = append(problems, errors.New("-relay não vai com -offline: o registro pelo relé é na hora, com o token pelo relé"))
-		}
 	}
 	if cfg.CAFile != "" && !filepath.IsAbs(cfg.CAFile) {
 		problems = append(problems, fmt.Errorf("-ca-file/PATCHD_CA_FILE: o caminho precisa ser absoluto (recebido %q)", cfg.CAFile))

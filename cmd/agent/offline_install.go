@@ -25,6 +25,9 @@ type offlineEnrollment struct {
 	Token     string
 	CAFile    string
 	HoldImage bool
+	// Relay (docs/rele.md): sem resposta direta do servidor, o registro adiado disca o relé
+	// (host:porta). Vazio nas configurações anteriores: só o servidor direto.
+	Relay string `json:",omitempty"`
 }
 
 func readOffline(dir string) (offlineEnrollment, error) {
@@ -59,7 +62,7 @@ func prepareOfflineInstall(cfg agentConfig, args []string, look config.Lookup) (
 	if err != nil {
 		return nil, errors.New("informe um arquivo válido de token para a instalação offline")
 	}
-	p := offlineEnrollment{ServerURL: cfg.ServerURL, Token: token, HoldImage: cfg.ImageInstall}
+	p := offlineEnrollment{ServerURL: cfg.ServerURL, Token: token, HoldImage: cfg.ImageInstall, Relay: cfg.Relay}
 	var ca []byte
 	if cfg.CAFile != "" {
 		var err error
@@ -80,8 +83,18 @@ func prepareOfflineInstall(cfg agentConfig, args []string, look config.Lookup) (
 				return nil, errors.New("a CA da configuração offline existente é diferente")
 			}
 		}
-		if old.ServerURL != p.ServerURL || old.Token != p.Token || old.CAFile != p.CAFile {
+		switch {
+		case old.ServerURL != p.ServerURL || old.CAFile != p.CAFile:
 			return nil, errors.New("já existe configuração offline diferente nesta pasta")
+		case old.Token != p.Token || old.Relay != p.Relay:
+			// A instalação individual que ainda não registrou (o token venceu antes de o
+			// notebook conectar) aceita o token e o relé novos; a imagem, não.
+			if cfg.ImageInstall || old.HoldImage {
+				return nil, errors.New("já existe configuração offline diferente nesta pasta")
+			}
+			if err := saveOffline(cfg.DataDir, p); err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -169,6 +182,7 @@ func offlineAttempt(ctx context.Context, dir, version string) (credential.Creden
 	if err := setEnrollCA(p.CAFile); err != nil {
 		return credential.Credential{}, err
 	}
+	setEnrollRelay(p.Relay) // o servidor direto primeiro; sem resposta, o relé
 	c, err := enrollMachineContext(ctx, p.ServerURL, dir, p.Token, version, io.Discard)
 	if err == nil {
 		_ = os.Remove(filepath.Join(dir, offlineFile))
@@ -194,7 +208,7 @@ func waitOfflineEnrollment(ctx context.Context, logger *slog.Logger, dir, versio
 				logger.Info("registro adiado concluído")
 				return c, nil
 			}
-			logger.Warn("aguardando registro: confira conectividade HTTPS, CA e validade do token", "nova_tentativa_em", delay.String())
+			logger.Warn("aguardando registro: confira conectividade HTTPS, CA e validade do token", "rele", p.Relay, "nova_tentativa_em", delay.String())
 		}
 		pause := delay
 		if p.HoldImage {
