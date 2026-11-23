@@ -1882,6 +1882,26 @@ excluída ou de programa que saiu do parque fica de fora, com a contagem na mens
 versão aprovada vai para a auditoria como `terceiros.aprovar`, como a aprovação na página do
 programa. Depois, a campanha "Todos os programas de terceiros aprovados" leva tudo de uma vez.
 
+**O aviso de versão nova.** Um programa com instalador guardado ganha o aviso quando há o que
+fazer: **para baixar** (a versão de referência, a que o catálogo de terceiros acompanha, é mais
+nova que a guardada mais nova) ou **para aprovar** (a guardada mais nova não está aprovada). O
+aviso aparece:
+
+- no menu, o número ao lado de **Terceiros** (os programas com uma das duas coisas; refeito a
+  cada 20 segundos);
+- na lista de terceiros, o indicador **Versões novas para baixar** (ao lado do "aguardando
+  aprovação"), o aviso no topo com os dois números e, na coluna Instalador, a marca **baixar
+  X** que leva aos instaladores do programa; o filtro "Versão nova para baixar"
+  (`?instalador=baixar`);
+- na página do programa, "Versão nova para baixar: a de referência é …, e a guardada mais nova
+  é …", no cartão Instaladores guardados;
+- em **Patch › Visão geral**, em "O que pede atenção".
+
+Programa sem nada guardado (o do manifesto que você não usa) e o instalador próprio (a
+referência é o próprio envio) não avisam; versão que não se compara (escrita de outro jeito
+que a de referência) também não. Com **Baixar sozinho cada versão nova** na Fonte do
+instalador, o "para baixar" some sozinho quando o servidor baixa, e fica o "para aprovar".
+
 ### Prazo da instalação e a fila do Windows Installer
 
 - **Prazo:** o agente dá 60 minutos a cada instalador, e 90 aos de 200 MB ou mais (o MSI do

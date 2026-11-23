@@ -166,6 +166,8 @@ type Store interface {
 	// Instaladores próprios (tpupload): o instalador enviado e a versão de referência dele.
 	SaveThirdPartyPackage(ctx context.Context, p store.ThirdPartyPackage) (bool, error)
 	SaveThirdPartyVersion(ctx context.Context, app, osID, version, source string) error
+	// As versões de referência (o aviso de versão nova para baixar, tpbatch.go).
+	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
 	// Aula 23.6: a localização do patrimônio.
 	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
 	AssetLocations(ctx context.Context) ([]store.AssetLocation, error)

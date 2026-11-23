@@ -364,6 +364,11 @@ func (a *api) patchOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.Attention = append(v.Attention, a.overviewSourceAttention(failures, now)...)
+	if inst, err := a.tpInstallers(ctx); err == nil {
+		v.Attention = append(v.Attention, tpAttention(inst)...)
+	} else {
+		a.logger.Warn("visão geral: instaladores de terceiros", "error", err)
+	}
 	if failed24 > 0 {
 		v.Attention = append(v.Attention, ovAttention{Level: "atencao", Href: "/painel/jobs",
 			Text: fmt.Sprintf("%d job(s) sem sucesso nas últimas 24 h", failed24)})
