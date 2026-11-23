@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -61,4 +62,26 @@ func TestFontesDoInstaladorPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testarFontesInstalador(t, NewPostgres(pool))
+}
+
+// O instalador baixado por link (site do fabricante, Chocolatey) leva a origem no winget_id:
+// o banco recusa o baixado por https sem ela (o erro do primeiro Baixar pelo Chocolatey).
+func TestOrigemDoInstaladorPostgres(t *testing.T) {
+	pool := bancoDeTeste(t)
+	ctx := context.Background()
+	if err := Migrate(ctx, pool, silencioso()); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPostgres(pool)
+	pk := ThirdPartyPackage{AppID: "adobe-acrobat", Version: "26.003.22110", Architecture: "x64", Type: "exe", Scope: "machine",
+		URL: "https://ardownload3.adobe.com/x.exe", SHA256: strings.Repeat("a", 64), Size: 1, Arguments: "/sAll"}
+	if _, err := p.SaveThirdPartyPackage(ctx, pk); err == nil {
+		t.Error("sem a origem: aceito")
+	}
+	for _, origem := range []string{"chocolatey:adobereader", "site-do-fabricante"} {
+		pk.WingetID, pk.Version = origem, pk.Version+"1"
+		if _, err := p.SaveThirdPartyPackage(ctx, pk); err != nil {
+			t.Errorf("%s: %v", origem, err)
+		}
+	}
 }

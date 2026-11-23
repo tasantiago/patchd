@@ -47,9 +47,11 @@ func CheckChoco(s store.InstallerSource, rule thirdparty.App) error {
 	return nil
 }
 
-// Choco baixa, confere e registra o instalador pelo pacote do Chocolatey.
+// Choco baixa, confere e registra o instalador pelo pacote do Chocolatey. ref: a versão de
+// referência do programa ("" sem ela), para acertar a versão quando o pacote a escreve de outro
+// jeito (o Adobe Reader: 2026.3.22110 no pacote, 26.003.22110 no Windows).
 func Choco(ctx context.Context, hc *http.Client, base string, f *pkgcache.Fetcher, st Store, a thirdparty.App, src store.InstallerSource,
-	version, dir string, out io.Writer) bool {
+	version, ref, dir string, out io.Writer) bool {
 	fail := func(format string, args ...any) bool {
 		fmt.Fprintf(out, "  ERRO        "+format+"\n", args...)
 		return false
@@ -75,9 +77,38 @@ func Choco(ctx context.Context, hc *http.Client, base string, f *pkgcache.Fetche
 		return fail("%v", err)
 	}
 	ver := choco.ProgramVersion(pkg.Version)
-	fmt.Fprintf(out, "  pacote      %s %s → versão %s\n  link        %s (de %s)\n", src.PackageID, pkg.Version, ver, in.URL, in.URLVar)
+	note := ""
+	if ref != "" && !sameVersion(ver, ref) {
+		switch {
+		case len(digits(ref)) >= 4 && (digits(ver) == digits(ref) || strings.Contains(in.URL, digits(ref))):
+			// O mesmo número escrito de outro jeito: vale a forma do Windows (a de referência).
+			note = fmt.Sprintf(" (a de referência; o pacote escreve %s)", ver)
+			ver = ref
+		default:
+			note = fmt.Sprintf(" (a de referência é %s: confira antes de aprovar)", ref)
+		}
+	}
+	fmt.Fprintf(out, "  pacote      %s %s → versão %s%s\n  link        %s (de %s)\n", src.PackageID, pkg.Version, ver, note, in.URL, in.URLVar)
 	if in.SHA256 != "" {
 		fmt.Fprintf(out, "  SHA-256     %s… (do pacote)\n", in.SHA256[:12])
 	}
-	return keep(ctx, f, st, a, in.URL, in.SHA256, src.Type, src.Arguments, ver, dir, out)
+	return keep(ctx, f, st, a, originChoco+src.PackageID, in.URL, in.SHA256, src.Type, src.Arguments, ver, dir, out)
+}
+
+// sameVersion: as duas versões são a mesma (pela parte numérica).
+func sameVersion(a, b string) bool {
+	na, ok1 := thirdparty.Normalize(a)
+	nb, ok2 := thirdparty.Normalize(b)
+	return a == b || ok1 && ok2 && na == nb
+}
+
+// digits: só os algarismos ("26.003.22110" → "2600322110").
+func digits(v string) string {
+	var b strings.Builder
+	for _, r := range v {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
