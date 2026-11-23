@@ -201,7 +201,11 @@ func (a *api) reloadRules(ctx context.Context) error {
 	for _, e := range errs {
 		a.logger.Warn("programa de terceiros incluído pelo painel fora do manifesto", "error", e)
 	}
-	a.tpManifest.Set(all)
+	tryOpen, err := a.store.TryOpenSettings(ctx)
+	if err != nil {
+		return err
+	}
+	a.tpManifest.Set(thirdparty.WithTryOpen(all, tryOpen))
 	return nil
 }
 

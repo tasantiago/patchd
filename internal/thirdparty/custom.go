@@ -273,3 +273,23 @@ func SignerOrganization(s string) string {
 	}
 	return s
 }
+
+// WithTryOpen devolve o manifesto com o "tentar com o programa aberto" de cada programa do
+// Windows que o painel escolheu (id → ligado). O programa sem processes fica como está (não há
+// o que conferir). O manifesto de entrada não muda: a regra trocada é uma cópia.
+func WithTryOpen(m Manifest, set map[string]bool) Manifest {
+	if len(set) == 0 {
+		return m
+	}
+	out := Manifest{Version: m.Version, Apps: slices.Clone(m.Apps)}
+	for i, a := range out.Apps {
+		on, ok := set[a.ID]
+		if !ok || a.OS != "windows" || a.Install == nil || len(a.Install.Processes) == 0 || a.Install.TryOpen == on {
+			continue
+		}
+		in := *a.Install
+		in.TryOpen = on
+		out.Apps[i].Install = &in
+	}
+	return out
+}

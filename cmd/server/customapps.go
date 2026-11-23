@@ -24,6 +24,8 @@ import (
 // customAppStore: onde ficam os programas incluídos pelo painel (migração 0074).
 type customAppStore interface {
 	CustomApps(ctx context.Context) ([]store.CustomApp, error)
+	// TryOpenSettings: o "tentar com o programa aberto" escolhido no painel (migração 0081).
+	TryOpenSettings(ctx context.Context) (map[string]bool, error)
 }
 
 // thirdPartyRules: o manifesto dos programas de terceiros como o servidor o usa. base é o
@@ -47,7 +49,11 @@ func thirdPartyRules(ctx context.Context, look config.Lookup, st customAppStore,
 			logger.Warn("programa de terceiros incluído pelo painel fora do manifesto", "error", e)
 		}
 	}
-	return base, all, nil
+	tryOpen, err := st.TryOpenSettings(ctx)
+	if err != nil {
+		return base, base, err
+	}
+	return base, thirdparty.WithTryOpen(all, tryOpen), nil
 }
 
 // withCustomApps: base com os programas do banco.

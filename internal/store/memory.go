@@ -20,6 +20,7 @@ import (
 type Memory struct {
 	customApps        map[string]CustomApp       // programas incluídos pelo painel (custom_apps.go)
 	tpSources         map[string]InstallerSource // a fonte do instalador de cada programa (tpsources.go)
+	tryOpen           map[string]TryOpenSetting  // tentar com o programa aberto (tptryopen.go)
 	tpVersions        map[string]thirdparty.Ref  // versões de referência de terceiros (catalog_thirdparty.go)
 	standardPolicies  map[int64]StandardizationPolicy
 	standardPolicySeq int64

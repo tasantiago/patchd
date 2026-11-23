@@ -183,12 +183,23 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	// de quem está nele. O job falha dizendo qual programa e onde; pedir de novo depois.
 	// Com close (a campanha pede, no horário dela), o programa aberto não adia: o instalador
 	// é baixado e conferido primeiro, e o programa só fecha (com aviso) quando tudo está pronto.
-	closing := false
+	// Com try_open (o programa que se atualiza aberto), o programa aberto também não adia de
+	// saída: o instalador roda uma vez com ele aberto, e só se não der certo o job adia (ou,
+	// com close, o programa fecha com aviso e o instalador roda de novo). A regularização
+	// não tenta: remover o programa aberto é pior que esperar.
+	closing, tryOpen, openWhat := false, false, ""
 	if err := e.checkRunning(p); err != nil {
-		if !errors.Is(err, jobs.ErrProgramOpen) || p.Close == nil || e.Closer == nil {
+		open := errors.Is(err, jobs.ErrProgramOpen)
+		canClose := p.Close != nil && e.Closer != nil
+		switch {
+		case open && p.TryOpen && p.Replace == nil:
+			tryOpen, closing = true, canClose
+			openWhat, _ = e.runningSummary(p)
+		case open && canClose:
+			closing = true
+		default:
 			return "", err
 		}
-		closing = true
 	}
 	if err := e.checkBusy("nada foi baixado nem executado"); err != nil {
 		return "", err
@@ -214,6 +225,21 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	sigNote, err := e.checkSignature(file, p.Signer)
 	if err != nil {
 		return sigNote, err
+	}
+
+	if tryOpen {
+		detail, err := e.runInstaller(ctx, jobID, file, p, sigNote)
+		switch {
+		case err == nil:
+			return joinNote(detail, "instalado com o programa aberto ("+openWhat+"): a versão nova vale quando ele for reaberto"), nil
+		case errors.Is(err, jobs.ErrRefused) || errors.Is(err, jobs.ErrNotStarted):
+			return detail, err // não chegou a rodar (outra instalação em andamento, por exemplo)
+		case !closing:
+			return detail, fmt.Errorf("%w: %w: tentou com o programa aberto (%s) e não deu (%v); adiado até o programa fechar",
+				ErrRetry, jobs.ErrProgramOpen, openWhat, err)
+		}
+		// Com close: fecha com aviso e tenta de novo, como sem try_open.
+		sigNote = joinNote(sigNote, fmt.Sprintf("1ª tentativa, com o programa aberto (%s): %v (%s)", openWhat, err, detail))
 	}
 
 	if closing {
@@ -249,7 +275,12 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 		}
 		sigNote = joinNote(note, sigNote)
 	}
+	return e.runInstaller(ctx, jobID, file, p, sigNote)
+}
 
+// runInstaller roda o instalador já baixado e conferido e traduz o código de saída. sigNote:
+// o que já aconteceu (a assinatura, o fechar, a remoção), no começo do detalhe.
+func (e *Executor) runInstaller(ctx context.Context, jobID int64, file string, p jobs.ThirdPartyParams, sigNote string) (string, error) {
 	prog, args := e.command(jobID, file, p)
 	env, err := e.jobTemp(jobID)
 	if err != nil {
@@ -416,13 +447,30 @@ func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
 	if e.Processes == nil {
 		return fmt.Errorf("%w: o agente não lista processos e o job exige conferir %s", jobs.ErrNotStarted, strings.Join(p.Processes, ", "))
 	}
-	list, err := e.Processes()
+	what, err := e.runningSummary(p)
 	if err != nil {
 		return fmt.Errorf("%w: não foi possível listar os processos para conferir %s: %v", jobs.ErrNotStarted, strings.Join(p.Processes, ", "), err)
 	}
+	if what == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %w: %w (%s); nada foi baixado nem executado: peça de novo com o programa fechado",
+		jobs.ErrNotStarted, ErrRetry, jobs.ErrProgramOpen, what)
+}
+
+// runningSummary: os executáveis do programa abertos e as sessões ("1 chrome.exe na sessão
+// 1"); vazio: nenhum.
+func (e *Executor) runningSummary(p jobs.ThirdPartyParams) (string, error) {
+	if e.Processes == nil {
+		return "", errors.New("o agente não lista processos")
+	}
+	list, err := e.Processes()
+	if err != nil {
+		return "", err
+	}
 	running := platform.Running(list, p.Processes)
 	if len(running) == 0 {
-		return nil
+		return "", nil
 	}
 	count := map[string]int{}
 	var sessions []uint32
@@ -442,8 +490,7 @@ func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
 	for _, s := range sessions {
 		ss = append(ss, strconv.FormatUint(uint64(s), 10))
 	}
-	return fmt.Errorf("%w: %w: %w (%s na sessão %s); nada foi baixado nem executado: peça de novo com o programa fechado",
-		jobs.ErrNotStarted, ErrRetry, jobs.ErrProgramOpen, strings.Join(parts, ", "), strings.Join(ss, ", "))
+	return fmt.Sprintf("%s na sessão %s", strings.Join(parts, ", "), strings.Join(ss, ", ")), nil
 }
 
 // jobLog: onde está o log do instalador deste job (msiexec ou Inno); vazio para os outros.

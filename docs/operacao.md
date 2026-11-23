@@ -408,6 +408,28 @@ baixado nem executado. Duas ajudas:
   força fechar, o job volta adiado. Só vai para agentes que anunciam a capacidade
   `fechar-programa-v1` no check-in (o servidor guarda as capacidades da máquina); para os
   outros, e para programas cuja regra não lista os executáveis, o job segue como hoje (adia).
+- **Tentar com o programa aberto antes de adiar** (opção de cada programa, desligada por
+  padrão): na página do programa, cartão Instaladores guardados, marque **Tentar instalar com
+  o programa aberto antes de adiar** e Guardar (só admin; vale para os programas com a lista de
+  processos). Para os que se atualizam abertos: o Chrome, o Firefox, o Edge, o Teams, os
+  instaladores que trocam os arquivos e pedem para reabrir. Com o programa aberto, o agente
+  baixa, confere e **roda o instalador** mesmo assim:
+  - deu certo: o job conclui com "instalado com o programa aberto (1 chrome.exe na sessão 1):
+    a versão nova vale quando ele for reaberto"; o inventário seguinte mostra a versão nova
+    (alguns só trocam a versão ao reabrir: o job pode ficar "sem efeito no inventário" até lá);
+  - não deu (o código de "arquivo em uso", ou qualquer falha): o job volta **adiado** por
+    programa aberto ("tentou com o programa aberto … e não deu"), não falhado, e entra no
+    **tentar assim que fechar**;
+  - com **fechar com aviso** na campanha, a tentativa vem antes: se não der, o programa fecha
+    com aviso e o instalador roda de novo.
+
+  Não tenta na **regularização** (remover a instalação antiga com o programa aberto é pior que
+  esperar). Instalador que falha no meio com o programa aberto pode deixar a instalação pela
+  metade: ligue só para os programas que você conferiu numa máquina. Vai só para agentes que
+  anunciam `tentar-aberto-v1`; os antigos adiam, como antes. A escolha fica no banco (migração
+  0081), vale na hora para os próximos jobs (campanha, painel, autoatendimento, Padronização) e
+  vai para a auditoria (`terceiros.tentar_aberto`). No manifesto, o campo é
+  `install.try_open` (exige `processes`).
 
 ### Acompanhar uma campanha grande
 

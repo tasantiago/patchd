@@ -55,6 +55,12 @@ type ThirdPartyParams struct {
 	// esta entrada em silêncio e só então instala. nil: nada sai. Só vai a agentes que
 	// anunciam protocol.CapabilityRegularize: os anteriores recusam o campo.
 	Replace *ReplaceEntry `json:"replace,omitempty"`
+	// TryOpen (tentar com o programa aberto, opção do programa): com o programa aberto, o
+	// agente roda o instalador mesmo assim; só se a instalação não der certo o job volta
+	// adiado (e o agente vigia o programa fechar). Para os programas que se atualizam abertos
+	// (o Chrome, o Firefox). Só vai a agentes que anunciam protocol.CapabilityTryOpen: os
+	// anteriores recusam o campo.
+	TryOpen bool `json:"try_open,omitempty"`
 }
 
 // ReplaceEntry é a entrada de Programas e Recursos que a regularização remove.
@@ -214,6 +220,8 @@ func (p ThirdPartyParams) Validate() error {
 		return fmt.Errorf("aviso antes de fechar o programa fora de %d a %d minutos", MinCloseNotice, MaxCloseNotice)
 	case p.Close != nil && len(p.Processes) == 0:
 		return errors.New("fechar o programa precisa da lista de processos da regra")
+	case p.TryOpen && (len(p.Processes) == 0 || p.Installer == InstallerInstallomator):
+		return errors.New("tentar com o programa aberto precisa da lista de processos da regra (e é do Windows)")
 	case p.Replace != nil && p.Installer == InstallerInstallomator:
 		return errors.New("a regularização é do Windows: o installomator não leva replace")
 	}

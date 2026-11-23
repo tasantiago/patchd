@@ -132,6 +132,9 @@ type Decision struct {
 	// Regularize: a atualização troca a instalação de outro tipo (o exe, o bundle) pela do
 	// instalador aprovado (Options.Regularize). nil: atualização comum.
 	Regularize *Regularization
+	// TryOpen: o job tenta instalar com o programa aberto antes de adiar (a regra pede e o
+	// agente sabe: Options.CanTryOpen).
+	TryOpen bool
 }
 
 // Regularization: a instalação que a atualização troca.
@@ -149,6 +152,9 @@ type Options struct {
 	// CanReplace: o agente da máquina remove a instalação antiga antes de instalar
 	// (protocol.CapabilityRegularize). Sem ele, só a regularização por cima.
 	CanReplace bool
+	// CanTryOpen: o agente da máquina tenta instalar com o programa aberto antes de adiar
+	// (protocol.CapabilityTryOpen). Sem ele, o job vai sem try_open (adia, como sempre).
+	CanTryOpen bool
 }
 
 // TargetVersion: a versão que o job leva.
@@ -176,6 +182,9 @@ func PlanWith(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdP
 		}
 		if d.State == StateUpdate && d.Regularize == nil && d.App.Install != nil && d.App.Install.UninstallFirst {
 			uninstallFirst(d, o)
+		}
+		if d.State == StateUpdate && o.CanTryOpen && d.Regularize == nil && d.App.Install != nil && d.App.Install.TryOpen {
+			d.TryOpen = true
 		}
 		out = append(out, *d)
 	}
@@ -392,6 +401,20 @@ func uninstallFirst(d *Decision, o Options) {
 func NeedsReplace(m thirdparty.Manifest) bool {
 	for _, a := range m.For("windows") {
 		if a.Install != nil && a.Install.UninstallFirst {
+			return true
+		}
+	}
+	return false
+}
+
+// NeedsCaps: o plano precisa das capacidades do agente (Options.CanReplace, CanTryOpen) mesmo
+// com a regularização desligada: alguma regra pede remover antes ou tentar com o programa aberto.
+func NeedsCaps(m thirdparty.Manifest) bool {
+	if NeedsReplace(m) {
+		return true
+	}
+	for _, a := range m.For("windows") {
+		if a.Install != nil && a.Install.TryOpen {
 			return true
 		}
 	}

@@ -44,3 +44,38 @@ func TestJobParams(t *testing.T) {
 		t.Errorf("rótulos: %v", Labels)
 	}
 }
+
+// Tentar com o programa aberto: o job leva try_open só quando a regra pede (WithTryOpen) e o
+// agente sabe (Options.CanTryOpen); sem uma das duas, o job vai como sempre (adia).
+func TestJobTentarAberto(t *testing.T) {
+	base, _ := thirdparty.Default()
+	vsc := pacote("vscode", "1.141.0", "inno", "x64")
+	vsc.Size, vsc.Arguments = 120<<20, "/VERYSILENT"
+	sw := []protocol.Software{maquina("Microsoft Visual Studio Code", "1.123.0", "Microsoft Corporation")}
+	pks := []store.ThirdPartyPackage{vsc}
+	m := thirdparty.WithTryOpen(base, map[string]bool{"vscode": true, "7zip": true})
+	if !NeedsCaps(m) || NeedsCaps(base) && !NeedsReplace(base) {
+		t.Error("NeedsCaps")
+	}
+	for _, tc := range []struct {
+		m    thirdparty.Manifest
+		can  bool
+		want bool
+	}{{m, true, true}, {m, false, false}, {base, true, false}} {
+		p, err := JobParams(PlanWith(sw, tc.m, pks, "x64", Options{CanTryOpen: tc.can})[0])
+		if err != nil || p.TryOpen != tc.want {
+			t.Errorf("regra %t, agente %t: try_open %t %v", tc.m.Apps[0].ID != "", tc.can, p.TryOpen, err)
+		}
+	}
+	// O manifesto de entrada não muda; o programa sem processos não liga.
+	for _, a := range base.Apps {
+		if a.Install != nil && a.Install.TryOpen {
+			t.Errorf("a base mudou: %s", a.ID)
+		}
+	}
+	for _, a := range m.Apps {
+		if a.ID == "7zip" && a.Install != nil && len(a.Install.Processes) == 0 && a.Install.TryOpen {
+			t.Error("7zip sem processos ligou")
+		}
+	}
+}
