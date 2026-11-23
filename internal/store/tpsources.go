@@ -13,8 +13,9 @@ import (
 
 // Os tipos de fonte.
 const (
-	SourceWinget = "winget"
-	SourceURL    = "url"
+	SourceWinget     = "winget"
+	SourceURL        = "url"
+	SourceChocolatey = "chocolatey"
 )
 
 // InstallerSource é a fonte do instalador de um programa.
@@ -23,9 +24,12 @@ type InstallerSource struct {
 	Kind  string // SourceWinget ou SourceURL
 	// URLTemplate, Type, Arguments e ChecksumURL: o site do fabricante (Kind SourceURL).
 	URLTemplate, Type, Arguments, ChecksumURL string
-	AutoFetch                                 bool // baixar sozinho a versão de referência nova
-	UpdatedBy                                 string
-	UpdatedAt                                 time.Time
+	// PackageID, URLVar e ChecksumVar: o Chocolatey (Kind SourceChocolatey): o pacote e,
+	// opcional, as variáveis do script com o link e o SHA-256. Type e Arguments valem também.
+	PackageID, URLVar, ChecksumVar string
+	AutoFetch                      bool // baixar sozinho a versão de referência nova
+	UpdatedBy                      string
+	UpdatedAt                      time.Time
 }
 
 // ErrInstallerSource: a fonte fora do formato.
@@ -35,9 +39,11 @@ func (s InstallerSource) check() error {
 	switch {
 	case s.AppID == "" || len(s.AppID) > 64 || strings.TrimSpace(s.UpdatedBy) == "":
 		return ErrInstallerSource
-	case s.Kind != SourceWinget && s.Kind != SourceURL:
+	case s.Kind != SourceWinget && s.Kind != SourceURL && s.Kind != SourceChocolatey:
 		return ErrInstallerSource
 	case s.Kind == SourceURL && (s.URLTemplate == "" || s.Type == ""):
+		return ErrInstallerSource
+	case s.Kind == SourceChocolatey && (s.PackageID == "" || s.Type == "" || len(s.PackageID) > 100 || len(s.URLVar) > 64 || len(s.ChecksumVar) > 64):
 		return ErrInstallerSource
 	case len(s.URLTemplate) > 1000 || len(s.ChecksumURL) > 1000 || len(s.Arguments) > 400:
 		return ErrInstallerSource
@@ -47,8 +53,8 @@ func (s InstallerSource) check() error {
 
 // InstallerSources lista as fontes gravadas, por programa.
 func (p *Postgres) InstallerSources(ctx context.Context) ([]InstallerSource, error) {
-	rows, err := p.pool.Query(ctx, `SELECT app_id, kind, url_template, type, arguments, checksum_url, auto_fetch, updated_by, updated_at
-		FROM thirdparty_sources ORDER BY app_id`)
+	rows, err := p.pool.Query(ctx, `SELECT app_id, kind, url_template, type, arguments, checksum_url, package_id, url_var, checksum_var,
+		auto_fetch, updated_by, updated_at FROM thirdparty_sources ORDER BY app_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +62,8 @@ func (p *Postgres) InstallerSources(ctx context.Context) ([]InstallerSource, err
 	var out []InstallerSource
 	for rows.Next() {
 		var s InstallerSource
-		if err := rows.Scan(&s.AppID, &s.Kind, &s.URLTemplate, &s.Type, &s.Arguments, &s.ChecksumURL, &s.AutoFetch, &s.UpdatedBy, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.AppID, &s.Kind, &s.URLTemplate, &s.Type, &s.Arguments, &s.ChecksumURL, &s.PackageID, &s.URLVar, &s.ChecksumVar,
+			&s.AutoFetch, &s.UpdatedBy, &s.UpdatedAt); err != nil {
 			return nil, err
 		}
 		s.UpdatedAt = s.UpdatedAt.UTC()
@@ -70,11 +77,12 @@ func (p *Postgres) SaveInstallerSource(ctx context.Context, s InstallerSource) e
 	if err := s.check(); err != nil {
 		return err
 	}
-	_, err := p.pool.Exec(ctx, `INSERT INTO thirdparty_sources (app_id, kind, url_template, type, arguments, checksum_url, auto_fetch, updated_by, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
-		ON CONFLICT (app_id) DO UPDATE SET kind = $2, url_template = $3, type = $4, arguments = $5, checksum_url = $6, auto_fetch = $7,
-			updated_by = $8, updated_at = now()`,
-		s.AppID, s.Kind, s.URLTemplate, s.Type, s.Arguments, s.ChecksumURL, s.AutoFetch, s.UpdatedBy)
+	_, err := p.pool.Exec(ctx, `INSERT INTO thirdparty_sources (app_id, kind, url_template, type, arguments, checksum_url, package_id, url_var,
+			checksum_var, auto_fetch, updated_by, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+		ON CONFLICT (app_id) DO UPDATE SET kind = $2, url_template = $3, type = $4, arguments = $5, checksum_url = $6, package_id = $7,
+			url_var = $8, checksum_var = $9, auto_fetch = $10, updated_by = $11, updated_at = now()`,
+		s.AppID, s.Kind, s.URLTemplate, s.Type, s.Arguments, s.ChecksumURL, s.PackageID, s.URLVar, s.ChecksumVar, s.AutoFetch, s.UpdatedBy)
 	return err
 }
 

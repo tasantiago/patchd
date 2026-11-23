@@ -22,17 +22,22 @@ func testarFontesInstalador(t *testing.T, st contratoFontesInstalador) {
 	if err := st.SaveInstallerSource(ctx, InstallerSource{AppID: "7zip", Kind: SourceWinget, AutoFetch: true, UpdatedBy: "ana"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SaveInstallerSource(ctx, InstallerSource{AppID: "adobe-acrobat-reader", Kind: SourceChocolatey, PackageID: "adobereader", Type: "exe",
+		Arguments: "/sAll /msi /norestart /quiet", URLVar: "$MUIurl64", ChecksumVar: "$MUIchecksum64", UpdatedBy: "ana"}); err != nil {
+		t.Fatal(err)
+	}
 	ff.Type, ff.UpdatedBy = "nullsoft", "bia"
 	if err := st.SaveInstallerSource(ctx, ff); err != nil {
 		t.Fatal(err)
 	}
 	l, err := st.InstallerSources(ctx)
-	if err != nil || len(l) != 2 || l[0].AppID != "7zip" || l[1].Type != "nullsoft" || l[1].UpdatedBy != "bia" || !l[1].AutoFetch ||
-		l[1].ChecksumURL != ff.ChecksumURL || l[1].UpdatedAt.IsZero() {
+	if err != nil || len(l) != 3 || l[0].AppID != "7zip" || l[2].Type != "nullsoft" || l[2].UpdatedBy != "bia" || !l[2].AutoFetch ||
+		l[2].ChecksumURL != ff.ChecksumURL || l[2].UpdatedAt.IsZero() || l[1].PackageID != "adobereader" || l[1].URLVar != "$MUIurl64" || l[1].ChecksumVar != "$MUIchecksum64" {
 		t.Fatalf("lista: %+v %v", l, err)
 	}
 	for _, ruim := range []InstallerSource{{Kind: SourceURL, UpdatedBy: "a"}, {AppID: "x", Kind: "ftp", UpdatedBy: "a"},
-		{AppID: "x", Kind: SourceURL, Type: "msi", UpdatedBy: "a"}, {AppID: "x", Kind: SourceWinget}} {
+		{AppID: "x", Kind: SourceURL, Type: "msi", UpdatedBy: "a"}, {AppID: "x", Kind: SourceWinget},
+		{AppID: "x", Kind: SourceChocolatey, Type: "msi", UpdatedBy: "a"}} {
 		if err := st.SaveInstallerSource(ctx, ruim); err == nil {
 			t.Errorf("aceita: %+v", ruim)
 		}
@@ -43,7 +48,7 @@ func testarFontesInstalador(t *testing.T, st contratoFontesInstalador) {
 	if ok, _ := st.DeleteInstallerSource(ctx, "7zip"); ok {
 		t.Error("tirar de novo")
 	}
-	if l, _ := st.InstallerSources(ctx); len(l) != 1 {
+	if l, _ := st.InstallerSources(ctx); len(l) != 2 {
 		t.Errorf("depois de tirar: %+v", l)
 	}
 }
