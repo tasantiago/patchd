@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/catalog/retry"
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
@@ -39,7 +40,9 @@ type sourceFetcher struct {
 	dir string
 	wg  *winget.Client
 	f   *pkgcache.Fetcher
-	hc  *http.Client // o arquivo de SHA-256 do fabricante
+	hc  *http.Client // o arquivo de SHA-256 do fabricante e o pacote do Chocolatey
+	// choco: o repositório do Chocolatey (choco.BaseURL; outro nos testes).
+	choco string
 }
 
 func newSourceFetcher(st sourceStore, dir, version string) *sourceFetcher {
@@ -47,7 +50,7 @@ func newSourceFetcher(st sourceStore, dir, version string) *sourceFetcher {
 	c := winget.NewClient(ua)
 	c.HTTP = retry.Wrap(c.HTTP, nil)
 	return &sourceFetcher{st: st, dir: dir, wg: c, f: pkgcache.NewFetcher(ua),
-		hc: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: pkgcache.HTTPSOnly}}
+		hc: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: pkgcache.HTTPSOnly}, choco: choco.BaseURL}
 }
 
 func (s *sourceFetcher) source(ctx context.Context, app string) (store.InstallerSource, error) {
@@ -83,7 +86,11 @@ func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver stri
 		fmt.Fprintf(out, "%s (%s)\n  ERRO        ler a fonte do instalador: %v\n", rule.Name, rule.ID, err)
 		return false
 	}
-	if src.Kind != store.SourceURL {
+	switch src.Kind {
+	case store.SourceChocolatey:
+		return tpfetch.Choco(ctx, s.hc, s.choco, s.f, s.st, rule, src, ver, s.dir, out)
+	case store.SourceURL:
+	default:
 		return tpfetch.One(ctx, s.wg, s.f, s.st, rule, tpfetch.Options{Version: ver, Arch: "x64", Types: types}, s.dir, out)
 	}
 	if ver == "" {
@@ -179,9 +186,9 @@ func (a *autoFetch) pass(ctx context.Context) int {
 		fctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		ok := a.s.fetch(fctx, *rule, ver, nil, &out)
 		cancel()
-		via := "winget"
-		if src.Kind == store.SourceURL {
-			via = "site do fabricante"
+		via := map[string]string{store.SourceURL: "site do fabricante", store.SourceChocolatey: "Chocolatey"}[src.Kind]
+		if via == "" {
+			via = "winget"
 		}
 		detail := fmt.Sprintf("automático: versão de referência %s, pelo %s: %s", ref, via, map[bool]string{true: "baixado", false: "falhou"}[ok])
 		a.logger.Info("download automático de instalador", "app", rule.ID, "version", ref, "fonte", via, "ok", ok, "andamento", lastLines(out.String(), 4))

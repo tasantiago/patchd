@@ -38,6 +38,7 @@ const VersionPlaceholder = "{versao}"
 
 var (
 	vendorVersion = regexp.MustCompile(`^[0-9][0-9A-Za-z._+-]{0,63}$`)
+	chocoVar      = regexp.MustCompile(`^\$?[A-Za-z_][A-Za-z0-9_]{0,63}$`)
 	sha256Line    = regexp.MustCompile(`^[0-9A-Fa-f]{64}$`)
 )
 
@@ -170,10 +171,7 @@ func Vendor(ctx context.Context, hc *http.Client, f *pkgcache.Fetcher, st Store,
 	if err := CheckVendor(src, a); err != nil {
 		return fail("%v", err)
 	}
-	msi := src.Type == "msi" || src.Type == "wix"
-	progress := func(line string) { fmt.Fprintf(out, "              %s\n", line) }
-	var res pkgcache.Result
-	var sha string
+	sha := ""
 	if src.ChecksumURL != "" {
 		sumsLink := ExpandVendor(src.ChecksumURL, version)
 		sums, err := getSums(ctx, hc, sumsLink, f.UserAgent)
@@ -184,6 +182,26 @@ func Vendor(ctx context.Context, hc *http.Client, f *pkgcache.Fetcher, st Store,
 			return fail("%v (%s)", err, sumsLink)
 		}
 		fmt.Fprintf(out, "  SHA-256     %s… (do arquivo do fabricante)\n", sha[:12])
+	}
+	return keep(ctx, f, st, a, link, sha, src.Type, src.Arguments, version, dir, out)
+}
+
+// keep baixa o link, confere (o SHA-256 conhecido, ou a assinatura exigida pela regra, sem
+// ele) e registra o instalador. sha vazio: calculado do que baixou.
+func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, link, sha, typ, args, version, dir string, out io.Writer) bool {
+	fail := func(format string, args ...any) bool {
+		fmt.Fprintf(out, "  ERRO        "+format+"\n", args...)
+		return false
+	}
+	if sha == "" && a.Install.Signer == "" {
+		return fail("sem o SHA-256 da fonte, o programa precisa exigir a assinatura (O=): é ela que garante o arquivo")
+	}
+	msi := typ == "msi" || typ == "wix"
+	progress := func(line string) { fmt.Fprintf(out, "              %s\n", line) }
+	var res pkgcache.Result
+	known := sha != ""
+	if known {
+		var err error
 		if res, err = f.Fetch(ctx, dir, link, sha, msi, progress); err != nil {
 			var hm *pkgcache.HashMismatchError
 			if errors.As(err, &hm) {
@@ -197,13 +215,13 @@ func Vendor(ctx context.Context, hc *http.Client, f *pkgcache.Fetcher, st Store,
 		if res, sha, err = f.FetchAny(ctx, dir, link, msi, progress); err != nil {
 			return fail("%v", err)
 		}
-		fmt.Fprintf(out, "  SHA-256     %s… (calculado: o fabricante não publica; vale a assinatura)\n", sha[:12])
+		fmt.Fprintf(out, "  SHA-256     %s… (calculado: a fonte não publica; vale a assinatura)\n", sha[:12])
 	}
 	// A assinatura: a da regra, já aqui (o agente confere de novo, com o Windows).
 	if want := a.Install.Signer; want != "" {
 		if err := checkSigner(res.Path, want); err != nil {
-			if src.ChecksumURL == "" {
-				_ = os.Remove(res.Path) // sem o SHA-256 do fabricante, o arquivo não fica
+			if !known {
+				_ = os.Remove(res.Path) // sem o SHA-256 da fonte, o arquivo não fica
 			}
 			fmt.Fprintf(out, "  RECUSADO    %v; nada foi guardado\n", err)
 			return false
@@ -215,8 +233,8 @@ func Vendor(ctx context.Context, hc *http.Client, f *pkgcache.Fetcher, st Store,
 	} else {
 		fmt.Fprintf(out, "  baixado     %s (%s) em %s\n", pkgcache.FileName(sha, msi), pkgcache.Bytes(res.Size), res.Duration.Round(100*time.Millisecond))
 	}
-	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, Version: version, Architecture: "x64", Type: src.Type,
-		Scope: "machine", URL: link, SHA256: sha, Size: res.Size, Arguments: cmp.Or(strings.TrimSpace(src.Arguments), winget.SilentDefault(src.Type))})
+	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, Version: version, Architecture: "x64", Type: typ,
+		Scope: "machine", URL: link, SHA256: sha, Size: res.Size, Arguments: cmp.Or(strings.TrimSpace(args), winget.SilentDefault(typ))})
 	var pc *store.PackageChangedError
 	switch {
 	case errors.As(err, &pc):

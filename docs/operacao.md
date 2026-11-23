@@ -1471,6 +1471,21 @@ winget-pkgs, que às vezes leva dias para ter a versão nova):
 
   O tipo tem de ser o das instalações nas máquinas (MSI só atualiza MSI; exe, exe). Para o
   ESR, o mesmo com `firefox/releases/{versao}` (a referência do ESR já traz o "esr").
+- **Pacote do Chocolatey** (o repositório da comunidade): o id do pacote (o de
+  `community.chocolatey.org/packages/<id>`). O servidor baixa o pacote (o mais novo, ou a
+  versão digitada no Baixar), lê do `tools/chocolateyInstall.ps1` o link do fabricante e o
+  SHA-256 que o script baixaria e baixa o instalador desse link, conferido pelo SHA-256. **O
+  script do Chocolatey não é executado**: só as atribuições de texto são lidas. A versão é a do
+  pacote (sem a data de correção, ex.: `1.2.3.20251010` → `1.2.3`). Por padrão vale o link de
+  64 bits (`url64bit`/`checksum64`, `$url64`/`$checksum64`, depois `url`/`checksum`); para outro,
+  informe as variáveis como estão no script (o Adobe Reader MUI: `$MUIurl64` e
+  `$MUIchecksum64`, tipo exe, argumentos `/sAll /msi /norestart /quiet ALLUSERS=1
+  EULA_ACCEPT=YES DISABLEDESKTOPSHORTCUT=1 DISABLE_ARM_SERVICE_INSTALL=1`; o Chrome:
+  `googlechrome`, tipo msi, sem variáveis). Limites: pacote que traz o instalador dentro
+  (embutido) não serve; link fixo do fabricante (o do Chrome, `…standaloneenterprise64.msi`)
+  muda de conteúdo antes de o pacote ser atualizado, e o download é recusado (SHA-256 diferente)
+  até o pacote acompanhar; soma que não é SHA-256 vale como sem soma (exige a assinatura). Os
+  pedidos ao Chocolatey são poucos (o Baixar e, no automático, a versão de referência nova).
 - **Arquivo de SHA-256 do fabricante** (opcional): o arquivo com linhas "SHA-256 nome" (o
   formato do `sha256sum`); o servidor só guarda se o baixado conferir. Sem ele, o servidor
   calcula o SHA-256 do que baixou e o programa **tem de exigir a assinatura**: o servidor confere

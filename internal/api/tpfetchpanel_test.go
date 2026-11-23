@@ -338,6 +338,20 @@ func TestFonteDoInstaladorPeloPainel(t *testing.T) {
 	if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "terceiros.fonte"}); len(ev) != 1 || !strings.Contains(ev[0].Detail, "baixa sozinho") {
 		t.Errorf("auditoria: %+v", ev)
 	}
+	// O Chocolatey: o pacote e as variáveis do script (as do Adobe), o tipo e os argumentos.
+	choco := url.Values{"fonte": {"chocolatey"}, "pacote": {"firefox"}, "var_link": {"$url64"}, "var_sha": {"$checksum64"}, "fonte_tipo": {"nullsoft"}}
+	if l := salvar(url.Values{"fonte": {"chocolatey"}, "pacote": {"../x"}, "fonte_tipo": {"msi"}}); !strings.Contains(l, "erro=fonte") {
+		t.Errorf("pacote inválido: %s", l)
+	}
+	if l := salvar(choco); !strings.HasSuffix(l, "&fonte=1#fonte") {
+		t.Fatalf("chocolatey: %s", l)
+	}
+	if list, _ := st.InstallerSources(ctx); len(list) != 1 || list[0].Kind != store.SourceChocolatey || list[0].PackageID != "firefox" || list[0].URLVar != "$url64" || list[0].AutoFetch {
+		t.Fatalf("fonte chocolatey: %+v", list)
+	}
+	if b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Chocolatey <code>firefox</code> · nullsoft") || !strings.Contains(b, `name="var_link" value="$url64"`) {
+		t.Error("cartão do Chocolatey")
+	}
 	// Leitura não vê o formulário; de volta ao winget sem automático: a linha sai.
 	if strings.Contains(pagina(h, "GET", prog, sessaoTeste, nil).Body.String(), `action="/painel/patch/terceiros/fonte"`) {
 		t.Error("leitura vê o formulário")
