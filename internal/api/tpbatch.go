@@ -32,7 +32,7 @@ const (
 
 var tpInstFilters = []struct{ V, L string }{
 	{"", "Qualquer instalador"}, {tpInstWaiting, "Aguardando aprovação"}, {tpInstApproved, "Mais nova aprovada"},
-	{tpInstNone, "Sem instalador guardado"}, {tpInstManual, "Sem regra de instalação"},
+	{tpInstDownload, "Versão nova para baixar"}, {tpInstNone, "Sem instalador guardado"}, {tpInstManual, "Sem regra de instalação"},
 }
 
 // tpQuery: o filtro da lista de terceiros.
@@ -96,7 +96,16 @@ type tpInstaller struct {
 	State    string // tpInst*
 	Newest   string // a versão guardada mais nova
 	Approved string // a versão aprovada mais nova, se houver
+	// Download: a versão de referência (Reference) é mais nova que a guardada mais nova: há
+	// versão nova para baixar. Só para quem já guardou alguma (o programa em uso) e não é
+	// instalador próprio (a referência dele é o próprio envio).
+	Download  bool
+	Reference string
 }
+
+// tpInstDownload: o filtro "versão nova para baixar" (não é um estado: o programa pode
+// também ter a guardada aguardando aprovação).
+const tpInstDownload = "baixar"
 
 // compareTPVersion: >0 se x for mais nova que y (a ordem dos instaladores guardados).
 func compareTPVersion(x, y string) int {
@@ -115,9 +124,11 @@ func (a *api) tpInstallers(ctx context.Context) (map[string]tpInstaller, error) 
 	if a.tpManifest == nil {
 		return out, nil
 	}
+	uploaded := map[string]bool{}
 	for _, r := range a.tpManifest.For("windows") {
 		if r.Install != nil {
 			out[r.ID] = tpInstaller{State: tpInstNone}
+			uploaded[r.ID] = r.Uploaded()
 		}
 	}
 	if len(out) == 0 {
@@ -130,6 +141,16 @@ func (a *api) tpInstallers(ctx context.Context) (map[string]tpInstaller, error) 
 	approvals, err := a.store.ThirdPartyApprovals(ctx)
 	if err != nil {
 		return nil, err
+	}
+	refs, err := a.store.ThirdPartyVersions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ref := map[string]string{}
+	for _, r := range refs {
+		if r.OS == "windows" {
+			ref[r.App] = r.Version
+		}
 	}
 	ok := map[string]bool{}
 	for _, ap := range approvals {
@@ -157,9 +178,55 @@ func (a *api) tpInstallers(ctx context.Context) (map[string]tpInstaller, error) 
 		default:
 			in.State = tpInstWaiting
 		}
+		in.Reference = ref[id]
+		in.Download = in.Newest != "" && !uploaded[id] && newerTPVersion(in.Reference, in.Newest)
 		out[id] = in
 	}
 	return out, nil
+}
+
+// newerTPVersion: ref é mais nova que have, as duas comparáveis (sem palpite pela ordem do
+// texto: um formato que não se compara não vira aviso).
+func newerTPVersion(ref, have string) bool {
+	nr, ok1 := thirdparty.Normalize(ref)
+	nh, ok2 := thirdparty.Normalize(have)
+	if !ok1 || !ok2 {
+		return false
+	}
+	c, err := version.CompareDotted(nr, nh)
+	return err == nil && c > 0
+}
+
+// tpAttention: os avisos da Visão geral: versão nova para baixar e guardada aguardando
+// aprovação, com o filtro da lista de terceiros.
+func tpAttention(inst map[string]tpInstaller) []ovAttention {
+	down, wait := 0, 0
+	for _, in := range inst {
+		if in.Download {
+			down++
+		}
+		if in.State == tpInstWaiting {
+			wait++
+		}
+	}
+	var out []ovAttention
+	if down > 0 {
+		out = append(out, ovAttention{Level: "atencao", Href: tpQuery{All: true, Inst: tpInstDownload, Per: tpPerPage}.href(),
+			Text: fmt.Sprintf("%d programa(s) de terceiros com versão nova para baixar (a referência passou o instalador guardado)", down)})
+	}
+	if wait > 0 {
+		out = append(out, ovAttention{Level: "atencao", Href: tpQuery{All: true, Inst: tpInstWaiting, Per: tpPerPage}.href(),
+			Text: fmt.Sprintf("%d programa(s) de terceiros com instalador guardado aguardando aprovação", wait)})
+	}
+	return out
+}
+
+// tpMatches: o programa passa no filtro do instalador.
+func tpMatches(in tpInstaller, filter string) bool {
+	if filter == tpInstDownload {
+		return in.Download
+	}
+	return in.State == filter
 }
 
 func tpInstallerOf(m map[string]tpInstaller, app string) tpInstaller {
@@ -182,7 +249,7 @@ func filterTP(progs []tpProgram, inst map[string]tpInstaller, q tpQuery) (out []
 		if needle != "" && !strings.Contains(strings.ToLower(p.Program), needle) && !strings.Contains(strings.ToLower(p.AppID), needle) {
 			continue
 		}
-		if q.Inst != "" && tpInstallerOf(inst, p.AppID).State != q.Inst {
+		if q.Inst != "" && !tpMatches(tpInstallerOf(inst, p.AppID), q.Inst) {
 			continue
 		}
 		if p.Reference == "" && !q.All {

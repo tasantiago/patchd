@@ -37,6 +37,9 @@ type navCounts struct {
 	Paused   int // campanhas pausadas
 	Sources  int // máquinas com a fonte de busca falhando (Aula 16.2), sem o catálogo offline
 	Alerts   int // alertas de desempenho abertos e não reconhecidos (docs/monitoramento.md)
+	// ThirdParty: programas de terceiros com versão nova para baixar ou com a guardada mais
+	// nova aguardando aprovação (tpbatch.go).
+	ThirdParty int
 }
 
 // chromeCache guarda os contadores, a versão publicada do agente e o logotipo.
@@ -115,6 +118,16 @@ func (a *api) countNav(ctx context.Context, n *navCounts) error {
 	}
 	if _, unacked, err := a.store.PerfAlertCounts(ctx); err == nil {
 		n.Alerts = unacked
+	} else {
+		errs = append(errs, err)
+	}
+	if inst, err := a.tpInstallers(ctx); err == nil {
+		n.ThirdParty = 0
+		for _, in := range inst {
+			if in.Download || in.State == tpInstWaiting {
+				n.ThirdParty++
+			}
+		}
 	} else {
 		errs = append(errs, err)
 	}

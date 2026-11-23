@@ -139,13 +139,16 @@ type tpRow struct {
 	Installs, Problems, EOL, Outdated          int
 	Installer, InstallerClass, InstallerNote   string
 	Sel                                        string // admin e versão guardada aguardando: o valor do lote
+	Download                                   string // a versão de referência, mais nova que a guardada: para baixar
 }
 
 type tpView struct {
 	pageBase
 	Unavailable                             string
 	Programs, Outdated, EOL, Hosts, Waiting int
-	All                                     bool // ?todos=1: também os programas sem problema
+	Download                                int    // programas com versão nova para baixar
+	DownloadHref                            string // o filtro deles
+	All                                     bool   // ?todos=1: também os programas sem problema
 	Rows                                    []tpRow
 	Shown, Prev, Next                       string
 	// Filtro e lote.
@@ -181,6 +184,7 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 	v.AllHref = link(func(c *tpQuery) { c.All = true })
 	v.ProblemsHref = link(func(c *tpQuery) { c.All = false })
 	v.WaitingHref = link(func(c *tpQuery) { c.All, c.Inst, c.Q = true, tpInstWaiting, "" })
+	v.DownloadHref = link(func(c *tpQuery) { c.All, c.Inst, c.Q = true, tpInstDownload, "" })
 	v.ClearHref = tpQuery{All: q.All, Per: q.Per}.href()
 	if a.compliance == nil {
 		v.Unavailable = "Os programas de terceiros exigem o PostgreSQL com o catálogo."
@@ -217,6 +221,9 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 		v.EOL += p.EOL
 		if tpInstallerOf(inst, p.AppID).State == tpInstWaiting {
 			v.Waiting++
+		}
+		if tpInstallerOf(inst, p.AppID).Download {
+			v.Download++
 		}
 	}
 	v.Hosts = len(hosts)
@@ -257,6 +264,9 @@ func (a *api) thirdPartyTab(w http.ResponseWriter, r *http.Request) {
 		row := tpRow{Program: p.Program, Href: tpProgramPath(p.AppID), Reference: dash(p.Reference), Origin: p.Origin,
 			Versions: text, Installs: len(p.Installs), Problems: p.Problems, EOL: p.EOL, Outdated: p.Outdated}
 		in := tpInstallerOf(inst, p.AppID)
+		if in.Download {
+			row.Download = in.Reference
+		}
 		switch in.State {
 		case tpInstWaiting:
 			row.Installer, row.InstallerClass = "aguardando "+in.Newest, "reboot_pendente"
@@ -321,6 +331,8 @@ type tpProgramView struct {
 	OtherBusy string // outro programa baixando agora (um download por vez)
 	// Upload: o envio do instalador próprio (tpupload.go); nil: o programa vem do winget.
 	Upload *tpUploadView
+	// NewVersion: a versão de referência passou a guardada mais nova (nil: não passou).
+	NewVersion *tpInstaller
 }
 
 func (a *api) thirdPartyProgramPage(w http.ResponseWriter, r *http.Request) {

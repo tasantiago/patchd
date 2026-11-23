@@ -76,6 +76,13 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		}
 	}
 	v.MaxNote = maxNoteLen
+	if all, err := a.tpInstallers(r.Context()); err == nil {
+		if in := tpInstallerOf(all, v.P.AppID); in.Download {
+			v.NewVersion = &in
+		}
+	} else {
+		return err
+	}
 	v.CanFetch = v.Admin && a.tpFetch != nil && !rule.Uploaded()
 	v.Kinds, v.RuleType = fetchKinds(*rule), rule.Install.Type
 	v.Fetch, v.OtherBusy = a.fetches.view(v.P.AppID)
