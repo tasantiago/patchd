@@ -32,6 +32,8 @@ const MaxPackage = 32 << 20
 // Package é o pacote lido.
 type Package struct {
 	ID, Version string
+	Title       string   // o nome do programa no .nuspec (Mozilla Firefox)
+	Authors     string   // o fabricante (Mozilla)
 	Script      string   // tools/chocolateyInstall.ps1
 	Embedded    []string // instaladores dentro do .nupkg (.exe, .msi): o pacote embutido
 }
@@ -104,12 +106,15 @@ func Read(nupkg []byte) (Package, error) {
 				Metadata struct {
 					ID      string `xml:"id"`
 					Version string `xml:"version"`
+					Title   string `xml:"title"`
+					Authors string `xml:"authors"`
 				} `xml:"metadata"`
 			}
 			if err := xml.Unmarshal(b, &spec); err != nil {
 				return p, fmt.Errorf("o .nuspec do pacote está ilegível: %w", err)
 			}
 			p.ID, p.Version = strings.TrimSpace(spec.Metadata.ID), strings.TrimSpace(spec.Metadata.Version)
+			p.Title, p.Authors = strings.TrimSpace(spec.Metadata.Title), strings.TrimSpace(spec.Metadata.Authors)
 		case name == "tools/chocolateyinstall.ps1":
 			b, err := readFile(f, 1<<20)
 			if err != nil {
@@ -169,21 +174,7 @@ var (
 // Extract acha o link e o SHA-256 no script. urlVar e checksumVar escolhem as atribuições
 // (o Adobe usa $MUIurl64 e $MUIchecksum64); vazios, os nomes de sempre, 64 bits primeiro.
 func Extract(script, urlVar, checksumVar string) (Installer, error) {
-	vals := map[string]string{}
-	for _, m := range assignText.FindAllStringSubmatch(script, -1) {
-		k := strings.ToLower(m[1])
-		if _, seen := vals[k]; !seen {
-			vals[k] = m[2] + m[3]
-		}
-	}
-	for _, m := range assignVar.FindAllStringSubmatch(script, -1) {
-		k, ref := strings.ToLower(m[1]), strings.ToLower(m[2])
-		if _, seen := vals[k]; !seen {
-			if v, ok := vals[ref]; ok {
-				vals[k] = v
-			}
-		}
-	}
+	vals := values(script)
 	pick := func(explicit string, names []string) (string, string) {
 		if explicit != "" {
 			k := strings.ToLower(strings.TrimPrefix(explicit, "$"))
@@ -221,6 +212,27 @@ func Extract(script, urlVar, checksumVar string) (Installer, error) {
 		in.SHA256 = strings.ToLower(sum)
 	}
 	return in, nil
+}
+
+// values: as atribuições de texto do script (a primeira de cada nome, em minúsculas), com as
+// que apontam para outra variável já resolvidas.
+func values(script string) map[string]string {
+	vals := map[string]string{}
+	for _, m := range assignText.FindAllStringSubmatch(script, -1) {
+		k := strings.ToLower(m[1])
+		if _, seen := vals[k]; !seen {
+			vals[k] = m[2] + m[3]
+		}
+	}
+	for _, m := range assignVar.FindAllStringSubmatch(script, -1) {
+		k, ref := strings.ToLower(m[1]), strings.ToLower(m[2])
+		if _, seen := vals[k]; !seen {
+			if v, ok := vals[ref]; ok {
+				vals[k] = v
+			}
+		}
+	}
+	return vals
 }
 
 func cmpOr(a, b string) string {

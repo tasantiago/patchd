@@ -150,3 +150,47 @@ func TestOrganizacaoDoAssinante(t *testing.T) {
 		}
 	}
 }
+
+// O programa do Chocolatey: o id vem do pacote, a referência é a do pacote, e o instalador não
+// tem winget. Exige o tipo; o exe genérico, os argumentos; uma origem só.
+func TestProgramaDoChocolatey(t *testing.T) {
+	in := CustomInput{Name: "Notepad++", Chocolatey: "notepadplusplus.install", InventoryName: "Notepad++", NameMode: NamePrefix,
+		InstallType: "nullsoft", Signer: "Notepad++"}
+	a, err := BuildCustom(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != "notepadplusplus-install" || a.Source.Type != SourceChocolatey || a.Source.ID != "notepadplusplus.install" ||
+		a.Install.Chocolatey != "notepadplusplus.install" || a.Install.Winget != "" || !a.FromChocolatey() || a.Uploaded() {
+		t.Errorf("regra: %+v %+v", a, a.Install)
+	}
+	data, _ := json.Marshal(a)
+	if m, errs := WithCustom(Manifest{Version: 1}, []json.RawMessage{data}); len(errs) != 0 || !m.Has("notepadplusplus-install/windows") {
+		t.Errorf("do banco: %v", errs)
+	}
+	for _, tc := range []struct {
+		mod    func(*CustomInput)
+		trecho string
+	}{
+		{func(c *CustomInput) { c.InstallType = "" }, "escolha o tipo"},
+		{func(c *CustomInput) { c.InstallType = "exe" }, "exige arguments"},
+		{func(c *CustomInput) { c.WingetID = "Notepad++.Notepad++" }, "não tem pacote do winget"},
+		{func(c *CustomInput) { c.Chocolatey = "x y" }, "o id da página do pacote"},
+	} {
+		c := in
+		tc.mod(&c)
+		if _, err := BuildCustom(c); err == nil || !strings.Contains(err.Error(), tc.trecho) {
+			t.Errorf("%+v: %v (queria %q)", c, err, tc.trecho)
+		}
+	}
+	in.InstallType, in.Arguments = "exe", "-q"
+	if a, err := BuildCustom(in); err != nil || a.Install.Arguments != "-q" {
+		t.Errorf("exe com argumentos: %v", err)
+	}
+	// Na mão, no manifesto: chocolatey e winget juntos não valem.
+	bad := `{"version":1,"apps":[{"id":"x","os":"windows","name":"X","category":"feed","match":"^X$","source":{"type":"chocolatey","id":"x"},
+		"install":{"chocolatey":"x","winget":"A.B","type":"msi","signer":"X"}}]}`
+	if _, err := Parse([]byte(bad)); err == nil || !strings.Contains(err.Error(), "mais de uma origem") {
+		t.Errorf("duas origens: %v", err)
+	}
+}

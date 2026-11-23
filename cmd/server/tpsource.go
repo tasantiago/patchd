@@ -53,15 +53,18 @@ func newSourceFetcher(st sourceStore, dir, version string) *sourceFetcher {
 		hc: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: pkgcache.HTTPSOnly}, choco: choco.BaseURL}
 }
 
-func (s *sourceFetcher) source(ctx context.Context, app string) (store.InstallerSource, error) {
+// source: a fonte gravada da regra. Sem linha, o winget; o programa incluído do Chocolatey
+// (sem winget), o pacote da regra com o tipo e os argumentos dela.
+func (s *sourceFetcher) source(ctx context.Context, rule thirdparty.App) (store.InstallerSource, error) {
 	list, err := s.st.InstallerSources(ctx)
 	if err != nil {
 		return store.InstallerSource{}, err
 	}
-	if i := slices.IndexFunc(list, func(x store.InstallerSource) bool { return x.AppID == app }); i >= 0 {
-		return list[i], nil
+	src := store.InstallerSource{AppID: rule.ID, Kind: store.SourceWinget}
+	if i := slices.IndexFunc(list, func(x store.InstallerSource) bool { return x.AppID == rule.ID }); i >= 0 {
+		src = list[i]
 	}
-	return store.InstallerSource{AppID: app, Kind: store.SourceWinget}, nil
+	return tpfetch.RuleSource(rule, src), nil
 }
 
 // reference: a versão de referência do programa no Windows ("" se ainda não buscada).
@@ -81,7 +84,7 @@ func (s *sourceFetcher) reference(ctx context.Context, app string) (string, erro
 // fetch: versão vazia, a mais nova (no winget, a mais nova dele; no fabricante, a de
 // referência). types: os tipos do Baixar (só no winget; a fonte do fabricante tem o seu).
 func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver string, types []string, out io.Writer) bool {
-	src, err := s.source(ctx, rule.ID)
+	src, err := s.source(ctx, rule)
 	if err != nil {
 		fmt.Fprintf(out, "%s (%s)\n  ERRO        ler a fonte do instalador: %v\n", rule.Name, rule.ID, err)
 		return false
@@ -183,6 +186,7 @@ func (a *autoFetch) pass(ctx context.Context) int {
 		a.tried[key] = a.now()
 		a.mu.Unlock()
 		tried++
+		src = tpfetch.RuleSource(*rule, src)
 		ver := ""
 		if src.Kind == store.SourceURL {
 			ver = ref

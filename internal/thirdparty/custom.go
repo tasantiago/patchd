@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/winget"
 )
 
@@ -43,6 +44,9 @@ type CustomInput struct {
 	// ID (a edição mantém o id de quando foi incluído).
 	Upload bool
 	ID     string
+	// Chocolatey: o pacote do Chocolatey de onde vem o instalador (e a versão de referência),
+	// sem winget. O id da regra vem do pacote.
+	Chocolatey string
 	// O atalho na área de trabalho de todos os usuários (opcional): o nome, o executável e o
 	// ícone. Sem o executável, não há atalho.
 	ShortcutName, ShortcutTarget, ShortcutIcon string
@@ -89,7 +93,7 @@ func BuildCustom(in CustomInput) (App, error) {
 		field, v string
 		max      int
 		required bool
-	}{{"o nome", in.Name, 80, true}, {"o pacote do winget", in.WingetID, 128, !in.Upload}, {"o nome no inventário", in.InventoryName, 160, true},
+	}{{"o nome", in.Name, 80, true}, {"o pacote do winget", in.WingetID, 128, !in.Upload && in.Chocolatey == ""}, {"o nome no inventário", in.InventoryName, 160, true},
 		{"o fabricante", in.Publisher, 160, false}, {"o assinante", in.Signer, 128, false}, {"o motivo sem assinatura", in.UnsignedReason, 300, false}} {
 		if err := oneLine(c.field, c.v, c.max, c.required); err != nil {
 			return App{}, err
@@ -107,6 +111,20 @@ func BuildCustom(in CustomInput) (App, error) {
 		}
 		if !customIDPattern.MatchString(id) {
 			return App{}, errors.New("o nome não dá um identificador válido: use letras e números (ex.: IRPF 2026)")
+		}
+	case in.Chocolatey != "":
+		if in.WingetID != "" {
+			return App{}, errors.New("o programa do Chocolatey não tem pacote do winget")
+		}
+		if !choco.ValidID(in.Chocolatey) {
+			return App{}, fmt.Errorf("o pacote do Chocolatey %q: o id da página do pacote (ex.: firefox, adobereader)", in.Chocolatey)
+		}
+		id = CustomID(in.Chocolatey)
+		if !customIDPattern.MatchString(id) {
+			return App{}, errors.New("o pacote do Chocolatey não dá um identificador válido")
+		}
+		if in.InstallType == "" {
+			return App{}, errors.New("escolha o tipo do instalador que o pacote do Chocolatey baixa (msi, nullsoft, inno ou exe)")
 		}
 	case !winget.ValidID(in.WingetID):
 		return App{}, fmt.Errorf("o pacote do winget %q fora da forma Fabricante.Programa (ex.: VideoLAN.VLC)", in.WingetID)
@@ -129,6 +147,10 @@ func BuildCustom(in CustomInput) (App, error) {
 		Source: &Source{Type: SourceWinget, ID: in.WingetID},
 		Install: &Install{Winget: in.WingetID, Type: in.InstallType, Signer: in.Signer, UnsignedReason: in.UnsignedReason, Processes: in.Processes,
 			UninstallFirst: in.UninstallFirst}}
+	if in.Chocolatey != "" {
+		a.Source = &Source{Type: SourceChocolatey, ID: in.Chocolatey}
+		a.Install.Chocolatey = in.Chocolatey
+	}
 	if !in.Upload && strings.TrimSpace(in.Arguments) != "" {
 		if in.InstallType == "" {
 			return App{}, fmt.Errorf("com argumentos próprios, escolha o tipo do instalador (os argumentos são de um tipo)")

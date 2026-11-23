@@ -25,7 +25,7 @@ import (
 // CheckChoco confere a fonte do Chocolatey antes de gravar.
 func CheckChoco(s store.InstallerSource, rule thirdparty.App) error {
 	if rule.Install == nil || rule.Uploaded() || rule.OS != "windows" {
-		return errors.New("o Chocolatey vale para os programas do Windows com instalação pelo winget")
+		return errors.New("o Chocolatey vale para os programas do Windows com instalação pelo winget ou pelo Chocolatey")
 	}
 	if !choco.ValidID(s.PackageID) {
 		return errors.New("o pacote do Chocolatey é o id da página do pacote (ex.: googlechrome, adobereader, firefox)")
@@ -93,6 +93,16 @@ func Choco(ctx context.Context, hc *http.Client, base string, f *pkgcache.Fetche
 		fmt.Fprintf(out, "  SHA-256     %s… (do pacote)\n", in.SHA256[:12])
 	}
 	return keep(ctx, f, st, a, originChoco+src.PackageID, in.URL, in.SHA256, src.Type, src.Arguments, ver, dir, out)
+}
+
+// RuleSource: para o programa do Chocolatey, a fonte "winget" (o padrão, sem linha, ou
+// só com o automático) vira o pacote da regra.
+func RuleSource(rule thirdparty.App, src store.InstallerSource) store.InstallerSource {
+	if src.Kind != store.SourceWinget || !rule.FromChocolatey() {
+		return src
+	}
+	src.Kind, src.PackageID, src.Type, src.Arguments = store.SourceChocolatey, rule.Install.Chocolatey, rule.Install.Type, rule.Install.Arguments
+	return src
 }
 
 // sameVersion: as duas versões são a mesma (pela parte numérica).

@@ -37,6 +37,9 @@ func Resolve(ctx context.Context, c *winget.Client, a thirdparty.App, ver string
 	if a.Uploaded() {
 		return winget.Manifest{}, fmt.Errorf("%s é instalador próprio: envie o arquivo pelo painel, não pelo winget", a.ID)
 	}
+	if a.FromChocolatey() {
+		return winget.Manifest{}, fmt.Errorf("%s vem do Chocolatey (%s), não do winget: baixe pela página do programa no painel", a.ID, a.Install.Chocolatey)
+	}
 	if ver == "" {
 		versions, err := c.Versions(ctx, a.Install.Winget)
 		if err != nil {

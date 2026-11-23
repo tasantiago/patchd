@@ -1593,6 +1593,41 @@ As regras ficam no banco (migração 0074) e somam-se ao manifesto embutido e ao
 o manifesto já tem não é incluído de novo. A linha de comando (`package fetch`, `catalog sync`,
 `compliance`, `selfservice`) usa as mesmas regras.
 
+### Incluir do Chocolatey
+
+Um programa que não está no winget (ou que lá demora a ter a versão nova) e tem pacote no
+repositório da comunidade do Chocolatey entra pela aba **Do Chocolatey** do Incluir programa:
+
+1. **Buscar no Chocolatey**: digite o pacote, o id do endereço
+   `community.chocolatey.org/packages/<id>` (`notepadplusplus.install`, `adobereader`). O
+   servidor baixa o pacote mais novo (o `.nupkg`) e lê, **sem executar o script**, o
+   `tools/chocolateyInstall.ps1`: o link do instalador (o de 64 bits primeiro) e o SHA-256, o
+   `fileType` e o `silentArgs` (daí o tipo: `.msi` é msi; `/VERYSILENT` é inno; `/S` é
+   nullsoft; o resto, exe com os argumentos do pacote) e o `softwareName` (o nome em Programas
+   e Recursos; com `*` no fim, "começa com"). O nome vem do título do pacote, e a assinatura é
+   lida do instalador do link, como na busca do winget. Do `silentArgs`, ficam só os argumentos
+   que o job aceita: o log com caminho (`/l*v "$env:TEMP\…"`) e o que tem aspas ficam de fora (a
+   busca mostra o `silentArgs` inteiro e o que saiu). Pacote que traz o instalador dentro do
+   `.nupkg` não serve: inclua como instalador próprio.
+2. **Confira e salve**, como no winget: o nome no inventário, o tipo (obrigatório: o mesmo das
+   instalações nas máquinas), os argumentos (o exe genérico exige os do fabricante) e a
+   assinatura.
+3. **O id** do programa vem do pacote (`notepadplusplus.install` → `notepadplusplus-install`).
+   Um programa que o manifesto já tem (`7zip`, `firefox`…) não se inclui de novo: para baixar o
+   instalador dele pelo Chocolatey, use a **Fonte do instalador** na página do programa.
+4. **A versão de referência** é a do pacote mais novo, sem a data da correção do pacote
+   (`8.9.8.20261101` → `8.9.8`); quando a versão do pacote não é a do Windows (o Adobe Reader
+   escreve `2026.3.22110`, o Windows `26.003.22110`), o programa aparece sempre desatualizado:
+   prefira o winget, o Evergreen ou o manifesto para ele.
+5. **Baixar**: na página do programa, o Baixar usa o pacote (a versão digitada é a do pacote;
+   vazio, a mais nova), com o tipo e os argumentos da regra. A **Fonte do instalador** mostra o
+   Chocolatey (sem a opção do winget, que o programa não tem) e aceita trocar as variáveis do
+   link, o tipo, ou o site do fabricante, e ligar **Baixar sozinho cada versão nova**.
+
+A `package fetch` da linha de comando não baixa os programas do Chocolatey (são do painel).
+Editar não troca o pacote nem a origem (winget, Chocolatey, instalador próprio): exclua e
+inclua de novo. Na auditoria, `terceiros.incluir` diz "Chocolatey <pacote> <tipo>".
+
 ## Instaladores próprios e atalho na área de trabalho
 
 Um programa que **não está no winget** (o IRPF da Receita, um sistema interno, um cliente que o

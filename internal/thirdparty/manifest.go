@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/winget"
@@ -53,6 +54,9 @@ const (
 	// terceiros › Incluir programa › instalador próprio). A referência é a versão do último
 	// instalador enviado: nenhuma consulta externa. ID é o próprio programa.
 	SourceUpload = "upload"
+	// SourceChocolatey: a versão do pacote no repositório da comunidade do Chocolatey (sem a
+	// data da correção do pacote); ID é o pacote (firefox, adobereader).
+	SourceChocolatey = "chocolatey"
 )
 
 var (
@@ -147,6 +151,10 @@ type Install struct {
 	// .msi ou .exe que o fabricante distribui, como o do IRPF). Exige o tipo e a fonte
 	// "upload"; os argumentos ficam em cada instalador enviado.
 	Upload bool `json:"upload,omitempty"`
+	// Chocolatey (Windows): o instalador vem do pacote do Chocolatey (o link do fabricante e o
+	// SHA-256 que o script do pacote baixaria, internal/choco), sem winget. Exige o tipo; o
+	// exe genérico, os argumentos.
+	Chocolatey string `json:"chocolatey,omitempty"`
 }
 
 // RegularizeOver: a regularização instala por cima, sem remover a instalação antiga.
@@ -172,6 +180,9 @@ func (a App) DesktopShortcut() *protocol.DesktopShortcut {
 
 // Uploaded: o instalador é o próprio, enviado pelo painel (sem winget).
 func (a App) Uploaded() bool { return a.Install != nil && a.Install.Upload }
+
+// FromChocolatey: o instalador vem do pacote do Chocolatey (sem winget).
+func (a App) FromChocolatey() bool { return a.Install != nil && a.Install.Chocolatey != "" }
 
 // Source diz de onde vem a versão de referência.
 type Source struct {
@@ -205,12 +216,16 @@ func (s *Source) validate() error {
 	}
 	switch s.Type {
 	case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew, SourceUpload:
+	case SourceChocolatey:
+		if !choco.ValidID(s.ID) {
+			return fmt.Errorf("chocolatey: o id %q é o pacote do Chocolatey (firefox, adobereader)", s.ID)
+		}
 	case SourceEvergreen:
 		if !evergreenID.MatchString(s.ID) {
 			return fmt.Errorf("evergreen: o id %q é o nome do aplicativo no Evergreen (AdobeAcrobatReaderDC)", s.ID)
 		}
 	default:
-		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew, evergreen ou upload)", s.Type)
+		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew, evergreen, chocolatey ou upload)", s.Type)
 	}
 	if len(s.Filter) > 0 && s.Type != SourceEvergreen {
 		return fmt.Errorf("filter só vale para a fonte evergreen")
@@ -324,7 +339,7 @@ func (a *App) compile() error {
 			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
 		case !jobs.ValidInstallomatorLabel(in.Installomator):
 			return fmt.Errorf("no macOS, install leva installomator: o rótulo do programa no Installomator (googlechromepkg)")
-		case in.Winget != "" || in.Type != "" || in.Signer != "" || in.UnsignedReason != "" || len(in.Processes) > 0:
+		case in.Winget != "" || in.Chocolatey != "" || in.Type != "" || in.Signer != "" || in.UnsignedReason != "" || len(in.Processes) > 0:
 			return fmt.Errorf("no macOS, install leva só installomator: o Installomator confere o Team ID e adia com o programa aberto")
 		}
 	}
@@ -334,13 +349,19 @@ func (a *App) compile() error {
 			return fmt.Errorf("installomator só vale para macos")
 		case a.Category != CategoryFeed && a.Category != CategoryMinimum && a.Category != CategoryLifecycle:
 			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
-		case a.Install.Upload && a.Install.Winget != "":
-			return fmt.Errorf("install com upload e winget: o instalador vem de um só lugar")
+		case a.Install.Upload && a.Install.Winget != "", a.Install.Chocolatey != "" && (a.Install.Upload || a.Install.Winget != ""):
+			return fmt.Errorf("install com mais de uma origem (winget, chocolatey, upload): o instalador vem de um só lugar")
+		case a.Install.Chocolatey != "" && !choco.ValidID(a.Install.Chocolatey):
+			return fmt.Errorf("install.chocolatey %q: o id do pacote do Chocolatey (firefox, adobereader)", a.Install.Chocolatey)
+		case a.Install.Chocolatey != "" && a.Install.Type == "":
+			return fmt.Errorf("install.chocolatey exige type (o tipo do instalador que o pacote baixa)")
+		case a.Install.Chocolatey != "" && a.Install.Type == "exe" && strings.TrimSpace(a.Install.Arguments) == "":
+			return fmt.Errorf("install.chocolatey com o exe genérico exige arguments (a instalação silenciosa, o silentArgs do pacote)")
 		case a.Install.Upload && !slices.Contains(UploadTypes, a.Install.Type):
 			return fmt.Errorf("install.upload exige type: %s", strings.Join(UploadTypes, ", "))
 		case a.Install.Upload && (a.Category != CategoryFeed || a.Source == nil || a.Source.Type != SourceUpload || a.Source.ID != a.ID):
 			return fmt.Errorf("install.upload exige a categoria feed com a fonte upload do próprio programa (a referência é o último instalador enviado)")
-		case !a.Install.Upload && !winget.ValidID(a.Install.Winget):
+		case !a.Install.Upload && a.Install.Chocolatey == "" && !winget.ValidID(a.Install.Winget):
 			return fmt.Errorf("install.winget %q fora da forma Fabricante.Programa", a.Install.Winget)
 		case a.Install.Type != "" && !winget.Supported(a.Install.Type):
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
@@ -404,8 +425,8 @@ func (a *App) compile() error {
 		return fmt.Errorf("install.regularize %q: use \"over\" ou deixe vazio", in.Regularize)
 	}
 	if in := a.Install; in != nil && in.Arguments != "" {
-		if in.Winget == "" || in.Type == "" {
-			return fmt.Errorf("install.arguments vale com install.winget e install.type (os argumentos são de um tipo de instalador)")
+		if (in.Winget == "" && in.Chocolatey == "") || in.Type == "" {
+			return fmt.Errorf("install.arguments vale com install.winget (ou chocolatey) e install.type (os argumentos são de um tipo de instalador)")
 		}
 		if _, err := jobs.SplitArgs(in.Type, in.Arguments); err != nil {
 			return fmt.Errorf("install.arguments: %w", err)

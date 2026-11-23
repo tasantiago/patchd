@@ -1,6 +1,8 @@
 package thirdparty
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +31,8 @@ func TestLatest(t *testing.T) {
 			w.Write([]byte(`[{"name": "8.9.8", "type": "dir"}, {"name": "8.9.8.1", "type": "dir"}]`))
 		case "/api/cask/visual-studio-code.json":
 			w.Write([]byte(`{"token": "visual-studio-code", "version": "1.140.0,abc123"}`))
+		case "/package/notepadplusplus.install":
+			w.Write(chocoPkg(t, "notepadplusplus.install", "8.9.8.20261101"))
 		case "/repos/microsoft/winget-pkgs/contents/manifests/v/Vazio/Pacote":
 			w.Write([]byte(`[{"name": "Beta", "type": "dir"}]`))
 		default:
@@ -38,6 +42,7 @@ func TestLatest(t *testing.T) {
 	defer srv.Close()
 	c := NewClient("patchd-teste")
 	c.ChromeURL, c.FirefoxURL, c.GitHubURL, c.HomebrewURL = srv.URL, srv.URL+"/firefox.json", srv.URL, srv.URL
+	c.ChocoURL = srv.URL
 
 	ctx := context.Background()
 	for _, tc := range []struct {
@@ -51,6 +56,7 @@ func TestLatest(t *testing.T) {
 		{Source{Type: SourceWinget, ID: "Mozilla.Firefox"}, "157.0.1"},
 		{Source{Type: SourceWinget, ID: "Notepad++.Notepad++"}, "8.9.8.1"},
 		{Source{Type: SourceHomebrew, ID: "visual-studio-code"}, "1.140.0"},
+		{Source{Type: SourceChocolatey, ID: "notepadplusplus.install"}, "8.9.8"}, // sem a data da correção do pacote
 	} {
 		if got, err := c.Latest(ctx, tc.src); err != nil || got != tc.want {
 			t.Errorf("%s: %q %v (queria %q)", tc.src, got, err, tc.want)
@@ -64,6 +70,7 @@ func TestLatest(t *testing.T) {
 		{Source{Type: SourceWinget, ID: "Vazio.Pacote"}, "nenhuma versão comparável"},
 		{Source{Type: SourceWinget, ID: "Nao.Existe"}, "HTTP 404"},
 		{Source{Type: SourceWinget, ID: ".x"}, "inválido"},
+		{Source{Type: SourceChocolatey, ID: "naoexiste"}, "não existe no Chocolatey"},
 	} {
 		if _, err := c.Latest(ctx, tc.src); err == nil || !strings.Contains(err.Error(), tc.trecho) {
 			t.Errorf("%s: %v (queria %q)", tc.src, err, tc.trecho)
@@ -173,4 +180,23 @@ func TestLifecycle(t *testing.T) {
 			t.Errorf("%s: %v (queria %q)", produto, err, trecho)
 		}
 	}
+}
+
+// chocoPkg: um .nupkg mínimo, com a versão e o script que só baixa.
+func chocoPkg(t *testing.T, id, version string) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	zw := zip.NewWriter(&b)
+	for name, body := range map[string]string{
+		id + ".nuspec":                `<package><metadata><id>` + id + `</id><version>` + version + `</version></metadata></package>`,
+		"tools/chocolateyInstall.ps1": "$url64 = 'https://example.com/x.exe'\n",
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write([]byte(body))
+	}
+	zw.Close()
+	return b.Bytes()
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/version"
 )
 
@@ -26,6 +27,7 @@ type Client struct {
 	// User-Agent próprio; EndoflifeURL: a do endoflife.date.
 	EvergreenURL string
 	EndoflifeURL string
+	ChocoURL     string // o repositório da comunidade do Chocolatey (choco.BaseURL)
 }
 
 // NewClient devolve um cliente para as fontes públicas.
@@ -39,6 +41,7 @@ func NewClient(userAgent string) *Client {
 		HomebrewURL:  "https://formulae.brew.sh",
 		EvergreenURL: "https://evergreen-api.stealthpuppy.com",
 		EndoflifeURL: "https://endoflife.date",
+		ChocoURL:     choco.BaseURL,
 	}
 }
 
@@ -121,6 +124,13 @@ func (c *Client) Latest(ctx context.Context, s Source) (string, error) {
 		if len(versions) == 0 {
 			return "", fmt.Errorf("%s: nenhuma das %d linhas passa no filtro", s, len(rows))
 		}
+	case SourceChocolatey:
+		// O pacote mais novo (só baixa o link: alguns KB); a versão sem a data da correção.
+		p, err := choco.Fetch(ctx, c.HTTP, c.ChocoURL, s.ID, "", c.UserAgent)
+		if err != nil {
+			return "", err
+		}
+		versions = []string{choco.ProgramVersion(p.Version)}
 	default:
 		return "", fmt.Errorf("fonte %q desconhecida", s.Type)
 	}

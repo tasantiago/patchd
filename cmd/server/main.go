@@ -480,7 +480,8 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 		apiOpts = append(apiOpts, api.WithCompliance(cs))
 		apiOpts = append(apiOpts, api.WithBackground(ctx)) // as regras dos grupos de implantação, a cada 5 min
 		// O mesmo manifesto confere, no inventário, o efeito do job thirdparty (Aula 14.4).
-		apiOpts = append(apiOpts, api.WithThirdPartyManifest(tpRules), api.WithCustomApps(tpBase, wingetDescriber(info.Version), customAppSync(pg, look, logger)))
+		apiOpts = append(apiOpts, api.WithThirdPartyManifest(tpRules), api.WithCustomApps(tpBase, wingetDescriber(info.Version), customAppSync(pg, look, logger)),
+			api.WithChocoSearch(chocoDescriber(info.Version)))
 		// O Installomator dos Macs (a versão fixada, ou a das variáveis).
 		script, err := installomator.Pinned(look)
 		if err != nil {
