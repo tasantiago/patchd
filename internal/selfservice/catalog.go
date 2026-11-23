@@ -7,6 +7,7 @@ package selfservice
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -96,7 +97,7 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 			case d.State == tpinstall.StateCurrent:
 				it.Action = ActionCurrent
 			case d.State == tpinstall.StateNoPackage:
-				it.Action, it.Reason = ActionBlocked, "nenhuma versão aprovada para esta instalação"
+				it.Action, it.Reason = ActionBlocked, noPackageReason(rule.ID, approved, d)
 			default:
 				it.Action, it.Reason = ActionBlocked, "fale com o suporte ("+strings.ToLower(tpinstall.Labels[d.State])+": "+d.Reason+")"
 			}
@@ -119,6 +120,22 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 		return cmp.Or(cmp.Compare(slices.Index(actionOrder, a.Action), slices.Index(actionOrder, b.Action)), strings.Compare(a.Name, b.Name))
 	})
 	return out
+}
+
+// noPackageReason: por que a atualização não sai. Com versão aprovada, o que falta é o
+// instalador do tipo desta instalação (a instalada pelo .exe não é atualizada pelo MSI).
+func noPackageReason(app string, approved []store.ThirdPartyPackage, d tpinstall.Decision) string {
+	if noInstallerReason(app, approved) == "nenhuma versão aprovada para esta máquina" || len(d.Entries) == 0 {
+		return "nenhuma versão aprovada para esta instalação"
+	}
+	var newest string
+	for _, p := range approved {
+		if p.AppID == app && (newest == "" || newerVersion(p.Version, newest)) {
+			newest = p.Version
+		}
+	}
+	return fmt.Sprintf("a versão aprovada (%s) ainda não tem, no servidor, o instalador do tipo desta instalação (%s): fale com a TI",
+		newest, tpinstall.KindLabel(d.Entries[0].Kind))
 }
 
 // noInstallerReason: por que a instalação nova não sai. Com versão aprovada, o que falta é o

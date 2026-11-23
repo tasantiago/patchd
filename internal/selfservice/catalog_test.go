@@ -89,3 +89,24 @@ func TestCatalogoSemInstaladorDoTipoDaRegra(t *testing.T) {
 		t.Errorf("sem aprovação: %+v", l)
 	}
 }
+
+// A regra nullsoft com o exe genérico do site do fabricante (o VLC): a família vale, e a loja
+// oferece instalar. A atualização da instalação exe com só o MSI guardado diz o que falta.
+func TestCatalogoFamiliaDoTipo(t *testing.T) {
+	m, err := thirdparty.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofertas := []store.SelfServiceOffer{{AppID: "notepad-plus-plus", CanInstall: true, CanUpdate: true}}
+	aprov := []store.ThirdPartyApproval{{AppID: "notepad-plus-plus", Version: "8.9.8.1"}}
+	exe := []store.ThirdPartyPackage{pacote("notepad-plus-plus", "8.9.8.1", "exe")}
+	if l := Catalog(ofertas, ListMember(nil), Machine{Arch: "x64"}, m, exe, aprov); len(l) != 1 || l[0].Action != ActionInstall {
+		t.Errorf("exe para a regra nullsoft: %+v", l)
+	}
+	maq := Machine{Arch: "x64", Software: []protocol.Software{{Name: "Notepad++ (64-bit x64)", Version: "8.9.7", Publisher: "Notepad++ Team", Scope: "machine"}}}
+	msi := []store.ThirdPartyPackage{pacote("notepad-plus-plus", "8.9.8.1", "wix")}
+	if l := Catalog(ofertas, ListMember(nil), maq, m, msi, aprov); len(l) != 1 || l[0].Action != ActionBlocked ||
+		l[0].Reason != "a versão aprovada (8.9.8.1) ainda não tem, no servidor, o instalador do tipo desta instalação (EXE): fale com a TI" {
+		t.Errorf("instalação exe com só o MSI: %+v", l)
+	}
+}
