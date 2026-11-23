@@ -155,6 +155,10 @@ type Install struct {
 	// SHA-256 que o script do pacote baixaria, internal/choco), sem winget. Exige o tipo; o
 	// exe genérico, os argumentos.
 	Chocolatey string `json:"chocolatey,omitempty"`
+	// TryOpen (Windows): com o programa aberto, o agente tenta instalar mesmo assim e só adia
+	// se não der certo (os que se atualizam abertos: o Chrome, o Firefox). Exige processes.
+	// O painel liga e desliga por programa (WithTryOpen).
+	TryOpen bool `json:"try_open,omitempty"`
 }
 
 // RegularizeOver: a regularização instala por cima, sem remover a instalação antiga.
@@ -367,6 +371,8 @@ func (a *App) compile() error {
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
 		case len(a.Install.Signer) > 128 || strings.ContainsAny(a.Install.Signer, "\r\n\t"):
 			return fmt.Errorf("install.signer inválido")
+		case a.Install.TryOpen && len(a.Install.Processes) == 0:
+			return fmt.Errorf("install.try_open exige processes (os executáveis que o agente confere)")
 		case len(a.Install.Processes) > jobs.MaxProcesses:
 			return fmt.Errorf("install.processes: no máximo %d", jobs.MaxProcesses)
 		}

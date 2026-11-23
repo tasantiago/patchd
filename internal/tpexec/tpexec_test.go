@@ -480,3 +480,55 @@ func TestDownloadDoInstaladorCaiPelaRede(t *testing.T) {
 		t.Errorf("contexto cancelado: %v", err)
 	}
 }
+
+// Tentar com o programa aberto (try_open): com o programa aberto, o instalador roda; deu
+// certo, o job conclui dizendo que foi com ele aberto. Não deu (o código 5 do arquivo em uso,
+// ou outro), o job volta adiado por programa aberto (o agente vigia o fechar), não falhado.
+// Com close, a segunda tentativa vem depois de fechar. A regularização não tenta.
+func TestTentarComOProgramaAberto(t *testing.T) {
+	inst := []byte("MZ instalador nsis do chrome")
+	ctx := context.Background()
+	aberto := func() ([]platform.Process, error) {
+		return []platform.Process{{Name: "chrome.exe", PID: 7, Session: 1}}, nil
+	}
+	p := params(inst, "nullsoft", "/S")
+	p.Processes, p.TryOpen = []string{"chrome.exe"}, true
+
+	run := &runnerFalso{}
+	e, _ := executor(t, inst, run, google, nil)
+	e.Processes = aberto
+	d, err := e.Install(ctx, 50, p)
+	if err != nil || run.rodadas != 1 || !strings.Contains(d, "instalado com o programa aberto (1 chrome.exe na sessão 1)") {
+		t.Fatalf("aberto, deu certo: %q %v (%d rodadas)", d, err, run.rodadas)
+	}
+	for _, code := range []int{5, 2} {
+		run = &runnerFalso{code: code}
+		e, _ = executor(t, inst, run, google, nil)
+		e.Processes = aberto
+		d, err = e.Install(ctx, 51, p)
+		if !errors.Is(err, ErrRetry) || !errors.Is(err, jobs.ErrProgramOpen) || errors.Is(err, jobs.ErrNotStarted) || run.rodadas != 1 ||
+			!strings.Contains(err.Error(), "tentou com o programa aberto (1 chrome.exe na sessão 1) e não deu") {
+			t.Errorf("aberto, código %d: %q %v", code, d, err)
+		}
+	}
+	// Sem try_open: nem baixa (como sempre).
+	q := p
+	q.TryOpen = false
+	run = &runnerFalso{}
+	e, _ = executor(t, inst, run, google, nil)
+	e.Processes = aberto
+	if _, err := e.Install(ctx, 52, q); !errors.Is(err, jobs.ErrNotStarted) || run.rodadas != 0 {
+		t.Errorf("sem try_open: %v", err)
+	}
+	// Com a regularização: não tenta com o programa aberto.
+	q = p
+	q.Replace = &jobs.ReplaceEntry{Name: "Google Chrome", Version: "1", Key: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\x`, Method: "quiet"}
+	e, _ = executor(t, inst, run, google, nil)
+	e.Processes = aberto
+	if _, err := e.Install(ctx, 53, q); !errors.Is(err, jobs.ErrNotStarted) || run.rodadas != 0 {
+		t.Errorf("regularização: %v", err)
+	}
+	if err := (jobs.ThirdPartyParams{App: "x", Version: "1", SHA256: p.SHA256, Size: 1, Installer: "exe", TryOpen: true}).Validate(); err == nil {
+		t.Error("try_open sem processos passou")
+	}
+}

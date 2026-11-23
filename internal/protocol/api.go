@@ -78,6 +78,10 @@ const CapabilityCloseApps = "fechar-programa-v1"
 // aprovada (o campo replace do job de terceiros). Os anteriores recusam o campo.
 const CapabilityRegularize = "regularizar-v1"
 
+// CapabilityTryOpen: o agente entende o "tentar com o programa aberto" do job de terceiros (o
+// campo try_open). Os anteriores recusam o campo: o servidor só o manda a quem anuncia.
+const CapabilityTryOpen = "tentar-aberto-v1"
+
 // CapabilityUninstall: o agente remove programas em silêncio (o job desinstalar, de Inventário ›
 // Programas instalados). O servidor só o manda a quem anuncia.
 const CapabilityUninstall = "desinstalar-v1"

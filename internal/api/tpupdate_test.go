@@ -218,7 +218,7 @@ func TestProgramaComProcessos(t *testing.T) {
 	m, _ := thirdparty.Default()
 	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	b := pagina(h, "GET", "/painel/patch/programa?app=vscode", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "assinatura exigida: Microsoft Corporation · não instala com Code.exe aberto") {
+	if !strings.Contains(b, "assinatura exigida: Microsoft Corporation · com Code.exe aberto, não instala (adia)") {
 		t.Errorf("programa vscode:\n%s", b)
 	}
 }

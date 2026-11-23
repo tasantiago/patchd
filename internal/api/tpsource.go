@@ -153,3 +153,37 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	a.audit(r, s, "terceiros.fonte", app, detail)
 	http.Redirect(w, r, back+"&fonte=1#fonte", http.StatusSeeOther)
 }
+
+// tryOpenAction: POST /painel/patch/terceiros/tentar-aberto (app, ligado). Liga ou desliga o
+// "tentar com o programa aberto" do programa e troca o manifesto vivo: os próximos jobs já vão
+// com a escolha.
+func (a *api) tryOpenAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	app := strings.TrimSpace(r.PostFormValue("app"))
+	rule := a.installRule(app)
+	if rule == nil || a.tpManifest == nil {
+		http.Redirect(w, r, "/painel/patch?aba=terceiros", http.StatusSeeOther)
+		return
+	}
+	back := tpProgramPath(app)
+	on := r.PostFormValue("ligado") == "1"
+	if on && len(rule.Install.Processes) == 0 {
+		http.Redirect(w, r, back+"&erro=tentar-aberto#instaladores", http.StatusSeeOther)
+		return
+	}
+	if err := a.store.SaveTryOpen(r.Context(), store.TryOpenSetting{AppID: app, Enabled: on, UpdatedBy: s.Username}); err != nil {
+		a.internalError(w, r, "guardar o tentar com o programa aberto", err)
+		return
+	}
+	set, err := a.store.TryOpenSettings(r.Context())
+	if err != nil {
+		a.internalError(w, r, "ler o tentar com o programa aberto", err)
+		return
+	}
+	a.tpManifest.Set(thirdparty.WithTryOpen(a.tpManifest.Get(), set))
+	detail := "desligado: com o programa aberto, adia"
+	if on {
+		detail = "ligado: com o programa aberto, tenta instalar e só adia se não der certo"
+	}
+	a.audit(r, s, "terceiros.tentar_aberto", app, detail)
+	http.Redirect(w, r, back+"&tentar-aberto="+map[bool]string{true: "1", false: "0"}[on]+"#instaladores", http.StatusSeeOther)
+}

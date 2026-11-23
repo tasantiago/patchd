@@ -42,6 +42,7 @@ func JobParams(d Decision) (jobs.ThirdPartyParams, error) {
 	if d.App.Install != nil {
 		p.Signer = d.App.Install.Signer
 		p.Processes = d.App.Install.Processes
+		p.TryOpen = d.TryOpen && len(p.Processes) > 0
 	}
 	if r := d.Regularize; r != nil && !r.Over {
 		method := r.Old.Uninstall

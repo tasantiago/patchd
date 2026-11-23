@@ -48,11 +48,12 @@ type Campaigner struct {
 // instalação antiga).
 func (c Campaigner) options(ctx context.Context, machineID string) (Options, error) {
 	o := Options{Regularize: c.Regularize != nil && c.Regularize()}
-	if !o.Regularize && !NeedsReplace(c.rules()) {
+	if !o.Regularize && !NeedsCaps(c.rules()) {
 		return o, nil
 	}
 	caps, err := c.Store.MachineCapabilities(ctx, machineID)
 	o.CanReplace = slices.Contains(caps, protocol.CapabilityRegularize)
+	o.CanTryOpen = slices.Contains(caps, protocol.CapabilityTryOpen)
 	return o, err
 }
 

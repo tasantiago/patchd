@@ -23,6 +23,7 @@ import (
 type tpInstallInfo struct {
 	Winget, Type, Signer, Unsigned, Processes string
 	Choco                                     string // o pacote do Chocolatey (o programa incluído de lá)
+	TryOpen                                   bool   // tenta instalar com o programa aberto antes de adiar
 	Upload                                    bool   // instalador próprio (tpupload.go)
 	UninstallFirst                            bool   // a atualização remove antes a versão instalada
 	Shortcut                                  string // o atalho da regra, para mostrar
@@ -68,7 +69,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	}
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
 		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded(), UninstallFirst: rule.Install.UninstallFirst,
-		Choco: rule.Install.Chocolatey}
+		Choco: rule.Install.Chocolatey, TryOpen: rule.Install.TryOpen}
 	if sc := rule.Shortcut; sc != nil {
 		v.Install.Shortcut = fmt.Sprintf("%s → %s", sc.Name, sc.Target)
 		if sc.Icon != "" {
@@ -241,6 +242,13 @@ func tpApprovalFlash(q url.Values) (flash, errMsg string) {
 		return "Aprovação revogada. Jobs já criados seguem o prazo deles (cancele os pendentes em Jobs).", ""
 	case q.Get("erro") == "ja-aprovado":
 		return "", "Esta versão já estava aprovada; a aprovação original foi mantida."
+	case q.Has("tentar-aberto"):
+		if q.Get("tentar-aberto") == "1" {
+			return "Ligado: com o programa aberto, o agente tenta instalar e só adia se não der certo. Vale nos próximos jobs (agentes atualizados).", ""
+		}
+		return "Desligado: com o programa aberto, o agente adia sem tentar (e instala quando ele fechar).", ""
+	case q.Get("erro") == "tentar-aberto":
+		return "", "O programa precisa da lista de processos (Processos do programa) para tentar com ele aberto; nada mudou."
 	case q.Has("fonte"):
 		return "Fonte do instalador guardada. O próximo Baixar (e o download automático, se ligado) usa ela.", ""
 	case q.Get("erro") == "fonte":

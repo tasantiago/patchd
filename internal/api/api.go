@@ -168,6 +168,9 @@ type Store interface {
 	SaveThirdPartyVersion(ctx context.Context, app, osID, version, source string) error
 	// As versões de referência (o aviso de versão nova para baixar, tpbatch.go).
 	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
+	// Tentar com o programa aberto, por programa (migração 0081, tptryopen.go).
+	TryOpenSettings(ctx context.Context) (map[string]bool, error)
+	SaveTryOpen(ctx context.Context, s store.TryOpenSetting) error
 	// Aula 23.6: a localização do patrimônio.
 	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
 	AssetLocations(ctx context.Context) ([]store.AssetLocation, error)
@@ -415,6 +418,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/patch/terceiros/assinante", a.sameOrigin(a.adminAction(a.adoptSignerAction)))
 	mux.Handle("POST /painel/patch/terceiros/baixar", a.sameOrigin(a.adminAction(a.fetchThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/fonte", a.sameOrigin(a.adminAction(a.sourceAction)))
+	mux.Handle("POST /painel/patch/terceiros/tentar-aberto", a.sameOrigin(a.adminAction(a.tryOpenAction)))
 	mux.Handle("POST /painel/patch/terceiros/excluir", a.sameOrigin(a.adminAction(a.deleteThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/enviar", a.sameOrigin(a.adminAction(a.uploadInstallerAction))) // instalador próprio (multipart)
 	mux.Handle("POST /painel/patch/aprovar", a.sameOrigin(a.adminAction(a.approvePatchAction)))
