@@ -83,6 +83,17 @@ func bundleArch(name, machine string) (arch string, exact bool) {
 // (msi ou exe); nil para os outros. Uma cópia: quem chama pode mexer.
 func Family(kind string) []string { return slices.Clone(families[kind]) }
 
+// FamilyOf: os tipos da mesma família do tipo (msi: msi e wix; nullsoft: nullsoft, inno e
+// exe); burn só serve a burn.
+func FamilyOf(t string) []string {
+	for _, k := range []string{KindMSI, KindExe} {
+		if slices.Contains(families[k], t) {
+			return slices.Clone(families[k])
+		}
+	}
+	return []string{t}
+}
+
 // KindLabel: o nome do tipo de instalação para a tela (MSI, EXE).
 func KindLabel(kind string) string { return strings.ToUpper(kind) }
 
@@ -402,7 +413,9 @@ func Counts(ds []Decision) map[string]int {
 func ForNewInstall(app thirdparty.App, pkgs []store.ThirdPartyPackage, arch string) *store.ThirdPartyPackage {
 	types := append(slices.Clone(families[KindExe]), families[KindMSI]...)
 	if app.Install != nil && app.Install.Type != "" {
-		types = []string{app.Install.Type}
+		// A família do tipo da regra: o que importa é MSI ou exe (o padrão da frota), não o
+		// gerador do exe (o VLC da regra nullsoft com o exe do site do fabricante).
+		types = FamilyOf(app.Install.Type)
 	}
 	return newest(pkgs, app.ID, types, arch, false)
 }

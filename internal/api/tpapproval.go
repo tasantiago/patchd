@@ -12,6 +12,7 @@ import (
 	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpinstall"
 	"github.com/tasantiago/patchd/internal/tpupload"
 )
 
@@ -155,7 +156,7 @@ func noRuleTypeNote(ruleType, app string, versions []tpVersionRow, pkgs []store.
 			continue
 		}
 		if slices.ContainsFunc(pkgs, func(p store.ThirdPartyPackage) bool {
-			return p.AppID == app && p.Version == row.Version && p.Type == ruleType
+			return p.AppID == app && p.Version == row.Version && slices.Contains(tpinstall.FamilyOf(ruleType), p.Type)
 		}) {
 			return ""
 		}

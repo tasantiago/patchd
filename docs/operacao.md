@@ -1469,7 +1469,12 @@ winget-pkgs, que às vezes leva dias para ter a versão nova):
   SHA-256:      https://ftp.mozilla.org/pub/firefox/releases/{versao}/SHA256SUMS
   ```
 
-  O tipo tem de ser o das instalações nas máquinas (MSI só atualiza MSI; exe, exe). Para o
+  O tipo tem de ser da família das instalações nas máquinas: MSI (msi, wix) só atualiza MSI;
+  exe (nullsoft, inno, exe) só atualiza exe. Na instalação nova (a Central), vale a família do
+  tipo da regra: a regra nullsoft aceita o exe genérico do site do fabricante. O Firefox
+  instalado pelo `.exe` oficial é da família exe: use o link `.exe` (tipo nullsoft); o `.msi`
+  só serve às instalações feitas pelo MSI. Com versão aprovada só de outra família, a Central
+  diz "ainda não tem, no servidor, o instalador do tipo desta instalação (EXE)". Para o
   ESR, o mesmo com `firefox/releases/{versao}` (a referência do ESR já traz o "esr").
 - **Pacote do Chocolatey** (o repositório da comunidade): o id do pacote (o de
   `community.chocolatey.org/packages/<id>`). O servidor baixa o pacote (o mais novo, ou a
