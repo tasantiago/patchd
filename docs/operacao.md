@@ -1453,6 +1453,40 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
   (o agente ainda vai baixá-lo; cancele em Jobs ou espere) e a de **campanha não encerrada**.
   Excluir não muda nada nas máquinas; dá para baixar a mesma versão de novo depois.
 
+### Fonte do instalador: o winget ou o site do fabricante
+
+Na página do programa, **Fonte do instalador** diz de onde o servidor baixa (o padrão é o
+winget-pkgs, que às vezes leva dias para ter a versão nova):
+
+- **Site do fabricante**: o link oficial, com `{versao}` no lugar da versão. O servidor troca
+  pela **versão de referência** que o patchd já acompanha (a de Patch › Programas de
+  terceiros) ou pela que você digitar no Baixar. O tipo (msi, nullsoft, inno…) e os argumentos
+  são os da fonte. Exemplos, o Firefox em português (a referência vem da própria Mozilla):
+
+  ```text
+  link (MSI):   https://ftp.mozilla.org/pub/firefox/releases/{versao}/win64/pt-BR/Firefox%20Setup%20{versao}.msi
+  link (exe):   https://ftp.mozilla.org/pub/firefox/releases/{versao}/win64/pt-BR/Firefox%20Setup%20{versao}.exe   (tipo nullsoft)
+  SHA-256:      https://ftp.mozilla.org/pub/firefox/releases/{versao}/SHA256SUMS
+  ```
+
+  O tipo tem de ser o das instalações nas máquinas (MSI só atualiza MSI; exe, exe). Para o
+  ESR, o mesmo com `firefox/releases/{versao}` (a referência do ESR já traz o "esr").
+- **Arquivo de SHA-256 do fabricante** (opcional): o arquivo com linhas "SHA-256 nome" (o
+  formato do `sha256sum`); o servidor só guarda se o baixado conferir. Sem ele, o servidor
+  calcula o SHA-256 do que baixou e o programa **tem de exigir a assinatura**: o servidor confere
+  o O= antes de guardar (e apaga o arquivo se for outro), e o agente confere de novo, com o
+  Windows. Daí em diante a versão fica presa a esse SHA-256, como as do winget.
+- **Baixar sozinho cada versão nova** (vale para o winget e para o fabricante): de hora em
+  hora, o servidor confere os programas marcados; quando a versão de referência ainda não tem
+  instalador guardado, baixa pela fonte. A mesma versão que falhou (o fabricante ainda não
+  publicou, o winget ainda não tem) é tentada de novo a cada 6 horas. **A aprovação continua
+  sua**: a versão baixada aparece em Instaladores guardados esperando aprovar. Na auditoria:
+  `terceiros.baixar` com o usuário `patchd` e o detalhe "automático: …"; no log, "download
+  automático de instalador".
+
+Mudar a fonte vai para a auditoria (`terceiros.fonte`). Voltar ao winget, sem o automático,
+apaga a configuração do programa.
+
 Na auditoria: `terceiros.baixar` (com a versão pedida) e `terceiros.excluir`. Sem pasta de
 conteúdo (`PATCHD_CONTENT_DIR`), o painel continua mostrando o comando da linha de comando.
 

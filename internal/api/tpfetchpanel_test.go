@@ -285,3 +285,67 @@ func TestBaixarTiposDaRegra(t *testing.T) {
 		t.Error("aviso com o exe guardado")
 	}
 }
+
+// A fonte do instalador pela página do programa: o site do fabricante (o link com {versao},
+// conferido), o "baixar sozinho", e a volta ao winget.
+func TestFonteDoInstaladorPeloPainel(t *testing.T) {
+	agora := time.Now().UTC()
+	src := &complianceFalso{
+		fleet: protocol.ComplianceFleet{EvaluatedAt: agora, Machines: []protocol.ComplianceStatus{{MachineID: "w1", Hostname: "pc-a"}}},
+		terceiros: map[string][]protocol.ThirdPartyItem{"w1": {
+			{AppID: "mozilla-firefox", Program: "Mozilla Firefox", Name: "Mozilla Firefox (x64 pt-BR)", State: "DESATUALIZADO", Installed: "146.0", Reference: "147.0.1"},
+		}},
+	}
+	st := store.NewMemory()
+	ctx := context.Background()
+	st.CreatePanelSession(ctx, identity.Hash(sessaoAdmin), panel.Session{Username: "thyago", Role: panel.RoleAdmin,
+		Source: panel.SourceAD, CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora})
+	m, _ := thirdparty.Default()
+	baixa := func(context.Context, thirdparty.App, string, []string, io.Writer) bool { return true }
+	h := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithThirdPartyManifest(thirdparty.NewLive(m)),
+		api.WithContent(t.TempDir(), nil), api.WithPackageFetch(baixa))
+	prog := "/painel/patch/programa?app=mozilla-firefox"
+	b := pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "<b>Fonte do instalador:</b> winget <code>Mozilla.Firefox.pt-BR</code>") || !strings.Contains(b, `action="/painel/patch/terceiros/fonte"`) {
+		t.Fatalf("cartão:\n%s", b)
+	}
+	salvar := func(v url.Values) string {
+		v.Set("app", "mozilla-firefox")
+		return local(pagina(h, "POST", "/painel/patch/terceiros/fonte", sessaoAdmin, v))
+	}
+	if l := salvar(url.Values{"fonte": {"url"}, "link": {"https://ftp.mozilla.org/pub/firefox/releases/latest/Firefox.msi"}, "fonte_tipo": {"msi"}}); !strings.Contains(l, "erro=fonte") || !strings.Contains(l, "versao") {
+		t.Errorf("link sem {versao}: %s", l)
+	}
+	ok := url.Values{"fonte": {"url"}, "link": {"https://ftp.mozilla.org/pub/firefox/releases/{versao}/win64/pt-BR/Firefox%20Setup%20{versao}.msi"},
+		"fonte_tipo": {"msi"}, "somas": {"https://ftp.mozilla.org/pub/firefox/releases/{versao}/SHA256SUMS"}, "auto": {"1"}}
+	if l := salvar(ok); !strings.HasSuffix(l, "&fonte=1#fonte") {
+		t.Fatalf("salvar: %s", l)
+	}
+	list, _ := st.InstallerSources(ctx)
+	if len(list) != 1 || list[0].Kind != store.SourceURL || list[0].Type != "msi" || !list[0].AutoFetch || list[0].UpdatedBy != "thyago" {
+		t.Fatalf("fonte: %+v", list)
+	}
+	b = pagina(h, "GET", prog, sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"site do fabricante · msi · baixa sozinho cada versão nova",
+		"<code>https://ftp.mozilla.org/pub/firefox/releases/147.0.1/win64/pt-BR/Firefox%20Setup%20147.0.1.msi</code>"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("depois de salvar: faltou %q", quer)
+		}
+	}
+	if strings.Contains(b, `name="tipo"`) {
+		t.Error("o Baixar oferece tipo com a fonte do fabricante")
+	}
+	if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "terceiros.fonte"}); len(ev) != 1 || !strings.Contains(ev[0].Detail, "baixa sozinho") {
+		t.Errorf("auditoria: %+v", ev)
+	}
+	// Leitura não vê o formulário; de volta ao winget sem automático: a linha sai.
+	if strings.Contains(pagina(h, "GET", prog, sessaoTeste, nil).Body.String(), `action="/painel/patch/terceiros/fonte"`) {
+		t.Error("leitura vê o formulário")
+	}
+	if l := salvar(url.Values{"fonte": {"winget"}}); !strings.HasSuffix(l, "&fonte=1#fonte") {
+		t.Fatalf("winget: %s", l)
+	}
+	if list, _ := st.InstallerSources(ctx); len(list) != 0 {
+		t.Errorf("a fonte padrão ficou gravada: %+v", list)
+	}
+}

@@ -501,7 +501,12 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 			// Aula 23.3: o painel baixa instaladores de terceiros, pelo mesmo caminho do
 			// package fetch (o mesmo winget, a mesma conferência do SHA-256, a mesma pasta).
 			if tpRules != nil {
-				apiOpts = append(apiOpts, api.WithPackageFetch(panelFetcher(pg, packagesDir(dir), info.Version)))
+				// A fonte de cada programa (o winget ou o site do fabricante) vale para o
+				// Baixar e para o download automático da versão de referência.
+				sf := newSourceFetcher(pg, packagesDir(dir), info.Version)
+				apiOpts = append(apiOpts, api.WithPackageFetch(sf.fetch))
+				af := &autoFetch{s: sf, rules: tpRules.Get, logger: logger, now: time.Now}
+				go af.run(ctx)
 			}
 		}
 	}

@@ -148,7 +148,7 @@ func (f *Fetcher) Fetch(ctx context.Context, dir, url, want string, msi bool, pr
 				return Result{}, err
 			}
 		}
-		size, err := f.download(ctx, dir, final, url, want, progress)
+		size, _, err := f.download(ctx, dir, msi, url, want, progress)
 		if err == nil {
 			return Result{Path: final, Size: size, Duration: time.Since(start)}, nil
 		}
@@ -232,33 +232,73 @@ func (f *Fetcher) open(ctx context.Context, addr string, progress func(string)) 
 	return f.get(ctx, plain.String(), httpOrHTTPS)
 }
 
+// FetchAny baixa o instalador sem SHA-256 conhecido (o site do fabricante que não publica o
+// hash): calcula o SHA-256 no caminho e guarda com ele no nome. Quem garante o conteúdo é a
+// assinatura (o agente a confere, e a regra tem de exigi-la) e a aprovação de cada versão.
+// Devolve o SHA-256.
+func (f *Fetcher) FetchAny(ctx context.Context, dir, url string, msi bool, progress func(string)) (Result, string, error) {
+	if progress == nil {
+		progress = func(string) {}
+	}
+	if !strings.HasPrefix(url, "https://") {
+		return Result{}, "", fmt.Errorf("endereço %q: só https", url)
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return Result{}, "", err
+	}
+	start := time.Now()
+	var lastErr error
+	for try := 1; try <= f.tries(); try++ {
+		if try > 1 {
+			progress(fmt.Sprintf("tentativa %d: %v", try, lastErr))
+			if err := sleep(ctx, time.Duration(try-1)*f.wait()); err != nil {
+				return Result{}, "", err
+			}
+		}
+		size, got, err := f.download(ctx, dir, msi, url, "", progress)
+		if err == nil {
+			return Result{Path: filepath.Join(dir, FileName(got, msi)), Size: size, Duration: time.Since(start)}, got, nil
+		}
+		if ctx.Err() != nil {
+			return Result{}, "", ctx.Err()
+		}
+		var perm permanent
+		if errors.As(err, &perm) {
+			return Result{}, "", perm.error
+		}
+		lastErr = err
+	}
+	return Result{}, "", fmt.Errorf("download falhou depois de %d tentativa(s): %w", f.tries(), lastErr)
+}
+
 // download baixa para um arquivo temporário na mesma pasta, calculando o SHA-256 no
-// caminho, e só renomeia para o nome final se conferir.
-func (f *Fetcher) download(ctx context.Context, dir, final, url, want string, progress func(string)) (int64, error) {
+// caminho, e só renomeia para o nome final (o SHA-256 no nome) se conferir com want; want
+// vazio: qualquer conteúdo (FetchAny). Devolve o tamanho e o SHA-256.
+func (f *Fetcher) download(ctx context.Context, dir string, msi bool, url, want string, progress func(string)) (int64, string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	resp, err := f.open(ctx, url, progress)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusOK:
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-		return 0, fmt.Errorf("GET %s: %s", url, resp.Status)
+		return 0, "", fmt.Errorf("GET %s: %s", url, resp.Status)
 	default:
-		return 0, permanent{fmt.Errorf("GET %s: %s", url, resp.Status)}
+		return 0, "", permanent{fmt.Errorf("GET %s: %s", url, resp.Status)}
 	}
 	max := f.maxSize()
 	if resp.ContentLength > max {
-		return 0, permanent{fmt.Errorf("o arquivo tem %s; o limite é %s", Bytes(resp.ContentLength), Bytes(max))}
+		return 0, "", permanent{fmt.Errorf("o arquivo tem %s; o limite é %s", Bytes(resp.ContentLength), Bytes(max))}
 	}
 
 	tmp := filepath.Join(dir, ".baixando-"+randomHex())
 	// #nosec G302 -- cópia de um pacote público do fornecedor
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
 	if err != nil {
-		return 0, permanent{err}
+		return 0, "", permanent{err}
 	}
 	keep := false
 	defer func() {
@@ -274,28 +314,29 @@ func (f *Fetcher) download(ctx context.Context, dir, final, url, want string, pr
 	body.stop()
 	switch {
 	case body.timedOut():
-		return n, fmt.Errorf("nenhum byte em %s", f.idle())
+		return n, "", fmt.Errorf("nenhum byte em %s", f.idle())
 	case err != nil:
-		return n, err
+		return n, "", err
 	case n > max:
-		return n, permanent{fmt.Errorf("o arquivo passou de %s", Bytes(max))}
+		return n, "", permanent{fmt.Errorf("o arquivo passou de %s", Bytes(max))}
 	case resp.ContentLength >= 0 && n != resp.ContentLength:
-		return n, fmt.Errorf("o corpo terminou em %s de %s", Bytes(n), Bytes(resp.ContentLength))
+		return n, "", fmt.Errorf("o corpo terminou em %s de %s", Bytes(n), Bytes(resp.ContentLength))
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		return n, permanent{&HashMismatchError{URL: url, Want: want, Got: got, Size: n}}
+	got := hex.EncodeToString(h.Sum(nil))
+	if want != "" && got != want {
+		return n, "", permanent{&HashMismatchError{URL: url, Want: want, Got: got, Size: n}}
 	}
 	if err := out.Sync(); err != nil {
-		return n, err
+		return n, "", err
 	}
 	if err := out.Close(); err != nil {
-		return n, err
+		return n, "", err
 	}
-	if err := os.Rename(tmp, final); err != nil {
-		return n, err
+	if err := os.Rename(tmp, filepath.Join(dir, FileName(got, msi))); err != nil {
+		return n, "", err
 	}
 	keep = true
-	return n, nil
+	return n, got, nil
 }
 
 // hashFile calcula o SHA-256 de um arquivo.

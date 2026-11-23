@@ -314,7 +314,9 @@ type tpProgramView struct {
 	// Central fica indisponível); "" quando não falta.
 	NoRuleType string
 	// Signer: a assinatura dos instaladores guardados contra a que o programa exige.
-	Signer    *tpSignerNote
+	Signer *tpSignerNote
+	// Source: a fonte do instalador (o winget ou o site do fabricante); nil no instalador próprio.
+	Source    *tpSourceView
 	Fetch     *tpFetchStatus
 	OtherBusy string // outro programa baixando agora (um download por vez)
 	// Upload: o envio do instalador próprio (tpupload.go); nil: o programa vem do winget.

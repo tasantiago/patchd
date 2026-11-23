@@ -14,7 +14,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/buildinfo"
 	"github.com/tasantiago/patchd/internal/catalog/retry"
 	"github.com/tasantiago/patchd/internal/config"
@@ -467,16 +466,4 @@ func btoi(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-// panelFetcher (Aula 23.3): o download do botão Baixar do painel, o mesmo do package fetch
-// de uma regra (x64 e o tipo da regra, como os padrões da linha de comando).
-func panelFetcher(st tpfetch.Store, dir, version string) api.PackageFetcher {
-	ua := "patchd-server/" + version
-	c := winget.NewClient(ua)
-	c.HTTP = retry.Wrap(c.HTTP, nil)
-	f := pkgcache.NewFetcher(ua)
-	return func(ctx context.Context, rule thirdparty.App, ver string, types []string, out io.Writer) bool {
-		return tpfetch.One(ctx, c, f, st, rule, tpfetch.Options{Version: ver, Arch: "x64", Types: types}, dir, out)
-	}
 }

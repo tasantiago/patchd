@@ -18,8 +18,9 @@ import (
 // Memory guarda tudo na memória do processo. Serve para desenvolvimento e para os
 // testes da API; em produção, o armazenamento é o PostgreSQL (Aula 4.2).
 type Memory struct {
-	customApps        map[string]CustomApp      // programas incluídos pelo painel (custom_apps.go)
-	tpVersions        map[string]thirdparty.Ref // versões de referência de terceiros (catalog_thirdparty.go)
+	customApps        map[string]CustomApp       // programas incluídos pelo painel (custom_apps.go)
+	tpSources         map[string]InstallerSource // a fonte do instalador de cada programa (tpsources.go)
+	tpVersions        map[string]thirdparty.Ref  // versões de referência de terceiros (catalog_thirdparty.go)
 	standardPolicies  map[int64]StandardizationPolicy
 	standardPolicySeq int64
 	standardStates    map[string]StandardizationState

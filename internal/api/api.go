@@ -46,6 +46,10 @@ type Store interface {
 	CustomApps(ctx context.Context) ([]store.CustomApp, error)
 	SaveCustomApp(ctx context.Context, a store.CustomApp) error
 	DeleteCustomApp(ctx context.Context, id string) (bool, error)
+	// A fonte do instalador de cada programa (tpsource.go).
+	InstallerSources(ctx context.Context) ([]store.InstallerSource, error)
+	SaveInstallerSource(ctx context.Context, s store.InstallerSource) error
+	DeleteInstallerSource(ctx context.Context, app string) (bool, error)
 	SaveStandardizationPolicy(context.Context, store.StandardizationPolicy) (int64, error)
 	DeleteStandardizationPolicy(context.Context, int64, int64) error
 	WithStandardizationLock(context.Context, string, func(context.Context) error) (bool, error)
@@ -407,6 +411,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/patch/terceiros/revogar", a.sameOrigin(a.adminAction(a.revokeThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/assinante", a.sameOrigin(a.adminAction(a.adoptSignerAction)))
 	mux.Handle("POST /painel/patch/terceiros/baixar", a.sameOrigin(a.adminAction(a.fetchThirdPartyAction)))
+	mux.Handle("POST /painel/patch/terceiros/fonte", a.sameOrigin(a.adminAction(a.sourceAction)))
 	mux.Handle("POST /painel/patch/terceiros/excluir", a.sameOrigin(a.adminAction(a.deleteThirdPartyAction)))
 	mux.Handle("POST /painel/patch/terceiros/enviar", a.sameOrigin(a.adminAction(a.uploadInstallerAction))) // instalador próprio (multipart)
 	mux.Handle("POST /painel/patch/aprovar", a.sameOrigin(a.adminAction(a.approvePatchAction)))

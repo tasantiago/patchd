@@ -76,6 +76,11 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	v.CanFetch = v.Admin && a.tpFetch != nil && !rule.Uploaded()
 	v.Kinds, v.RuleType = fetchKinds(*rule), rule.Install.Type
 	v.Fetch, v.OtherBusy = a.fetches.view(v.P.AppID)
+	if !rule.Uploaded() {
+		if err := a.fillSource(r, v, rule.Install.Winget); err != nil {
+			return err
+		}
+	}
 	if v.Fetch != nil && v.Fetch.Running {
 		v.Refresh = 5
 	}
@@ -226,6 +231,10 @@ func tpApprovalFlash(q url.Values) (flash, errMsg string) {
 		return "Aprovação revogada. Jobs já criados seguem o prazo deles (cancele os pendentes em Jobs).", ""
 	case q.Get("erro") == "ja-aprovado":
 		return "", "Esta versão já estava aprovada; a aprovação original foi mantida."
+	case q.Has("fonte"):
+		return "Fonte do instalador guardada. O próximo Baixar (e o download automático, se ligado) usa ela.", ""
+	case q.Get("erro") == "fonte":
+		return "", "A fonte do instalador não foi guardada: " + q.Get("motivo") + "."
 	case q.Has("assinante"):
 		return "Assinatura atualizada: o programa passa a exigir a organização que assina o instalador guardado. Os próximos jobs já levam a regra nova.", ""
 	case q.Get("erro") == "assinante-arquivo":
