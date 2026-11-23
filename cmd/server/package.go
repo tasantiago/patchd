@@ -205,6 +205,13 @@ func rulesFor(manifest thirdparty.Manifest, o packageFlags, stderr io.Writer) []
 				}
 				continue
 			}
+			if a.FromChocolatey() { // o do Chocolatey: pelo painel (o Baixar e o automático)
+				if !o.all {
+					fmt.Fprintf(stderr, "patchd-server: %s vem do Chocolatey (%s): baixe pela página do programa no painel\n", a.ID, a.Install.Chocolatey)
+					return nil
+				}
+				continue
+			}
 			rules = append(rules, a)
 		}
 	}

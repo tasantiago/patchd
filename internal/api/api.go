@@ -299,6 +299,7 @@ type api struct {
 	directory   Directory                            // nil: só usuários locais
 	compliance  ComplianceSource                     // nil: sem estado de compliance (armazenamento em memória)
 	custom      *customApps                          // programas incluídos pelo painel (customapps.go); nil: desligado
+	chocoSearch ChocoDescriber                       // a busca "Do Chocolatey" do Incluir programa; nil: sem ela
 	tpManifest  *thirdparty.Live                     // regras de terceiros, para conferir o job thirdparty (Aula 14.4)
 	tpFetch     PackageFetcher                       // Aula 23.3: baixar pelo painel; nil: só pela linha de comando
 	fetches     tpFetchBoard                         // Aula 23.3: o download em andamento e o último de cada programa

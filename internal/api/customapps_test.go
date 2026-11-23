@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/winget"
@@ -294,5 +295,79 @@ ManifestVersion: 1.28.0
 	}
 	if b := pagina(h, "GET", ed+"&ajuda=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `<details class="ajuda" open>`) || !strings.Contains(b, "<td>InstallLocation</td>") {
 		t.Error("edição com a ajuda")
+	}
+}
+
+// Incluir do Chocolatey: a busca lê o pacote (nome, tipo, argumentos, nome em Programas e
+// Recursos, assinatura) e preenche; salvar grava a regra com o pacote, sem winget; a página do
+// programa mostra o Chocolatey como origem e a fonte sem a opção do winget.
+func TestIncluirDoChocolatey(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	buscar := func(_ context.Context, id string) (api.ChocoDescription, error) {
+		if id != "notepadplusplus.install" {
+			return api.ChocoDescription{}, errors.New("o pacote não existe no Chocolatey")
+		}
+		return api.ChocoDescription{Description: choco.Description{ID: id, Title: "Notepad++ (Install)", Version: "8.9.8", Authors: "Don Ho",
+			URL: "https://example.com/npp.8.9.8.Installer.x64.exe", URLVar: "url64bit", SHA256: strings.Repeat("a", 64), Type: "nullsoft",
+			SilentArgs: "/S", DisplayName: "Notepad++", Prefix: true}, SignerOrg: "Notepad++", SignerSubject: "CN=Notepad++, O=Notepad++"}, nil
+	}
+	h, _, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, nil, nil), api.WithChocoSearch(buscar),
+		api.WithCompliance(&complianceFalso{}))
+	const pagina_ = "/painel/patch/terceiros/incluir"
+	b := pagina(h, "GET", pagina_+"?chocolatey=1", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `Do Chocolatey</a>`) || !strings.Contains(b, `name="pacote"`) || !strings.Contains(b, `name="origem" value="chocolatey"`) {
+		t.Error("a aba do Chocolatey")
+	}
+	b = pagina(h, "GET", pagina_+"?pacote=notepadplusplus.install", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"Achado no Chocolatey: <b>Notepad&#43;&#43; (Install)</b> 8.9.8", `name="chocolatey" value="notepadplusplus.install"`,
+		`name="inventario" value="Notepad&#43;&#43;"`, `<option value="comeca" selected>`, `<option value="nullsoft" selected>`,
+		`name="assinante" value="Notepad&#43;&#43;"`, "silentArgs do script: <code>/S</code>"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("busca: falta %q", quer)
+		}
+	}
+	if b := pagina(h, "GET", pagina_+"?pacote=nada", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "não existe no Chocolatey") {
+		t.Error("pacote que não existe")
+	}
+	form := url.Values{"origem": {"chocolatey"}, "nome": {"Notepad++"}, "chocolatey": {"notepadplusplus.install"}, "inventario": {"Notepad++"},
+		"modo": {"comeca"}, "tipo": {"nullsoft"}, "assinatura": {"sim"}, "assinante": {"Notepad++"}, "winget": {"Ignorado.Aqui"}}
+	r := pagina(h, "POST", pagina_, sessaoAdmin, form)
+	if r.Code != http.StatusSeeOther || !strings.Contains(local(r), "salvo=notepadplusplus-install") || !strings.Contains(local(r), "chocolatey=1") {
+		t.Fatalf("salvar: %d %s %s", r.Code, local(r), r.Body)
+	}
+	var rule thirdparty.App
+	for _, a := range live.For("windows") {
+		if a.ID == "notepadplusplus-install" {
+			rule = a
+		}
+	}
+	if !rule.FromChocolatey() || rule.Install.Winget != "" || rule.Source.Type != thirdparty.SourceChocolatey {
+		t.Fatalf("regra: %+v", rule)
+	}
+	b = pagina(h, "GET", "/painel/patch/programa?app=notepadplusplus-install", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "Chocolatey <code>notepadplusplus.install</code>") || strings.Contains(b, `name="fonte" value="winget"`) ||
+		!strings.Contains(b, `name="fonte" value="chocolatey" checked`) {
+		t.Error("a página do programa do Chocolatey")
+	}
+	// A edição mantém a aba; não vira programa do winget.
+	if b := pagina(h, "GET", pagina_+"?editar=notepadplusplus-install", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `name="chocolatey" value="notepadplusplus.install"`) {
+		t.Error("edição")
+	}
+	form.Set("editar", "notepadplusplus-install")
+	form.Set("origem", "")
+	form.Set("winget", "Notepad.Plus")
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity {
+		t.Errorf("trocar de origem na edição: %d", r.Code)
+	}
+	// O exe genérico sem os argumentos: recusado.
+	form = url.Values{"origem": {"chocolatey"}, "nome": {"X"}, "chocolatey": {"xis"}, "inventario": {"X"}, "tipo": {"exe"}, "assinatura": {"sim"}, "assinante": {"X"}}
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "exige arguments") {
+		t.Errorf("exe sem argumentos: %d", r.Code)
+	}
+	// O que o manifesto já tem: aponta para a Fonte do instalador.
+	form = url.Values{"origem": {"chocolatey"}, "nome": {"7-Zip"}, "chocolatey": {"7zip"}, "inventario": {"7-Zip"}, "tipo": {"msi"}, "assinatura": {"sim"}, "assinante": {"X"}}
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "Fonte do instalador") {
+		t.Errorf("do manifesto: %d", r.Code)
 	}
 }

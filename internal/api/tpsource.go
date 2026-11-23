@@ -9,6 +9,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpfetch"
 )
 
@@ -28,7 +29,10 @@ type tpSourceView struct {
 	Types                     []string
 	UpdatedBy, UpdatedAt      string
 	Winget                    string
-	CanEdit                   bool
+	// ChocoRule: o programa foi incluído do Chocolatey (sem winget): o padrão é o pacote da
+	// regra, e o winget não é opção.
+	ChocoRule bool
+	CanEdit   bool
 }
 
 // vendorTypes: os tipos que a fonte do fabricante aceita.
@@ -47,15 +51,18 @@ func (a *api) installerSource(r *http.Request, app string) (store.InstallerSourc
 	return list[i], true, nil
 }
 
-// fillSource monta o cartão da fonte (programas do winget; o instalador próprio não tem).
-func (a *api) fillSource(r *http.Request, v *tpProgramView, winget string) error {
+// fillSource monta o cartão da fonte (programas do winget e do Chocolatey; o instalador
+// próprio não tem).
+func (a *api) fillSource(r *http.Request, v *tpProgramView, rule thirdparty.App) error {
 	src, saved, err := a.installerSource(r, v.P.AppID)
 	if err != nil {
 		return err
 	}
+	src = tpfetch.RuleSource(rule, src)
+	winget := rule.Install.Winget
 	sv := &tpSourceView{Vendor: src.Kind == store.SourceURL, Choco: src.Kind == store.SourceChocolatey, URL: src.URLTemplate, Type: src.Type,
 		Args: src.Arguments, Checksum: src.ChecksumURL, Package: src.PackageID, URLVar: src.URLVar, ChecksumVar: src.ChecksumVar,
-		Auto: src.AutoFetch, Types: vendorTypes, Winget: winget, CanEdit: v.Admin}
+		Auto: src.AutoFetch, Types: vendorTypes, Winget: winget, ChocoRule: rule.FromChocolatey(), CanEdit: v.Admin}
 	if saved {
 		sv.UpdatedBy, sv.UpdatedAt = src.UpdatedBy, a.stamp(src.UpdatedAt)
 	}
@@ -81,6 +88,11 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	back := tpProgramPath(app)
 	src := store.InstallerSource{AppID: app, Kind: store.SourceWinget, AutoFetch: r.PostFormValue("auto") == "1", UpdatedBy: s.Username}
 	switch r.PostFormValue("fonte") {
+	case store.SourceWinget:
+		if rule.FromChocolatey() {
+			http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape("este programa foi incluído do Chocolatey e não tem pacote do winget: escolha o Chocolatey ou o site do fabricante")+"#fonte", http.StatusSeeOther)
+			return
+		}
 	case store.SourceChocolatey:
 		src.Kind = store.SourceChocolatey
 		src.PackageID = strings.TrimSpace(r.PostFormValue("pacote"))
@@ -111,7 +123,10 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	var err error
 	detail := "winget"
-	if src.Kind == store.SourceWinget && !src.AutoFetch {
+	if rule.FromChocolatey() && src.Kind == store.SourceChocolatey && src.PackageID == rule.Install.Chocolatey && !src.AutoFetch &&
+		src.URLVar == "" && src.ChecksumVar == "" && src.Type == rule.Install.Type && src.Arguments == rule.Install.Arguments {
+		_, err = a.store.DeleteInstallerSource(r.Context(), app) // o da regra: sem linha
+	} else if src.Kind == store.SourceWinget && !src.AutoFetch {
 		_, err = a.store.DeleteInstallerSource(r.Context(), app) // o padrão: sem linha
 	} else {
 		err = a.store.SaveInstallerSource(r.Context(), src)

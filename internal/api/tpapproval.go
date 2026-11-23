@@ -22,6 +22,7 @@ import (
 
 type tpInstallInfo struct {
 	Winget, Type, Signer, Unsigned, Processes string
+	Choco                                     string // o pacote do Chocolatey (o programa incluído de lá)
 	Upload                                    bool   // instalador próprio (tpupload.go)
 	UninstallFirst                            bool   // a atualização remove antes a versão instalada
 	Shortcut                                  string // o atalho da regra, para mostrar
@@ -66,7 +67,8 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 		return nil
 	}
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
-		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded(), UninstallFirst: rule.Install.UninstallFirst}
+		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded(), UninstallFirst: rule.Install.UninstallFirst,
+		Choco: rule.Install.Chocolatey}
 	if sc := rule.Shortcut; sc != nil {
 		v.Install.Shortcut = fmt.Sprintf("%s → %s", sc.Name, sc.Target)
 		if sc.Icon != "" {
@@ -78,7 +80,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	v.Kinds, v.RuleType = fetchKinds(*rule), rule.Install.Type
 	v.Fetch, v.OtherBusy = a.fetches.view(v.P.AppID)
 	if !rule.Uploaded() {
-		if err := a.fillSource(r, v, rule.Install.Winget); err != nil {
+		if err := a.fillSource(r, v, *rule); err != nil {
 			return err
 		}
 	}

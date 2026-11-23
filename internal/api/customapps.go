@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
@@ -39,6 +41,21 @@ func WithCustomApps(base thirdparty.Manifest, describe WingetDescriber, sync fun
 	}
 }
 
+// ChocoDescription: o pacote do Chocolatey lido para o formulário, com quem assina o
+// instalador do link (lido pelo servidor, como na busca do winget).
+type ChocoDescription struct {
+	choco.Description
+	SignerOrg, SignerSubject, SignerNote string
+}
+
+// ChocoDescriber lê um pacote do Chocolatey (cmd/server, chocoDescriber).
+type ChocoDescriber func(ctx context.Context, id string) (ChocoDescription, error)
+
+// WithChocoSearch liga a aba "Do Chocolatey" do Incluir programa (com WithCustomApps).
+func WithChocoSearch(fn ChocoDescriber) Option {
+	return func(a *api) { a.chocoSearch = fn }
+}
+
 type customApps struct {
 	base     thirdparty.Manifest
 	describe WingetDescriber
@@ -54,6 +71,7 @@ type customView struct {
 	Rows    []customRow
 	Form    customForm
 	Upload  bool   // o formulário do instalador próprio (?proprio=1)
+	Choco   bool   // o formulário do Chocolatey (?chocolatey=1, ou a busca ?pacote=)
 	Editing string // o id do programa em edição ("" = novo)
 	Found   *winget.Description
 	Help    []winget.Help // os parâmetros do instalador no winget (na busca e em Editar com ?ajuda=1)
@@ -61,6 +79,9 @@ type customView struct {
 	Types   []string
 	CanUse  bool // o painel pode incluir (o servidor tem o manifesto vivo)
 	CanFind bool // a busca no winget está ligada
+	// FoundChoco: o pacote do Chocolatey achado na busca; CanFindChoco: a busca está ligada.
+	FoundChoco   *ChocoDescription
+	CanFindChoco bool
 	// O programa que acabou de ser salvo: o botão para a página dele (baixar ou enviar o
 	// instalador, aprovar).
 	SavedHref, SavedName string
@@ -68,12 +89,14 @@ type customView struct {
 
 type customRow struct {
 	ID, Name, Winget, Match, Updated, Href string
+	Choco                                  string // o pacote do Chocolatey
 	Upload                                 bool
 }
 
 // customForm: os campos, como digitados.
 type customForm struct {
 	Name, Winget, Inventory, Mode, Publisher, Type, Signer, Unsigned, Processes string
+	Chocolatey                                                                  string // o pacote do Chocolatey
 	NoSignature                                                                 bool
 	UninstallFirst                                                              bool   // remover a versão instalada antes de atualizar
 	Arguments                                                                   string // os argumentos no lugar dos do winget
@@ -101,6 +124,7 @@ func formOf(r thirdparty.App) customForm {
 	}
 	if r.Install != nil {
 		f.Winget, f.Type, f.Signer, f.Unsigned = r.Install.Winget, r.Install.Type, r.Install.Signer, r.Install.UnsignedReason
+		f.Chocolatey = r.Install.Chocolatey
 		f.Processes = strings.Join(r.Install.Processes, ", ")
 		f.NoSignature = r.Install.Signer == ""
 		f.UninstallFirst = r.Install.UninstallFirst
@@ -121,12 +145,17 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 		Processes: strings.TrimSpace(r.PostFormValue("processos")), NoSignature: r.PostFormValue("assinatura") == "nao",
 		UninstallFirst: r.PostFormValue("remover_antes") == "1", Arguments: strings.TrimSpace(r.PostFormValue("argumentos")),
 		ShortName: strings.TrimSpace(r.PostFormValue("atalho_nome")), ShortTarget: strings.TrimSpace(r.PostFormValue("atalho_executavel")),
-		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone"))}
+		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone")), Chocolatey: strings.TrimSpace(r.PostFormValue("chocolatey"))}
 	in := thirdparty.CustomInput{Name: f.Name, WingetID: f.Winget, InventoryName: f.Inventory, NameMode: f.Mode, Publisher: f.Publisher,
 		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio", UninstallFirst: f.UninstallFirst, Arguments: f.Arguments,
 		ShortcutName: f.ShortName, ShortcutTarget: f.ShortTarget, ShortcutIcon: f.ShortIcon}
-	if in.Upload {
-		in.WingetID, f.Winget = "", ""
+	switch r.PostFormValue("origem") {
+	case "proprio":
+		in.WingetID, f.Winget, f.Chocolatey = "", "", ""
+	case "chocolatey":
+		in.Chocolatey, in.WingetID, f.Winget = f.Chocolatey, "", ""
+	default:
+		f.Chocolatey = ""
 	}
 	if f.NoSignature {
 		in.UnsignedReason = f.Unsigned
@@ -187,6 +216,7 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 		return
 	}
 	v.CanFind = a.custom.describe != nil
+	v.CanFindChoco = a.chocoSearch != nil
 	list, rules, err := a.customList(r.Context())
 	if err != nil {
 		a.internalError(w, r, "listar os programas incluídos", err)
@@ -198,16 +228,24 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 	}
 	q := r.URL.Query()
 	v.Upload = q.Get("proprio") == "1"
-	if v.Upload {
+	v.Choco = !v.Upload && (q.Get("chocolatey") == "1" || q.Has("pacote"))
+	switch {
+	case v.Upload:
 		v.Types = thirdparty.UploadTypes
 		v.Form.Type = thirdparty.UploadTypes[0]
+	case v.Choco:
+		v.Types = vendorTypes
+		v.Form.Type = vendorTypes[0]
 	}
 	switch {
 	case q.Get("editar") != "":
 		if rule, ok := rules[q.Get("editar")]; ok {
-			v.Editing, v.Form, v.Upload = q.Get("editar"), formOf(rule), rule.Uploaded()
-			if v.Upload {
+			v.Editing, v.Form, v.Upload, v.Choco = q.Get("editar"), formOf(rule), rule.Uploaded(), rule.FromChocolatey()
+			switch {
+			case v.Upload:
 				v.Types = thirdparty.UploadTypes
+			case v.Choco:
+				v.Types = vendorTypes
 			}
 			// ?ajuda=1: os parâmetros do instalador no winget, para escolher os argumentos.
 			if q.Get("ajuda") == "1" && !v.Upload && v.CanFind && rule.Install != nil && rule.Install.Winget != "" {
@@ -221,6 +259,8 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 				}
 			}
 		}
+	case q.Get("pacote") != "" && v.CanFindChoco:
+		a.chocoFill(r.Context(), &v, strings.TrimSpace(q.Get("pacote")))
 	case q.Get("winget") != "" && v.CanFind:
 		id := strings.TrimSpace(q.Get("winget"))
 		v.Form.Winget = id
@@ -268,6 +308,8 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 		}
 	}
 	switch {
+	case q.Has("salvo") && q.Get("chocolatey") == "1":
+		v.Flash = "Programa salvo. Ele já vale no painel: abra-o (botão abaixo), baixe o instalador pelo Chocolatey em Instaladores guardados (ou ligue \"baixar sozinho\" na Fonte do instalador), aprove a versão e ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("salvo") && q.Get("proprio") == "1":
 		v.Flash = "Programa salvo. Abra-o (botão abaixo) e envie o instalador (.msi ou .exe) com a versão; depois ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("salvo"):
@@ -306,9 +348,13 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	fail := func(msg string) {
 		v := customView{pageBase: a.baseFor(r.Context(), s, "Incluir programa", "patch"), Form: f, Editing: editing, Upload: in.Upload,
-			Types: append([]string{""}, wingetTypes...), CanUse: true, CanFind: a.custom.describe != nil}
-		if in.Upload {
+			Choco: in.Chocolatey != "" || r.PostFormValue("origem") == "chocolatey", Types: append([]string{""}, wingetTypes...), CanUse: true,
+			CanFind: a.custom.describe != nil, CanFindChoco: a.chocoSearch != nil}
+		switch {
+		case in.Upload:
 			v.Types = thirdparty.UploadTypes
+		case v.Choco:
+			v.Types = vendorTypes
 		}
 		v.Error = msg
 		if list, rules, err := a.customList(r.Context()); err == nil {
@@ -329,10 +375,13 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	switch {
 	case editing != "" && editing != rule.ID:
-		fail("Para trocar o pacote do winget, exclua este programa e inclua o novo: o pacote define o programa.")
+		fail("Para trocar o pacote (do winget ou do Chocolatey), exclua este programa e inclua o novo: o pacote define o programa.")
 		return
-	case editing != "" && a.isUploadedCustom(r.Context(), editing) != rule.Uploaded():
-		fail("Um programa do winget não vira instalador próprio (nem o contrário): exclua e inclua de novo.")
+	case editing != "" && a.customOrigin(r.Context(), editing) != customOriginOf(rule):
+		fail("Um programa não muda de origem (winget, Chocolatey, instalador próprio): exclua e inclua de novo.")
+		return
+	case editing == "" && a.custom.base.Has(rule.Key()) && rule.FromChocolatey():
+		fail(fmt.Sprintf("O programa %s já está no manifesto do patchd: para baixar o instalador pelo Chocolatey, abra a página dele e escolha o pacote em Fonte do instalador.", rule.ID))
 		return
 	case editing == "" && a.custom.base.Has(rule.Key()):
 		fail(fmt.Sprintf("O programa %s já está no manifesto do patchd: não precisa incluir.", rule.ID))
@@ -369,8 +418,11 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		sig = "sem assinatura: " + rule.Install.UnsignedReason
 	}
 	origin := "winget " + rule.Install.Winget
-	if rule.Uploaded() {
+	switch {
+	case rule.Uploaded():
 		origin = "instalador próprio " + rule.Install.Type
+	case rule.FromChocolatey():
+		origin = "Chocolatey " + rule.Install.Chocolatey + " " + rule.Install.Type
 	}
 	detail := fmt.Sprintf("%s · %s · nome %q (%s) · %s", rule.Name, origin, f.Inventory, f.Mode, sig)
 	if sc := rule.Shortcut; sc != nil {
@@ -383,8 +435,11 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		go a.custom.sync(context.WithoutCancel(r.Context()), rule) // a versão de referência, já
 	}
 	q := url.Values{"salvo": {rule.ID}}
-	if rule.Uploaded() {
+	switch {
+	case rule.Uploaded():
 		q.Set("proprio", "1")
+	case rule.FromChocolatey():
+		q.Set("chocolatey", "1")
 	}
 	http.Redirect(w, r, "/painel/patch/terceiros/incluir?"+q.Encode(), http.StatusSeeOther)
 }
@@ -454,15 +509,64 @@ func (a *api) customRowOf(c store.CustomApp, rule thirdparty.App) customRow {
 	row := customRow{ID: c.ID, Name: rule.Name, Match: formOf(rule).Inventory, Href: tpProgramPath(c.ID),
 		Updated: a.stamp(c.UpdatedAt) + " · " + c.UpdatedBy, Upload: rule.Uploaded()}
 	if rule.Install != nil {
-		row.Winget = rule.Install.Winget
+		row.Winget, row.Choco = rule.Install.Winget, rule.Install.Chocolatey
 	}
 	return row
 }
 
-// isUploadedCustom: o programa incluído (id) é de instalador próprio.
-func (a *api) isUploadedCustom(ctx context.Context, id string) bool {
+// customOrigin: de onde vem o instalador do programa incluído (id): winget, chocolatey ou
+// proprio ("" se não achar).
+func (a *api) customOrigin(ctx context.Context, id string) string {
 	_, rules, err := a.customList(ctx)
-	return err == nil && rules[id].Uploaded()
+	if err != nil {
+		return ""
+	}
+	return customOriginOf(rules[id])
+}
+
+func customOriginOf(r thirdparty.App) string {
+	switch {
+	case r.Uploaded():
+		return "proprio"
+	case r.FromChocolatey():
+		return "chocolatey"
+	}
+	return "winget"
+}
+
+// chocoFill: a busca "Do Chocolatey" preenche o formulário com o pacote.
+func (a *api) chocoFill(ctx context.Context, v *customView, id string) {
+	v.Form.Chocolatey = id
+	if !choco.ValidID(id) {
+		v.Error = "O pacote do Chocolatey é o id do endereço community.chocolatey.org/packages/id (ex.: firefox, adobereader, notepadplusplus)."
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, customTimeout)
+	defer cancel()
+	d, err := a.chocoSearch(ctx, id)
+	if err != nil {
+		v.Error = "Não deu para usar o pacote do Chocolatey: " + err.Error()
+		return
+	}
+	v.FoundChoco = &d
+	v.Form.Name = cmp.Or(d.Title, id)
+	v.Form.Inventory, v.Form.Mode = d.DisplayName, thirdparty.NameEquals
+	switch {
+	case d.DisplayName == "":
+		v.Form.Inventory, v.Form.Mode = v.Form.Name, thirdparty.NamePrefix // sem o softwareName: o começo do nome
+	case d.Prefix:
+		v.Form.Mode = thirdparty.NamePrefix
+	}
+	if slices.Contains(vendorTypes, d.Type) {
+		v.Form.Type = d.Type
+	}
+	v.Form.Arguments = d.Arguments
+	switch {
+	case d.SignerOrg != "":
+		v.Form.Signer, v.Form.NoSignature = d.SignerOrg, false
+	case d.SignerNote == unsignedNote:
+		v.Form.NoSignature, v.Form.Unsigned = true, "o fabricante publica o instalador sem assinatura (conferido pelo patchd no link do pacote do Chocolatey)"
+	}
 }
 
 // isCustom: o programa foi incluído pelo painel (a página do programa mostra editar e excluir).

@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/authsig"
 	"github.com/tasantiago/patchd/internal/catalog/retry"
+	"github.com/tasantiago/patchd/internal/choco"
 	"github.com/tasantiago/patchd/internal/config"
+	"github.com/tasantiago/patchd/internal/pkgcache"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/winget"
@@ -62,37 +65,67 @@ func wingetDescriber(version string) api.WingetDescriber {
 	ua := "patchd-server/" + version
 	c := winget.NewClient(ua)
 	c.HTTP = retry.Wrap(c.HTTP, nil)
-	// Quem assinou: só os pedaços do instalador com a assinatura (Range), sem baixá-lo. É para
-	// preencher o formulário; quem confere é o agente (o http do espelho não muda isso).
-	sigHTTP := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
-			return fmt.Errorf("redirecionamento para %q", req.URL.Scheme)
-		}
-		if len(via) >= 10 {
-			return errors.New("mais de 10 redirecionamentos")
-		}
-		return nil
-	}}
 	return func(ctx context.Context, id string) (winget.Description, error) {
 		d, err := c.Describe(ctx, id)
 		if err != nil || d.InstallerURL == "" {
 			return d, err
 		}
-		sctx, cancel := context.WithTimeout(ctx, signerTimeout)
-		defer cancel()
-		s, err := authsig.Remote(sctx, sigHTTP, d.InstallerURL, ua)
-		switch {
-		case errors.Is(err, authsig.ErrUnsigned):
-			d.SignerNote = "o instalador não é assinado"
-		case err != nil:
-			d.SignerNote = "não deu para ler a assinatura do instalador: " + err.Error()
-		case s.Organization == "":
-			d.SignerNote = "o certificado que assinou não tem O= (" + s.Subject + ")"
-		default:
-			d.SignerOrg, d.SignerSubject = s.Organization, s.Subject
-		}
+		d.SignerOrg, d.SignerSubject, d.SignerNote = signerOf(ctx, d.InstallerURL, ua)
 		return d, nil
 	}
+}
+
+// chocoDescriber: a busca "Do Chocolatey" do "Incluir programa": o pacote mais novo do
+// repositório da comunidade, lido sem executar o script, e quem assina o instalador do link.
+func chocoDescriber(version string) api.ChocoDescriber {
+	ua := "patchd-server/" + version
+	hc := retry.Wrap(&http.Client{Timeout: time.Minute, CheckRedirect: pkgcache.HTTPSOnly}, nil)
+	return func(ctx context.Context, id string) (api.ChocoDescription, error) {
+		p, err := choco.Fetch(ctx, hc, choco.BaseURL, id, "", ua)
+		if err != nil {
+			return api.ChocoDescription{}, err
+		}
+		d, err := choco.Describe(p)
+		if err != nil {
+			if len(p.Embedded) > 0 {
+				return api.ChocoDescription{}, fmt.Errorf("o pacote %s %s traz o instalador dentro (%s): o patchd só usa o link do fabricante; inclua como instalador próprio",
+					id, p.Version, strings.Join(p.Embedded, ", "))
+			}
+			return api.ChocoDescription{}, err
+		}
+		out := api.ChocoDescription{Description: d}
+		out.SignerOrg, out.SignerSubject, out.SignerNote = signerOf(ctx, d.URL, ua)
+		return out, nil
+	}
+}
+
+// sigHTTP: a leitura da assinatura segue redirecionamentos http e https (o http do espelho não
+// muda nada: é para preencher o formulário; quem confere é o agente).
+var sigHTTP = &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
+		return fmt.Errorf("redirecionamento para %q", req.URL.Scheme)
+	}
+	if len(via) >= 10 {
+		return errors.New("mais de 10 redirecionamentos")
+	}
+	return nil
+}}
+
+// signerOf: quem assinou o instalador do link, só pelos pedaços com a assinatura (Range), sem
+// baixá-lo: a organização (O=) e o Subject, ou uma nota de por que não deu.
+func signerOf(ctx context.Context, link, ua string) (org, subject, note string) {
+	sctx, cancel := context.WithTimeout(ctx, signerTimeout)
+	defer cancel()
+	s, err := authsig.Remote(sctx, sigHTTP, link, ua)
+	switch {
+	case errors.Is(err, authsig.ErrUnsigned):
+		return "", "", "o instalador não é assinado"
+	case err != nil:
+		return "", "", "não deu para ler a assinatura do instalador: " + err.Error()
+	case s.Organization == "":
+		return "", "", "o certificado que assinou não tem O= (" + s.Subject + ")"
+	}
+	return s.Organization, s.Subject, ""
 }
 
 // signerTimeout: a leitura da assinatura do instalador na busca do "Incluir programa".

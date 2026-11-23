@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -89,5 +90,63 @@ func TestTemVersao(t *testing.T) {
 	pk := []store.ThirdPartyPackage{{AppID: "ff", Version: "140.5.0esr"}, {AppID: "x", Version: "1.0"}}
 	if !hasVersion(pk, "ff", "140.5.0esr") || !hasVersion(pk, "ff", "140.5.0") || hasVersion(pk, "ff", "140.6.0") || hasVersion(pk, "y", "1.0") {
 		t.Error("hasVersion")
+	}
+}
+
+// O programa incluído do Chocolatey: sem fonte gravada, o Baixar usa o pacote da regra (com o
+// tipo e os argumentos dela); com "baixar sozinho" (a linha winget só com o automático), também.
+func TestFonteDoProgramaDoChocolatey(t *testing.T) {
+	inst := authsigtest.Exe("Notepad++")
+	sum := sha256.Sum256(inst)
+	sha := hex.EncodeToString(sum[:])
+	var srvURL string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/package/notepadplusplus.install":
+			var b bytes.Buffer
+			zw := zip.NewWriter(&b)
+			fw, _ := zw.Create("notepadplusplus.install.nuspec")
+			fw.Write([]byte(`<package><metadata><id>notepadplusplus.install</id><version>8.9.8.20261101</version></metadata></package>`))
+			fw, _ = zw.Create("tools/chocolateyInstall.ps1")
+			fw.Write([]byte("$packageArgs = @{\n  url64bit = '" + srvURL + "/npp.8.9.8.Installer.x64.exe'\n  checksum64 = '" + sha + "'\n}\n"))
+			zw.Close()
+			w.Write(b.Bytes())
+		case "/npp.8.9.8.Installer.x64.exe":
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(inst))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+	rule, err := thirdparty.BuildCustom(thirdparty.CustomInput{Name: "Notepad++", Chocolatey: "notepadplusplus.install", InventoryName: "Notepad++",
+		NameMode: thirdparty.NamePrefix, InstallType: "nullsoft", Signer: "Notepad++"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := store.NewMemory()
+	ctx := context.Background()
+	sf := newSourceFetcher(st, t.TempDir(), "teste")
+	sf.f.HTTP = srv.Client()
+	sf.f.HTTP.CheckRedirect = pkgcache.HTTPSOnly
+	sf.f.Wait = time.Millisecond
+	sf.hc, sf.choco = srv.Client(), srv.URL+"/api/v2"
+	var out strings.Builder
+	if !sf.fetch(ctx, rule, "", nil, &out) {
+		t.Fatalf("baixar:\n%s", out.String())
+	}
+	pk, _ := st.ThirdPartyPackages(ctx)
+	if len(pk) != 1 || pk[0].AppID != rule.ID || pk[0].Version != "8.9.8" || pk[0].Type != "nullsoft" || pk[0].WingetID != "chocolatey:notepadplusplus.install" {
+		t.Fatalf("pacotes: %+v\n%s", pk, out.String())
+	}
+	// O automático: a versão de referência nova (a do pacote, que o servidor ainda não tem).
+	st.SaveThirdPartyVersion(ctx, rule.ID, "windows", "8.9.9", "chocolatey:notepadplusplus.install")
+	st.SaveInstallerSource(ctx, store.InstallerSource{AppID: rule.ID, Kind: store.SourceWinget, AutoFetch: true, UpdatedBy: "ana"})
+	m := thirdparty.Manifest{Version: 1, Apps: []thirdparty.App{rule}}
+	var log bytes.Buffer
+	af := &autoFetch{s: sf, rules: func() thirdparty.Manifest { return m }, logger: slog.New(slog.NewTextHandler(&log, nil)),
+		now: time.Now}
+	if n := af.pass(ctx); n != 1 || !strings.Contains(log.String(), "fonte=Chocolatey") {
+		t.Errorf("automático: %d\n%s", n, log.String())
 	}
 }
