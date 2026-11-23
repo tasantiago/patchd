@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -72,6 +73,9 @@ func CheckVendor(s store.InstallerSource, rule thirdparty.App) error {
 	}
 	if !winget.Supported(s.Type) {
 		return fmt.Errorf("tipo %q: use msi, wix, nullsoft, inno, burn ou exe", s.Type)
+	}
+	if err := linkFits(ExpandVendor(s.URLTemplate, "1.0"), s.Type); err != nil {
+		return err
 	}
 	if s.Type == "exe" && strings.TrimSpace(s.Arguments) == "" {
 		return errors.New("o exe genérico exige os argumentos da instalação silenciosa do fabricante")
@@ -183,18 +187,63 @@ func Vendor(ctx context.Context, hc *http.Client, f *pkgcache.Fetcher, st Store,
 		}
 		fmt.Fprintf(out, "  SHA-256     %s… (do arquivo do fabricante)\n", sha[:12])
 	}
-	return keep(ctx, f, st, a, link, sha, src.Type, src.Arguments, version, dir, out)
+	return keep(ctx, f, st, a, OriginVendor, link, sha, src.Type, src.Arguments, version, dir, out)
+}
+
+// As origens dos instaladores fora do winget (a coluna winget_id do registro, que o banco
+// exige preenchida para os baixados por https).
+const (
+	OriginVendor = "site-do-fabricante"
+	originChoco  = "chocolatey:"
+)
+
+// linkFits: o link termina numa extensão que contradiz o tipo (.exe para msi, .msi para exe).
+func linkFits(link, typ string) error {
+	ext := strings.ToLower(path.Ext(vendorFile(link)))
+	msi := typ == "msi" || typ == "wix"
+	switch {
+	case ext == ".exe" && msi:
+		return fmt.Errorf("o link é de um .exe, e o tipo escolhido é %s: escolha exe (ou nullsoft, inno, burn, conforme o instalador)", typ)
+	case ext == ".msi" && !msi:
+		return fmt.Errorf("o link é de um .msi, e o tipo escolhido é %s: escolha msi", typ)
+	}
+	return nil
+}
+
+// fileFits: o arquivo baixado é do formato do tipo (MSI: arquivo composto; os outros: executável).
+func fileFits(file, typ string) error {
+	fh, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+	head := make([]byte, 8)
+	if _, err := io.ReadFull(fh, head); err != nil {
+		return fmt.Errorf("o arquivo baixado é pequeno demais para um instalador")
+	}
+	isMSI := bytes.Equal(head, []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
+	isExe := bytes.HasPrefix(head, []byte("MZ"))
+	switch msi := typ == "msi" || typ == "wix"; {
+	case msi && !isMSI:
+		return fmt.Errorf("o arquivo baixado não é um MSI, e o tipo escolhido é %s", typ)
+	case !msi && !isExe:
+		return fmt.Errorf("o arquivo baixado não é um executável, e o tipo escolhido é %s", typ)
+	}
+	return nil
 }
 
 // keep baixa o link, confere (o SHA-256 conhecido, ou a assinatura exigida pela regra, sem
 // ele) e registra o instalador. sha vazio: calculado do que baixou.
-func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, link, sha, typ, args, version, dir string, out io.Writer) bool {
+func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, origin, link, sha, typ, args, version, dir string, out io.Writer) bool {
 	fail := func(format string, args ...any) bool {
 		fmt.Fprintf(out, "  ERRO        "+format+"\n", args...)
 		return false
 	}
 	if sha == "" && a.Install.Signer == "" {
 		return fail("sem o SHA-256 da fonte, o programa precisa exigir a assinatura (O=): é ela que garante o arquivo")
+	}
+	if err := linkFits(link, typ); err != nil {
+		return fail("%v", err)
 	}
 	msi := typ == "msi" || typ == "wix"
 	progress := func(line string) { fmt.Fprintf(out, "              %s\n", line) }
@@ -217,6 +266,17 @@ func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, 
 		}
 		fmt.Fprintf(out, "  SHA-256     %s… (calculado: a fonte não publica; vale a assinatura)\n", sha[:12])
 	}
+	// O arquivo que acabou de chegar e não serve não fica (o que já estava, fica).
+	drop := func() {
+		if !res.Cached || !known {
+			_ = os.Remove(res.Path)
+		}
+	}
+	if err := fileFits(res.Path, typ); err != nil {
+		drop()
+		fmt.Fprintf(out, "  RECUSADO    %v; nada foi guardado\n", err)
+		return false
+	}
 	// A assinatura: a da regra, já aqui (o agente confere de novo, com o Windows).
 	if want := a.Install.Signer; want != "" {
 		if err := checkSigner(res.Path, want); err != nil {
@@ -233,7 +293,7 @@ func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, 
 	} else {
 		fmt.Fprintf(out, "  baixado     %s (%s) em %s\n", pkgcache.FileName(sha, msi), pkgcache.Bytes(res.Size), res.Duration.Round(100*time.Millisecond))
 	}
-	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, Version: version, Architecture: "x64", Type: typ,
+	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, WingetID: origin, Version: version, Architecture: "x64", Type: typ,
 		Scope: "machine", URL: link, SHA256: sha, Size: res.Size, Arguments: cmp.Or(strings.TrimSpace(args), winget.SilentDefault(typ))})
 	var pc *store.PackageChangedError
 	switch {
@@ -241,11 +301,22 @@ func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, 
 		fmt.Fprintf(out, "  RECUSADO    %v\n", err)
 		return false
 	case err != nil:
+		if !res.Cached {
+			_ = os.Remove(res.Path) // baixado agora e sem registro: não fica órfão
+		}
 		return fail("registrar: %v", err)
 	case created:
 		fmt.Fprintln(out, "  registrado  novo")
 	default:
 		fmt.Fprintln(out, "  registrado  já estava")
+	}
+	// A cópia do mesmo arquivo com a extensão do outro tipo (um Baixar anterior com o tipo
+	// errado) não serve a ninguém: o formato acabou de ser conferido.
+	other := pkgcache.FileName(sha, !msi)
+	if _, err := os.Stat(filepath.Join(dir, other)); err == nil {
+		if os.Remove(filepath.Join(dir, other)) == nil {
+			fmt.Fprintf(out, "  removido    %s (o mesmo arquivo com a extensão do outro tipo)\n", other)
+		}
 	}
 	return true
 }

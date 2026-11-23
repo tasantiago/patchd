@@ -88,7 +88,12 @@ func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver stri
 	}
 	switch src.Kind {
 	case store.SourceChocolatey:
-		return tpfetch.Choco(ctx, s.hc, s.choco, s.f, s.st, rule, src, ver, s.dir, out)
+		ref, err := s.reference(ctx, rule.ID)
+		if err != nil {
+			fmt.Fprintf(out, "%s (%s)\n  ERRO        ler a versão de referência: %v\n", rule.Name, rule.ID, err)
+			return false
+		}
+		return tpfetch.Choco(ctx, s.hc, s.choco, s.f, s.st, rule, src, ver, ref, s.dir, out)
 	case store.SourceURL:
 	default:
 		return tpfetch.One(ctx, s.wg, s.f, s.st, rule, tpfetch.Options{Version: ver, Arch: "x64", Types: types}, s.dir, out)

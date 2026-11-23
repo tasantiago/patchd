@@ -1486,6 +1486,15 @@ winget-pkgs, que às vezes leva dias para ter a versão nova):
   muda de conteúdo antes de o pacote ser atualizado, e o download é recusado (SHA-256 diferente)
   até o pacote acompanhar; soma que não é SHA-256 vale como sem soma (exige a assinatura). Os
   pedidos ao Chocolatey são poucos (o Baixar e, no automático, a versão de referência nova).
+  **A versão**: quando o pacote escreve a versão de outro jeito que o Windows (o Adobe Reader:
+  `2026.3.22110` no pacote, `26.003.22110` em Programas e Recursos), e o número da versão de
+  referência está no link (`…/2600322110/…`), vale a de referência: o andamento diz "a de
+  referência; o pacote escreve …". Sem como casar, fica a do pacote, com o aviso "confira
+  antes de aprovar".
+- **O tipo confere com o arquivo**: o link `.exe` com o tipo msi (ou `.msi` com exe) é recusado
+  antes de baixar; o arquivo baixado que não é do formato do tipo (MSI ou executável) não
+  fica. Um Baixar anterior com o tipo errado deixou o arquivo com a extensão errada: o próximo
+  Baixar certo o apaga ("removido … o mesmo arquivo com a extensão do outro tipo").
 - **Arquivo de SHA-256 do fabricante** (opcional): o arquivo com linhas "SHA-256 nome" (o
   formato do `sha256sum`); o servidor só guarda se o baixado conferir. Sem ele, o servidor
   calcula o SHA-256 do que baixou e o programa **tem de exigir a assinatura**: o servidor confere
