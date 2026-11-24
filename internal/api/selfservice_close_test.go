@@ -89,3 +89,28 @@ func TestCentralFecharEInstalar(t *testing.T) {
 		t.Errorf("sem a capacidade: %+v", r)
 	}
 }
+
+// A tela do autoatendimento mostra o nome de exibição de quem pediu (o do AD, dos conectados
+// nas máquinas) e a conta embaixo; sem o nome, só a conta.
+func TestAutoatendimentoComONomeDoUsuario(t *testing.T) {
+	m, _ := thirdparty.Default()
+	_, priv, _ := jobs.GenerateKey()
+	h, st, _ := ambientePaginas(t, api.WithJobKey(priv), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
+	ctx := context.Background()
+	tok, hash := identity.NewSecret(identity.EnrollmentPrefix)
+	_, _ = st.CreateEnrollmentToken(ctx, hash, "teste", time.Now().Add(time.Hour), 1)
+	maq := registra(t, h, tok)
+	_ = st.SaveHostState(ctx, maq.MachineID, &protocol.MachineState{Users: []protocol.LoggedUser{
+		{Account: `EXEMPLO\ana.souza`, DisplayName: "Ana Souza", Session: protocol.SessionConsole, Active: true}}}, "192.0.2.1")
+	for _, who := range []string{`EXEMPLO\ana.souza`, `EXEMPLO\outro`} {
+		raw, _ := json.Marshal(jobs.ThirdPartyParams{App: "7zip", Version: "26.04", SHA256: strings.Repeat("a", 64), Size: 1, Installer: "exe", Args: []string{"/S"}})
+		if _, err := jobs.Issue(ctx, st, priv, jobs.Request{MachineID: maq.MachineID, Type: jobs.TypeThirdParty, TTL: time.Hour,
+			By: "autoatendimento: " + who, Params: raw}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := pagina(h, "GET", "/painel/autoatendimento", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `<td>Ana Souza<br><span class="muted">(EXEMPLO\ana.souza)</span></td>`) || !strings.Contains(b, `<td>EXEMPLO\outro</td>`) {
+		t.Errorf("tela:\n%s", b)
+	}
+}

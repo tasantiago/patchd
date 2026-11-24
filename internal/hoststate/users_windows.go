@@ -107,3 +107,14 @@ func localFullName(account string) string {
 	defer windows.NetApiBufferFree(b)
 	return windows.UTF16PtrToString((*windows.UserInfo10)(unsafe.Pointer(b)).FullName)
 }
+
+// DisplayName: o nome de exibição da conta DOMINIO\usuario (o displayName do AD, ou o nome
+// completo da conta local), do mesmo cache da coleta dos usuários conectados. "" sem nome.
+func DisplayName(account string) string {
+	domain, user, ok := strings.Cut(account, `\`)
+	if !ok || domain == "" || user == "" {
+		return ""
+	}
+	computer, _ := windows.ComputerName()
+	return clip(names.get(account, func() string { return windowsDisplayName(domain, user, computer) }))
+}

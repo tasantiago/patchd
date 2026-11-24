@@ -668,3 +668,19 @@ func TestLojaPorCategoria(t *testing.T) {
 		t.Errorf("sem categorias:\n%s", b)
 	}
 }
+
+// O cabeçalho da Central com o nome de exibição (o do AD, que o agente acha): "Ana Souza" e,
+// embaixo, a conta; sem o nome, a conta como antes.
+func TestCentralComONomeDoUsuario(t *testing.T) {
+	loja := localapi.Response{OK: true, Account: `EXEMPLO\ana.souza`, DisplayName: "Ana Souza", Catalog: &protocol.SelfServiceCatalog{}}
+	a := New(func(_ context.Context, r localapi.Request) (localapi.Response, error) { return loja, nil })
+	a.Addr = "127.0.0.1:5555"
+	b := get(a, a.base()).Body.String()
+	if !strings.Contains(b, `<strong>Ana Souza</strong><small>(EXEMPLO\ana.souza) · este computador</small>`) || !strings.Contains(b, `aria-hidden="true">AS</span>`) {
+		t.Errorf("com o nome:\n%s", b)
+	}
+	loja.DisplayName = ""
+	if b := get(a, a.base()).Body.String(); !strings.Contains(b, `<strong>ana.souza</strong><small>EXEMPLO · este computador</small>`) {
+		t.Error("sem o nome")
+	}
+}
