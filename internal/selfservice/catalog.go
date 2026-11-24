@@ -107,6 +107,8 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 				it.Action = ActionInstalled
 			case d.State == tpinstall.StateUpdate:
 				it.Action, it.Target, it.Replaces = ActionUpdate, d.Package.Version, d.Regularize != nil
+			case d.State == tpinstall.StateCurrent && rule.NoVersion():
+				it.Action = ActionInstalled // sem versão: instalado, e ele mesmo se atualiza
 			case d.State == tpinstall.StateCurrent:
 				it.Action = ActionCurrent
 			case d.State == tpinstall.StateNoPackage:
@@ -144,10 +146,19 @@ func userItem(it *Item, o store.SelfServiceOffer, rule thirdparty.App, m Machine
 			it.Installed = s.Version
 		}
 	}
+	if rule.NoVersion() {
+		for _, s := range m.Software {
+			if s.Scope == "user" && m.UserSID != "" && strings.EqualFold(s.User, m.UserSID) && !s.SystemComponent && rule.Matches(s.Name, s.Publisher) {
+				it.Installed = s.Version
+			}
+		}
+	}
 	pk := tpinstall.ForUserInstall(rule, approved, m.Arch)
 	switch {
 	case it.Installed == "" && !o.CanInstall:
 		return false
+	case it.Installed != "" && rule.NoVersion():
+		it.Action = ActionInstalled
 	case it.Installed != "" && !o.CanUpdate:
 		it.Action = ActionInstalled
 	case !m.CanUserInstall:

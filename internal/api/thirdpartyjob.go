@@ -106,6 +106,9 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		}
 		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo"
 	}
+	if rule := a.installRule(p.App); rule != nil && rule.NoVersion() {
+		return a.judgeNoVersion(inv, p, agent)
+	}
 	if p.User != "" {
 		return a.judgeUser(inv, p, agent)
 	}
@@ -138,6 +141,28 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC mostra %s %s, abaixo de %s; agente: %s", when, p.App, e.Software.Version, p.Version, agent)
 	}
 	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC mostra %s (%s); agente: %s", when, nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
+}
+
+// judgeNoVersion: o programa que não informa a versão (se atualiza sozinho). Basta a entrada
+// aparecer no inventário: a da máquina, ou a do perfil de quem pediu (o job por usuário).
+func (a *api) judgeNoVersion(inv protocol.InventoryReport, p jobs.ThirdPartyParams, agent string) (string, string) {
+	machine, user := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
+	if p.User != "" {
+		for _, e := range user {
+			if p.UserSID == "" || strings.EqualFold(e.Software.User, p.UserSID) {
+				return jobs.StateDone, fmt.Sprintf("o inventário mostra %s no perfil de %s (o programa não informa a versão); agente: %s",
+					nameVersion(e.Software.Name, e.Software.Version), p.User, agent)
+			}
+		}
+		return jobs.StateFailed, fmt.Sprintf("o agente informou sucesso, mas o inventário não mostra o programa no perfil de %s; agente: %s", p.User, agent)
+	}
+	if len(machine) > 0 {
+		e := machine[0]
+		return jobs.StateDone, fmt.Sprintf("o inventário mostra %s (o programa não informa a versão: instalado conta como em dia); agente: %s",
+			nameVersion(e.Software.Name, e.Software.Version), agent)
+	}
+	return jobs.StateFailed, "o agente informou sucesso, mas o inventário não mostra o programa instalado para a máquina toda: " +
+		missingWhy(inv, a.tpManifest.Get(), p.App, user) + "; agente: " + agent
 }
 
 // judgeUser: o job no perfil do usuário (a Central, programa por usuário). Vale a instalação

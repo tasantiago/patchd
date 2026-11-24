@@ -164,6 +164,11 @@ type Install struct {
 	// o perfil do SYSTEM): só a Central de software, pedido pelo usuário, roda o instalador
 	// como ele, na sessão dele. Campanhas e a Padronização deixam o programa de fora.
 	PerUser bool `json:"per_user,omitempty"`
+	// NoVersion (Windows): o programa não informa a versão em Programas e Recursos (o PJeOffice
+	// Pro: "Auto Updatable") porque se atualiza sozinho. Achado no inventário, conta como
+	// instalado e em dia: a avaliação, as campanhas e a Central não comparam versão; o job de
+	// instalação conclui quando a entrada aparece.
+	NoVersion bool `json:"no_version,omitempty"`
 }
 
 // RegularizeOver: a regularização instala por cima, sem remover a instalação antiga.
@@ -192,6 +197,9 @@ func (a App) Uploaded() bool { return a.Install != nil && a.Install.Upload }
 
 // FromChocolatey: o instalador vem do pacote do Chocolatey (sem winget).
 func (a App) FromChocolatey() bool { return a.Install != nil && a.Install.Chocolatey != "" }
+
+// NoVersion: o programa não informa a versão (se atualiza sozinho): instalado é em dia.
+func (a App) NoVersion() bool { return a.Install != nil && a.Install.NoVersion }
 
 // PerUser: o programa instala no perfil do usuário, só pela Central de software.
 func (a App) PerUser() bool { return a.Install != nil && a.Install.PerUser && a.OS == "windows" }

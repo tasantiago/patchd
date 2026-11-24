@@ -1668,6 +1668,32 @@ A `package fetch` da linha de comando não baixa os programas do Chocolatey (sã
 Editar não troca o pacote nem a origem (winget, Chocolatey, instalador próprio): exclua e
 inclua de novo. Na auditoria, `terceiros.incluir` diz "Chocolatey <pacote> <tipo>".
 
+## Programas que não informam a versão (se atualizam sozinhos)
+
+Alguns programas aparecem em Programas e Recursos sem número de versão: o PJeOffice Pro mostra
+`DisplayVersion = Auto Updatable`, porque se atualiza sozinho. Sem a opção abaixo, o patchd os
+trata como "versão ilegível": a avaliação e a lista de terceiros mostram o problema, a Central
+mostra o programa indisponível para quem já o tem, e o pedido de instalação termina "falhou"
+mesmo com o programa instalado ("versão que não se compara").
+
+Em **Incluir programa** (ou Editar), marque **O programa não informa a versão (se atualiza
+sozinho)**. Daí:
+
+- achado no inventário, o programa conta como **instalado e em dia**, qualquer que seja o texto
+  da versão: na avaliação do parque, na lista de terceiros, no plano das campanhas (que o deixam
+  de fora) e na Padronização;
+- na Central, quem não tem vê **Instalar**; quem tem vê **instalado** (sem "atualizar": ele se
+  atualiza sozinho). Ofereça só "instalar" no autoatendimento;
+- o pedido de instalação **conclui quando a entrada aparece** no inventário (o resultado diz "o
+  programa não informa a versão: instalado conta como em dia"); sem a entrada, falha dizendo
+  por quê, como os outros;
+- a versão do instalador que você envia (ou baixa) serve só para identificar o arquivo e a
+  aprovação: use a do site do fabricante ou a data (`2026.11.24`).
+
+O PJeOffice Pro, por exemplo: instalador próprio, tipo `inno` (o registro mostra "Inno Setup"),
+nome no inventário `PJeOffice Pro` (igual), fabricante `Conselho Nacional de Justiça - CNJ`. No
+manifesto, o campo é `install.no_version`.
+
 ## Programas que só instalam no perfil do usuário (pela Central)
 
 Alguns instaladores só instalam no perfil de quem os roda (o winget diz `Scope: user`; o

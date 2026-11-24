@@ -169,3 +169,22 @@ func TestProgramaComNomeParecidoEJaInstalado(t *testing.T) {
 		t.Errorf("versão de antes: %s %s", st, d)
 	}
 }
+
+// O job do programa sem versão conclui quando a entrada aparece no inventário (sem comparar o
+// "Auto Updatable" com a versão do job), e falha sem ela.
+func TestJulgarProgramaSemVersao(t *testing.T) {
+	rule, err := thirdparty.BuildCustom(thirdparty.CustomInput{Name: "PJeOffice Pro", InventoryName: "PJeOffice Pro", NameMode: thirdparty.NameEquals,
+		InstallType: "inno", UnsignedReason: "teste", Upload: true, NoVersion: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &api{tpManifest: thirdparty.NewLive(thirdparty.Manifest{Version: 1, Apps: []thirdparty.App{rule}})}
+	p := jobs.ThirdPartyParams{App: rule.ID, Version: "2026.11.24"}
+	inv := protocol.InventoryReport{OS: protocol.OSInfo{ID: "windows"}, Software: []protocol.Software{{Name: "PJeOffice Pro", Version: "Auto Updatable", Scope: "machine"}}}
+	if st, d := a.judgeNoVersion(inv, p, "código 0"); st != jobs.StateDone || !strings.Contains(d, "não informa a versão") {
+		t.Errorf("com a entrada: %s %s", st, d)
+	}
+	if st, _ := a.judgeNoVersion(protocol.InventoryReport{OS: protocol.OSInfo{ID: "windows"}}, p, "código 0"); st != jobs.StateFailed {
+		t.Errorf("sem a entrada: %s", st)
+	}
+}

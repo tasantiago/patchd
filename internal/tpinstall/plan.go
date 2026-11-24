@@ -272,6 +272,11 @@ func decide(d *Decision, pkgs []store.ThirdPartyPackage, arch string) {
 	}
 	e := d.Entries[0]
 	d.Installed = e.Installed
+	if d.App.NoVersion() {
+		d.State = StateCurrent
+		d.Reason = "o programa não informa a versão (se atualiza sozinho): instalado conta como em dia"
+		return
+	}
 	exact := false
 	if e.Kind == KindBundle {
 		if !slices.Contains(families[KindBundle], d.App.Install.Type) {

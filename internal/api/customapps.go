@@ -100,6 +100,7 @@ type customForm struct {
 	NoSignature                                                                 bool
 	UninstallFirst                                                              bool   // remover a versão instalada antes de atualizar
 	PerUser                                                                     bool   // instala no perfil do usuário, só pela Central
+	NoVersion                                                                   bool   // o programa não informa a versão (se atualiza sozinho)
 	Arguments                                                                   string // os argumentos no lugar dos do winget
 	// O atalho na área de trabalho de todos os usuários.
 	ShortName, ShortTarget, ShortIcon string
@@ -130,6 +131,7 @@ func formOf(r thirdparty.App) customForm {
 		f.NoSignature = r.Install.Signer == ""
 		f.UninstallFirst = r.Install.UninstallFirst
 		f.PerUser = r.Install.PerUser
+		f.NoVersion = r.Install.NoVersion
 		f.Arguments = r.Install.Arguments
 	}
 	if r.Shortcut != nil {
@@ -145,11 +147,11 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 		Publisher: strings.TrimSpace(r.PostFormValue("fabricante")), Type: r.PostFormValue("tipo"),
 		Signer: strings.TrimSpace(r.PostFormValue("assinante")), Unsigned: strings.TrimSpace(r.PostFormValue("sem_assinatura")),
 		Processes: strings.TrimSpace(r.PostFormValue("processos")), NoSignature: r.PostFormValue("assinatura") == "nao",
-		UninstallFirst: r.PostFormValue("remover_antes") == "1", PerUser: r.PostFormValue("por_usuario") == "1", Arguments: strings.TrimSpace(r.PostFormValue("argumentos")),
+		UninstallFirst: r.PostFormValue("remover_antes") == "1", PerUser: r.PostFormValue("por_usuario") == "1", NoVersion: r.PostFormValue("sem_versao") == "1", Arguments: strings.TrimSpace(r.PostFormValue("argumentos")),
 		ShortName: strings.TrimSpace(r.PostFormValue("atalho_nome")), ShortTarget: strings.TrimSpace(r.PostFormValue("atalho_executavel")),
 		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone")), Chocolatey: strings.TrimSpace(r.PostFormValue("chocolatey"))}
 	in := thirdparty.CustomInput{Name: f.Name, WingetID: f.Winget, InventoryName: f.Inventory, NameMode: f.Mode, Publisher: f.Publisher,
-		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio", UninstallFirst: f.UninstallFirst, PerUser: f.PerUser, Arguments: f.Arguments,
+		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio", UninstallFirst: f.UninstallFirst, PerUser: f.PerUser, NoVersion: f.NoVersion, Arguments: f.Arguments,
 		ShortcutName: f.ShortName, ShortcutTarget: f.ShortTarget, ShortcutIcon: f.ShortIcon}
 	switch r.PostFormValue("origem") {
 	case "proprio":
