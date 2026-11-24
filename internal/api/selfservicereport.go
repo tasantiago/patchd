@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/selfservice"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Autoatendimento no painel (Aula 17.7): o que os usuários pediram, como terminou e o que
@@ -29,6 +31,40 @@ const (
 )
 
 var ssReportPeriods = []int{7, 30, 90}
+
+// A lista de pedidos: os itens por página e as situações do filtro (a do job, uma por uma).
+var (
+	ssPerPage    = []int{25, 50, 100}
+	ssSituations = []string{jobs.StatePending, jobs.StateDelivered, jobs.StateDone, jobs.StatePostponed, jobs.StateFailed,
+		jobs.StateRejected, jobs.StateExpired, jobs.StateCanceled, jobs.StateDismissed}
+)
+
+// ssQuery: o filtro da lista de pedidos, como vai na URL.
+type ssQuery struct {
+	Days                int
+	Group, Situation, Q string // o grupo (os cartões), a situação do job e a busca
+	Page, Per           int
+}
+
+func (q ssQuery) href() string {
+	v := url.Values{"dias": {strconv.Itoa(q.Days)}}
+	if q.Group != "" {
+		v.Set("estado", q.Group)
+	}
+	if q.Situation != "" {
+		v.Set("situacao", q.Situation)
+	}
+	if q.Q != "" {
+		v.Set("q", q.Q)
+	}
+	if q.Per != ssPerPage[1] {
+		v.Set("por", strconv.Itoa(q.Per))
+	}
+	if q.Page > 1 {
+		v.Set("pagina", strconv.Itoa(q.Page))
+	}
+	return "/painel/autoatendimento?" + v.Encode() + "#pedidos"
+}
 
 type ssKPI struct {
 	Label, Sub, Color, Filter string
@@ -55,17 +91,24 @@ type ssTopRow struct {
 
 type ssReportView struct {
 	pageBase
-	Waiting  []ssWaitingRow // Aula 18.3
-	Days     int
-	Periods  []int
-	Filter   string
-	KPIs     []ssKPI
-	Users    int
-	Rows     []ssReqRow
-	Shown    int
-	Total    int
-	Refusals []ssRefusalRow
-	Top      []ssTopRow
+	// O filtro e as páginas da lista de pedidos.
+	Situation, Q      string
+	Situations, Pers  []optView
+	HasFilter         bool
+	Range, Prev, Next string
+	ClearHref         string
+	Hidden            []optView      // o período e o grupo, no formulário do filtro
+	Waiting           []ssWaitingRow // Aula 18.3
+	Days              int
+	Periods           []int
+	Filter            string
+	KPIs              []ssKPI
+	Users             int
+	Rows              []ssReqRow
+	Shown             int
+	Total             int
+	Refusals          []ssRefusalRow
+	Top               []ssTopRow
 }
 
 // ssGroup agrupa os estados do job como a TI lê o resultado de um pedido.
@@ -105,6 +148,23 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 	case "andamento", "concluido", "adiado", "falha":
 		v.Filter = f
 	}
+	sq := ssQuery{Days: v.Days, Group: v.Filter, Per: ssPerPage[1], Page: 1}
+	if st := r.URL.Query().Get("situacao"); slices.Contains(ssSituations, st) {
+		sq.Situation = st
+	}
+	sq.Q = texto.Clip(strings.TrimSpace(r.URL.Query().Get("q")), maxSearchLen)
+	if n, _ := strconv.Atoi(r.URL.Query().Get("por")); slices.Contains(ssPerPage, n) {
+		sq.Per = n
+	}
+	if n, _ := strconv.Atoi(r.URL.Query().Get("pagina")); n > 1 {
+		sq.Page = n
+	}
+	v.Situation, v.Q, v.HasFilter = sq.Situation, sq.Q, sq.Situation != "" || sq.Q != ""
+	v.ClearHref = ssQuery{Days: v.Days, Group: v.Filter, Per: sq.Per, Page: 1}.href()
+	v.Hidden = []optView{{Value: "dias", Label: strconv.Itoa(v.Days)}}
+	if v.Filter != "" {
+		v.Hidden = append(v.Hidden, optView{Value: "estado", Label: v.Filter})
+	}
 	a.expireJobs(r)
 	since := a.now().Add(-time.Duration(v.Days) * 24 * time.Hour)
 	list, err := a.store.SelfServiceJobs(r.Context(), since, ssReportJobs)
@@ -136,6 +196,7 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 	}
 
 	count := map[string]int{}
+	situation := map[string]int{} // por situação do job, dentro do grupo escolhido
 	users := map[string]bool{}
 	top := map[string]int{}
 	now := a.now()
@@ -151,9 +212,16 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 		if v.Filter != "" && g != v.Filter {
 			continue
 		}
+		situation[j.State]++
+		if sq.Situation != "" && j.State != sq.Situation {
+			continue
+		}
 		name := "—"
 		if n, ok := names[j.MachineID]; ok {
 			name = n
+		}
+		if sq.Q != "" && !ssMatches(sq.Q, user, person(user), name, j.MachineID, what) {
+			continue
 		}
 		v.Rows = append(v.Rows, ssReqRow{ID: j.ID, When: ago(now.Sub(j.CreatedAt)), User: user, UserName: person(user), MachineID: j.MachineID,
 			Short: short(j.MachineID), Name: name, What: what, State: j.State, StateLabel: stateLabel(j.State),
@@ -188,6 +256,30 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 		v.Top = v.Top[:ssReportTop]
 	}
 	v.Shown = len(v.Rows)
+	// A situação (com quantos há, no grupo) e os itens por página, para o formulário.
+	v.Situations = []optView{{Value: "", Label: "Qualquer situação", Selected: sq.Situation == ""}}
+	for _, st := range ssSituations {
+		if situation[st] > 0 || st == sq.Situation {
+			v.Situations = append(v.Situations, optView{Value: st, Label: fmt.Sprintf("%s (%d)", stateLabel(st), situation[st]), Selected: st == sq.Situation})
+		}
+	}
+	for _, n := range ssPerPage {
+		v.Pers = append(v.Pers, optView{Value: strconv.Itoa(n), Label: strconv.Itoa(n), Selected: n == sq.Per})
+	}
+	// As páginas.
+	page, pages := pageOf(strconv.Itoa(sq.Page), len(v.Rows), sq.Per)
+	from, to := (page-1)*sq.Per, min(page*sq.Per, len(v.Rows))
+	if len(v.Rows) > 0 {
+		v.Range = fmt.Sprintf("%d–%d de %d", from+1, to, len(v.Rows))
+	}
+	at := func(n int) string { c := sq; c.Page = n; return c.href() }
+	if page > 1 {
+		v.Prev = at(page - 1)
+	}
+	if page < pages {
+		v.Next = at(page + 1)
+	}
+	v.Rows = v.Rows[from:to]
 
 	// Aula 18.3: os pedidos que esperam a TI, de todas as máquinas.
 	if _, err := a.store.ExpireSelfServiceRequests(r.Context(), now.Add(-store.RequestTTL), now); err != nil {
@@ -318,6 +410,13 @@ func ssWhat(j store.JobRow, appNames map[string]string, loc *time.Location) (app
 	return "", typeLabel(j.Type)
 }
 
+// ssMatches: a busca da lista de pedidos, sem diferença de maiúsculas, na conta, no nome de
+// quem pediu, no nome da máquina, no ID dela e no pedido (o programa e a versão).
+func ssMatches(q string, fields ...string) bool {
+	q = strings.ToLower(q)
+	return slices.ContainsFunc(fields, func(f string) bool { return strings.Contains(strings.ToLower(f), q) })
+}
+
 // ss-usuario: o nome de exibição (o do AD, pelos usuários conectados nas máquinas) e, embaixo,
 // a conta; sem o nome, só a conta.
 var _ = template.Must(pages.New("ss-usuario").Parse(`{{if .UserName}}{{.UserName}}<br><span class="muted">({{.User}})</span>{{else}}{{.User}}{{end}}`))
@@ -327,7 +426,7 @@ var _ = template.Must(pages.New("autoatendimento-painel").Parse(`{{template "top
 {{template "automacao-abas" "autoatendimento"}}
 <p class="muted">O que os usuários pediram pela Central de software. A oferta (quem pode pedir o quê) fica em Configuração › Autoatendimento.
 Período: {{range .Periods}}{{if eq . $.Days}}<b>{{.}} dias</b>{{else}}<a href="?dias={{.}}{{if $.Filter}}&amp;estado={{$.Filter}}{{end}}">{{.}} dias</a>{{end}} {{end}}</p>
-<ul class="kpis">{{range .KPIs}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{if eq .Filter "#aprovacao"}}#aprovacao{{else}}?dias={{$.Days}}{{if .Filter}}&amp;estado={{.Filter}}{{end}}{{end}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Color .N}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
+<ul class="kpis">{{range .KPIs}}<li><a class="kpi{{if .Active}} ativo{{end}}" href="{{if eq .Filter "#aprovacao"}}#aprovacao{{else}}?dias={{$.Days}}{{if .Filter}}&amp;estado={{.Filter}}{{end}}{{if $.Q}}&amp;q={{$.Q}}{{end}}#pedidos{{end}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Color .N}}">{{.N}}</span><span class="kpi-sub">{{.Sub}}</span></a></li>{{end}}
 <li><div class="kpi"><span class="kpi-rot">Recusados</span><span class="kpi-val v-cinza">{{len .Refusals}}{{if ge (len .Refusals) 30}}+{{end}}</span><span class="kpi-sub">pedidos fora da oferta ou da regra</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Usuários</span><span class="kpi-val">{{.Users}}</span><span class="kpi-sub">com algum pedido atendido</span></div></li></ul>
 {{if .Waiting}}<div class="card" id="aprovacao"><div class="card-cab"><h2>Aguardando a TI</h2><span class="muted">pedidos de programas com aprovação; sem decisão em 7 dias, expiram</span></div>
@@ -335,12 +434,18 @@ Período: {{range .Periods}}{{if eq . $.Days}}<b>{{.}} dias</b>{{else}}<a href="
 <tbody>{{range .Waiting}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{template "ss-usuario" .}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td><td>{{.What}}</td><td>{{.Action}}</td><td>{{.Expires}}</td>
 {{if $.Admin}}<td><div class="decisao"><form method="post" action="/painel/autoatendimento/pedidos/{{.ID}}/aprovar"><button type="submit">Aprovar</button></form>
 <form method="post" action="/painel/autoatendimento/pedidos/{{.ID}}/recusar"><input type="text" name="motivo" maxlength="200" placeholder="motivo (o usuário vê)" aria-label="motivo da recusa do pedido {{.ID}}"><button class="perigo" type="submit">Recusar</button></form></div></td>{{end}}</tr>{{end}}</tbody></table></div></div>{{end}}
-<div class="card"><div class="card-cab"><h2>Pedidos{{if .Filter}} · {{range .KPIs}}{{if .Active}}{{.Label}}{{end}}{{end}}{{end}}</h2><span class="muted">{{.Shown}} de {{.Total}} nos últimos {{.Days}} dias{{if ge .Total 500}} (os 500 mais recentes){{end}}</span></div>
+<div class="card" id="pedidos"><div class="card-cab"><h2>Pedidos{{if .Filter}} · {{range .KPIs}}{{if .Active}}{{.Label}}{{end}}{{end}}{{end}}</h2><span class="muted">{{.Shown}} de {{.Total}} nos últimos {{.Days}} dias{{if ge .Total 500}} (os 500 mais recentes){{end}}</span></div>
+<form class="busca" method="get" action="/painel/autoatendimento#pedidos">{{range .Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}
+<select name="situacao" aria-label="situação do pedido">{{range .Situations}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Usuário, nome, máquina ou programa" aria-label="buscar pedido">
+<label>Por página <select name="por">{{range .Pers}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<button type="submit">Filtrar</button>{{if .HasFilter}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Job</th><th>Quando</th><th>Usuário</th><th>Máquina</th><th>Nome</th><th>Pedido</th><th>Estado</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{template "ss-usuario" .}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
 <td>{{.What}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nenhum pedido{{if .Filter}} neste estado{{end}} no período.</p>{{end}}</div>
+<nav class="paginas" aria-label="páginas"><span class="muted">{{.Range}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
+{{else}}<p class="muted">Nenhum pedido{{if or .Filter .HasFilter}} com esse filtro{{end}} no período.</p>{{end}}</div>
 <div class="duas-col">
 <div class="card"><div class="card-cab"><h2>Mais pedidos</h2><span class="muted">programas, no período</span></div>
 {{if .Top}}<div class="tabela"><table><thead><tr><th>Programa</th><th class="num">Pedidos</th></tr></thead>
