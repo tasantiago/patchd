@@ -42,7 +42,7 @@ func newThirdParty(client *agent.Client, dataDir string, allowed []string) func(
 		InstallerBusy: platform.WindowsInstallerBusy,
 		// Fechar o programa com aviso (opção da campanha, no horário dela).
 		Closer: &tpexec.AppCloser{Sessions: platform.Sessions, Notify: platform.NotifySession,
-			Ask: platform.AskClose, Kill: platform.KillProcess},
+			Ask: platform.AskClose, Kill: platform.KillProcess, UserSession: platform.UserSession},
 	}
 	// Regularização: a instalação de outro tipo sai antes da aprovada (o comando vem do
 	// registro desta máquina, lido na hora).

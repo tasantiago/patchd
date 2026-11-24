@@ -138,3 +138,50 @@ func TestFecharProgramaComAviso(t *testing.T) {
 		t.Fatalf("nem à força: %v", err)
 	}
 }
+
+// "Fechar e instalar" da Central (close com user): sem aviso; fecha só o programa da sessão de
+// quem pediu (pede, e força em 15 s); aberto na sessão de outra pessoa, não mexe em nada.
+func TestFecharAPedidoDoUsuario(t *testing.T) {
+	inst := []byte("MZ instalador do notepad++")
+	ctx := context.Background()
+	prepara := func(f *fechaFalso) (*Executor, *runnerFalso, jobs.ThirdPartyParams) {
+		run := &runnerFalso{}
+		e, _ := executor(t, inst, run, google, nil)
+		e.Processes, e.Closer, e.Sleep = f.lista, f.closer(), f.sleep
+		e.Closer.UserSession = func(sid, account string) (uint32, string, error) {
+			if account != `TJ\ana` {
+				return 0, "", platform.ErrNoUserSession
+			}
+			return 4, "S-1-5-21-1-2-3-1001", nil
+		}
+		p := params(inst, "nullsoft", "/S")
+		p.Processes = []string{"notepad++.exe"}
+		p.Close = &jobs.CloseApps{User: `TJ\ana`, UserSID: "S-1-5-21-1-2-3-1001"}
+		if err := p.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		return e, run, p
+	}
+	// Na sessão dela, não atende o pedido: força, sem aviso, e instala.
+	f := &fechaFalso{abertos: []platform.Process{{Name: "notepad++.exe", PID: 41, Session: 4}}, ativas: map[uint32]bool{4: true}}
+	e, run, p := prepara(f)
+	d, err := e.Install(ctx, 1, p)
+	if err != nil || run.prog == "" || len(f.avisos) != 0 || !slices.Equal(f.pedidos, []uint32{4}) || !slices.Equal(f.mortos, []uint32{41}) ||
+		f.esperado > time.Minute || !strings.Contains(d, `fechado a pedido de TJ\ana, pela Central: fechado à força`) {
+		t.Fatalf("na sessão dela: %q %v (pedidos %v, mortos %v, esperou %v)", d, err, f.pedidos, f.mortos, f.esperado)
+	}
+	// Aberto também na sessão de outra pessoa: nada fecha, adia.
+	f = &fechaFalso{abertos: []platform.Process{{Name: "notepad++.exe", PID: 41, Session: 4}, {Name: "notepad++.exe", PID: 61, Session: 6}},
+		ativas: map[uint32]bool{4: true, 6: true}}
+	e, run, p = prepara(f)
+	if _, err := e.Install(ctx, 2, p); !errors.Is(err, jobs.ErrProgramOpen) || run.prog != "" || len(f.pedidos) != 0 || len(f.mortos) != 0 ||
+		!strings.Contains(err.Error(), "sessão de outro usuário (sessão 6)") {
+		t.Errorf("outra pessoa: %v", err)
+	}
+	// O job: com user, sem aviso; o aviso com user não passa.
+	q := p
+	q.Close = &jobs.CloseApps{User: `TJ\ana`, NoticeMinutes: 5}
+	if err := q.Validate(); err == nil {
+		t.Error("close com user e aviso passou")
+	}
+}

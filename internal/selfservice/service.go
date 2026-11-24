@@ -99,6 +99,9 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	if out.Requests, err = s.requests(ctx, machineID, u.Account); err != nil {
 		return out, err
 	}
+	if err := s.closeOffers(ctx, machineID, &out); err != nil {
+		return out, err
+	}
 	out.Reboot, err = s.rebootState(ctx, machineID, u.Account)
 	return out, err
 }
@@ -327,6 +330,21 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 	if why != "" {
 		return refuse(why, "Este programa está indisponível agora. Avise o suporte.")
 	}
+	if req.Close {
+		// "Fechar o programa e instalar": quem pediu já confirmou; o agente fecha só o da sessão dele.
+		ok, err := s.canCloseForUser(ctx, machineID, p)
+		if err != nil {
+			return o, err
+		}
+		if !ok {
+			return refuse("fechar pelo usuário: sem a lista de processos, ou agente sem a capacidade",
+				"O patchd não consegue fechar este programa neste computador. Feche-o você mesmo e peça de novo.")
+		}
+		p.Close = &jobs.CloseApps{User: req.Account, UserSID: req.SID}
+		if err := p.Validate(); err != nil {
+			return refuse("fechar pelo usuário: "+err.Error(), "Pedido inválido.")
+		}
+	}
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return o, err
@@ -344,8 +362,12 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 	if req.Action == protocol.SelfServiceUpdate {
 		verb = "atualização"
 	}
-	o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceCreated, JobID: rec.ID,
-		Message: fmt.Sprintf("Pedido aceito: %s de %s %s. Feche o programa, se estiver aberto; o patchd avisa quando terminar.", verb, it.Name, p.Version)}
+	msg := fmt.Sprintf("Pedido aceito: %s de %s %s. Feche o programa, se estiver aberto; o patchd avisa quando terminar.", verb, it.Name, p.Version)
+	if p.Close != nil {
+		msg = fmt.Sprintf("Pedido aceito: o patchd vai fechar %s (o que não estiver salvo nele se perde) e fazer a %s para a versão %s. Ele avisa quando terminar.",
+			it.Name, verb, p.Version)
+	}
+	o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceCreated, JobID: rec.ID, Message: msg}
 	return o, nil
 }
 
@@ -751,4 +773,62 @@ func (s *Service) Refuse(ctx context.Context, id int64, by, note string) (store.
 	}
 	q.State, q.Note = store.RequestRefused, note
 	return q, "", nil
+}
+
+// canCloseForUser: o agente da máquina fecha o programa a pedido do usuário, e o job tem os
+// processos do programa (sem eles, o agente nem confere se está aberto).
+func (s *Service) canCloseForUser(ctx context.Context, machineID string, p jobs.ThirdPartyParams) (bool, error) {
+	if len(p.Processes) == 0 || p.Replace != nil {
+		return false, nil
+	}
+	caps, err := s.Store.MachineCapabilities(ctx, machineID)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(caps, protocol.CapabilityCloseByUser), nil
+}
+
+// closeOffers marca, em Meus pedidos, o pedido mais recente de cada programa que ficou adiado
+// por programa aberto e pode ser pedido de novo com "Fechar o programa e instalar": o programa
+// continua na loja com a mesma ação, sem passar pela TI, nada em andamento na máquina, a regra
+// lista os processos e o agente sabe fechar a pedido do usuário.
+func (s *Service) closeOffers(ctx context.Context, machineID string, out *protocol.SelfServiceCatalog) error {
+	if out.OpenJob != 0 || s.Manifest == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var cand []int
+	for i, j := range out.Requests {
+		if j.ID == 0 || j.App == "" || j.App == "reinicio" || seen[j.App] {
+			continue
+		}
+		seen[j.App] = true
+		if j.State == jobs.StatePostponed && strings.Contains(j.Detail, jobs.ErrProgramOpen.Error()) {
+			cand = append(cand, i)
+		}
+	}
+	if len(cand) == 0 {
+		return nil
+	}
+	caps, err := s.Store.MachineCapabilities(ctx, machineID)
+	if err != nil || !slices.Contains(caps, protocol.CapabilityCloseByUser) {
+		return err
+	}
+	rules := s.Manifest.For("windows")
+	for _, i := range cand {
+		j := &out.Requests[i]
+		ri := slices.IndexFunc(rules, func(a thirdparty.App) bool { return a.ID == j.App })
+		if ri < 0 || rules[ri].Install == nil || len(rules[ri].Install.Processes) == 0 {
+			continue
+		}
+		ii := slices.IndexFunc(out.Items, func(it protocol.SelfServiceItem) bool { return it.App == j.App })
+		if ii < 0 {
+			continue
+		}
+		it := out.Items[ii]
+		if (it.Action == ActionUpdate || it.Action == ActionInstall) && !it.Approval && it.Pending == 0 {
+			j.CloseAction = it.Action
+		}
+	}
+	return nil
 }

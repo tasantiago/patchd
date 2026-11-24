@@ -130,6 +130,11 @@ func (r ReplaceEntry) Validate() error {
 // CloseApps: o aviso antes de fechar o programa aberto.
 type CloseApps struct {
 	NoticeMinutes int `json:"notice_minutes"`
+	// User e UserSID (o "Fechar e instalar" da Central): quem pediu já confirmou, então não há
+	// aviso (NoticeMinutes 0); o agente fecha só o programa aberto na sessão dessa pessoa e não
+	// mexe no de outro usuário. Só vai a agentes que anunciam protocol.CapabilityCloseByUser.
+	User    string `json:"user,omitempty"`
+	UserSID string `json:"user_sid,omitempty"`
 }
 
 // Limites do aviso (os mesmos do reinício).
@@ -223,7 +228,12 @@ func (p ThirdPartyParams) Validate() error {
 		return errors.New("assinante inválido")
 	case len(p.Processes) > MaxProcesses:
 		return fmt.Errorf("mais de %d processos", MaxProcesses)
-	case p.Close != nil && (p.Close.NoticeMinutes < MinCloseNotice || p.Close.NoticeMinutes > MaxCloseNotice):
+	case p.Close != nil && p.Close.User != "" && (p.Close.NoticeMinutes != 0 || !userAccount.MatchString(p.Close.User) ||
+		p.Close.UserSID != "" && !userSID.MatchString(p.Close.UserSID)):
+		return errors.New("fechar a pedido do usuário: sem aviso, com a conta (DOMINIO\\usuario) e o SID no formato")
+	case p.Close != nil && p.Close.User == "" && p.Close.UserSID != "":
+		return errors.New("fechar: user_sid sem user")
+	case p.Close != nil && p.Close.User == "" && (p.Close.NoticeMinutes < MinCloseNotice || p.Close.NoticeMinutes > MaxCloseNotice):
 		return fmt.Errorf("aviso antes de fechar o programa fora de %d a %d minutos", MinCloseNotice, MaxCloseNotice)
 	case p.Close != nil && len(p.Processes) == 0:
 		return errors.New("fechar o programa precisa da lista de processos da regra")
@@ -231,8 +241,8 @@ func (p ThirdPartyParams) Validate() error {
 		return errors.New("user_sid sem user")
 	case p.User != "" && (!userAccount.MatchString(p.User) || p.UserSID != "" && !userSID.MatchString(p.UserSID)):
 		return errors.New("usuário do job fora do formato (DOMINIO\\usuario e o SID)")
-	case p.User != "" && (p.Close != nil || p.Replace != nil || p.Installer == InstallerInstallomator):
-		return errors.New("a instalação no perfil do usuário não fecha programa nem regulariza (e é do Windows)")
+	case p.User != "" && (p.Close != nil && p.Close.User == "" || p.Replace != nil || p.Installer == InstallerInstallomator):
+		return errors.New("a instalação no perfil do usuário não fecha programa com aviso nem regulariza (e é do Windows)")
 	case p.TryOpen && (len(p.Processes) == 0 || p.Installer == InstallerInstallomator):
 		return errors.New("tentar com o programa aberto precisa da lista de processos da regra (e é do Windows)")
 	case p.Replace != nil && p.Installer == InstallerInstallomator:

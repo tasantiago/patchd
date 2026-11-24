@@ -408,6 +408,18 @@ baixado nem executado. Duas ajudas:
   força fechar, o job volta adiado. Só vai para agentes que anunciam a capacidade
   `fechar-programa-v1` no check-in (o servidor guarda as capacidades da máquina); para os
   outros, e para programas cuja regra não lista os executáveis, o job segue como hoje (adia).
+- **Fechar o programa e instalar, pela Central** (o usuário decide): o pedido da Central que
+  ficou **adiado** porque o programa estava aberto ganha, em **Meus pedidos**, o botão
+  **Fechar o programa e instalar agora** (o texto pede para salvar antes). O clique pede de
+  novo, com o fechar: o servidor confere que o programa continua na loja com a mesma ação
+  (atualizar ou instalar), sem aprovação da TI, sem outra instalação em andamento, que a regra
+  lista os processos e que o agente anuncia `fechar-pelo-usuario-v1`. O agente baixa e confere
+  o instalador, **pede para o programa fechar na sessão de quem pediu** (como o X da janela),
+  espera até 15 s e **força** se ele não fechou; sem aviso, porque quem pediu já confirmou. Se o
+  programa estiver aberto também na **sessão de outra pessoa** (máquina com mais de um
+  usuário), nada é fechado e o job volta adiado. O resultado diz "fechado a pedido de …, pela
+  Central: fechado normalmente / à força". O que não estava salvo no programa se perde. Com a
+  regularização (a instalação antiga sai antes), o botão não aparece.
 - **Tentar com o programa aberto antes de adiar** (opção de cada programa, desligada por
   padrão): na página do programa, cartão Instaladores guardados, marque **Tentar instalar com
   o programa aberto antes de adiar** e Guardar (só admin; vale para os programas com a lista de

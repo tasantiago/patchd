@@ -290,7 +290,7 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 		if err != nil {
 			return sigNote, err
 		}
-		if err := e.checkRunning(p); err != nil { // aberto de novo enquanto fechava
+		if err := e.checkRunningIn(p, only); err != nil { // aberto de novo enquanto fechava
 			return sigNote, err
 		}
 		sigNote = joinNote(note, sigNote)
@@ -515,8 +515,6 @@ func (e *Executor) innoLog(p jobs.ThirdPartyParams) bool {
 
 // checkRunning confere se algum executável do programa está aberto. Sem lista de processos
 // não há como saber: o job não roda (melhor que arriscar o Abort no meio da instalação).
-func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error { return e.checkRunningIn(p, nil) }
-
 // checkRunningIn: o checkRunning só na sessão only (o programa por usuário); nil: em todas.
 func (e *Executor) checkRunningIn(p jobs.ThirdPartyParams, only *uint32) error {
 	if len(p.Processes) == 0 {
