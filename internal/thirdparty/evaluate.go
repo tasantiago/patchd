@@ -117,6 +117,12 @@ func EvaluateWith(osID string, sw []protocol.Software, m Manifest, d Data) Resul
 			continue
 		}
 		f := Finding{App: a, Software: s}
+		if a.NoVersion() && a.Category != CategoryEOL && a.Category != CategoryOSVendor {
+			// Sem versão para comparar (o programa se atualiza sozinho): instalado é em dia.
+			f.State = StateCurrent
+			res.Findings = append(res.Findings, f)
+			continue
+		}
 		installed, ok := a.InstalledVersion(s.Name, s.Version)
 		if ok {
 			f.Installed = installed
