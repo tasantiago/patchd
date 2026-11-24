@@ -113,3 +113,19 @@ func latin1(b []byte) string {
 }
 
 func isUTF8(b []byte) bool { return strings.ToValidUTF8(string(b), "�") == string(b) }
+
+// msiMaintenance: o msiexec terminou bem, mas o mesmo produto (o mesmo ProductCode) já estava
+// instalado: entrou em "modo de manutenção" e só reconfigurou, sem trocar arquivo nenhum. É o
+// MSI de link fixo (o do Chrome) que o fabricante não trocou, ou o mesmo instalador de novo.
+// "" se o log não diz isso.
+func msiMaintenance(path string) string {
+	raw, err := os.ReadFile(path) // #nosec G304 -- o log do próprio job, na pasta de logs do agente
+	if err != nil || len(raw) > msiLogTail*4 {
+		return ""
+	}
+	if !strings.Contains(decodeLog(raw, 0), "Product registered: entering maintenance mode") {
+		return ""
+	}
+	return "o msiexec não instalou nada: este MSI (o mesmo ProductCode) já estava instalado, e ele só reconfigurou o produto " +
+		"(modo de manutenção). O programa ficou na versão que já tinha; o instalador guardado é o mesmo da instalação anterior"
+}

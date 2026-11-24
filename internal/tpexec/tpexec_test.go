@@ -626,3 +626,21 @@ func TestInstalarNoPerfilDoUsuario(t *testing.T) {
 		}
 	}
 }
+
+// O MSI que já estava instalado (o mesmo ProductCode): o msiexec sai com 0 sem instalar nada
+// (modo de manutenção). O detalhe do job diz isso, para o "inventário não mudou" ter explicação.
+func TestMSIEmModoDeManutencao(t *testing.T) {
+	inst := []byte("msi do chrome")
+	run := &runnerFalso{}
+	e, _ := executor(t, inst, run, google, nil)
+	if err := os.MkdirAll(e.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.LogDir, "instalar-job-70.log"), []byte("MSI (s) (D8:AC) [08:53:58:112]: Product registered: entering maintenance mode\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := e.Install(context.Background(), 70, params(inst, "msi"))
+	if err != nil || !strings.Contains(d, "o msiexec não instalou nada: este MSI (o mesmo ProductCode) já estava instalado") {
+		t.Errorf("manutenção: %q %v", d, err)
+	}
+}
