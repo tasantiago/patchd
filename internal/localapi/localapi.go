@@ -74,9 +74,12 @@ type Response struct {
 	Code            string                        `json:"code,omitempty"`
 	Error           string                        `json:"error,omitempty"`
 	Account         string                        `json:"account,omitempty"`
-	Groups          []string                      `json:"groups,omitempty"` // só no whoami
-	Catalog         *protocol.SelfServiceCatalog  `json:"catalog,omitempty"`
-	Result          *protocol.SelfServiceResponse `json:"result,omitempty"`
+	// DisplayName: o nome de exibição da conta (o do AD), para a Central mostrar "Fulano de
+	// Tal (DOMINIO\usuario)". Vazio: sem nome (ou agente anterior).
+	DisplayName string                        `json:"display_name,omitempty"`
+	Groups      []string                      `json:"groups,omitempty"` // só no whoami
+	Catalog     *protocol.SelfServiceCatalog  `json:"catalog,omitempty"`
+	Result      *protocol.SelfServiceResponse `json:"result,omitempty"`
 	// Aula 19.1b: no "logo", a imagem já conferida pelo agente (vazia: nenhuma).
 	Logo     []byte `json:"logo,omitempty"`
 	LogoType string `json:"logo_type,omitempty"`
@@ -219,9 +222,11 @@ const (
 // quando a loja mostra um job do usuário ainda não entregue, como o de um pedido que a TI
 // acabou de aprovar): o agente faz o check-in na hora em vez de esperar a próxima hora.
 type Server struct {
-	Backend   Backend
-	Logger    *slog.Logger
-	OnCreated func()
+	// DisplayName: o nome de exibição da conta (hoststate.DisplayName). nil: sem nome.
+	DisplayName func(account string) string
+	Backend     Backend
+	Logger      *slog.Logger
+	OnCreated   func()
 	// RebootStatus (Aula 17.6): o reinício pendente lido na hora; a loja do servidor traz o
 	// da última busca, que pode ter um dia. nil: fica o do servidor.
 	RebootStatus func(ctx context.Context) (protocol.RebootStatus, error)
@@ -305,6 +310,14 @@ func (s *Server) identified(ctx context.Context, c Conn, req Request) Response {
 	return s.Serve(ctx, id, req)
 }
 
+// displayName: o nome de exibição da conta, se o servidor sabe achar.
+func (s *Server) displayName(account string) string {
+	if s.DisplayName == nil {
+		return ""
+	}
+	return s.DisplayName(account)
+}
+
 // Serve atende um pedido de quem já foi identificado.
 func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 	s.init()
@@ -346,7 +359,7 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 			return limited(wait)
 		}
 		if req.Op == OpWhoami {
-			return Response{OK: true, Account: id.Account, Groups: u.Groups}
+			return Response{OK: true, Account: id.Account, Groups: u.Groups, DisplayName: s.displayName(id.Account)}
 		}
 		cat, err := s.Backend.SelfServiceCatalog(ctx, u)
 		if err != nil {
@@ -373,7 +386,7 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 		if cat.AppName != "" && s.OnAppName != nil {
 			go s.OnAppName(cat.AppName)
 		}
-		return Response{OK: true, Account: id.Account, Catalog: &cat}
+		return Response{OK: true, Account: id.Account, Catalog: &cat, DisplayName: s.displayName(id.Account)}
 	case OpLogo:
 		if wait, ok := s.allow("q:"+id.Account, QueryLimit, QueryWindow); !ok {
 			return limited(wait)

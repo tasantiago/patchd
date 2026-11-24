@@ -315,6 +315,7 @@ type pageData struct {
 	Computer               []tab
 	Brand, Logo, Version   string
 	User, Domain, Initials string
+	DisplayName            string // o nome de exibição (o do AD); vazio: só a conta
 	TabLabel               string
 	// Aula 19.1b: o "Atualizar tudo" (com 2 ou mais atualizações que ainda dá para pedir) e a fila.
 	UpdateAll                       int
@@ -442,6 +443,10 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	default:
 		d.Account = resp.Account
 		d.User, d.Domain, d.Initials = splitAccount(resp.Account)
+		if n := strings.TrimSpace(resp.DisplayName); n != "" {
+			d.DisplayName = n
+			_, _, d.Initials = splitAccount(n) // as iniciais do nome, não da matrícula
+		}
 		d.Brand = resp.Catalog.Brand
 		if n := resp.Catalog.AppName; n != "" && protocol.CheckAppName(n) == nil {
 			d.Title = n // Aula 20.10
@@ -952,7 +957,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 <input type="checkbox" id="menu" class="menu-chk" aria-label="recolher ou abrir o menu lateral">
 <aside class="lado" aria-label="menu lateral">
 <a class="marca" href="{{.Base}}" title="{{.Title}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + ui.ShieldSVG + `</span>{{end}}<span class="rot">{{.Title}}{{if .Brand}}<small>{{.Brand}}</small>{{end}}</span></a>
-{{if .Account}}<div class="usuario" title="{{.Account}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot"><strong>{{.User}}</strong><small>{{if .Domain}}{{.Domain}} · {{end}}este computador</small></span></div>{{end}}
+{{if .Account}}<div class="usuario" title="{{.Account}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot">{{if .DisplayName}}<strong>{{.DisplayName}}</strong><small>({{.Account}}) · este computador</small>{{else}}<strong>{{.User}}</strong><small>{{if .Domain}}{{.Domain}} · {{end}}este computador</small>{{end}}</span></div>{{end}}
 <nav aria-label="seções">
 <p class="grupo"><span class="rot">Software</span></p>
 {{range .Tabs}}{{template "item" .}}{{end}}

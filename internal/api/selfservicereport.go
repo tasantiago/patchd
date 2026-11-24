@@ -40,10 +40,12 @@ type ssReqRow struct {
 	ID                                     int64
 	When, User, MachineID, Short, Name     string
 	What, State, StateLabel, Detail, Group string
+	UserName                               string // o nome de exibição da conta (vazio: só a conta)
 }
 
 type ssRefusalRow struct {
 	When, User, MachineID, Short, Detail string
+	UserName                             string
 }
 
 type ssTopRow struct {
@@ -119,6 +121,13 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 	for _, m := range machines {
 		names[m.ID] = dash(m.Hostname)
 	}
+	// O nome de exibição de cada conta (o do AD, dos conectados nas máquinas): sem ele, a conta.
+	people, err := a.store.UserDisplayNames(r.Context())
+	if err != nil {
+		a.logger.Warn("autoatendimento: nomes dos usuários", "error", err)
+		people = map[string]string{}
+	}
+	person := func(account string) string { return people[strings.ToLower(account)] }
 	appNames := map[string]string{}
 	if a.tpManifest != nil {
 		for _, rule := range a.tpManifest.For("windows") {
@@ -146,7 +155,7 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 		if n, ok := names[j.MachineID]; ok {
 			name = n
 		}
-		v.Rows = append(v.Rows, ssReqRow{ID: j.ID, When: ago(now.Sub(j.CreatedAt)), User: user, MachineID: j.MachineID,
+		v.Rows = append(v.Rows, ssReqRow{ID: j.ID, When: ago(now.Sub(j.CreatedAt)), User: user, UserName: person(user), MachineID: j.MachineID,
 			Short: short(j.MachineID), Name: name, What: what, State: j.State, StateLabel: stateLabel(j.State),
 			Detail: dash(j.Detail), Group: g})
 	}
@@ -168,7 +177,7 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 		return
 	}
 	for _, e := range ev {
-		v.Refusals = append(v.Refusals, ssRefusalRow{When: ago(now.Sub(e.At)), User: e.Username, MachineID: e.Target,
+		v.Refusals = append(v.Refusals, ssRefusalRow{When: ago(now.Sub(e.At)), User: e.Username, UserName: person(e.Username), MachineID: e.Target,
 			Short: short(e.Target), Detail: e.Detail})
 	}
 	for n, c := range top {
@@ -199,7 +208,7 @@ func (a *api) renderSSReport(w http.ResponseWriter, r *http.Request, status int,
 		if n, ok := names[q.MachineID]; ok {
 			mname = n
 		}
-		v.Waiting = append(v.Waiting, ssWaitingRow{ID: q.ID, When: ago(now.Sub(q.CreatedAt)), User: q.Account, MachineID: q.MachineID,
+		v.Waiting = append(v.Waiting, ssWaitingRow{ID: q.ID, When: ago(now.Sub(q.CreatedAt)), User: q.Account, UserName: person(q.Account), MachineID: q.MachineID,
 			Short: short(q.MachineID), Name: mname, What: name + " " + q.Version, Action: q.Action,
 			Expires: untilText(q.CreatedAt.Add(store.RequestTTL).Sub(now))})
 	}
@@ -215,6 +224,7 @@ type ssWaitingRow struct {
 	ID                                       int64
 	When, User, MachineID, Short, Name, What string
 	Action, Expires                          string
+	UserName                                 string
 }
 
 func (a *api) ssRequestID(r *http.Request) (int64, bool) {
@@ -308,6 +318,10 @@ func ssWhat(j store.JobRow, appNames map[string]string, loc *time.Location) (app
 	return "", typeLabel(j.Type)
 }
 
+// ss-usuario: o nome de exibição (o do AD, pelos usuários conectados nas máquinas) e, embaixo,
+// a conta; sem o nome, só a conta.
+var _ = template.Must(pages.New("ss-usuario").Parse(`{{if .UserName}}{{.UserName}}<br><span class="muted">({{.User}})</span>{{else}}{{.User}}{{end}}`))
+
 var _ = template.Must(pages.New("autoatendimento-painel").Parse(`{{template "topo" .}}
 <h1>Automação <span class="muted">› Autoatendimento</span></h1>
 {{template "automacao-abas" "autoatendimento"}}
@@ -318,13 +332,13 @@ Período: {{range .Periods}}{{if eq . $.Days}}<b>{{.}} dias</b>{{else}}<a href="
 <li><div class="kpi"><span class="kpi-rot">Usuários</span><span class="kpi-val">{{.Users}}</span><span class="kpi-sub">com algum pedido atendido</span></div></li></ul>
 {{if .Waiting}}<div class="card" id="aprovacao"><div class="card-cab"><h2>Aguardando a TI</h2><span class="muted">pedidos de programas com aprovação; sem decisão em 7 dias, expiram</span></div>
 <div class="tabela"><table><thead><tr><th>Pedido</th><th>Quando</th><th>Usuário</th><th>Máquina</th><th>Nome</th><th>Programa</th><th>Ação</th><th>Expira em</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
-<tbody>{{range .Waiting}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{.User}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td><td>{{.What}}</td><td>{{.Action}}</td><td>{{.Expires}}</td>
+<tbody>{{range .Waiting}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{template "ss-usuario" .}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td><td>{{.What}}</td><td>{{.Action}}</td><td>{{.Expires}}</td>
 {{if $.Admin}}<td><div class="decisao"><form method="post" action="/painel/autoatendimento/pedidos/{{.ID}}/aprovar"><button type="submit">Aprovar</button></form>
 <form method="post" action="/painel/autoatendimento/pedidos/{{.ID}}/recusar"><input type="text" name="motivo" maxlength="200" placeholder="motivo (o usuário vê)" aria-label="motivo da recusa do pedido {{.ID}}"><button class="perigo" type="submit">Recusar</button></form></div></td>{{end}}</tr>{{end}}</tbody></table></div></div>{{end}}
 <div class="card"><div class="card-cab"><h2>Pedidos{{if .Filter}} · {{range .KPIs}}{{if .Active}}{{.Label}}{{end}}{{end}}{{end}}</h2><span class="muted">{{.Shown}} de {{.Total}} nos últimos {{.Days}} dias{{if ge .Total 500}} (os 500 mais recentes){{end}}</span></div>
 {{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>Job</th><th>Quando</th><th>Usuário</th><th>Máquina</th><th>Nome</th><th>Pedido</th><th>Estado</th><th>Detalhe</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{.User}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
+<tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td><td>{{.When}}</td><td>{{template "ss-usuario" .}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>
 <td>{{.What}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum pedido{{if .Filter}} neste estado{{end}} no período.</p>{{end}}</div>
 <div class="duas-col">
@@ -333,7 +347,7 @@ Período: {{range .Periods}}{{if eq . $.Days}}<b>{{.}} dias</b>{{else}}<a href="
 <tbody>{{range .Top}}<tr><td>{{.Name}}</td><td class="num">{{.N}}</td></tr>{{end}}</tbody></table></div>{{else}}<p class="muted">Nenhum programa pedido no período.</p>{{end}}</div>
 <div class="card"><div class="card-cab"><h2>Recusas recentes</h2><span class="muted">da auditoria; o motivo completo está no log</span></div>
 {{if .Refusals}}<div class="tabela"><table><thead><tr><th>Quando</th><th>Usuário</th><th>Máquina</th><th>Detalhe</th></tr></thead>
-<tbody>{{range .Refusals}}<tr><td>{{.When}}</td><td>{{.User}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
+<tbody>{{range .Refusals}}<tr><td>{{.When}}</td><td>{{template "ss-usuario" .}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Detail}}</td></tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhuma recusa no período.</p>{{end}}</div>
 </div>
 {{template "fim"}}`))

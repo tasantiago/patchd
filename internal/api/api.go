@@ -170,6 +170,8 @@ type Store interface {
 	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
 	// Tentar com o programa aberto, por programa (migração 0081, tptryopen.go).
 	TryOpenSettings(ctx context.Context) (map[string]bool, error)
+	// O nome de exibição das contas conectadas nas máquinas (usernames.go).
+	UserDisplayNames(ctx context.Context) (map[string]string, error)
 	SaveTryOpen(ctx context.Context, s store.TryOpenSetting) error
 	// Aula 23.6: a localização do patrimônio.
 	ReplaceAssetLocations(ctx context.Context, list []store.AssetLocation, imp store.AssetImport) error
