@@ -49,6 +49,11 @@ func newThirdParty(client *agent.Client, dataDir string, allowed []string) func(
 	u := &tpexec.Uninstaller{Run: platform.SilentRunner{Timeout: 40 * time.Minute}, Msiexec: e.Msiexec,
 		Lookup: tpexec.LookupUninstall, Split: tpexec.SplitCommandLine}
 	e.Remove = u.Remove
+	// O programa por usuário (pedido na Central): roda como o usuário, na sessão dele, com a
+	// cópia do instalador numa pasta da pasta de dados que só ele (e SYSTEM) lê.
+	stage := filepath.Join(dataDir, "usuario")
+	e.AsUser = &tpexec.UserRunner{Session: platform.UserSession, Run: platform.RunAsUser,
+		Stage: func(src, sid string) (string, func(), error) { return platform.StageForUser(src, stage, sid) }}
 	return e.Install
 }
 

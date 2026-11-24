@@ -159,6 +159,11 @@ type Install struct {
 	// se não der certo (os que se atualizam abertos: o Chrome, o Firefox). Exige processes.
 	// O painel liga e desliga por programa (WithTryOpen).
 	TryOpen bool `json:"try_open,omitempty"`
+	// PerUser (Windows): o instalador instala no perfil de quem o roda (o escopo "user" do
+	// winget: Canva, os instaladores Electron). O agente não o instala como SYSTEM (iria para
+	// o perfil do SYSTEM): só a Central de software, pedido pelo usuário, roda o instalador
+	// como ele, na sessão dele. Campanhas e a Padronização deixam o programa de fora.
+	PerUser bool `json:"per_user,omitempty"`
 }
 
 // RegularizeOver: a regularização instala por cima, sem remover a instalação antiga.
@@ -187,6 +192,9 @@ func (a App) Uploaded() bool { return a.Install != nil && a.Install.Upload }
 
 // FromChocolatey: o instalador vem do pacote do Chocolatey (sem winget).
 func (a App) FromChocolatey() bool { return a.Install != nil && a.Install.Chocolatey != "" }
+
+// PerUser: o programa instala no perfil do usuário, só pela Central de software.
+func (a App) PerUser() bool { return a.Install != nil && a.Install.PerUser && a.OS == "windows" }
 
 // Source diz de onde vem a versão de referência.
 type Source struct {
@@ -371,6 +379,8 @@ func (a *App) compile() error {
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
 		case len(a.Install.Signer) > 128 || strings.ContainsAny(a.Install.Signer, "\r\n\t"):
 			return fmt.Errorf("install.signer inválido")
+		case a.Install.PerUser && (a.Install.Regularize != "" || a.Install.UninstallFirst):
+			return fmt.Errorf("install.per_user não combina com regularize nem uninstall_first (o usuário não remove a instalação da máquina)")
 		case a.Install.TryOpen && len(a.Install.Processes) == 0:
 			return fmt.Errorf("install.try_open exige processes (os executáveis que o agente confere)")
 		case len(a.Install.Processes) > jobs.MaxProcesses:

@@ -85,6 +85,7 @@ type Identity struct {
 	Account    string   // DOMINIO\usuario
 	Groups     []string // DOMINIO\grupo, sem os desligados e os "só para negar"
 	Unresolved int      // grupos cujo nome não foi resolvido (ficaram de fora)
+	SID        string   // o SID do usuário (Windows); vazio fora dele
 }
 
 // SIDs que decidem quem pode usar o canal.
@@ -140,6 +141,9 @@ func IdentityFrom(t TokenInfo) (Identity, error) {
 		return Identity{}, errors.New("o nome da conta não foi resolvido")
 	}
 	id := Identity{Account: t.Account}
+	if strings.HasPrefix(t.UserSID, "S-1-") {
+		id.SID = t.UserSID
+	}
 	seen := map[string]bool{}
 	for _, g := range t.Groups {
 		if !KeepGroup(g.Attrs) || g.SID == sidInteractive { // INTERATIVO todos têm: não conta
@@ -302,7 +306,7 @@ func (s *Server) identified(ctx context.Context, c Conn, req Request) Response {
 // Serve atende um pedido de quem já foi identificado.
 func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 	s.init()
-	u := protocol.SelfServiceUser{Account: id.Account, Groups: id.Groups}
+	u := protocol.SelfServiceUser{Account: id.Account, Groups: id.Groups, SID: id.SID}
 	if u.Groups == nil {
 		u.Groups = []string{}
 	}

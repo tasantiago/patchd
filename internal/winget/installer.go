@@ -358,7 +358,7 @@ func (in Installer) unusable(w Want, order []string) string {
 		return "exe sem o Silent no manifesto: não se sabe como instalar em silêncio"
 	case !known && in.Type != "exe":
 		return "tipo " + in.Type + " não é executado pelo patchd"
-	case in.Scope == "user" && w.Scope == "machine" && w.UserScope:
+	case in.Scope == "user" && w.Scope == "machine" && w.UserScope, in.Scope == "user" && w.Scope == "user":
 		// Os argumentos da regra fazem instalar para todos: segue.
 	case in.Scope != "" && in.Scope != w.Scope:
 		if in.Scope == "user" {

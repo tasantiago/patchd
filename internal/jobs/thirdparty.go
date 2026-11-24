@@ -61,6 +61,11 @@ type ThirdPartyParams struct {
 	// (o Chrome, o Firefox). Só vai a agentes que anunciam protocol.CapabilityTryOpen: os
 	// anteriores recusam o campo.
 	TryOpen bool `json:"try_open,omitempty"`
+	// User e UserSID (o programa por usuário, pedido na Central): o agente roda o instalador
+	// como esse usuário, na sessão dele (sem elevação), e não como SYSTEM. Sem ele conectado,
+	// o job volta adiado. Só vai a agentes que anunciam protocol.CapabilityUserInstall.
+	User    string `json:"user,omitempty"`     // DOMINIO\usuario, de quem pediu
+	UserSID string `json:"user_sid,omitempty"` // o SID dele, do token (vazio: acha pela conta)
 }
 
 // ReplaceEntry é a entrada de Programas e Recursos que a regularização remove.
@@ -143,6 +148,8 @@ const (
 
 var (
 	appID        = regexp.MustCompile(`^[a-z0-9][a-z0-9.+-]{0,63}$`)
+	userAccount  = regexp.MustCompile(`^(?:[^\\\x00-\x1f"]{1,64}\\)?[^\\\x00-\x1f"]{1,104}$`)
+	userSID      = regexp.MustCompile(`^S-1-[0-9]+(-[0-9]+){1,14}$`)
 	tpVersion    = regexp.MustCompile(`^[0-9][0-9A-Za-z.+-]{0,63}$`)
 	sha256Hex    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	argToken     = regexp.MustCompile(`^[A-Za-z0-9/_.=!+-]{1,128}$`)
@@ -220,6 +227,12 @@ func (p ThirdPartyParams) Validate() error {
 		return fmt.Errorf("aviso antes de fechar o programa fora de %d a %d minutos", MinCloseNotice, MaxCloseNotice)
 	case p.Close != nil && len(p.Processes) == 0:
 		return errors.New("fechar o programa precisa da lista de processos da regra")
+	case p.User == "" && p.UserSID != "":
+		return errors.New("user_sid sem user")
+	case p.User != "" && (!userAccount.MatchString(p.User) || p.UserSID != "" && !userSID.MatchString(p.UserSID)):
+		return errors.New("usuário do job fora do formato (DOMINIO\\usuario e o SID)")
+	case p.User != "" && (p.Close != nil || p.Replace != nil || p.Installer == InstallerInstallomator):
+		return errors.New("a instalação no perfil do usuário não fecha programa nem regulariza (e é do Windows)")
 	case p.TryOpen && (len(p.Processes) == 0 || p.Installer == InstallerInstallomator):
 		return errors.New("tentar com o programa aberto precisa da lista de processos da regra (e é do Windows)")
 	case p.Replace != nil && p.Installer == InstallerInstallomator:

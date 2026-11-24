@@ -176,6 +176,13 @@ func PlanWith(sw []protocol.Software, m thirdparty.Manifest, pkgs []store.ThirdP
 	groups := group(sw, m)
 	out := make([]Decision, 0, len(groups))
 	for _, d := range groups {
+		if d.App.PerUser() {
+			// Instala no perfil de cada usuário: só a Central, pedido por ele. Nada como SYSTEM.
+			d.State = StateUserOnly
+			d.Reason = "instala no perfil de cada usuário: só pela Central de software, pedido pelo usuário"
+			out = append(out, *d)
+			continue
+		}
 		decide(d, pkgs, arch)
 		if o.Regularize && (d.State == StateNoPackage || d.State == StateBundle) {
 			regularize(d, pkgs, arch, o)
@@ -434,6 +441,22 @@ func Counts(ds []Decision) map[string]int {
 // o programa. Sem instalação para seguir, vale o tipo da regra (o 7-Zip exige exe: instalar o
 // MSI criaria outro padrão na frota); regra sem tipo, qualquer família.
 func ForNewInstall(app thirdparty.App, pkgs []store.ThirdPartyPackage, arch string) *store.ThirdPartyPackage {
+	if app.PerUser() {
+		return nil // o instalador por usuário não vai como SYSTEM (ForUserInstall, pela Central)
+	}
+	return forInstall(app, pkgs, arch)
+}
+
+// ForUserInstall: o instalador do programa por usuário (PerUser), que a Central roda como o
+// usuário: para instalar e para atualizar (o instalador novo por cima da instalação dele).
+func ForUserInstall(app thirdparty.App, pkgs []store.ThirdPartyPackage, arch string) *store.ThirdPartyPackage {
+	if !app.PerUser() {
+		return nil
+	}
+	return forInstall(app, pkgs, arch)
+}
+
+func forInstall(app thirdparty.App, pkgs []store.ThirdPartyPackage, arch string) *store.ThirdPartyPackage {
 	types := append(slices.Clone(families[KindExe]), families[KindMSI]...)
 	if app.Install != nil && app.Install.Type != "" {
 		// A família do tipo da regra: o que importa é MSI ou exe (o padrão da frota), não o

@@ -106,6 +106,9 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		}
 		return jobs.StateFailed, "o servidor não conseguiu ler o inventário novo"
 	}
+	if p.User != "" {
+		return a.judgeUser(inv, p, agent)
+	}
 	if unchanged {
 		// O inventário é o mesmo de antes: o instalador reinstalou a mesma versão (ou não fez
 		// nada). Conclui se o programa já está visível na versão do job; senão, diz por quê.
@@ -135,6 +138,29 @@ func (a *api) judgeThirdParty(r *http.Request, job store.JobRow, res protocol.Jo
 		return jobs.StateFailed, fmt.Sprintf("o inventário de %s UTC mostra %s %s, abaixo de %s; agente: %s", when, p.App, e.Software.Version, p.Version, agent)
 	}
 	return jobs.StateDone, fmt.Sprintf("o inventário de %s UTC mostra %s (%s); agente: %s", when, nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
+}
+
+// judgeUser: o job no perfil do usuário (a Central, programa por usuário). Vale a instalação
+// por usuário dele (pelo SID; sem SID, a de qualquer usuário) na versão do job ou acima. O
+// inventário só lê os perfis carregados: com o usuário conectado (ele acabou de pedir), lê.
+func (a *api) judgeUser(inv protocol.InventoryReport, p jobs.ThirdPartyParams, agent string) (string, string) {
+	_, user := tpinstall.Entries(inv.OS.ID, inv.Software, a.tpManifest.Get(), p.App)
+	target, ok := thirdparty.Normalize(p.Version)
+	var seen []string
+	for _, e := range user {
+		if p.UserSID != "" && !strings.EqualFold(e.Software.User, p.UserSID) {
+			continue
+		}
+		seen = append(seen, e.Software.Version)
+		if c, err := version.CompareDotted(e.Installed, target); ok && e.Installed != "" && err == nil && c >= 0 {
+			return jobs.StateDone, fmt.Sprintf("o inventário mostra %s no perfil de %s; agente: %s", nameVersion(e.Software.Name, e.Software.Version), p.User, agent)
+		}
+	}
+	if len(seen) > 0 {
+		return jobs.StateFailed, fmt.Sprintf("o inventário mostra %s no perfil de %s, abaixo de %s; agente: %s", strings.Join(seen, ", "), p.User, p.Version, agent)
+	}
+	return jobs.StateFailed, fmt.Sprintf("o agente informou sucesso, mas o inventário não mostra o programa no perfil de %s (o nome no inventário do programa confere com o de Programas e Recursos dele?); agente: %s",
+		p.User, agent)
 }
 
 // judgeUnchanged: o job com o inventário igual ao de antes da entrega.

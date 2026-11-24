@@ -1650,6 +1650,44 @@ A `package fetch` da linha de comando não baixa os programas do Chocolatey (sã
 Editar não troca o pacote nem a origem (winget, Chocolatey, instalador próprio): exclua e
 inclua de novo. Na auditoria, `terceiros.incluir` diz "Chocolatey <pacote> <tipo>".
 
+## Programas que só instalam no perfil do usuário (pela Central)
+
+Alguns instaladores só instalam no perfil de quem os roda (o winget diz `Scope: user`; o
+Canva, vários programas Electron, ferramentas que vão para `%LOCALAPPDATA%`). O agente roda
+como SYSTEM: instalado por ele, o programa iria para o perfil do SYSTEM, onde ninguém o vê.
+Duas saídas:
+
+1. **Instalar para todos**, quando o instalador aceita (os NSIS do Electron: `/S /allusers`):
+   argumentos no programa, como em "Incluir programas pelo painel" (passo 3). É o melhor: o
+   programa fica na máquina, e campanhas, Padronização e o aviso de versão nova valem.
+2. **No perfil do usuário, pela Central**: em Incluir programa (ou Editar), marque **Instala
+   no perfil do usuário, só pela Central de software**. A busca do winget já marca quando o
+   instalador é só por usuário e não é um NSIS (para o NSIS ela põe o `/S /allusers`; se ele
+   não instalar para todos, tire os argumentos e marque a opção). Daí:
+   - o **Baixar** pega o instalador de escopo usuário do winget (o de máquina não serve);
+   - em Configuração › Autoatendimento, **ofereça** (instalar e/ou atualizar, grupos), como os
+     outros;
+   - na Central, o programa aparece com "só no seu usuário". A loja olha as instalações **do
+     perfil de quem está vendo** (pelo SID do usuário): não instalado nele, "Instalar";
+     instalado numa versão abaixo da aprovada, "Atualizar"; na aprovada, "Em dia". O Canva de
+     outra pessoa da mesma máquina não conta;
+   - o pedido vira o job de sempre, com o usuário: o agente acha a **sessão dele** (a ativa
+     antes da desconectada), copia o instalador conferido (SHA-256 e assinatura, como sempre)
+     para uma pasta dentro da pasta de dados do agente que só SYSTEM, os Administradores e esse
+     usuário leem, e o roda **como ele**, com o token da sessão (sem administrador) e o ambiente
+     dele. O programa aberto que conta é o da sessão dele;
+   - o job conclui quando o inventário mostra o programa **no perfil dele**, na versão do job.
+
+   O usuário tem de estar conectado: sem ele, o job volta adiado ("não está conectado nesta
+   máquina; peça de novo pela Central"). Instalador que pede administrador não é por usuário:
+   o job falha dizendo isso (desmarque a opção). Não há log do msiexec nem do Inno nesse caso
+   (o usuário não escreve na pasta de logs do agente). **Campanhas e a Padronização deixam o
+   programa de fora** (o plano mostra "instala no perfil de cada usuário: só pela Central"), e
+   o "remover antes" e a regularização não combinam com a opção. Só vai para agentes que
+   anunciam `instalar-usuario-v1`; nos outros, a Central mostra o programa indisponível
+   ("aguarde a atualização do agente"). Pedido aprovado pela TI (oferta com aprovação) vai sem
+   o SID: o agente acha a sessão pela conta. No manifesto, o campo é `install.per_user`.
+
 ## Instaladores próprios e atalho na área de trabalho
 
 Um programa que **não está no winget** (o IRPF da Receita, um sistema interno, um cliente que o

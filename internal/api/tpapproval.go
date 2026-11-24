@@ -24,6 +24,7 @@ type tpInstallInfo struct {
 	Winget, Type, Signer, Unsigned, Processes string
 	Choco                                     string // o pacote do Chocolatey (o programa incluído de lá)
 	TryOpen                                   bool   // tenta instalar com o programa aberto antes de adiar
+	PerUser                                   bool   // instala no perfil do usuário, só pela Central
 	Upload                                    bool   // instalador próprio (tpupload.go)
 	UninstallFirst                            bool   // a atualização remove antes a versão instalada
 	Shortcut                                  string // o atalho da regra, para mostrar
@@ -69,7 +70,7 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	}
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
 		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded(), UninstallFirst: rule.Install.UninstallFirst,
-		Choco: rule.Install.Chocolatey, TryOpen: rule.Install.TryOpen}
+		Choco: rule.Install.Chocolatey, TryOpen: rule.Install.TryOpen, PerUser: rule.Install.PerUser}
 	if sc := rule.Shortcut; sc != nil {
 		v.Install.Shortcut = fmt.Sprintf("%s → %s", sc.Name, sc.Target)
 		if sc.Icon != "" {

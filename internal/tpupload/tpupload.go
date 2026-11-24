@@ -181,7 +181,7 @@ func Save(ctx context.Context, st Store, dir string, rule thirdparty.App, in Inp
 		return store.ThirdPartyPackage{}, err
 	}
 	pk := store.ThirdPartyPackage{AppID: rule.ID, Version: in.Version, Architecture: in.Arch, Type: rule.Install.Type,
-		Scope: "machine", URL: store.UploadPrefix + displayName(in.FileName), SHA256: sum, Size: n, Arguments: args}
+		Scope: map[bool]string{true: "user", false: "machine"}[rule.PerUser()], URL: store.UploadPrefix + displayName(in.FileName), SHA256: sum, Size: n, Arguments: args}
 	if _, err := st.SaveThirdPartyPackage(ctx, pk); err != nil {
 		return store.ThirdPartyPackage{}, err // a corrida com outro envio da mesma versão: PackageChangedError
 	}

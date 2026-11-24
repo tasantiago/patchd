@@ -87,6 +87,28 @@ type Executor struct {
 	// Remove (regularização, jobs.ReplaceEntry): remove a instalação de outro tipo antes de
 	// instalar (Uninstaller.Remove). nil: o job com replace é recusado.
 	Remove func(ctx context.Context, r jobs.ReplaceEntry, log string) (string, error)
+	// AsUser (o programa por usuário, job com user): acha a sessão do usuário, copia o
+	// instalador conferido para uma pasta que só ele lê e o roda como ele. nil: o job com user
+	// é recusado.
+	AsUser *UserRunner
+}
+
+// UserRunner são as operações do sistema para instalar no perfil do usuário (platform, no
+// Windows).
+type UserRunner struct {
+	// Session: a sessão do usuário (pelo SID; sem SID, pela conta) e o SID dele;
+	// platform.ErrNoUserSession se ele não está conectado.
+	Session func(sid, account string) (uint32, string, error)
+	// Stage: a cópia do instalador que só SYSTEM, os Administradores e o usuário leem.
+	Stage func(src, sid string) (string, func(), error)
+	// Run roda o programa na sessão, como o usuário, e devolve o código de saída.
+	Run func(ctx context.Context, session uint32, prog string, args []string) (int, error)
+}
+
+// userTarget: o usuário do job, achado na máquina.
+type userTarget struct {
+	session uint32
+	sid     string
 }
 
 // Prazo da execução do instalador, pelo tamanho: os grandes (o MSI do LibreOffice tem 350 MB e
@@ -178,6 +200,23 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 		return "", fmt.Errorf("%w: %v", jobs.ErrNotStarted, err)
 	}
 	e.pruneLogs(time.Now())
+	// O programa por usuário: o usuário tem de estar conectado (o instalador roda na sessão
+	// dele, como ele). O programa aberto que conta é o dele.
+	var user *userTarget
+	if p.User != "" {
+		if e.AsUser == nil {
+			return "", fmt.Errorf("%w: este agente não instala no perfil do usuário", jobs.ErrRefused)
+		}
+		sess, sid, err := e.AsUser.Session(p.UserSID, p.User)
+		if errors.Is(err, platform.ErrNoUserSession) {
+			return "", fmt.Errorf("%w: %w: %s não está conectado nesta máquina; nada foi baixado nem executado: peça de novo pela Central, conectado",
+				jobs.ErrNotStarted, ErrRetry, p.User)
+		}
+		if err != nil {
+			return "", fmt.Errorf("%w: achar a sessão de %s: %v", jobs.ErrNotStarted, p.User, err)
+		}
+		user = &userTarget{session: sess, sid: sid}
+	}
 	// Programa aberto (Aula 14.6b): nem baixa. O instalador não substituiria os arquivos em
 	// uso (o Inno sai com 5, o MSI pede reinício), e fechar o programa perderia o trabalho
 	// de quem está nele. O job falha dizendo qual programa e onde; pedir de novo depois.
@@ -188,13 +227,17 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	// com close, o programa fecha com aviso e o instalador roda de novo). A regularização
 	// não tenta: remover o programa aberto é pior que esperar.
 	closing, tryOpen, openWhat := false, false, ""
-	if err := e.checkRunning(p); err != nil {
+	var only *uint32
+	if user != nil {
+		only = &user.session
+	}
+	if err := e.checkRunningIn(p, only); err != nil {
 		open := errors.Is(err, jobs.ErrProgramOpen)
 		canClose := p.Close != nil && e.Closer != nil
 		switch {
 		case open && p.TryOpen && p.Replace == nil:
 			tryOpen, closing = true, canClose
-			openWhat, _ = e.runningSummary(p)
+			openWhat, _ = e.runningSummary(p, only)
 		case open && canClose:
 			closing = true
 		default:
@@ -228,7 +271,7 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 	}
 
 	if tryOpen {
-		detail, err := e.runInstaller(ctx, jobID, file, p, sigNote)
+		detail, err := e.runInstaller(ctx, jobID, file, p, sigNote, user)
 		switch {
 		case err == nil:
 			return joinNote(detail, "instalado com o programa aberto ("+openWhat+"): a versão nova vale quando ele for reaberto"), nil
@@ -275,12 +318,21 @@ func (e *Executor) Install(ctx context.Context, jobID int64, p jobs.ThirdPartyPa
 		}
 		sigNote = joinNote(note, sigNote)
 	}
-	return e.runInstaller(ctx, jobID, file, p, sigNote)
+	return e.runInstaller(ctx, jobID, file, p, sigNote, user)
 }
 
 // runInstaller roda o instalador já baixado e conferido e traduz o código de saída. sigNote:
 // o que já aconteceu (a assinatura, o fechar, a remoção), no começo do detalhe.
-func (e *Executor) runInstaller(ctx context.Context, jobID int64, file string, p jobs.ThirdPartyParams, sigNote string) (string, error) {
+func (e *Executor) runInstaller(ctx context.Context, jobID int64, file string, p jobs.ThirdPartyParams, sigNote string, user *userTarget) (string, error) {
+	if user != nil {
+		staged, cleanup, err := e.AsUser.Stage(file, user.sid)
+		if err != nil {
+			return sigNote, fmt.Errorf("%w: preparar o instalador para %s: %v", jobs.ErrNotStarted, p.User, err)
+		}
+		defer cleanup()
+		file = staged
+		sigNote = joinNote(sigNote, "como "+p.User+" (sessão "+strconv.FormatUint(uint64(user.session), 10)+")")
+	}
 	prog, args := e.command(jobID, file, p)
 	env, err := e.jobTemp(jobID)
 	if err != nil {
@@ -298,7 +350,12 @@ func (e *Executor) runInstaller(ctx context.Context, jobID int64, file string, p
 	defer cancel()
 	start := time.Now()
 	var runErr error
-	if er, ok := e.Run.(envRunner); ok && env != nil {
+	if user != nil {
+		var c int
+		if c, runErr = e.AsUser.Run(rctx, user.session, prog, args); runErr == nil && c != 0 {
+			runErr = exitCode(c)
+		}
+	} else if er, ok := e.Run.(envRunner); ok && env != nil {
 		_, runErr = er.RunEnv(rctx, env, prog, args...)
 	} else {
 		_, runErr = e.Run.Run(rctx, prog, args...)
@@ -349,6 +406,12 @@ func (e *Executor) runInstaller(ctx context.Context, jobID int64, file string, p
 	}
 	return detail, fmt.Errorf("o instalador terminou com o código %d", code)
 }
+
+// exitCode: o código de saída de quem não é um *exec.ExitError (o instalador do usuário).
+type exitCode int
+
+func (c exitCode) Error() string { return "exit status " + strconv.Itoa(int(c)) }
+func (c exitCode) ExitCode() int { return int(c) }
 
 // fetch baixa para um temporário, confere o tamanho e o SHA-256 e só então dá o nome final.
 func (e *Executor) fetch(ctx context.Context, file string, p jobs.ThirdPartyParams) error {
@@ -420,6 +483,12 @@ func (e *Executor) checkSignature(file, signer string) (string, error) {
 
 // command monta o programa e os argumentos: o msiexec com /i e o log, ou o próprio arquivo.
 func (e *Executor) command(jobID int64, file string, p jobs.ThirdPartyParams) (string, []string) {
+	if p.User != "" { // como o usuário: ele não escreve na pasta de logs do agente
+		if jobs.MSIInstaller(p.Installer) {
+			return e.Msiexec, append([]string{"/i", file}, p.Args...)
+		}
+		return file, p.Args
+	}
 	if jobs.MSIInstaller(p.Installer) {
 		args := []string{"/i", file}
 		args = append(args, p.Args...)
@@ -440,14 +509,17 @@ func (e *Executor) innoLog(p jobs.ThirdPartyParams) bool {
 
 // checkRunning confere se algum executável do programa está aberto. Sem lista de processos
 // não há como saber: o job não roda (melhor que arriscar o Abort no meio da instalação).
-func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
+func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error { return e.checkRunningIn(p, nil) }
+
+// checkRunningIn: o checkRunning só na sessão only (o programa por usuário); nil: em todas.
+func (e *Executor) checkRunningIn(p jobs.ThirdPartyParams, only *uint32) error {
 	if len(p.Processes) == 0 {
 		return nil
 	}
 	if e.Processes == nil {
 		return fmt.Errorf("%w: o agente não lista processos e o job exige conferir %s", jobs.ErrNotStarted, strings.Join(p.Processes, ", "))
 	}
-	what, err := e.runningSummary(p)
+	what, err := e.runningSummary(p, only)
 	if err != nil {
 		return fmt.Errorf("%w: não foi possível listar os processos para conferir %s: %v", jobs.ErrNotStarted, strings.Join(p.Processes, ", "), err)
 	}
@@ -460,7 +532,7 @@ func (e *Executor) checkRunning(p jobs.ThirdPartyParams) error {
 
 // runningSummary: os executáveis do programa abertos e as sessões ("1 chrome.exe na sessão
 // 1"); vazio: nenhum.
-func (e *Executor) runningSummary(p jobs.ThirdPartyParams) (string, error) {
+func (e *Executor) runningSummary(p jobs.ThirdPartyParams, only *uint32) (string, error) {
 	if e.Processes == nil {
 		return "", errors.New("o agente não lista processos")
 	}
@@ -469,6 +541,9 @@ func (e *Executor) runningSummary(p jobs.ThirdPartyParams) (string, error) {
 		return "", err
 	}
 	running := platform.Running(list, p.Processes)
+	if only != nil {
+		running = slices.DeleteFunc(running, func(r platform.Process) bool { return r.Session != *only })
+	}
 	if len(running) == 0 {
 		return "", nil
 	}
@@ -496,6 +571,8 @@ func (e *Executor) runningSummary(p jobs.ThirdPartyParams) (string, error) {
 // jobLog: onde está o log do instalador deste job (msiexec ou Inno); vazio para os outros.
 func (e *Executor) jobLog(p jobs.ThirdPartyParams, jobID int64) string {
 	switch {
+	case p.User != "":
+		return ""
 	case jobs.MSIInstaller(p.Installer):
 		return "log do msiexec: " + e.logPath(jobID)
 	case e.innoLog(p):

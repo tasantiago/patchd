@@ -37,6 +37,9 @@ type CustomInput struct {
 	Processes      []string
 	// UninstallFirst: a atualização remove a instalação de agora antes de instalar.
 	UninstallFirst bool
+	// PerUser: o instalador instala no perfil de quem o roda; só a Central o instala, como o
+	// usuário que pediu (Install.PerUser).
+	PerUser bool
 	// Arguments (winget): os argumentos da instalação silenciosa no lugar dos do winget (o
 	// "/S /allusers" que faz o instalador Electron de escopo usuário instalar para todos).
 	Arguments string
@@ -146,7 +149,7 @@ func BuildCustom(in CustomInput) (App, error) {
 	a := App{ID: id, OS: "windows", Name: in.Name, Category: CategoryFeed, Match: match,
 		Source: &Source{Type: SourceWinget, ID: in.WingetID},
 		Install: &Install{Winget: in.WingetID, Type: in.InstallType, Signer: in.Signer, UnsignedReason: in.UnsignedReason, Processes: in.Processes,
-			UninstallFirst: in.UninstallFirst}}
+			UninstallFirst: in.UninstallFirst, PerUser: in.PerUser}}
 	if in.Chocolatey != "" {
 		a.Source = &Source{Type: SourceChocolatey, ID: in.Chocolatey}
 		a.Install.Chocolatey = in.Chocolatey

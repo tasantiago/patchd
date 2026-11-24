@@ -30,3 +30,6 @@ func Running(list []Process, names []string) []Process {
 	}
 	return out
 }
+
+// ErrNoUserSession: o usuário pedido não tem sessão nesta máquina (não está conectado).
+var ErrNoUserSession = errors.New("o usuário não está conectado nesta máquina")

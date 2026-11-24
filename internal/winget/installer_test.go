@@ -186,6 +186,14 @@ func TestDescartes(t *testing.T) {
 	if in, _, err := m.Select(Want{Arch: "x64", UserScope: true}); err != nil || in.Type != "nullsoft" {
 		t.Errorf("escopo user com argumentos: %v", err)
 	}
+	// O programa por usuário pede o escopo user: o de usuário serve, o de máquina não.
+	if in, _, err := m.Select(Want{Arch: "x64", Scope: "user"}); err != nil || in.Type != "nullsoft" {
+		t.Errorf("escopo user pedido: %v", err)
+	}
+	mm, _ := ParseInstaller([]byte(base + inst("  InstallerType: msi\n  Scope: machine\n")))
+	if _, _, err := mm.Select(Want{Arch: "x64", Scope: "user"}); err == nil {
+		t.Error("o de máquina serviu ao por usuário")
+	}
 	// Escopo declarado igual ao pedido vence o não declarado, mesmo vindo depois.
 	m, _ = ParseInstaller([]byte(base + inst("  InstallerType: nullsoft\n") + inst("  InstallerType: msi\n  Scope: machine\n")))
 	if in, _, _ := m.Select(Want{Arch: "x64"}); in.Type != "msi" {
