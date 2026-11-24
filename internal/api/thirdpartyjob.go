@@ -174,7 +174,17 @@ func (a *api) judgeUnchanged(inv protocol.InventoryReport, p jobs.ThirdPartyPara
 				nameVersion(e.Software.Name, e.Software.Version), e.Kind, agent)
 		}
 	}
-	why := "o inventário continua mostrando a versão de antes"
+	var found []string
+	for _, e := range machine {
+		found = append(found, fmt.Sprintf("%s (%s)", nameVersion(e.Software.Name, e.Software.Version), e.Kind))
+	}
+	why := fmt.Sprintf("o inventário continua mostrando a versão de antes: %s, e o job levava %s", strings.Join(found, ", "), p.Version)
+	switch {
+	case len(machine) > 1:
+		why += fmt.Sprintf(" (%d instalações visíveis do programa: limpar antes, deixando uma)", len(machine))
+	case len(machine) == 1:
+		why += "; o programa foi achado pelo nome (não é o nome no inventário): o instalador rodou e não trocou a versão (veja o log do instalador no resultado: o MSI que já estava instalado só reconfigura)"
+	}
 	if len(machine) == 0 {
 		why = "e não mostra o programa instalado para a máquina toda: " + missingWhy(inv, a.tpManifest.Get(), p.App, user)
 	}
