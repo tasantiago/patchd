@@ -423,6 +423,12 @@ baixado nem executado. Duas ajudas:
   - com **fechar com aviso** na campanha, a tentativa vem antes: se não der, o programa fecha
     com aviso e o instalador roda de novo.
 
+  A opção só aparece nos programas **com a lista de processos**. Sem ela (o Chrome do
+  manifesto, ou um programa incluído sem "Processos do programa"), o agente não confere se o
+  programa está aberto: instala sempre, mesmo aberto, e nunca adia por isso; a página do
+  programa diz isso no lugar da opção (nos incluídos pelo painel, preencha os processos em
+  Editar para o agente esperar fechar e a opção aparecer).
+
   Não tenta na **regularização** (remover a instalação antiga com o programa aberto é pior que
   esperar). Instalador que falha no meio com o programa aberto pode deixar a instalação pela
   metade: ligue só para os programas que você conferiu numa máquina. Vai só para agentes que
@@ -1961,6 +1967,22 @@ Programa sem nada guardado (o do manifesto que você não usa) e o instalador pr
 referência é o próprio envio) não avisam; versão que não se compara (escrita de outro jeito
 que a de referência) também não. Com **Baixar sozinho cada versão nova** na Fonte do
 instalador, o "para baixar" some sozinho quando o servidor baixa, e fica o "para aprovar".
+
+### MSI que já estava instalado (o msiexec "não fez nada")
+
+O msiexec sai com 0 sem trocar arquivo nenhum quando **o mesmo MSI (o mesmo ProductCode) já
+está instalado** na máquina: o log diz "Product registered: entering maintenance mode" e
+"Configuration completed successfully" (em português, "O Windows Installer reconfigurou o
+produto"). É o caso do MSI corporativo do Chrome baixado pelo link fixo
+(`googlechromestandaloneenterprise64.msi`, também o do pacote do Chocolatey): o Google troca o
+arquivo do link, e o que o servidor guardou é o mesmo que a máquina já recebeu antes, enquanto o
+próprio Chrome se atualizou sozinho por cima. O resultado do job passa a dizer "o msiexec não
+instalou nada: este MSI (o mesmo ProductCode) já estava instalado", e o servidor julga pelo
+inventário como sempre. O que fazer: baixar a versão nova (o Baixar de novo, com o link fixo já
+trocado pelo Google, ou a fonte do fabricante com a versão no link) e aprovar; o mesmo arquivo de
+novo nunca atualiza. O MSI do Chrome também se registra no Windows com uma versão própria, que
+pode não ser a do Chrome que está na pasta (o log mostra as duas: a `ProductVersion` e a pasta
+em `UNINSTALLCMDLINE`).
 
 ### Prazo da instalação e a fila do Windows Installer
 

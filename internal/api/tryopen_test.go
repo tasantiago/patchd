@@ -69,6 +69,10 @@ func TestTentarComOProgramaAbertoNoPainel(t *testing.T) {
 	if loc := local(pagina(h, "POST", "/painel/patch/terceiros/tentar-aberto", sessaoAdmin, url.Values{"app": {"powershell-7"}, "ligado": {"1"}})); !strings.Contains(loc, "erro=tentar-aberto") {
 		t.Errorf("sem processos: %s", loc)
 	}
+	// O programa sem a lista de processos (o Chrome do manifesto): a página diz por que não há a opção.
+	if b := pagina(h, "GET", "/painel/patch/programa?app=google-chrome", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "não tem a lista de processos") {
+		t.Error("sem processos: sem a explicação")
+	}
 	if r := pagina(h, "POST", "/painel/patch/terceiros/tentar-aberto", sessaoTeste, url.Values{"app": {"vscode"}, "ligado": {"1"}}); r.Code != http.StatusForbidden || tryOpen() {
 		t.Errorf("leitura: %d", r.Code)
 	}

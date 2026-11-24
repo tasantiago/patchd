@@ -392,9 +392,15 @@ func (e *Executor) runInstaller(ctx context.Context, jobID int64, file string, p
 		detail += "; " + log
 	}
 	switch outcome {
-	case winget.OutcomeOK:
-		return detail, nil
-	case winget.OutcomeReboot:
+	case winget.OutcomeOK, winget.OutcomeReboot:
+		if jobs.MSIInstaller(p.Installer) && e.LogDir != "" && user == nil {
+			if note := msiMaintenance(e.logPath(jobID)); note != "" {
+				detail += "; " + note
+			}
+		}
+		if outcome == winget.OutcomeOK {
+			return detail, nil
+		}
 		return detail + "; reinício pendente para concluir", nil
 	case winget.OutcomeRetry:
 		return detail, fmt.Errorf("%w: %s", ErrRetry, cmpOr(resp, "código "+strconv.Itoa(code)))
