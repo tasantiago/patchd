@@ -347,6 +347,10 @@ func (s *Service) applications(ctx context.Context, inv protocol.InventoryReport
 		} else {
 			decision = tpinstall.Decision{App: rule, State: tpinstall.StateUpdate, Package: tpinstall.ForNewInstall(rule, available, arch)}
 		}
+		if rule.PerUser() {
+			state.Detail = "Instala no perfil de cada usuário: pela Central de software, pedido pelo usuário (não pela Padronização)."
+			continue
+		}
 		if decision.Package == nil {
 			state.Detail = "Nenhum instalador aprovado compatível com este computador."
 			continue

@@ -269,6 +269,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 			client.Capabilities = append(client.Capabilities, protocol.CapabilityRegularize)
 			// E o com try_open (tentar instalar com o programa aberto antes de adiar).
 			client.Capabilities = append(client.Capabilities, protocol.CapabilityTryOpen)
+			// E o com user (instalar no perfil de quem pediu na Central).
+			client.Capabilities = append(client.Capabilities, protocol.CapabilityUserInstall)
 		case "darwin":
 			// No macOS, o job de terceiros é o Installomator; só vem a quem anuncia.
 			client.Capabilities = append(client.Capabilities, protocol.CapabilityInstallomator)

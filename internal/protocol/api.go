@@ -82,6 +82,10 @@ const CapabilityRegularize = "regularizar-v1"
 // campo try_open). Os anteriores recusam o campo: o servidor só o manda a quem anuncia.
 const CapabilityTryOpen = "tentar-aberto-v1"
 
+// CapabilityUserInstall: o agente instala no perfil do usuário (o campo user do job de
+// terceiros: o programa por usuário pedido na Central). Os anteriores recusam o campo.
+const CapabilityUserInstall = "instalar-usuario-v1"
+
 // CapabilityUninstall: o agente remove programas em silêncio (o job desinstalar, de Inventário ›
 // Programas instalados). O servidor só o manda a quem anuncia.
 const CapabilityUninstall = "desinstalar-v1"

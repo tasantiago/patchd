@@ -532,3 +532,97 @@ func TestTentarComOProgramaAberto(t *testing.T) {
 		t.Error("try_open sem processos passou")
 	}
 }
+
+// O programa por usuário (job com user): acha a sessão de quem pediu, copia o instalador para a
+// pasta dele e roda como ele, sem os logs do agente; o programa aberto que conta é o da sessão
+// dele; sem ele conectado, adia sem baixar; o agente sem a função recusa.
+func TestInstalarNoPerfilDoUsuario(t *testing.T) {
+	inst := []byte("MZ instalador nsis do canva")
+	ctx := context.Background()
+	p := params(inst, "nullsoft", "/S")
+	p.User, p.UserSID, p.Processes = `TJ\ana`, "S-1-5-21-1-2-3-1001", []string{"Canva.exe"}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	run := &runnerFalso{}
+	e, pedido := executor(t, inst, run, google, nil)
+	var rodou struct {
+		session uint32
+		prog    string
+		args    []string
+	}
+	staged := filepath.Join(t.TempDir(), "copia.exe")
+	limpou := false
+	e.AsUser = &UserRunner{
+		Session: func(sid, account string) (uint32, string, error) {
+			if sid != p.UserSID {
+				return 0, "", platform.ErrNoUserSession
+			}
+			return 2, sid, nil
+		},
+		Stage: func(src, sid string) (string, func(), error) {
+			b, err := os.ReadFile(src)
+			if err != nil || !bytes.Equal(b, inst) || sid != p.UserSID {
+				return "", nil, fmt.Errorf("cópia: %v", err)
+			}
+			return staged, func() { limpou = true }, os.WriteFile(staged, b, 0o600)
+		},
+		Run: func(_ context.Context, s uint32, prog string, args []string) (int, error) {
+			rodou.session, rodou.prog, rodou.args = s, prog, args
+			return 0, nil
+		},
+	}
+	// Outro usuário (sessão 1) com o programa aberto não impede.
+	e.Processes = func() ([]platform.Process, error) {
+		return []platform.Process{{Name: "Canva.exe", PID: 9, Session: 1}}, nil
+	}
+	d, err := e.Install(ctx, 60, p)
+	if err != nil || rodou.session != 2 || rodou.prog != staged || strings.Join(rodou.args, " ") != "/S" || !limpou || run.rodadas != 0 ||
+		!strings.Contains(d, `como TJ\ana (sessão 2)`) || strings.Contains(d, "log do") {
+		t.Fatalf("usuário: %q %v %+v (limpou %t)", d, err, rodou, limpou)
+	}
+	// Na sessão dele, aberto: adia, sem baixar.
+	e.Processes = func() ([]platform.Process, error) {
+		return []platform.Process{{Name: "Canva.exe", PID: 9, Session: 2}}, nil
+	}
+	*pedido = ""
+	if _, err := e.Install(ctx, 61, p); !errors.Is(err, jobs.ErrProgramOpen) || *pedido != "" {
+		t.Errorf("aberto na sessão dele: %v", err)
+	}
+	// Código de saída do instalador do usuário: o mesmo mapa dos outros.
+	e.Processes = nil
+	q := p
+	q.Processes = nil
+	e.AsUser.Run = func(context.Context, uint32, string, []string) (int, error) { return 5, nil }
+	if d, err := e.Install(ctx, 62, q); !errors.Is(err, ErrRetry) || !strings.Contains(d, "código 5 (packageInUse)") {
+		t.Errorf("código 5: %q %v", d, err)
+	}
+	// Não conectado: adia, sem baixar.
+	q.UserSID = "S-1-5-21-9-9-9-9"
+	*pedido = ""
+	if _, err := e.Install(ctx, 63, q); !errors.Is(err, ErrRetry) || !errors.Is(err, jobs.ErrNotStarted) || *pedido != "" ||
+		!strings.Contains(err.Error(), "não está conectado") {
+		t.Errorf("desconectado: %v", err)
+	}
+	// O MSI como o usuário: msiexec /i com a cópia, sem /l*v.
+	if prog, args := e.command(1, staged, jobs.ThirdPartyParams{Installer: "msi", User: `TJ\ana`, Args: []string{"/qn"}}); prog != e.Msiexec ||
+		strings.Join(args, " ") != "/i "+staged+" /qn" {
+		t.Errorf("msi: %s %v", prog, args)
+	}
+	e.AsUser = nil
+	if _, err := e.Install(ctx, 64, q); !errors.Is(err, jobs.ErrRefused) {
+		t.Errorf("sem AsUser: %v", err)
+	}
+	// O job: usuário fora do formato, ou com close/replace, não passa.
+	for _, ruim := range []jobs.ThirdPartyParams{{User: `a"b`}, {User: `TJ\ana`, UserSID: "x"}, {UserSID: "S-1-5-21-1"},
+		{User: `TJ\ana`, Close: &jobs.CloseApps{NoticeMinutes: 5}, Processes: []string{"a.exe"}}} {
+		r := p
+		r.User, r.UserSID, r.Close = ruim.User, ruim.UserSID, ruim.Close
+		if ruim.Processes != nil {
+			r.Processes = ruim.Processes
+		}
+		if err := r.Validate(); err == nil {
+			t.Errorf("passou: %+v", ruim)
+		}
+	}
+}

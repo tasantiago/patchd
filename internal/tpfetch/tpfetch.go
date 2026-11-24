@@ -53,6 +53,9 @@ func Resolve(ctx context.Context, c *winget.Client, a thirdparty.App, ver string
 // Want: o instalador que a regra pede, com a arquitetura e o tipo das opções.
 func Want(a thirdparty.App, o Options) winget.Want {
 	w := winget.Want{Arch: o.Arch, Type: a.Install.Type, UninstallFirst: a.Install.UninstallFirst, UserScope: a.Install.Arguments != ""}
+	if a.PerUser() {
+		w.Scope = "user" // o instalador por usuário (a Central o roda como quem pediu)
+	}
 	if o.Type != "" {
 		w.Type = o.Type
 	}

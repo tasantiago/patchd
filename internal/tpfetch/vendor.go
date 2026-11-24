@@ -294,7 +294,7 @@ func keep(ctx context.Context, f *pkgcache.Fetcher, st Store, a thirdparty.App, 
 		fmt.Fprintf(out, "  baixado     %s (%s) em %s\n", pkgcache.FileName(sha, msi), pkgcache.Bytes(res.Size), res.Duration.Round(100*time.Millisecond))
 	}
 	created, err := st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: a.ID, WingetID: origin, Version: version, Architecture: "x64", Type: typ,
-		Scope: "machine", URL: link, SHA256: sha, Size: res.Size, Arguments: cmp.Or(strings.TrimSpace(args), winget.SilentDefault(typ))})
+		Scope: map[bool]string{true: "user", false: "machine"}[a.PerUser()], URL: link, SHA256: sha, Size: res.Size, Arguments: cmp.Or(strings.TrimSpace(args), winget.SilentDefault(typ))})
 	var pc *store.PackageChangedError
 	switch {
 	case errors.As(err, &pc):

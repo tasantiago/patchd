@@ -36,6 +36,8 @@ type Store interface {
 	DecideSelfServiceRequest(ctx context.Context, id int64, state, by, note string, jobID int64, at time.Time) error
 	ExpireSelfServiceRequests(ctx context.Context, before, now time.Time) (int64, error)
 	CancelJob(ctx context.Context, id int64, by string) (bool, error)
+	// As capacidades do agente (o programa por usuário só vai a quem instala como o usuário).
+	MachineCapabilities(ctx context.Context, id string) ([]string, error)
 }
 
 // Service atende a loja e os pedidos (Aula 17.2). A API do agente e a linha de comando usam
@@ -82,7 +84,7 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	}
 	for _, it := range items {
 		x := protocol.SelfServiceItem{App: it.AppID, Name: it.Name, Installed: it.Installed, Target: it.Target,
-			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval, Replaces: it.Replaces, Category: it.Category}
+			Action: it.Action, Reason: it.Reason, Approval: it.NeedsApproval, Replaces: it.Replaces, Category: it.Category, PerUser: it.PerUser}
 		for _, q := range waiting {
 			if q.AppID == it.AppID && q.State == store.RequestWaiting {
 				x.Pending = q.ID
@@ -238,7 +240,15 @@ func (s *Service) items(ctx context.Context, machineID string, u protocol.SelfSe
 	if err != nil {
 		return nil, err
 	}
-	return Catalog(offers, TokenMember(u.Groups), Machine{Software: inv.Software, Arch: arch, Options: opts}, s.Manifest.Get(), pkgs, approvals), nil
+	m := Machine{Software: inv.Software, Arch: arch, Options: opts, UserSID: u.SID}
+	if slices.ContainsFunc(s.Manifest.For("windows"), thirdparty.App.PerUser) {
+		caps, err := s.Store.MachineCapabilities(ctx, machineID)
+		if err != nil {
+			return nil, err
+		}
+		m.CanUserInstall = slices.Contains(caps, protocol.CapabilityUserInstall)
+	}
+	return Catalog(offers, TokenMember(u.Groups), m, s.Manifest.Get(), pkgs, approvals), nil
 }
 
 func (s *Service) openJob(ctx context.Context, machineID string) (int64, error) {
@@ -310,7 +320,7 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 		o.Why = fmt.Sprintf("job %d em aberto", open)
 		return o, nil
 	}
-	p, why, err := s.params(ctx, machineID, it)
+	p, why, err := s.params(ctx, machineID, it, req.SelfServiceUser)
 	if err != nil {
 		return o, err
 	}
@@ -341,7 +351,7 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 
 // params monta o job pelo mesmo caminho do painel: a decisão da máquina com os instaladores
 // aprovados, conferidos no cache.
-func (s *Service) params(ctx context.Context, machineID string, it Item) (jobs.ThirdPartyParams, string, error) {
+func (s *Service) params(ctx context.Context, machineID string, it Item, u protocol.SelfServiceUser) (jobs.ThirdPartyParams, string, error) {
 	pkgs, err := s.Store.ThirdPartyPackages(ctx)
 	if err != nil {
 		return jobs.ThirdPartyParams{}, "", err
@@ -364,7 +374,10 @@ func (s *Service) params(ctx context.Context, machineID string, it Item) (jobs.T
 		}
 	}
 	d := tpinstall.Decision{App: rule, State: tpinstall.StateUpdate}
-	if it.Action == ActionInstall {
+	if rule.PerUser() {
+		// No perfil de quem pediu: instalar e atualizar são o mesmo instalador, como ele.
+		d.Package = tpinstall.ForUserInstall(rule, versionPkgs, arch)
+	} else if it.Action == ActionInstall {
 		d.Package = tpinstall.ForNewInstall(rule, versionPkgs, arch)
 	} else {
 		opts, err := s.planOptions(ctx, machineID)
@@ -389,6 +402,12 @@ func (s *Service) params(ctx context.Context, machineID string, it Item) (jobs.T
 	p, err := tpinstall.JobParams(d)
 	if err != nil {
 		return jobs.ThirdPartyParams{}, "parâmetros do instalador fora do job: " + err.Error(), nil
+	}
+	if rule.PerUser() {
+		p.User, p.UserSID = u.Account, u.SID
+		if err := p.Validate(); err != nil {
+			return jobs.ThirdPartyParams{}, "usuário fora do job: " + err.Error(), nil
+		}
 	}
 	return p, "", nil
 }
@@ -680,7 +699,7 @@ func (s *Service) Approve(ctx context.Context, id int64, by string) (Approval, s
 	} else if open > 0 {
 		return a, fmt.Sprintf("há uma instalação em andamento nessa máquina (job %d); aprove quando ela terminar", open), nil
 	}
-	p, why, err := s.params(ctx, q.MachineID, it)
+	p, why, err := s.params(ctx, q.MachineID, it, protocol.SelfServiceUser{Account: q.Account})
 	if err != nil {
 		return a, "", err
 	}

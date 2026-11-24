@@ -41,7 +41,12 @@ const (
 type SelfServiceUser struct {
 	Account string   `json:"account"` // DOMINIO\usuario
 	Groups  []string `json:"groups"`  // DOMINIO\grupo
+	// SID: o do token (Windows), para a loja achar as instalações por usuário dele e o job
+	// por usuário achar a sessão dele. Agentes anteriores não mandam.
+	SID string `json:"sid,omitempty"`
 }
+
+var selfServiceSID = regexp.MustCompile(`^S-1-[0-9]+(-[0-9]+){1,14}$`)
 
 var selfServiceAccount = regexp.MustCompile(`^(?:[^\\\x00-\x1f]{1,64}\\)?[^\\\x00-\x1f]{1,104}$`)
 
@@ -52,6 +57,8 @@ func (u SelfServiceUser) Check() error {
 		return errors.New("account fora do formato DOMINIO\\usuario")
 	case len(u.Groups) > MaxSelfServiceGroups:
 		return errors.New("grupos demais")
+	case u.SID != "" && !selfServiceSID.MatchString(u.SID):
+		return errors.New("sid fora do formato")
 	}
 	for _, g := range u.Groups {
 		if g == "" || len(g) > 256 || strings.IndexFunc(g, unicode.IsControl) >= 0 {
@@ -79,6 +86,9 @@ type SelfServiceItem struct {
 	// Category: a categoria na loja (StoreCategories). Servidores anteriores não mandam: a
 	// Central mostra a lista sem as categorias.
 	Category string `json:"category,omitempty"`
+	// PerUser: o programa instala só no perfil de quem pede (o patchd roda o instalador como
+	// ele). Servidores anteriores não mandam.
+	PerUser bool `json:"per_user,omitempty"`
 }
 
 // SelfServiceCatalog é a loja do usuário na máquina.

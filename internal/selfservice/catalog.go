@@ -42,6 +42,8 @@ type Item struct {
 	Replaces bool
 	// Category: a categoria na loja (protocol.StoreCategories).
 	Category string
+	// PerUser: instala só no perfil de quem pede (thirdparty.App.PerUser).
+	PerUser bool
 }
 
 // StoreCategory: a categoria da oferta na loja, ou a padrão do programa.
@@ -58,6 +60,10 @@ type Machine struct {
 	Arch     string // tpinstall.MachineArch
 	// Options: o que o plano faz além da atualização do mesmo tipo (a regularização).
 	Options tpinstall.Options
+	// UserSID: o SID de quem vê a loja (os programas por usuário: as instalações dele);
+	// CanUserInstall: o agente instala no perfil do usuário (protocol.CapabilityUserInstall).
+	UserSID        string
+	CanUserInstall bool
 }
 
 // Catalog monta a loja de um usuário numa máquina. member diz se o usuário está no grupo
@@ -86,6 +92,13 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 		}
 		rule := rules[i]
 		it := Item{AppID: rule.ID, Name: rule.Name, NeedsApproval: o.NeedsApproval, Category: StoreCategory(o)}
+		if rule.PerUser() {
+			it.PerUser = true
+			if userItem(&it, o, rule, m, approved) {
+				out = append(out, it)
+			}
+			continue
+		}
 		if j := slices.IndexFunc(plan, func(d tpinstall.Decision) bool { return d.App.ID == rule.ID }); j >= 0 {
 			d := plan[j]
 			it.Installed = d.Installed
@@ -120,6 +133,35 @@ func Catalog(offers []store.SelfServiceOffer, member func(group string) bool, m 
 		return cmp.Or(cmp.Compare(slices.Index(actionOrder, a.Action), slices.Index(actionOrder, b.Action)), strings.Compare(a.Name, b.Name))
 	})
 	return out
+}
+
+// userItem: o item do programa por usuário, pelas instalações de quem vê a loja (as do perfil
+// dele, pelo SID). false: nada a mostrar (não instalado e a oferta só atualiza).
+func userItem(it *Item, o store.SelfServiceOffer, rule thirdparty.App, m Machine, approved []store.ThirdPartyPackage) bool {
+	for _, s := range m.Software {
+		if s.Scope == "user" && m.UserSID != "" && strings.EqualFold(s.User, m.UserSID) && !s.SystemComponent && rule.Matches(s.Name, s.Publisher) &&
+			(it.Installed == "" || newerVersion(s.Version, it.Installed)) {
+			it.Installed = s.Version
+		}
+	}
+	pk := tpinstall.ForUserInstall(rule, approved, m.Arch)
+	switch {
+	case it.Installed == "" && !o.CanInstall:
+		return false
+	case it.Installed != "" && !o.CanUpdate:
+		it.Action = ActionInstalled
+	case !m.CanUserInstall:
+		it.Action, it.Reason = ActionBlocked, "o patchd desta máquina ainda não instala no seu perfil: aguarde a atualização do agente"
+	case pk == nil:
+		it.Action, it.Reason = ActionBlocked, noInstallerReason(rule.ID, approved)
+	case it.Installed == "":
+		it.Action, it.Target = ActionInstall, pk.Version
+	case newerVersion(pk.Version, it.Installed):
+		it.Action, it.Target = ActionUpdate, pk.Version
+	default:
+		it.Action = ActionCurrent
+	}
+	return true
 }
 
 // noPackageReason: por que a atualização não sai. Com versão aprovada, o que falta é o

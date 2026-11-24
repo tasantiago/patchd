@@ -371,3 +371,40 @@ func TestIncluirDoChocolatey(t *testing.T) {
 		t.Errorf("do manifesto: %d", r.Code)
 	}
 }
+
+// O instalador só por usuário sem os argumentos do Electron (o exe do fabricante): a busca
+// marca "instala no perfil do usuário"; salvar guarda a regra por usuário, e a página do programa
+// diz que só a Central instala.
+func TestIncluirProgramaPorUsuario(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	descrever := func(_ context.Context, id string) (winget.Description, error) {
+		return winget.Description{ID: id, Version: "2.0", Name: "Ferramenta", Publisher: "Exemplo", Types: []string{"inno"}, UserScope: true}, nil
+	}
+	h, _, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, descrever, nil), api.WithCompliance(&complianceFalso{}))
+	b := pagina(h, "GET", "/painel/patch/terceiros/incluir?winget=Exemplo.Ferramenta", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `name="por_usuario" value="1" checked`) || strings.Contains(b, `value="/S /allusers"`) {
+		t.Errorf("busca:\n%s", b)
+	}
+	form := url.Values{"nome": {"Ferramenta"}, "winget": {"Exemplo.Ferramenta"}, "inventario": {"Ferramenta"}, "modo": {"comeca"}, "tipo": {"inno"},
+		"assinatura": {"sim"}, "assinante": {"Exemplo"}, "por_usuario": {"1"}}
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("salvar: %d %s", r.Code, r.Body)
+	}
+	ok := false
+	for _, a := range live.For("windows") {
+		ok = ok || a.ID == "exemplo-ferramenta" && a.PerUser()
+	}
+	if !ok {
+		t.Error("a regra não ficou por usuário")
+	}
+	if b := pagina(h, "GET", "/painel/patch/programa?app=exemplo-ferramenta", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "instala no perfil de cada usuário, só pela Central de software") {
+		t.Error("página do programa")
+	}
+	// Com "remover antes": a regra não passa.
+	form.Set("remover_antes", "1")
+	form.Set("editar", "exemplo-ferramenta")
+	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity {
+		t.Errorf("com remover antes: %d", r.Code)
+	}
+}

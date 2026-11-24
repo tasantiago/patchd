@@ -287,6 +287,8 @@ type Item struct {
 	Replaces bool
 	// Category: a categoria na loja (protocol.StoreCategories); vazia com servidor anterior.
 	Category string
+	// PerUser: instala só para quem pede (no perfil dele), não para o computador.
+	PerUser bool
 }
 
 // catLink é um link da loja: "Todos" ou uma categoria com programas.
@@ -447,7 +449,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		refresh = d.Busy > 0
 		for _, it := range resp.Catalog.Items {
 			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
-				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category}
+				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category, PerUser: it.PerUser}
 			switch it.Action {
 			case protocol.SelfServiceUpdate:
 				d.Updates = append(d.Updates, x)
@@ -977,13 +979,14 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{end}}
 {{define "loja"}}{{with .Confirm}}<section class="confirma"><h1>Instalar {{.Name}}?</h1>
 {{if .Approval}}<p>O pedido da versão <b>{{.Target}}</b> vai para a aprovação da equipe de TI. Aprovado, a instalação começa sozinha, em segundo plano; você acompanha em Meus pedidos.</p>
+{{else if .PerUser}}<p>A versão <b>{{.Target}}</b> será instalada só para você (no seu usuário), em segundo plano, aprovada pela equipe de TI. Fique conectado até terminar: leva poucos minutos, e você pode continuar trabalhando.</p>
 {{else}}<p>A versão <b>{{.Target}}</b> será instalada neste computador, em segundo plano, aprovada pela equipe de TI. Leva poucos minutos; você pode continuar trabalhando.</p>{{end}}
 <div class="botoes"><form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="instalar">
 <button type="submit"{{if and $.Busy (not .Approval)}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Instalar agora{{end}}</button></form><a class="sec" href="{{$.Base}}?aba=loja">Cancelar</a></div></section>{{end}}
 {{if or .Cats .Install .Installed .Unavailable .Search}}<div class="loja-filtro">{{if .Cats}}<nav class="cats" aria-label="categorias da loja">{{range .Cats}}<a href="{{.Href}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}<span class="n">{{.Count}}</span></a>{{end}}</nav>{{end}}
 <form class="busca-loja" method="get" action="{{$.Base}}" role="search"><input type="hidden" name="aba" value="loja">{{if .Category}}<input type="hidden" name="categoria" value="{{.Category}}">{{end}}<label for="busca-loja" class="sr">Buscar programa pelo nome</label><input id="busca-loja" type="search" name="busca" value="{{.Search}}" placeholder="Buscar programa pelo nome" maxlength="60"><button type="submit">Buscar</button>{{if .Search}}<a class="sec" href="{{.StoreClear}}">Limpar</a>{{end}}</form></div>{{end}}
 <section><h1>Programas para instalar</h1>
-{{if .Install}}<ul class="lista">{{range .Install}}<li><div><strong>{{.Name}}</strong><span class="ver">versão {{.Target}}{{if .Approval}} · com aprovação da TI{{end}}</span></div>
+{{if .Install}}<ul class="lista">{{range .Install}}<li><div><strong>{{.Name}}</strong><span class="ver">versão {{.Target}}{{if .PerUser}} · só no seu usuário{{end}}{{if .Approval}} · com aprovação da TI{{end}}</span></div>
 {{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else}}<a class="btn" href="{{$.Base}}?aba=loja&amp;confirmar={{.App}}">{{if .Approval}}Pedir à TI{{else}}Instalar{{end}}</a>{{end}}</li>{{end}}</ul>
 {{else if .Filtered}}<p class="vazio">Nenhum programa para instalar {{if .Search}}com “{{.Search}}” no nome{{if .Category}} nesta categoria{{end}}{{else}}nesta categoria{{end}}. <a href="{{.StoreAll}}">Ver todos</a></p>
 {{else}}<p class="vazio">Nenhum programa novo disponível para você neste computador.</p>{{end}}
