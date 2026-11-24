@@ -165,7 +165,7 @@ func TestProgramaComNomeParecidoEJaInstalado(t *testing.T) {
 		t.Errorf("já instalado: %s %s", st, d)
 	}
 	p.Version = "2.5"
-	if st, d := a.judgeUnchanged(inv, p, "código 0"); st != jobs.StateFailed || !strings.Contains(d, "continua mostrando a versão de antes") {
+	if st, d := a.judgeUnchanged(inv, p, "código 0"); st != jobs.StateFailed || !strings.Contains(d, "continua mostrando a versão de antes: ") || !strings.Contains(d, "e o job levava 2.5") || !strings.Contains(d, "achado pelo nome") {
 		t.Errorf("versão de antes: %s %s", st, d)
 	}
 }
