@@ -29,15 +29,24 @@ GOSEC_VERSION=v2.29.0
 cd "$(dirname "$0")/.."
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/patchd-seguranca"
 
-# instalar NOME MÓDULO VERSÃO: go install numa pasta só daquela versão.
+# instalar NOME MÓDULO VERSÃO: go install numa pasta só daquela versão. A rede do CI às vezes
+# cai no meio (o sum.golang.org com "stream error"): tenta três vezes antes de desistir, e a
+# falha de instalação aparece como tal, não como achado.
 instalar() {
 	local nome=$1 mod=$2 ver=$3
 	local dir="$cache/$nome-$ver"
 	if [ ! -x "$dir/$nome" ]; then
-		echo "== instalando $nome $ver" >&2
 		mkdir -p "$dir"
-		GOBIN="$dir" GOOS= GOARCH= go install "$mod@$ver" >&2
+		local tentativa
+		for tentativa in 1 2 3; do
+			echo "== instalando $nome $ver (tentativa $tentativa)" >&2
+			if GOBIN="$dir" GOOS= GOARCH= go install "$mod@$ver" >&2; then
+				break
+			fi
+			[ "$tentativa" -lt 3 ] && sleep $((tentativa * 10))
+		done
 	fi
+	[ -x "$dir/$nome" ] || return 1
 	echo "$dir/$nome"
 }
 
@@ -46,15 +55,21 @@ sistemas="${SO:-linux windows darwin}"
 falhas=()
 
 for ferramenta in $quais; do
+	bin=
 	case $ferramenta in
-	govulncheck) bin=$(instalar govulncheck golang.org/x/vuln/cmd/govulncheck "$GOVULNCHECK_VERSION") ;;
-	staticcheck) bin=$(instalar staticcheck honnef.co/go/tools/cmd/staticcheck "$STATICCHECK_VERSION") ;;
-	gosec) bin=$(instalar gosec github.com/securego/gosec/v2/cmd/gosec "$GOSEC_VERSION") ;;
+	govulncheck) bin=$(instalar govulncheck golang.org/x/vuln/cmd/govulncheck "$GOVULNCHECK_VERSION") || bin= ;;
+	staticcheck) bin=$(instalar staticcheck honnef.co/go/tools/cmd/staticcheck "$STATICCHECK_VERSION") || bin= ;;
+	gosec) bin=$(instalar gosec github.com/securego/gosec/v2/cmd/gosec "$GOSEC_VERSION") || bin= ;;
 	*)
 		echo "ferramenta desconhecida: $ferramenta (govulncheck, staticcheck ou gosec)" >&2
 		exit 2
 		;;
 	esac
+	if [ -z "$bin" ]; then
+		echo "== $ferramenta: não deu para instalar (rede?); nada foi analisado com ele"
+		falhas+=("$ferramenta/instalação")
+		continue
+	fi
 	for so in $sistemas; do
 		echo "== $ferramenta ($so)"
 		case $ferramenta in
