@@ -86,6 +86,10 @@ const CapabilityTryOpen = "tentar-aberto-v1"
 // terceiros: o programa por usuário pedido na Central). Os anteriores recusam o campo.
 const CapabilityUserInstall = "instalar-usuario-v1"
 
+// CapabilityCloseByUser: o agente fecha o programa a pedido do próprio usuário (o "Fechar e
+// instalar" da Central: o campo close com user). Os anteriores recusam o campo.
+const CapabilityCloseByUser = "fechar-pelo-usuario-v1"
+
 // CapabilityUninstall: o agente remove programas em silêncio (o job desinstalar, de Inventário ›
 // Programas instalados). O servidor só o manda a quem anuncia.
 const CapabilityUninstall = "desinstalar-v1"

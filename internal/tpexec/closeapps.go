@@ -28,7 +28,14 @@ type AppCloser struct {
 	Ask func(session uint32, pids []uint32) error
 	// Kill fecha à força o processo, se ele ainda for o executável name.
 	Kill func(pid uint32, name string) error
+	// UserSession: a sessão do usuário (pelo SID; sem SID, pela conta), para o "Fechar e
+	// instalar" da Central fechar só o programa dele. nil: o close com user é recusado.
+	UserSession func(sid, account string) (uint32, string, error)
 }
+
+// Prazo do "Fechar e instalar": quem pediu já confirmou; o programa tem um pouco para fechar
+// sozinho (salvar o que dá) antes da força.
+const userAskWait = 15 * time.Second
 
 // Prazos de depois do aviso: quanto o programa tem para fechar sozinho e a conferência final.
 const (
@@ -78,6 +85,9 @@ func (e *Executor) closeRunning(ctx context.Context, p jobs.ThirdPartyParams) (s
 	}
 	if len(run) == 0 {
 		return "", nil
+	}
+	if p.Close.User != "" {
+		return e.closeForUser(ctx, p, notStarted)
 	}
 	active, err := e.Closer.Sessions()
 	if err != nil {
@@ -165,4 +175,71 @@ func (e *Executor) closeRunning(ctx context.Context, p jobs.ThirdPartyParams) (s
 		}
 	}
 	return fmt.Sprintf("programa aberto (%s): aviso de %d min em %d sessão(ões); %s", strings.Join(names, ", "), minutes, notified, how), nil
+}
+
+// closeForUser: o "Fechar e instalar" da Central. Fecha só o programa aberto na sessão de quem
+// pediu (pede para fechar e, em 15 s, força); aberto também na sessão de outra pessoa, não
+// mexe em nada e o job volta adiado.
+func (e *Executor) closeForUser(ctx context.Context, p jobs.ThirdPartyParams, notStarted func(format string, a ...any) error) (string, error) {
+	if e.Closer.UserSession == nil {
+		return "", fmt.Errorf("%w: este agente não fecha o programa a pedido do usuário", jobs.ErrRefused)
+	}
+	sess, _, err := e.Closer.UserSession(p.Close.UserSID, p.Close.User)
+	if err != nil {
+		return "", notStarted("%s não está conectado nesta máquina: o programa não foi fechado", p.Close.User)
+	}
+	// No programa por usuário (job com user), o de outro usuário é outra instalação: não conta.
+	running := func() ([]platform.Process, error) {
+		list, err := e.running(p)
+		if err == nil && p.User != "" {
+			list = slices.DeleteFunc(list, func(r platform.Process) bool { return r.Session != sess })
+		}
+		return list, err
+	}
+	run, err := running()
+	if err != nil {
+		return "", notStarted("não foi possível listar os processos: %v", err)
+	}
+	var mine []uint32
+	var names []string
+	for _, r := range run {
+		if r.Session != sess {
+			return "", notStarted("o programa (%s) está aberto também na sessão de outro usuário (sessão %d): nada foi fechado; feche-o lá, ou fale com a TI", r.Name, r.Session)
+		}
+		mine = append(mine, r.PID)
+		if !slices.Contains(names, r.Name) {
+			names = append(names, r.Name)
+		}
+	}
+	slices.Sort(names)
+	_ = e.Closer.Ask(sess, mine)
+	how := "fechado normalmente"
+	for waited := time.Duration(0); waited < userAskWait; waited += closePoll {
+		if err := e.wait(ctx, closePoll); err != nil {
+			return "", notStarted("interrompido ao fechar o programa")
+		}
+		if run, err = running(); err == nil && len(run) == 0 {
+			break
+		}
+	}
+	if run, err = running(); err != nil {
+		return "", notStarted("não foi possível listar os processos: %v", err)
+	}
+	if len(run) > 0 {
+		how = "fechado à força (não fechou sozinho em 15 s)"
+		var errs []error
+		for _, r := range run {
+			if r.Session != sess {
+				return "", notStarted("o programa (%s) abriu na sessão de outro usuário (sessão %d) enquanto fechava: o job volta adiado", r.Name, r.Session)
+			}
+			if err := e.Closer.Kill(r.PID, r.Name); err != nil {
+				errs = append(errs, fmt.Errorf("%s (pid %d): %w", r.Name, r.PID, err))
+			}
+		}
+		_ = e.wait(ctx, closeKillWait)
+		if run, err = running(); err != nil || len(run) > 0 {
+			return "", notStarted("o programa não fechou nem à força: %v", errors.Join(errs...))
+		}
+	}
+	return fmt.Sprintf("programa aberto (%s) fechado a pedido de %s, pela Central: %s", strings.Join(names, ", "), p.Close.User, how), nil
 }

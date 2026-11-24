@@ -144,6 +144,10 @@ type SelfServiceJob struct {
 	Detail     string     `json:"detail,omitempty"` // o que o agente informou (curto)
 	CreatedAt  time.Time  `json:"created_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	// CloseAction: o pedido ficou adiado porque o programa estava aberto, e a Central pode
+	// oferecer "Fechar o programa e instalar": a ação a pedir de novo, com Close (atualizar ou
+	// instalar). Vazio: sem o botão. Servidores anteriores não mandam.
+	CloseAction string `json:"close_action,omitempty"`
 }
 
 // SelfServiceRequest é o pedido do usuário.
@@ -153,6 +157,9 @@ type SelfServiceRequest struct {
 	Action string `json:"action"`
 	// RebootAt (Aula 17.6): no "reiniciar", a hora escolhida; vazio: agora.
 	RebootAt *time.Time `json:"reboot_at,omitempty"`
+	// Close: o usuário pediu para o patchd fechar o programa aberto (na sessão dele) e instalar
+	// (o botão "Fechar o programa e instalar" da Central). Servidores anteriores ignoram.
+	Close bool `json:"close,omitempty"`
 }
 
 // SelfServiceRebootState é o reinício da máquina como o app mostra (Aula 17.6).

@@ -304,6 +304,8 @@ type reqView struct {
 	Request              int64 // Aula 18.4: o pedido à TI (ID 0: não virou job)
 	Name, Version, When  string
 	Label, Class, Detail string
+	// App e CloseAction: o "Fechar o programa e instalar" (o pedido adiado por programa aberto).
+	App, CloseAction string
 }
 
 type pageData struct {
@@ -467,12 +469,16 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		for _, j := range resp.Catalog.Requests {
-			v := reqView{ID: j.ID, Request: j.Request, Name: j.Name, Version: j.Version, When: j.CreatedAt.In(a.loc()).Format("02/01 15:04")}
+			v := reqView{ID: j.ID, Request: j.Request, Name: j.Name, Version: j.Version, When: j.CreatedAt.In(a.loc()).Format("02/01 15:04"),
+				App: j.App, CloseAction: j.CloseAction}
 			v.Label, v.Class = stateLabel(j.State)
 			switch j.State {
 			case "concluido", "pendente", "entregue", "aguardando aprovação":
 			case "adiado": // o programa estava aberto: o pedido não fica na fila sozinho
 				v.Detail = "Feche o programa e peça de novo. (" + j.Detail + ")"
+				if j.CloseAction != "" {
+					v.Detail = "O programa estava aberto. Salve o que estiver fazendo nele e use o botão abaixo: o patchd fecha o programa e instala. (" + j.Detail + ")"
+				}
 			default:
 				v.Detail = j.Detail
 			}
@@ -671,7 +677,7 @@ func (a *App) request(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	req := localapi.Request{Op: localapi.OpRequest, App: r.PostForm.Get("app"), Action: r.PostForm.Get("action")}
+	req := localapi.Request{Op: localapi.OpRequest, App: r.PostForm.Get("app"), Action: r.PostForm.Get("action"), Close: r.PostForm.Get("fechar") == "1"}
 	back := tabUpdates
 	switch req.Action {
 	case protocol.SelfServiceInstall:
@@ -685,6 +691,9 @@ func (a *App) request(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.At = at
+	}
+	if req.Close {
+		back = tabRequests // o botão fica em Meus pedidos
 	}
 	resp, err := a.Call(ctx, req)
 	var f flash
@@ -1011,7 +1020,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{if .Updates}}<section><h2>O que foi atualizado{{if .Boot}} desde o último início ({{.Boot}}){{end}}</h2><ul class="lista">{{range .Updates}}<li><div><strong>{{.Name}}</strong><span class="ver">{{if .When}}{{.When}} · {{end}}{{.Source}}</span></div><span class="selo atencao">espera o reinício</span></li>{{end}}</ul></section>
 {{else if or .Reasons .JobID}}<p class="nota">A lista do que foi instalado ainda não chegou ao servidor (ela vem com a próxima busca de atualizações{{if .Boot}}; último início: {{.Boot}}{{end}}).</p>{{end}}{{end}}
 {{define "pedidos"}}<section><h1>Meus pedidos neste computador</h1>
-{{if .Requests}}<ul class="lista">{{range .Requests}}<li><div><strong>{{.Name}} {{.Version}}</strong><span class="ver">{{if .ID}}pedido nº {{.ID}}{{else}}pedido à TI nº {{.Request}}{{end}} · {{.When}}</span>{{if .Detail}}<span class="det">{{.Detail}}</span>{{end}}</div>
+{{if .Requests}}<ul class="lista">{{range .Requests}}<li><div><strong>{{.Name}} {{.Version}}</strong><span class="ver">{{if .ID}}pedido nº {{.ID}}{{else}}pedido à TI nº {{.Request}}{{end}} · {{.When}}</span>{{if .Detail}}<span class="det">{{.Detail}}</span>{{end}}{{if .CloseAction}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="{{.CloseAction}}"><input type="hidden" name="fechar" value="1"><button type="submit"{{if $.Busy}} disabled{{end}}>Fechar o programa e instalar agora</button></form>{{end}}</div>
 <span class="selo {{.Class}}">{{.Label}}</span></li>{{end}}</ul>
 {{else}}<p class="vazio">Você ainda não fez pedidos neste computador.</p>{{end}}
 </section>

@@ -63,6 +63,8 @@ type Request struct {
 	Action                string                          `json:"action,omitempty"`
 	// At (Aula 17.6): no "reiniciar", a hora escolhida; vazio: agora.
 	At *time.Time `json:"at,omitempty"`
+	// Close: "Fechar o programa e instalar" (atualizar e instalar).
+	Close bool `json:"close,omitempty"`
 }
 
 // Response é a resposta do agente: uma linha de JSON, e a conexão termina.
@@ -387,7 +389,7 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 			s.Logger.Warn("autoatendimento: limite de pedidos", "account", id.Account, "app", req.App)
 			return limited(wait)
 		}
-		res, err := s.Backend.SelfServiceRequest(ctx, protocol.SelfServiceRequest{SelfServiceUser: u, App: req.App, Action: req.Action, RebootAt: req.At})
+		res, err := s.Backend.SelfServiceRequest(ctx, protocol.SelfServiceRequest{SelfServiceUser: u, App: req.App, Action: req.Action, RebootAt: req.At, Close: req.Close})
 		if err != nil {
 			return s.backendError("pedido", err)
 		}
@@ -456,7 +458,7 @@ var appID = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]{0,63}$`)
 func checkRequest(r Request) error {
 	switch r.Action {
 	case protocol.SelfServiceReboot: // Aula 17.6: o reinício é do computador, sem programa
-		if r.App != "" {
+		if r.App != "" || r.Close {
 			return errors.New("o reiniciar não leva programa")
 		}
 		return nil
