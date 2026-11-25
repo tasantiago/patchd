@@ -34,6 +34,7 @@ type Evidence struct {
 	AgentOutdated *bool
 	AgentKnown    bool
 
+	AntivirusDetail string
 	Antivirus *bool // nil: sem evidência (o agente ainda não coleta)
 
 	Exceptions map[Criterion]bool      // exceções aprovadas e vigentes
@@ -353,6 +354,11 @@ func judge(p *Policy, c Criterion, cp CriterionPolicy, e Evidence, now time.Time
 		}
 		return cr
 	case CritAntivirus:
+		if e.AntivirusDetail != "" {
+			if e.Antivirus == nil { return CriterionResult{Status: Desconhecido, Blame: BlameUnknown, Detail: e.AntivirusDetail} }
+			if *e.Antivirus { return CriterionResult{Status: Conforme, Detail: e.AntivirusDetail} }
+			return CriterionResult{Status: NaoConforme, Blame: BlameIT, Detail: e.AntivirusDetail}
+		}
 		switch {
 		case e.Antivirus == nil:
 			return CriterionResult{Status: Desconhecido, Blame: BlameUnknown, Detail: "o agente não informa o antivírus"}

@@ -881,6 +881,16 @@ func shieldPolicyFrom(r *http.Request, base shield.Policy) (shield.Policy, error
 		integer(string(c)+"_prazo", &cp.GraceDays)
 		p.Criteria[c] = cp
 	}
+	if r.PostForm.Has("av_windows") || r.PostForm.Has("av_linux") || r.PostForm.Has("av_macos") {
+		parseServices := func(field string) []string {
+			var out []string
+			for _, line := range strings.Split(r.PostFormValue(field), "\n") {
+				if n := strings.TrimSpace(line); n != "" && !slices.Contains(out, n) { out = append(out, n) }
+			}
+			return out
+		}
+		p.AntivirusServices = shield.AntivirusServices{Windows: parseServices("av_windows"), Linux: parseServices("av_linux"), MacOS: parseServices("av_macos")}
+	}
 	p.Credits = map[shield.Status]float64{shield.Conforme: 1, shield.NaoConforme: 0, shield.Desconhecido: 0}
 	for _, s := range []shield.Status{shield.Parcial, shield.DentroPrazo, shield.AguardandoTI, shield.AguardandoUsuario} {
 		var f float64
@@ -1398,7 +1408,12 @@ var _ = template.Must(pages.New("shield-politica").Parse(`{{if not .Admin}}<p cl
 <fieldset class="campo"><legend>Grupos piloto (nenhum marcado: todos os grupos)</legend><div class="opcoes-linha">{{range .Rings}}<label class="check"><input type="checkbox" name="piloto" value="{{.N}}"{{if .Checked}} checked{{end}}> {{.Label}}</label>{{end}}</div></fieldset></div>
 <div class="card campos-shield"><h2>Critérios</h2><table><thead><tr><th>Critério</th><th>Ligado</th><th>Peso</th><th>Obrigatório p/ selo</th><th>Prazo (dias)</th></tr></thead><tbody>
 {{range .CritForm}}<tr><td>{{.Label}}</td><td><input type="checkbox" name="{{.ID}}_on" value="1" aria-label="{{.Label}} ligado"{{if .Enabled}} checked{{end}}></td><td><input name="{{.ID}}_peso" value="{{.Weight}}" size="5" aria-label="peso de {{.Label}}"></td><td><input type="checkbox" name="{{.ID}}_obrig" value="1" aria-label="{{.Label}} obrigatório"{{if .Mandatory}} checked{{end}}></td><td><input name="{{.ID}}_prazo" type="number" min="0" max="90" value="{{.Grace}}" aria-label="prazo de {{.Label}}"></td></tr>{{end}}</tbody></table>
-<p class="muted">O antivírus vem desligado porque o agente ainda não coleta essa evidência: ligado, ele fica "desconhecido" em todas as máquinas e impede o selo.</p>
+<h3 class="sub">Serviços obrigatórios do antivírus</h3>
+<p class="muted">Configure os nomes internos dos serviços, um por linha. Todos devem estar em execução. Compatível com qualquer fabricante. Sem configuração ou coleta recente, o critério fica desconhecido. Serviço em execução não comprova atualização das assinaturas nem proteção efetiva.</p>
+<div class="campo"><label for="avw">Windows — nomes de serviço (ServiceName)</label><textarea id="avw" name="av_windows" rows="4">{{range .Pol.AntivirusServices.Windows}}{{.}}{{"\n"}}{{end}}</textarea></div>
+<div class="campo"><label for="avl">Linux — unidades systemd (.service)</label><textarea id="avl" name="av_linux" rows="2">{{range .Pol.AntivirusServices.Linux}}{{.}}{{"\n"}}{{end}}</textarea></div>
+<div class="campo"><label for="avm">macOS — labels do launchd</label><textarea id="avm" name="av_macos" rows="2">{{range .Pol.AntivirusServices.MacOS}}{{.}}{{"\n"}}{{end}}</textarea></div>
+<p class="muted">O critério vem desligado. Atualize os agentes e configure os nomes antes de ligá-lo na tabela acima.</p>
 <h3 class="sub">Quanto cada situação vale (fração do peso; conforme vale 1, não conforme e desconhecido valem 0 — fixo)</h3>
 <div class="campo"><label for="c1">Parcial</label><input id="c1" name="cred_parcial" value="{{index .Credits "parcial"}}"></div>
 <div class="campo"><label for="c2">Dentro do prazo</label><input id="c2" name="cred_dentro_do_prazo" value="{{index .Credits "dentro_do_prazo"}}"></div>

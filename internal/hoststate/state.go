@@ -33,6 +33,11 @@ func Collect(ctx context.Context) protocol.MachineState {
 		s.Errors = append(s.Errors, "usuários: "+err.Error())
 	}
 	s.Users = us
+	s.Services, err = collectRunningServices(ctx)
+	if err != nil {
+		s.Services = nil
+		s.Errors = append(s.Errors, "serviços: coleta indisponível")
+	}
 	trim(&s)
 	return s
 }

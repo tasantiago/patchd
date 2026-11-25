@@ -226,12 +226,14 @@ type ShieldMachine struct {
 	Ring         int
 	AgentVersion string
 	Users        []protocol.LoggedUser
+	Services *protocol.RunningServices
+	StateAt *time.Time
 }
 
 // ShieldMachines: as máquinas ativas, numa consulta só.
 func (p *Postgres) ShieldMachines(ctx context.Context) ([]ShieldMachine, error) {
 	rows, err := p.pool.Query(ctx, `SELECT m.id, coalesce(i.hostname, ''), m.ring, m.agent_version,
-		CASE WHEN jsonb_typeof(m.state->'users') = 'array' THEN m.state->'users' ELSE '[]'::jsonb END
+		CASE WHEN jsonb_typeof(m.state->'users') = 'array' THEN m.state->'users' ELSE '[]'::jsonb END, m.state->'services', m.state_at
 		FROM machines m LEFT JOIN inventory_reports i ON i.id = m.current_inventory_id
 		WHERE m.retired_at IS NULL ORDER BY m.id`)
 	if err != nil {
@@ -239,9 +241,12 @@ func (p *Postgres) ShieldMachines(ctx context.Context) ([]ShieldMachine, error) 
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ShieldMachine, error) {
 		var m ShieldMachine
-		var users []byte
-		if err := r.Scan(&m.ID, &m.Hostname, &m.Ring, &m.AgentVersion, &users); err != nil {
+		var users, services []byte
+		if err := r.Scan(&m.ID, &m.Hostname, &m.Ring, &m.AgentVersion, &users, &services, &m.StateAt); err != nil {
 			return m, err
+		}
+		if json.Unmarshal(services, &m.Services) != nil || (m.Services != nil && m.Services.Check() != nil) {
+			m.Services = nil
 		}
 		_ = json.Unmarshal(users, &m.Users) // estado fora do formato: ninguém conectado
 		return m, nil

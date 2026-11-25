@@ -358,7 +358,9 @@ func (a *api) shieldRun(ctx context.Context, db shieldStore, now time.Time) erro
 		if had {
 			since = old.Result.SinceMap()
 		}
-		res := shield.Evaluate(&pol, shieldEvidenceFor(&in, m.ID, since, now), now)
+		evidence := shieldEvidenceFor(&in, m.ID, since, now)
+		evidence.Antivirus, evidence.AntivirusDetail = pol.AntivirusServices.Evaluate(m.Services, m.StateAt, now)
+		res := shield.Evaluate(&pol, evidence, now)
 		counts[res.Overall]++
 		place := in.places[m.ID]
 		placed = append(placed, shield.PlaceScore{Place: place, Sealed: res.Sealed, Score: res.Score})
