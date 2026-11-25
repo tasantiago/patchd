@@ -1,0 +1,205 @@
+package api_test
+
+import (
+	"context"
+	"log/slog"
+	"net/url"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tasantiago/patchd/internal/api"
+	"github.com/tasantiago/patchd/internal/identity"
+	"github.com/tasantiago/patchd/internal/panel"
+	"github.com/tasantiago/patchd/internal/shield"
+)
+
+// formPolitica: o formulário da Política com os valores da política p.
+func formPolitica(p shield.Policy) url.Values {
+	f := url.Values{}
+	if p.Enabled {
+		f.Set("ligado", "1")
+	}
+	for _, r := range p.PilotRings {
+		f.Add("piloto", strconv.Itoa(r))
+	}
+	for _, c := range shield.Criteria {
+		cp := p.Criteria[c]
+		if cp.Enabled {
+			f.Set(string(c)+"_on", "1")
+		}
+		if cp.Mandatory {
+			f.Set(string(c)+"_obrig", "1")
+		}
+		f.Set(string(c)+"_peso", strconv.FormatFloat(cp.Weight, 'f', -1, 64))
+		f.Set(string(c)+"_prazo", strconv.Itoa(cp.GraceDays))
+	}
+	for _, s := range []shield.Status{shield.Parcial, shield.DentroPrazo, shield.AguardandoTI, shield.AguardandoUsuario} {
+		f.Set("cred_"+string(s), strings.Replace(strconv.FormatFloat(p.Credits[s], 'f', -1, 64), ".", ",", 1))
+	}
+	for k, v := range map[string]int{"inv_dias": p.InventoryDays, "inv_limite": p.InventoryHardDays, "criticas_prazo": p.CriticalGraceDays,
+		"quase": p.NearMin, "atencao": p.AttentionMin, "xp_dia": p.XP.ProtectedDay, "xp_reinicio": p.XP.Reboot, "xp_atualizacao": p.XP.Update,
+		"xp_teto": p.XP.MaxPerDay, "rank_min": p.Ranking.MinGroup, "avisos_horas": p.Notify.MinHours, "exp_inicio": p.Notify.WorkStart, "exp_fim": p.Notify.WorkEnd} {
+		f.Set(k, strconv.Itoa(v))
+	}
+	for _, d := range p.Workdays {
+		f.Add("dias", strconv.Itoa(d))
+	}
+	var lv []string
+	for _, l := range p.Levels {
+		lv = append(lv, strconv.Itoa(l.MinDays)+";"+l.Name)
+	}
+	f.Set("niveis", strings.Join(lv, "\n"))
+	f.Set("bonus", "5;20\n10;40")
+	f.Set("marca", p.Brand.Name)
+	f.Set("missao", p.Brand.Mission)
+	f.Set("slogan", p.Brand.Slogan)
+	f.Set("rank_coletivo", "1")
+	f.Set("rank_predios", "1")
+	f.Set("rank_andares", "1")
+	f.Set("rank_salas", "1")
+	f.Set("rank_min_sala", strconv.Itoa(p.Ranking.MinRoom))
+	f.Set("avisos", "1")
+	return f
+}
+
+func TestPainelDoShield(t *testing.T) {
+	st := postgresDeTeste(t)
+	ctx := context.Background()
+	agora := time.Now().UTC()
+	for cookie, role := range map[string]string{sessaoAdmin: panel.RoleAdmin, sessaoTeste: panel.RoleRead} {
+		if err := st.CreatePanelSession(ctx, identity.Hash(cookie), panel.Session{Username: "u-" + role, Role: role, Source: panel.SourceLocal,
+			CreatedAt: agora, ExpiresAt: agora.Add(time.Hour), LastSeenAt: agora}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := api.New(st, slog.New(slog.DiscardHandler), api.WithCompliance(&complianceFalso{}))
+
+	b := pagina(h, "GET", "/painel/shield", sessaoTeste, nil).Body.String()
+	if !strings.Contains(b, "Desligado") || !strings.Contains(b, "PatchD Shield") {
+		t.Fatalf("visão geral desligada: %s", b)
+	}
+	for _, aba := range []string{"geral", "equipamentos", "pessoas", "missoes", "ranking", "excecoes", "politica", "auditoria", "xyz"} {
+		if r := pagina(h, "GET", "/painel/shield?aba="+aba, sessaoTeste, nil); r.Code != 200 {
+			t.Errorf("aba %s: %d", aba, r.Code)
+		}
+	}
+	// Só o admin muda; de outra origem, ninguém.
+	pol := shield.Default()
+	pol.Enabled, pol.PilotRings = true, []int{0}
+	f := formPolitica(pol)
+	if r := pagina(h, "POST", "/painel/shield/politica", sessaoTeste, f); r.Code != 403 {
+		t.Fatalf("leitura mudou a política: %d", r.Code)
+	}
+	if r := pagina(h, "POST", "/painel/shield/politica", sessaoAdmin, f, "Origin", "https://atacante.exemplo"); r.Code != 403 {
+		t.Fatalf("outra origem: %d", r.Code)
+	}
+	r := pagina(h, "POST", "/painel/shield/politica", sessaoAdmin, f)
+	if r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "politica=1") {
+		t.Fatalf("gravar: %d %s", r.Code, r.Header().Get("Location"))
+	}
+	row, ok, _ := st.ShieldPolicy(ctx)
+	got, err := shield.Parse(row.Body)
+	if !ok || err != nil || !got.Enabled || len(got.PilotRings) != 1 || got.Criteria[shield.CritOS].Weight != 30 || len(got.XP.StreakBonus) != 2 {
+		t.Fatalf("política gravada: %+v %v", got, err)
+	}
+	// Peso fora da faixa: nada gravado, e o motivo volta.
+	f.Set("so_peso", "300")
+	r = pagina(h, "POST", "/painel/shield/politica", sessaoAdmin, f)
+	if loc := r.Header().Get("Location"); !strings.Contains(loc, "erro=1") || !strings.Contains(loc, "peso") {
+		t.Fatalf("peso inválido: %s", loc)
+	}
+	f.Set("so_peso", "30")
+	f.Set("conquistas", `[{"code":"x","name":"X"}]`)
+	if loc := pagina(h, "POST", "/painel/shield/politica", sessaoAdmin, f).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("conquista inválida aceita: %s", loc)
+	}
+	if h2, _ := st.ShieldPolicyHistory(ctx, 10); len(h2) != 1 {
+		t.Fatalf("versões: %d", len(h2))
+	}
+
+	// Missão coletiva: rascunho, publicar.
+	m := url.Values{"titulo": {"Semana do reinício"}, "tipo": {"coletiva"}, "percentual": {"90"}, "criterio": {"reinicio"},
+		"inicio": {agora.Format(time.DateOnly)}, "fim": {agora.AddDate(0, 0, 7).Format(time.DateOnly)}, "xp": {"50"}}
+	if loc := pagina(h, "POST", "/painel/shield/missoes", sessaoAdmin, m).Header().Get("Location"); !strings.Contains(loc, "missao=1") {
+		t.Fatalf("missão: %s", loc)
+	}
+	ms, _ := st.ShieldMissions(ctx, 10)
+	if len(ms) != 1 || ms[0].State != "rascunho" || ms[0].Goal.Percent != 90 {
+		t.Fatalf("%+v", ms)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/missoes/"+strconv.FormatInt(ms[0].ID, 10)+"/estado", sessaoAdmin, url.Values{"estado": {"publicada"}}).Header().Get("Location"); !strings.Contains(loc, "estado=1") {
+		t.Fatalf("publicar: %s", loc)
+	}
+	m.Set("fim", agora.AddDate(0, 0, 400).Format(time.DateOnly))
+	if loc := pagina(h, "POST", "/painel/shield/missoes", sessaoAdmin, m).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("missão longa demais aceita: %s", loc)
+	}
+
+	// Exceção para máquina que não existe: recusada.
+	if loc := pagina(h, "POST", "/painel/shield/excecoes", sessaoAdmin, url.Values{"maquina": {"nao-existe"}, "criterio": {"so"}, "motivo": {"x"}, "dias": {"10"}}).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("exceção sem máquina: %s", loc)
+	}
+
+	// Ajuste de XP: com motivo, uma vez por formulário; o CSV não deixa passar fórmula.
+	ids, _ := st.ShieldTouchAccounts(ctx, map[string]string{`EXEMPLO\ana`: "=HYPERLINK(\"x\")"})
+	pid := strconv.FormatInt(ids[`exemplo\ana`], 10)
+	aj := url.Values{"ref": {strings.Repeat("ab", 12)}, "pontos": {"25"}, "motivo": {"XP perdido na indisponibilidade"}}
+	if loc := pagina(h, "POST", "/painel/shield/pessoas/"+pid+"/ajuste", sessaoAdmin, aj).Header().Get("Location"); !strings.Contains(loc, "ajuste=1") {
+		t.Fatalf("ajuste: %s", loc)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/pessoas/"+pid+"/ajuste", sessaoAdmin, aj).Header().Get("Location"); !strings.Contains(loc, "repetido=1") {
+		t.Fatalf("reenvio: %s", loc)
+	}
+	aj.Set("ref", strings.Repeat("cd", 12))
+	aj.Set("motivo", "")
+	if loc := pagina(h, "POST", "/painel/shield/pessoas/"+pid+"/ajuste", sessaoAdmin, aj).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("ajuste sem motivo: %s", loc)
+	}
+	pl, _, _ := st.ShieldPlayerByAccount(ctx, `exemplo\ana`)
+	if pl.XP != 25 {
+		t.Fatalf("XP: %d", pl.XP)
+	}
+	csv := pagina(h, "GET", "/painel/shield/pessoas.csv", sessaoTeste, nil)
+	if !strings.HasPrefix(csv.Body.String(), "\xef\xbb\xbf") || !strings.Contains(csv.Body.String(), `'=HYPERLINK`) {
+		t.Fatalf("CSV: %q", csv.Body.String())
+	}
+	if pagina(h, "GET", "/painel/shield/equipamentos.csv", sessaoTeste, nil).Code != 200 {
+		t.Fatal("CSV das máquinas")
+	}
+	// Nomes das faixas como andares: só o admin; nome vazio volta ao padrão.
+	andar := url.Values{"faixa": {"10.1.2.0/24", "10.1.3.0/24"}, "nome": {"2º andar", ""}}
+	if r := pagina(h, "POST", "/painel/shield/andares", sessaoTeste, andar); r.Code != 403 {
+		t.Fatalf("leitura nomeou andar: %d", r.Code)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/andares", sessaoAdmin, andar).Header().Get("Location"); !strings.Contains(loc, "andares=1") {
+		t.Fatalf("andares: %s", loc)
+	}
+	row, _, _ = st.ShieldPolicy(ctx)
+	got, _ = shield.Parse(row.Body)
+	if got.Ranking.FloorNames["10.1.2.0/24"] != "2º andar" || len(got.Ranking.FloorNames) != 1 || !got.Ranking.Rooms || got.Ranking.MinRoom != 3 {
+		t.Fatalf("nomes dos andares: %+v", got.Ranking)
+	}
+	andar.Set("nome", strings.Repeat("x", 41))
+	andar.Del("faixa")
+	andar.Set("faixa", "10.1.2.0/24")
+	if loc := pagina(h, "POST", "/painel/shield/andares", sessaoAdmin, andar).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("nome longo demais: %s", loc)
+	}
+	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoTeste, nil).Body.String(); !strings.Contains(b, "Ranking dos prédios") {
+		t.Fatal("aba Ranking sem os prédios")
+	}
+	// A auditoria do Shield mostra tudo isso.
+	b = pagina(h, "GET", "/painel/shield?aba=auditoria", sessaoAdmin, nil).Body.String()
+	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido", "shield.andares"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("auditoria sem %q", want)
+		}
+	}
+	// A visão de leitura não tem os formulários de admin.
+	b = pagina(h, "GET", "/painel/shield?aba=pessoas", sessaoTeste, nil).Body.String()
+	if strings.Contains(b, "/ajuste") {
+		t.Error("leitura vê o ajuste de XP")
+	}
+}

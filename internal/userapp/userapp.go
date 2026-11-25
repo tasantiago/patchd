@@ -76,6 +76,11 @@ type App struct {
 	logoSHA, logoType string
 	logoData          []byte
 
+	// Shield (shield.go): a última "Minha Proteção" e quando chegou.
+	shieldMu   sync.Mutex
+	shieldView *protocol.ShieldView
+	shieldAt   time.Time
+
 	kickOnce      sync.Once
 	kick          chan struct{}
 	fast          time.Duration // FastCheck; os testes encurtam
@@ -333,6 +338,11 @@ type pageData struct {
 	Requests             []reqView
 	Reboot               *rebootView
 	Busy                 int64
+	// Windows: as atualizações do Windows aprovadas pela TI (nil: desligado ou sem Windows).
+	Windows *winView
+	// Shield: a aba "Minha Proteção" (Protection: o grupo do menu; vazio sem o Shield).
+	Protection []tab
+	Shield     *shieldPage
 }
 
 // maxStoreSearch: o tamanho da busca na loja.
@@ -426,7 +436,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	d := pageData{Title: Title, Base: a.base(), Checked: a.now().Format("02/01 15:04"), Tab: r.URL.Query().Get("aba")}
-	if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot {
+	if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot && d.Tab != tabShield {
 		d.Tab = tabUpdates
 	}
 	a.mu.Lock()
@@ -454,6 +464,9 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		a.syncLogo(ctx, resp.Catalog.Logo)
 		d.Busy = resp.Catalog.OpenJob
 		refresh = d.Busy > 0
+		if d.Windows = a.windowsView(resp.Catalog.Windows); d.Windows != nil && d.Windows.JobID > 0 {
+			refresh = true // acompanha a instalação do Windows
+		}
 		for _, it := range resp.Catalog.Items {
 			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
 				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category, PerUser: it.PerUser}
@@ -517,8 +530,19 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	if d.Tab == tabStore {
 		a.storeFilter(&d, r.URL.Query())
 	}
+	if d.Error == "" {
+		if sv := a.shieldFetch(ctx, d.Tab == tabShield); sv != nil {
+			sp := a.shieldPageOf(sv)
+			d.Protection = []tab{{ID: tabShield, Label: "Minha Proteção", Alert: len(sp.Actions) > 0}}
+			if d.Tab == tabShield {
+				d.Shield = sp
+			}
+		} else if d.Tab == tabShield {
+			d.Tab = tabUpdates // sem Shield (agente, servidor ou política): a aba não existe
+		}
+	}
 	d.Tabs = []tab{
-		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
+		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates) + windowsCount(d.Windows)},
 		{ID: tabStore, Label: "Loja"},
 		{ID: tabRequests, Label: "Meus pedidos"},
 	}
@@ -527,7 +551,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	} else if d.Tab == tabReboot && d.Error == "" {
 		d.Tab = tabUpdates
 	}
-	for _, l := range [][]tab{d.Tabs, d.Computer} {
+	for _, l := range [][]tab{d.Protection, d.Tabs, d.Computer} {
 		for i := range l {
 			l[i].Href = a.base() + "?aba=" + l[i].ID
 			if l[i].Active = l[i].ID == d.Tab; l[i].Active {
@@ -777,6 +801,9 @@ type Notice struct {
 	Updates []string // nomes dos programas com atualização para o usuário
 	Done    []string // pedidos que terminaram (17.5): "7-Zip 26.04: instalado"
 	Reboot  bool     // reinício pendente sem hora escolhida (17.6)
+	// Shield (shield.go): o aviso da "Minha Proteção" e o texto novo do ícone ("": o mesmo).
+	Shield *protocol.ShieldNotice
+	Tip    string
 }
 
 // Tab é a aba que o clique no aviso abre.
@@ -786,6 +813,8 @@ func (n Notice) Tab() string {
 		return tabRequests
 	case n.Reboot:
 		return tabReboot
+	case n.Shield != nil && len(n.Updates) == 0:
+		return tabShield
 	}
 	return tabUpdates
 }
@@ -802,11 +831,16 @@ func noticeText(n Notice) (title, text string) {
 		return "Pedidos concluídos", strings.Join(n.Done, "; ") + "."
 	case n.Reboot:
 		return "Reinício pendente", "Para concluir as atualizações, este computador precisa reiniciar. Clique para escolher a hora."
+	case n.Shield != nil && len(n.Updates) == 0:
+		return n.Shield.Title, n.Shield.Text
 	}
 	switch len(n.Updates) {
 	case 0:
 		return "", ""
 	case 1:
+		if strings.HasPrefix(n.Updates[0], "Atualizações do Windows") {
+			return "Atualizações do Windows", n.Updates[0] + " liberadas pela TI para este computador. Clique para instalar."
+		}
 		return "Atualização disponível", n.Updates[0] + " tem uma versão nova para você. Clique para atualizar."
 	default:
 		return "Atualizações disponíveis", fmt.Sprintf("%d programas têm versão nova para você: %s. Clique para ver.",
@@ -882,6 +916,14 @@ func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- 
 			if it.Action == protocol.SelfServiceUpdate {
 				ids, n.Updates = append(ids, it.App), append(n.Updates, it.Name)
 			}
+		}
+		if w := resp.Catalog.Windows; w != nil && len(w.Updates) > 0 && w.JobID == 0 && w.Problem == "" {
+			kbs := make([]string, 0, len(w.Updates))
+			for _, u := range w.Updates {
+				kbs = append(kbs, u.KB)
+			}
+			ids = append(ids, "windows:"+strings.Join(kbs, ","))
+			n.Updates = append(n.Updates, fmt.Sprintf("Atualizações do Windows (%d)", len(w.Updates)))
 		}
 		if slices.Equal(ids, last) {
 			n.Updates = nil
@@ -959,6 +1001,8 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 <a class="marca" href="{{.Base}}" title="{{.Title}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + ui.ShieldSVG + `</span>{{end}}<span class="rot">{{.Title}}{{if .Brand}}<small>{{.Brand}}</small>{{end}}</span></a>
 {{if .Account}}<div class="usuario" title="{{.Account}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot">{{if .DisplayName}}<strong>{{.DisplayName}}</strong><small>({{.Account}}) · este computador</small>{{else}}<strong>{{.User}}</strong><small>{{if .Domain}}{{.Domain}} · {{end}}este computador</small>{{end}}</span></div>{{end}}
 <nav aria-label="seções">
+{{if .Protection}}<p class="grupo"><span class="rot">Proteção</span></p>
+{{range .Protection}}{{template "item" .}}{{end}}{{end}}
 <p class="grupo"><span class="rot">Software</span></p>
 {{range .Tabs}}{{template "item" .}}{{end}}
 {{if .Computer}}<p class="grupo"><span class="rot">Computador</span></p>
@@ -975,11 +1019,11 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{with .Flash}}<p class="aviso {{.Kind}}" role="status">{{.Text}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{else}}
 {{if .Busy}}<p class="aviso andamento" role="status"><span class="gira" aria-hidden="true"></span>Há uma instalação em andamento neste computador (pedido nº {{.Busy}}). Esta página se atualiza sozinha.</p>{{end}}
-{{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else}}{{template "pedidos" .}}{{end}}
+{{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else if eq .Tab "protecao"}}{{template "protecao" .}}{{else}}{{template "pedidos" .}}{{end}}
 {{end}}
 </main></div></body></html>
-{{define "icone"}}{{if eq . "atualizacoes"}}` + ui.IcAtualizar + `{{else if eq . "loja"}}` + ui.IcLoja + `{{else if eq . "pedidos"}}` + ui.IcPedidos + `{{else if eq . "reinicio"}}` + ui.IcReinicio + `{{end}}{{end}}
-{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{template "icone" .ID}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}
+{{define "icone"}}{{if eq . "atualizacoes"}}` + ui.IcAtualizar + `{{else if eq . "loja"}}` + ui.IcLoja + `{{else if eq . "pedidos"}}` + ui.IcPedidos + `{{else if eq . "reinicio"}}` + ui.IcReinicio + `{{else if eq . "protecao"}}` + IcEscudo + `{{end}}{{end}}
+{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{template "icone" .ID}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="{{if eq .ID "protecao"}}ação sua pendente{{else}}reinício pendente{{end}}">!</span>{{end}}</a>{{end}}
 {{define "atualizacoes"}}<section><div class="cab"><h1>Atualizações para você</h1>{{if .UpdateAll}}<form method="post" action="{{$.Base}}atualizar-tudo"><button type="submit">Atualizar tudo ({{.UpdateAll}})</button></form>{{end}}</div>
 {{with .Queue}}{{if .Waiting}}<div class="fila" role="status"><span class="gira" aria-hidden="true"></span><span>Atualizando tudo, uma de cada vez: {{len .Waiting}} na fila. Deixe a Central aberta até terminar.</span><form method="post" action="{{$.Base}}cancelar-fila"><button class="sec" type="submit">Cancelar o restante</button></form></div>{{end}}
 {{if .Failed}}<ul class="falhas">{{range .Failed}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}
@@ -987,8 +1031,9 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else if .Running}}<span class="selo andamento">Instalando</span>{{else if .Queued}}<span class="selo neutro">Na fila</span>{{else}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
 <button type="submit"{{if $.Busy}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Atualizar{{end}}</button></form>{{end}}</li>{{end}}</ul>
 <p class="nota">Feche o programa antes de atualizar. A instalação roda em segundo plano e leva poucos minutos.</p>
-{{else}}<p class="vazio">Nenhuma atualização disponível para você neste computador.</p>{{end}}
+{{else}}<p class="vazio">Nenhum programa com atualização para você neste computador.</p>{{end}}
 </section>
+{{template "windows" .}}
 {{if .Current}}<section><h2>Em dia</h2><ul class="lista">{{range .Current}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">✓ em dia</span></li>{{end}}</ul></section>{{end}}
 {{end}}
 {{define "loja"}}{{with .Confirm}}<section class="confirma"><h1>Instalar {{.Name}}?</h1>
@@ -1032,7 +1077,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{end}}`))
 
 // pageCSS: o arquivo estilo.css da Central (Aula 20.6): o layout do painel e o da Central.
-var pageCSS = ui.LayoutCSS + css
+var pageCSS = ui.LayoutCSS + css + shieldCSS
 
 // css: o que é da Central, por cima do layout do painel (ui.LayoutCSS, Aula 19.1b).
 const css = `
@@ -1089,3 +1134,11 @@ nav.cats .n{font-size:.75rem;color:var(--muted)}nav.cats a.ativa .n{color:#dbe9f
 form.busca-loja{display:flex;align-items:center;gap:.5rem}
 form.busca-loja input[type=search]{flex:1;font:inherit;font-size:.9rem;padding:.45rem .7rem;border:1px solid var(--borda);border-radius:6px;min-width:0}
 `
+
+// windowsCount: as atualizações do Windows que contam no número do menu.
+func windowsCount(w *winView) int {
+	if w == nil || w.JobID > 0 || w.Problem != "" {
+		return 0
+	}
+	return len(w.Updates)
+}

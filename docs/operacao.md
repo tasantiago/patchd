@@ -2328,3 +2328,80 @@ Linux, e vice-versa. O agente confere de novo na máquina e recusa o que não fo
 Um detalhe que custa caro quando falta: se o script deixar um processo em segundo plano, ele
 segura o cano da saída. O agente mata o processo no fim do prazo e espera no máximo mais 5 s
 pela saída — sem isso, o job ficaria preso até o processo em segundo plano morrer.
+
+## PatchD Shield — Missão 100%
+
+O Shield (docs/shield.md) dá a cada máquina uma pontuação de proteção e à pessoa que a usa uma
+sequência, XP, nível e conquistas. Ele lê o que o servidor já tem: não muda o compliance, não
+cria job e não pede nada novo ao agente além da operação `shield` da Central.
+
+**Ligar com piloto.** Em Shield › Política, marque **Shield ligado** e um ou mais **grupos
+piloto** (nenhum marcado: todos). Grave: é a versão 1 da política. Em até 5 minutos, as
+máquinas do piloto aparecem em Shield › Equipamentos; a Central delas passa a mostrar a aba
+**Minha Proteção** (agente com `shield-v1`; agente anterior simplesmente não mostra a aba).
+
+**Ajustar.** Pesos, critérios obrigatórios, prazos, créditos, níveis, conquistas (JSON), XP,
+textos, ranking e avisos ficam na mesma tela. Cada gravação é uma versão nova, auditada
+(Shield › Auditoria), com a lista do que mudou. O servidor recusa o que tornaria a pontuação
+desonesta (desconhecido valendo pontos, conforme valendo menos que 1).
+
+**Antivírus.** O agente ainda não coleta o estado do antivírus. O critério existe, mas vem
+desligado: ligado, ele fica "desconhecido" em todas as máquinas e impede o selo.
+
+**Exceções.** Shield › Exceções: um critério de uma máquina fora da conta até a validade (até
+365 dias), com motivo. Em critério obrigatório, a exceção impede o selo — exceção não é prova.
+
+**Missões.** Shield › Missões: individual (N dias protegidos no período) ou coletiva (X% das
+máquinas do escopo no selo, ou com um critério conforme). Rascunho → publicada; cancelar a
+qualquer momento. O XP é pago no fechamento do dia, uma vez por pessoa.
+
+**Ajuste de XP.** Shield › Pessoas: a compensação do administrador (por exemplo, XP perdido
+numa indisponibilidade), com motivo obrigatório. Fica no livro do XP e na auditoria; o reenvio
+do mesmo formulário não soma de novo. Não existe outra forma de dar XP.
+
+**Ranking.** O coletivo (por grupo de implantação) vem ligado e esconde grupos com menos
+máquinas que o mínimo (padrão 5). O individual vem desligado; ligado, mostra nome, XP, dias
+protegidos e sequência — nunca máquina, CVE ou programa.
+
+**Ranking por prédio, andar e sala.** Para a disputa entre as pessoas, o Shield também
+classifica os **prédios** e as **salas** do patrimônio e, nos prédios com máquinas em mais de
+uma faixa de IP (as das regras dos grupos de implantação), os **andares** — cada faixa é um
+andar. Em Shield › Ranking, abra o prédio e dê nome a cada faixa ("Térreo", "2º andar") e grave:
+é uma versão nova da política (auditoria `shield.andares`); nome vazio volta a "Faixa N". A
+Central mostra o nome, nunca a faixa. Salas com menos de 3 computadores (ajustável) e prédios ou
+andares abaixo do mínimo não aparecem. Sem patrimônio importado, não há ranking por lugar.
+
+**Relatórios.** Shield › Equipamentos e Pessoas exportam CSV (UTF-8 com BOM, `;`, campos que
+começam com `=`, `+`, `-`, `@` neutralizados). A exportação entra na auditoria.
+
+**Métricas.** `patchd_shield_avaliacoes_total{resultado}`, `patchd_shield_maquinas{faixa}` e
+`patchd_shield_avaliacao_segundos` (sem rótulo de máquina ou pessoa).
+
+**Vários servidores.** Uma passada por vez no cluster (trava consultiva do PostgreSQL); o
+fechamento do dia e o XP são idempotentes (chaves únicas no banco).
+
+**Desligar.** Desmarque **Shield ligado** e grave. A avaliação para, a Central esconde a aba;
+pontuações, XP e conquistas ficam guardados para quando ligar de novo.
+
+## Atualizações do Windows pela Central de software
+
+Na Central, a aba **Atualizações** tem a seção **Windows**: o usuário instala, quando quiser, as
+atualizações do Windows que a TI **já aprovou** em Patch e que a **busca do próprio computador**
+mostra pendentes — o mesmo plano do botão "Instalar" da aba Pendências da máquina no painel.
+
+- **O que aparece:** cada KB com o título que o Windows Update deu, "pede reinício" quando a
+  atualização exige, e "corrige falha já explorada" quando corrige CVE com exploração conhecida.
+  Sem nada liberado: "N atualização(ões) aguardam a liberação da equipe de TI", ou "O Windows
+  está em dia". Busca com falha: só a TI instala, até a próxima busca boa.
+- **O botão** cria o job `windows_update` em nome do usuário (`autoatendimento: DOMINIO\usuario`),
+  com até 20 KBs, da fonte da política da máquina (WSUS ou Windows Update) e com o cache do
+  servidor quando o parâmetro do cache inclui a máquina. O servidor refaz o plano na hora: o app
+  só pede. Com um `windows_update` já em aberto (de campanha, do painel ou de outro usuário), o
+  pedido espera. Vai para a auditoria como `autoatendimento.pedido` e aparece em Meus pedidos.
+- **Reinício:** o job nunca reinicia. Quando a atualização pede, o usuário escolhe a hora na aba
+  **Reinício**, como já era.
+- **Servidores** (Windows Server) ficam de fora: a atualização deles é da TI.
+- **Aviso:** o ícone perto do relógio avisa quando há atualização do Windows liberada.
+- **Ligar e desligar:** Configuração › Parâmetros › Agentes › **Atualizações do Windows na
+  Central de software** (ligado por padrão). Desligado, a seção some e o pedido é recusado.
+- Agente ou servidor anteriores: a seção não aparece (o campo novo não chega à Central).

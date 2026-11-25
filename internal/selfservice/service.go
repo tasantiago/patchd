@@ -50,7 +50,20 @@ type Service struct {
 	Now         func() time.Time
 	// PlanOptions: as opções do plano da máquina (a regularização). nil: o plano comum.
 	PlanOptions func(ctx context.Context, machineID string) (tpinstall.Options, error)
+	// Windows: as atualizações do Windows que o usuário pode instalar nesta máquina e o job
+	// que as instala (nil: desligado, sem Windows ou sem busca). Quem monta é a API, pelo
+	// mesmo caminho do botão do painel: só KBs aprovados em Patch e pendentes na busca.
+	Windows func(ctx context.Context, machineID string) (*WindowsPlan, error)
 }
+
+// WindowsPlan: o que a Central mostra e o job que instala.
+type WindowsPlan struct {
+	State  protocol.SelfServiceWindowsState
+	Params jobs.WinUpdateParams
+}
+
+// WindowsName: o nome das atualizações do Windows em Meus pedidos.
+const WindowsName = "Atualizações do Windows"
 
 // planOptions: as opções da máquina, ou as do plano comum.
 func (s *Service) planOptions(ctx context.Context, machineID string) (tpinstall.Options, error) {
@@ -102,6 +115,9 @@ func (s *Service) Catalog(ctx context.Context, machineID string, u protocol.Self
 	if err := s.closeOffers(ctx, machineID, &out); err != nil {
 		return out, err
 	}
+	if out.Windows, err = s.windowsState(ctx, machineID); err != nil {
+		return out, err
+	}
 	out.Reboot, err = s.rebootState(ctx, machineID, u.Account)
 	return out, err
 }
@@ -130,7 +146,23 @@ func (s *Service) requests(ctx context.Context, machineID, account string) ([]pr
 		if len(out) == MaxRequests {
 			break
 		}
-		if (j.Type != jobs.TypeThirdParty && j.Type != jobs.TypeReboot) || !strings.EqualFold(j.CreatedBy, Author(account)) {
+		if (j.Type != jobs.TypeThirdParty && j.Type != jobs.TypeReboot && j.Type != jobs.TypeWinUpdate) || !strings.EqualFold(j.CreatedBy, Author(account)) {
+			continue
+		}
+		if j.Type == jobs.TypeWinUpdate {
+			item := protocol.SelfServiceJob{ID: j.ID, App: protocol.SelfServiceWindows, Name: WindowsName, State: j.State,
+				CreatedAt: j.CreatedAt, FinishedAt: j.FinishedAt, Detail: short(j.Detail, MaxJobDetail)}
+			if full, found, err := s.Store.JobForMachine(ctx, machineID, j.ID); err != nil {
+				return nil, err
+			} else if found {
+				var payload jobs.Job
+				if json.Unmarshal([]byte(full.Payload), &payload) == nil {
+					if p, err := jobs.ParseWinUpdateParams(payload.Params); err == nil {
+						item.Version = strings.Join(p.Labels(), ", ")
+					}
+				}
+			}
+			out = append(out, item)
 			continue
 		}
 		if j.Type == jobs.TypeReboot { // Aula 17.6
@@ -297,6 +329,9 @@ func (s *Service) Request(ctx context.Context, machineID string, req protocol.Se
 	o.Seen = seen
 	if req.Action == protocol.SelfServiceReboot {
 		return s.reboot(ctx, machineID, req, o)
+	}
+	if req.Action == protocol.SelfServiceWindows {
+		return s.windows(ctx, machineID, req, o)
 	}
 	if req.Action != protocol.SelfServiceUpdate && req.Action != protocol.SelfServiceInstall {
 		return refuse("ação desconhecida", "Pedido inválido.")
@@ -831,4 +866,96 @@ func (s *Service) closeOffers(ctx context.Context, machineID string, out *protoc
 		}
 	}
 	return nil
+}
+
+// windowsJob: o job windows_update em aberto na máquina (de qualquer autor: a campanha, o
+// painel ou outro usuário), ou 0.
+func (s *Service) windowsJob(ctx context.Context, machineID string) (int64, error) {
+	list, err := s.Store.Jobs(ctx, machineID, openJobsScan)
+	if err != nil {
+		return 0, err
+	}
+	for _, j := range list {
+		if j.Type == jobs.TypeWinUpdate && !jobs.Final(j.State) && j.NotAfter.After(s.Now()) {
+			return j.ID, nil
+		}
+	}
+	return 0, nil
+}
+
+// windowsState: a seção Windows da Central (nil: desligado, sem Windows ou sem busca).
+func (s *Service) windowsState(ctx context.Context, machineID string) (*protocol.SelfServiceWindowsState, error) {
+	if s.Windows == nil {
+		return nil, nil
+	}
+	plan, err := s.Windows(ctx, machineID)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	st := plan.State
+	if st.JobID, err = s.windowsJob(ctx, machineID); err != nil {
+		return nil, err
+	}
+	if len(st.Updates) > protocol.MaxSelfServiceWinUpdates {
+		st.Updates = st.Updates[:protocol.MaxSelfServiceWinUpdates]
+	}
+	return &st, nil
+}
+
+// windows atende o "instalar as atualizações do Windows": o mesmo job do botão do painel, com
+// o que o servidor decide na hora (o app só pede). Sem reinício: o reinício continua sendo o
+// da aba Reinício.
+func (s *Service) windows(ctx context.Context, machineID string, req protocol.SelfServiceRequest, o Outcome) (Outcome, error) {
+	refuse := func(why, msg string) (Outcome, error) {
+		o.Why = why
+		o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceRefused, Message: msg}
+		return o, nil
+	}
+	if req.App != "" || req.RebootAt != nil || req.Close {
+		return refuse("windows com programa, hora ou fechar", "Pedido inválido.")
+	}
+	if s.Windows == nil {
+		return refuse("windows desligado", "As atualizações do Windows não estão disponíveis por aqui.")
+	}
+	plan, err := s.Windows(ctx, machineID)
+	if err != nil {
+		return o, err
+	}
+	if plan == nil {
+		return refuse("windows desligado ou sem busca", "As atualizações do Windows não estão disponíveis por aqui.")
+	}
+	open, err := s.windowsJob(ctx, machineID)
+	if err != nil {
+		return o, err
+	}
+	switch {
+	case open > 0:
+		o.Why = fmt.Sprintf("windows_update %d em aberto", open)
+		o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceWait, JobID: open,
+			Message: "Já há uma instalação de atualizações do Windows em andamento neste computador."}
+		return o, nil
+	case plan.State.Problem != "":
+		return refuse("busca do windows falhou", "A busca de atualizações deste computador falhou. A equipe de TI foi avisada pelo painel; tente mais tarde.")
+	case len(plan.Params.Updates) == 0:
+		return refuse("nada aprovado e pendente", "Não há atualização do Windows liberada pela TI para instalar agora.")
+	}
+	if err := plan.Params.Validate(); err != nil {
+		return refuse("windows: "+err.Error(), "Pedido inválido.")
+	}
+	raw, err := json.Marshal(plan.Params)
+	if err != nil {
+		return o, err
+	}
+	rec, err := jobs.Issue(ctx, s.Store, s.Key, jobs.Request{MachineID: machineID, Type: jobs.TypeWinUpdate, TTL: JobTTL,
+		By: Author(req.Account), Params: raw}, s.Now())
+	if errors.Is(err, jobs.ErrMachineUnavailable) {
+		return refuse("máquina aposentada", "Esta máquina não está mais no parque.")
+	}
+	if err != nil {
+		return o, err
+	}
+	o.Job, o.Version = &rec, strings.Join(plan.Params.Labels(), ", ")
+	o.Response = protocol.SelfServiceResponse{Status: protocol.SelfServiceCreated, JobID: rec.ID,
+		Message: fmt.Sprintf("Pedido aceito: %d atualização(ões) do Windows. A instalação roda em segundo plano e pode demorar; você pode continuar trabalhando. O computador não reinicia sozinho: se precisar, a Central avisa.", len(plan.Params.Updates))}
+	return o, nil
 }
