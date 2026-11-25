@@ -24,8 +24,8 @@ const tabShield = "protecao"
 // precisa saber se a aba existe).
 const shieldTTL = 2 * time.Minute
 
-// IcEscudo é o ícone da aba.
-var IcEscudo = ui.Icon(`<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>`)
+// IcEscudo é o ícone da aba (o mesmo do painel).
+var IcEscudo = ui.IcEscudo
 
 // shieldFetch devolve a "Minha Proteção" (nil: o agente, o servidor ou a política não têm),
 // do cache curto, ou do agente com force.
@@ -68,6 +68,7 @@ type shieldPage struct {
 	Badges, Locked         []protocol.ShieldBadgeView
 	Recent                 []shieldXP
 	Missions               []shieldMission
+	Groups                 []protocol.ShieldGroupView
 }
 
 type shieldCrit struct {
@@ -122,7 +123,7 @@ func missionLabel(s string) string {
 
 // shieldPageOf monta a aba.
 func (a *App) shieldPageOf(v *protocol.ShieldView) *shieldPage {
-	p := &shieldPage{Brand: v.Brand, Mission: v.Mission, Slogan: v.Slogan, Player: v.Player}
+	p := &shieldPage{Brand: v.Brand, Mission: v.Mission, Slogan: v.Slogan, Player: v.Player, Groups: v.Groups}
 	loc := a.loc()
 	if m := v.Machine; m != nil {
 		p.Display, p.Sealed, p.Pending, p.OverallLabel, p.Blockers = m.Display, m.Sealed, m.Pending, m.OverallLabel, m.Blockers
@@ -262,7 +263,7 @@ var _ = template.Must(pageTmpl.New("protecao").Parse(`{{with .Shield}}
 </section>
 {{if .Criteria}}<section><h2>Como a pontuação é formada</h2><ul class="lista crit">{{range .Criteria}}<li><div><strong>{{.Label}}{{if .Mandatory}} <span class="ver">(obrigatório para o selo)</span>{{end}}</strong>
 <span class="ver">{{.Detail}}{{if .Blame}} · responsável: {{.Blame}}{{end}}{{if .Deadline}} · prazo: {{.Deadline}}{{end}}</span></div>
-<span class="st {{.Status}}"><span aria-hidden="true">{{.Icon}}</span> {{.StatusLabel}}{{if .Points}}<small>{{.Points}} pontos</small>{{end}}</span></li>{{end}}</ul></section>{{end}}
+<span class="st {{.Status}}"><span><span aria-hidden="true">{{.Icon}}</span> {{.StatusLabel}}</span>{{if .Points}}<small>{{.Points}} pontos</small>{{end}}</span></li>{{end}}</ul></section>{{end}}
 {{with .Player}}<section><h2>Seu progresso</h2><ul class="kpis-c">
 <li><span class="rot">Sequência</span><b>{{.Streak}}</b><small>dias úteis seguidos (melhor: {{.Best}})</small></li>
 <li><span class="rot">Dias protegidos</span><b>{{.Protected}}</b><small>no total</small></li>
@@ -274,13 +275,15 @@ var _ = template.Must(pageTmpl.New("protecao").Parse(`{{with .Shield}}
 <progress max="100" value="{{.Percent}}">{{.Percent}}%</progress><span class="ver">{{.Progress}}</span></div></li>{{end}}</ul></section>{{end}}
 {{if or .Badges .Locked}}<section><h2>Conquistas</h2><ul class="medalhas">{{range .Badges}}<li class="ganha"><span aria-hidden="true">★</span><strong>{{.Name}}</strong><small>{{.Description}}</small></li>{{end}}
 {{range .Locked}}<li class="falta"><span aria-hidden="true">☆</span><strong>{{.Name}}</strong><small>{{.Description}}</small></li>{{end}}</ul></section>{{end}}
+{{if .Groups}}<section><h2>Ranking dos grupos</h2><ul class="lista">{{range .Groups}}<li{{if .Mine}} class="meu"{{end}}><div><strong>{{.Pos}}º {{.Name}}{{if .Mine}} · seu grupo{{end}}</strong><span class="ver">{{.Machines}} computadores</span></div><span class="ver"><meter min="0" max="100" value="{{.Percent}}">{{.Percent}}%</meter> {{.Percent}}% no selo</span></li>{{end}}</ul>
+<p class="nota">O ranking é por grupo: ninguém vê o seu computador nem o seu nome aqui.</p></section>{{end}}
 {{if .Recent}}<section><h2>De onde veio seu XP</h2><ul class="lista">{{range .Recent}}<li><div><strong>{{.Reason}}</strong><span class="ver">{{.Day}}</span></div><span class="selo {{if lt .Points 0}}atencao{{else}}sucesso{{end}}">{{if gt .Points 0}}+{{end}}{{.Points}} XP</span></li>{{end}}</ul></section>{{end}}
 {{if .Slogan}}<p class="slogan">{{.Slogan}}</p>{{end}}
 {{end}}`))
 
 // shieldCSS: o estilo da aba (no estilo.css, sem inline).
 const shieldCSS = `
-.shield-topo{display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap}
+.shield-topo{display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap}.shield-topo>div{flex:1;min-width:15rem}.shield-topo h1{margin:0 0 .4rem}
 svg.anel .trilho{stroke:#e6e9ef}svg.anel .valor{stroke:#8a94a6}svg.anel .num{font-size:24px;font-weight:700;fill:var(--texto)}
 svg.anel.protegida .valor{stroke:#1f8a4c}svg.anel.quase .valor{stroke:#2f6fd0}svg.anel.atencao .valor{stroke:#c98a00}svg.anel.risco .valor{stroke:#c0392b}
 .estado{margin:.2rem 0 .4rem;padding:.4rem .7rem;border-radius:6px;border:1px solid var(--borda)}
@@ -296,5 +299,6 @@ progress{width:100%;height:.8rem;margin:.35rem 0 .1rem}
 ul.medalhas{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(12rem,1fr));gap:.6rem}
 ul.medalhas li{border:1px solid var(--borda);border-radius:var(--raio);padding:.55rem .7rem;display:flex;flex-direction:column;gap:.15rem}
 ul.medalhas li.ganha{background:#fffbea;border-color:#f3dc8a}ul.medalhas li.falta{color:var(--muted)}ul.medalhas small{font-size:.78rem}
+ul.lista li.meu{background:#eef5fd;margin:0 -1.25rem;padding:.7rem 1.25rem}
 .slogan{text-align:center;color:var(--muted);font-style:italic;margin:1.5rem 0 0}
 `

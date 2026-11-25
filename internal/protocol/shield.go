@@ -34,6 +34,18 @@ type ShieldView struct {
 	Notices []ShieldNotice `json:"notices,omitempty"`
 	// Notify: as regras dos avisos (a Central respeita).
 	Notify ShieldNotify `json:"notify"`
+	// Groups: o ranking coletivo (só grupos de implantação, nunca pessoas ou máquinas), com o
+	// grupo desta máquina marcado. Vazio: desligado.
+	Groups []ShieldGroupView `json:"groups,omitempty"`
+}
+
+// ShieldGroupView é um grupo no ranking coletivo.
+type ShieldGroupView struct {
+	Pos      int    `json:"pos"`
+	Name     string `json:"name"`
+	Machines int    `json:"machines"`
+	Percent  int    `json:"percent"` // no selo 100%
+	Mine     bool   `json:"mine,omitempty"`
 }
 
 // ShieldMachineView é a pontuação da máquina.
@@ -126,7 +138,7 @@ type ShieldNotify struct {
 
 // Check confere os limites da resposta (a Central só desenha o que passa aqui).
 func (v ShieldView) Check() error {
-	if len(v.Missions) > 50 || len(v.Notices) > 20 || len(v.Brand) > 200 || len(v.Mission) > 200 || len(v.Slogan) > 400 {
+	if len(v.Missions) > 50 || len(v.Notices) > 20 || len(v.Groups) > 20 || len(v.Brand) > 200 || len(v.Mission) > 200 || len(v.Slogan) > 400 {
 		return errShieldView
 	}
 	if m := v.Machine; m != nil && (len(m.Criteria) > 20 || len(m.Blockers) > 20 || m.Display < 0 || m.Display > 100 || (m.Display == 100 && !m.Sealed)) {

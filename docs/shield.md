@@ -185,6 +185,11 @@ com as mesmas regras de hoje.
 - O retrato do dia só é regravado quando muda; a presença é um `INSERT … SELECT unnest`.
 - Uma passada por vez no cluster (`pg_try_advisory_lock`); quem não pega a trava pula a vez.
 - A "Minha Proteção" lê uma linha de pontuação e uma pessoa (índices pela chave).
+- O fechamento do dia grava uma transação curta por pessoa, com até 6 em paralelo.
+
+Medido neste repositório (`TestShieldDezMil`, com `PATCHD_SHIELD_PERF=1`, PostgreSQL 16 local,
+10.000 máquinas e 10.000 pessoas): primeira passada (grava tudo) ~1,5 s; passada sem mudança
+~0,7 s; passada com o fechamento do dia ~7 s. É uma medida de laboratório, não de produção.
 
 ## 11. Riscos e mitigações
 
@@ -226,3 +231,26 @@ com as mesmas regras de hoje.
 1. Configuração › Shield › Política: escolha os grupos piloto, revise pesos e prazos, ligue.
 2. Acompanhe a visão geral por alguns dias (a evolução diária mostra o efeito).
 3. Ajuste o que gerar injustiça (prazos, créditos), crie missões, e só então amplie o piloto.
+
+## 15. Estado da implementação e limitações conhecidas
+
+Implementado: motor, política versionada, avaliador com trava, retrato diário, presença,
+sequência, XP com teto e chaves únicas, níveis, 13 conquistas, missões individuais e coletivas,
+exceções, ranking coletivo (painel e Central) e individual (painel, desligado), Minha Proteção
+na Central, texto e avisos do ícone, painel com 8 abas, CSV, auditoria e métricas.
+
+Limitações (honestas):
+
+- **Antivírus:** sem coleta no agente; o critério nasce desligado.
+- **Prazo:** conta da primeira avaliação em que o critério apareceu fora; ao ligar o Shield, tudo
+  que já estava fora começa o prazo naquele momento.
+- **"A Central oferece para você atualizar":** é aproximado pelas ofertas de atualização sem
+  aprovação da TI; não confere os grupos do AD da pessoa (o servidor não tem o token dela no
+  avaliador).
+- **XP de atualização:** vale para qualquer job do autoatendimento de programa concluído (inclui
+  instalação nova), com o teto diário.
+- **Feriados:** lista manual na política (sem calendário externo).
+- **Ícone e avisos no Windows:** o código da bandeja compila para Windows e a lógica dos avisos
+  tem teste, mas a exibição real no Windows não foi executada neste ambiente (Linux).
+- **Sem PostgreSQL** (servidor em memória), o Shield não existe: a aba avisa e a Central não o
+  mostra.

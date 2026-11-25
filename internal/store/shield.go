@@ -1002,3 +1002,29 @@ func (p *Postgres) PruneShield(ctx context.Context, before time.Time) (int64, er
 	}
 	return a.RowsAffected() + b.RowsAffected(), nil
 }
+
+// ShieldRingStat é um grupo de implantação no ranking coletivo: as máquinas ativas (com ou
+// sem pontuação: as sem dado contam no denominador), as no selo e a média (sem dado vale 0).
+type ShieldRingStat struct {
+	Ring     int
+	Machines int
+	Scored   int
+	Sealed   int
+	Average  float64
+}
+
+// ShieldRingStats: os grupos, numa consulta agregada.
+func (p *Postgres) ShieldRingStats(ctx context.Context) ([]ShieldRingStat, error) {
+	rows, err := p.pool.Query(ctx, `SELECT m.ring, count(*), count(s.machine_id), count(*) FILTER (WHERE s.sealed),
+		coalesce(avg(coalesce(s.score, 0)), 0)::float8
+		FROM machines m LEFT JOIN shield_scores s ON s.machine_id = m.id
+		WHERE m.retired_at IS NULL GROUP BY m.ring ORDER BY m.ring`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ShieldRingStat, error) {
+		var s ShieldRingStat
+		err := r.Scan(&s.Ring, &s.Machines, &s.Scored, &s.Sealed, &s.Average)
+		return s, err
+	})
+}

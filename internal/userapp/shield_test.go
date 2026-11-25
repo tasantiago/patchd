@@ -29,6 +29,7 @@ func vistaShield(sealed bool, display int) *protocol.ShieldView {
 			Recent: []protocol.ShieldXPView{{Reason: "dia útil 100% protegido", Points: 10, Day: prazo}}},
 		Missions: []protocol.ShieldMissionView{{ID: 1, Title: "Semana do reinício", Scope: "coletiva", Status: "ativa", Progress: "80% das máquinas", Percent: 80,
 			StartsAt: prazo.AddDate(0, 0, -2), EndsAt: prazo.AddDate(0, 0, 5)}},
+		Groups:  []protocol.ShieldGroupView{{Pos: 1, Name: "3 · Prédio Sede", Machines: 12, Percent: 75, Mine: true}},
 		Notices: []protocol.ShieldNotice{{ID: "acao:reinicio:1", Title: "Sua proteção precisa de você", Text: "Reinicie."}, {ID: "missao:1", Title: "Missão", Text: "x"}},
 	}
 	if sealed {
@@ -60,7 +61,7 @@ func TestAbaMinhaProtecao(t *testing.T) {
 	for _, want := range []string{
 		"Minha Proteção", `aria-label="proteção 93%"`, "93%", "quase lá", "Escolher a hora do reinício", "?aba=reinicio",
 		"aguardando você", "responsável: usuário", "3,75 de 15 pontos", "Prata — Sentinela", "faltam 3 dia(s) para Ouro — Guardião",
-		"<meter", "<progress", "Semana do reinício", "Primeiro escudo", "Semana blindada", "+10 XP", "Sua máquina protegida.",
+		"<meter", "<progress", "Semana do reinício", "Primeiro escudo", "Semana blindada", "+10 XP", "Sua máquina protegida.", "1º 3 · Prédio Sede · seu grupo", "75% no selo",
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("faltou %q", want)

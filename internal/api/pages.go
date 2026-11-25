@@ -692,6 +692,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + ui.IcInventario + `<span class="rot">Inventário</span></a>
 <a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAposentadas + `<span class="rot">Aposentadas</span></a>
 <a href="/painel/alertas" title="Alertas de desempenho" {{if eq .Nav "alertas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAlertas + `<span class="rot">Alertas</span>{{with .Badges.Alerts}}<span class="cont" title="alertas de desempenho abertos e não reconhecidos">{{.}}</span>{{end}}</a>
+<a href="/painel/shield" title="Shield — proteção das máquinas" {{if eq .Nav "shield"}}class="ativo" aria-current="page"{{end}}>` + ui.IcEscudo + `<span class="rot">Shield</span></a>
 <p class="grupo"><span class="rot">Patch</span></p>
 <a href="/painel/patch?aba=geral" title="Patch › Visão geral" {{if and (eq .Nav "patch") (eq .Sub "geral")}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Visão geral</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}</a>
 <a href="/painel/patch" title="Patch › Sistema operacional" {{if and (eq .Nav "patch") (ne .Sub "geral") (ne .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + ui.IcSistema + `<span class="rot">Sistema</span></a>

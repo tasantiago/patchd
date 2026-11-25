@@ -146,7 +146,7 @@ func (a *api) shieldView(ctx context.Context, db shieldStore, id string, u proto
 			}
 			what := "com o selo 100%"
 			if m.Goal.Criterion != "" {
-				what = "com " + m.Goal.Criterion.Label() + " em dia"
+				what = "com “" + m.Goal.Criterion.Label() + "” conforme"
 			}
 			mv.Progress = fmt.Sprintf("%d%% das máquinas %s (meta: %d%%)", mv.Percent, what, m.Goal.Percent)
 		}
@@ -165,6 +165,26 @@ func (a *api) shieldView(ctx context.Context, db shieldStore, id string, u proto
 		if sc.Result.Sealed && now.Sub(sc.ChangedAt) < 24*time.Hour {
 			v.Notices = append(v.Notices, protocol.ShieldNotice{ID: fmt.Sprintf("selo:%d", sc.ChangedAt.Unix()), Title: "100% protegido",
 				Text: "Este computador está com o selo 100%. " + pol.Brand.Slogan})
+		}
+	}
+	if pol.Ranking.Collective {
+		stats, err := db.ShieldRingStats(ctx)
+		if err != nil {
+			return v, err
+		}
+		names, err := a.ringNames(ctx)
+		if err != nil {
+			return v, err
+		}
+		groups, _ := shieldGroups(&pol, stats, names)
+		mine := groupLabel(ring, names)
+		for _, g := range groups {
+			if len(v.Groups) < 20 || g.Name == mine {
+				v.Groups = append(v.Groups, protocol.ShieldGroupView{Pos: g.Pos, Name: g.Name, Machines: g.Machines, Percent: g.Pct, Mine: g.Name == mine})
+			}
+		}
+		if len(v.Groups) > 20 {
+			v.Groups = v.Groups[len(v.Groups)-20:]
 		}
 	}
 	if len(v.Notices) > 20 {

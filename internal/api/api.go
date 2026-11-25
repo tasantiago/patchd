@@ -449,6 +449,15 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/perguntas/{id}", a.adminAction(a.questionPage))                                                                // perguntas ao parque
 	mux.Handle("GET /painel/perguntas/{id}/csv", a.adminAction(a.questionCSV))                                                             // perguntas ao parque
 	mux.Handle("GET /painel/perguntas/{id}/item", a.adminAction(a.questionItemPage))                                                       // perguntas por usuário: quem tem o item
+	mux.Handle("GET /painel/shield", a.panelPage(a.shieldPage))                                                                            // PatchD Shield (docs/shield.md)
+	mux.Handle("GET /painel/shield/equipamentos.csv", a.panelPage(a.shieldMachinesCSV))                                                    // PatchD Shield
+	mux.Handle("GET /painel/shield/pessoas.csv", a.panelPage(a.shieldPlayersCSV))                                                          // PatchD Shield
+	mux.Handle("POST /painel/shield/politica", a.sameOrigin(a.adminAction(a.shieldPolicyAction)))                                          // PatchD Shield
+	mux.Handle("POST /painel/shield/missoes", a.sameOrigin(a.adminAction(a.shieldMissionAction)))                                          // PatchD Shield
+	mux.Handle("POST /painel/shield/missoes/{id}/estado", a.sameOrigin(a.adminAction(a.shieldMissionStateAction)))                         // PatchD Shield
+	mux.Handle("POST /painel/shield/excecoes", a.sameOrigin(a.adminAction(a.shieldExceptionAction)))                                       // PatchD Shield
+	mux.Handle("POST /painel/shield/excecoes/{id}/revogar", a.sameOrigin(a.adminAction(a.shieldRevokeAction)))                             // PatchD Shield
+	mux.Handle("POST /painel/shield/pessoas/{id}/ajuste", a.sameOrigin(a.adminAction(a.shieldAdjustAction)))                               // PatchD Shield: a compensação do admin, auditada
 	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
 	mux.Handle("POST /painel/alertas/lote", a.sameOrigin(a.adminAction(a.staleAfter(a.alertBatchAction))))                                 // fechar ou reconhecer em lote
 	mux.Handle("POST /painel/alertas/{id}/reconhecer", a.sameOrigin(a.adminAction(a.staleAfter(a.ackAlertAction))))                        // docs/monitoramento.md

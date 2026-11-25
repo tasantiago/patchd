@@ -67,6 +67,7 @@ As áreas abaixo representam o **escopo e a direção do projeto**, e não uma g
 | Campanhas | Planejamento de implantações controladas, por etapas ou anéis. |
 | Segurança | Identidade dos agentes, autenticação, autorização e rastreabilidade de operações. |
 | Autoatendimento | Catálogo e solicitações de software, quando suportados e habilitados. |
+| Shield | Pontuação de proteção de cada máquina (0–100%), selo 100%, sequência, níveis, conquistas, missões e ranking coletivo; desligado por padrão. |
 
 Para requisitos e limites detalhados, consulte [docs/requisitos.md](docs/requisitos.md), [docs/fontes-de-verdade.md](docs/fontes-de-verdade.md) e [docs/seguranca.md](docs/seguranca.md).
 
@@ -739,6 +740,7 @@ Consulte [docs/seguranca.md](docs/seguranca.md) e [Segurança no desenvolvimento
 | [docs/tls-laboratorio.md](docs/tls-laboratorio.md) | TLS com CA nova para laboratório isolado. |
 | [docs/build-agentes-sem-dev.md](docs/build-agentes-sem-dev.md) | Build, assinatura e publicação de agentes com imagem oficial de Go. |
 | [docs/pacotes-de-scripts.md](docs/pacotes-de-scripts.md) | Cadastro e execução de ZIPs e scripts avulsos, parâmetros, timeout e migração do ITOM. |
+| [docs/shield.md](docs/shield.md) | PatchD Shield — Missão 100%: pontuação, selo, gamificação, privacidade e operação. |
 | [docs/rotas.md](docs/rotas.md) | Inventário de rotas, quando presente na revisão utilizada. |
 | [Mapa do repositório](https://github.com/tasantiago/patchd/wiki/Mapa-do-repositorio) | Orientação para localizar entradas e implementações no código. |
 | [Exemplos práticos](https://github.com/tasantiago/patchd/wiki/Exemplos-praticos) | Atividades comentadas nas trilhas e manuais. |
@@ -759,3 +761,9 @@ Em **Automação › Padronização**, crie um padrão básico e grupos como Fin
 Windows usa os instaladores aprovados do catálogo; Windows, Linux e macOS também podem usar pacotes de scripts com detecção pelo inventário. Os atalhos são aplicados na sessão do usuário, preservando arquivos pessoais. Atualize servidor e agentes para disponibilizar a função.
 
 Veja [Padronização: instalação, grupos, aplicativos e atalhos](docs/padronizacao.md) para configurar, ativar e acompanhar os padrões.
+
+## PatchD Shield — Missão 100%
+
+Em **Shield** (menu Navegação), o painel mostra a pontuação de proteção de cada máquina (0 a 100%), calculada pelo servidor com o que ele já sabe (atualizações do sistema e de terceiros, reinício pendente, padronização, inventário e versão do agente), e quem resolve o que falta. Na Central de software, a pessoa vê a **Minha Proteção**: o anel com a pontuação, o que fazer agora, a sequência de dias protegidos, o nível, as conquistas, as missões e o ranking dos grupos.
+
+O módulo nasce **desligado**. Ligue em **Shield › Política**, de preferência para um grupo piloto. A pontuação nunca mostra 100% sem o selo, o que não se sabe vale zero, e o XP só vem de eventos do servidor. Veja [docs/shield.md](docs/shield.md).

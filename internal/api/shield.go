@@ -64,6 +64,8 @@ type shieldStore interface {
 	SetShieldMissionProgress(ctx context.Context, id int64, done, total int) error
 	ShieldProtectedDaysOf(ctx context.Context, playerID int64, from, to time.Time) (int, error)
 	MachineRing(ctx context.Context, id string) (int, bool, error)
+	ShieldRingStats(ctx context.Context) ([]store.ShieldRingStat, error)
+	ResolveMachine(ctx context.Context, prefix string) (string, bool, error)
 	ShieldProtectedDaysBetween(ctx context.Context, from, to time.Time) (map[int64]int, error)
 	ShieldPlayersInRings(ctx context.Context, ring *int, from, to time.Time) ([]int64, error)
 	PruneShield(ctx context.Context, before time.Time) (int64, error)
@@ -435,6 +437,14 @@ func (a *api) shieldDone(start time.Time, counts map[shield.Overall]int, err err
 	if counts != nil || err == nil {
 		a.shield.counts = counts
 	}
+	var bands map[string]int
+	if counts != nil {
+		bands = map[string]int{}
+		for o, n := range counts {
+			bands[string(o)] = n
+		}
+	}
+	a.metrics.shieldObserve(bands, a.shield.duration, err != nil)
 }
 
 // playable: contas de gente (fora as de serviço e as vazias).
@@ -673,6 +683,7 @@ func (a *api) shieldCloseDay(ctx context.Context, db shieldStore, pol *shield.Po
 		return err
 	}
 	touched := map[int64]bool{}
+	var commits []store.ShieldCommit
 	for id, machines := range inputs {
 		pl, ok := players[id]
 		if !ok {
@@ -683,11 +694,11 @@ func (a *api) shieldCloseDay(ctx context.Context, db shieldStore, pol *shield.Po
 		if !st.Step(day, v) {
 			continue // dia já fechado (por outro servidor, ou antes de reiniciar)
 		}
-		c := store.ShieldCommit{PlayerID: id, Day: day, Streak: &st, Events: shield.DayXP(pol, day, v, st), MaxPerDay: pol.XP.MaxPerDay}
-		if _, err := db.CommitShield(ctx, c); err != nil {
-			return err
-		}
+		commits = append(commits, store.ShieldCommit{PlayerID: id, Day: day, Streak: &st, Events: shield.DayXP(pol, day, v, st), MaxPerDay: pol.XP.MaxPerDay})
 		touched[id] = true
+	}
+	if err := shieldCommitAll(ctx, db, commits); err != nil {
+		return err
 	}
 	// Missões: as individuais com o dia dentro, e as coletivas cumpridas.
 	ms, err := db.ShieldMissions(ctx, 200)
@@ -742,14 +753,56 @@ func (a *api) shieldCloseDay(ctx context.Context, db shieldStore, pol *shield.Po
 	if err != nil {
 		return err
 	}
+	commits = commits[:0]
 	for _, id := range tids {
-		earned := shield.Earned(pol, counters[id], have[id])
-		if len(earned) == 0 {
-			continue
-		}
-		if _, err := db.CommitShield(ctx, store.ShieldCommit{PlayerID: id, Day: day, Badges: earned}); err != nil {
-			return err
+		if earned := shield.Earned(pol, counters[id], have[id]); len(earned) > 0 {
+			commits = append(commits, store.ShieldCommit{PlayerID: id, Day: day, Badges: earned})
 		}
 	}
-	return nil
+	return shieldCommitAll(ctx, db, commits)
+}
+
+// shieldCommitWorkers: quantas transações de fechamento ao mesmo tempo (cada uma é de uma
+// pessoa só, com a linha dela trancada: não disputam entre si).
+const shieldCommitWorkers = 6
+
+// shieldCommitAll grava os fechamentos em paralelo, limitado; o primeiro erro para o resto.
+func shieldCommitAll(ctx context.Context, db shieldStore, list []store.ShieldCommit) error {
+	if len(list) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	work := make(chan store.ShieldCommit)
+	errs := make(chan error, shieldCommitWorkers)
+	var wg sync.WaitGroup
+	for range min(shieldCommitWorkers, len(list)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for c := range work {
+				if _, err := db.CommitShield(ctx, c); err != nil {
+					errs <- err
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+feed:
+	for _, c := range list {
+		select {
+		case work <- c:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(work)
+	wg.Wait()
+	select {
+	case err := <-errs:
+		return err
+	default:
+		return ctx.Err()
+	}
 }

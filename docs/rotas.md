@@ -53,7 +53,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | GET | `/api/v1/agent/wucache/{key}` |
 | POST | `/api/v1/agent/wucache` |
 
-## Sessão (página) (27)
+## Sessão (página) (30)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
@@ -85,6 +85,9 @@ Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/en
 | GET | `/painel/patch/item` |
 | GET | `/painel/patch/programa` |
 | GET | `/painel/patch` |
+| GET | `/painel/shield/equipamentos.csv` |
+| GET | `/painel/shield/pessoas.csv` |
+| GET | `/painel/shield` |
 | GET | `/painel/{$}` |
 
 ## Sessão (API) (6)
@@ -125,7 +128,7 @@ Quem pode: sessão de admin. Sem sessão: 303 → /painel/entrar. Sessão de lei
 | GET | `/painel/scripts` |
 | GET | `/painel/terminal` |
 
-## Admin (ação) (88)
+## Admin (ação) (94)
 
 Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /painel/entrar. Sessão de leitura: 403, com o evento acesso.negado na auditoria. De outra origem: 403.
 
@@ -219,3 +222,9 @@ Quem pode: sessão de admin, só da própria origem. Sem sessão: 303 → /paine
 | POST | `/painel/scripts/{id}/excluir` |
 | POST | `/painel/scripts/{id}/executar` |
 | POST | `/painel/scripts` |
+| POST | `/painel/shield/excecoes/{id}/revogar` |
+| POST | `/painel/shield/excecoes` |
+| POST | `/painel/shield/missoes/{id}/estado` |
+| POST | `/painel/shield/missoes` |
+| POST | `/painel/shield/pessoas/{id}/ajuste` |
+| POST | `/painel/shield/politica` |

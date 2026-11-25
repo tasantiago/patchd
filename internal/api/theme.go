@@ -208,6 +208,8 @@ form.formulario .campo>label{font-weight:600;font-size:.88rem}
 form.formulario .campo input:not([type=checkbox]):not([type=radio]),form.formulario .campo select{width:100%}
 form.formulario .campo .muted{font-size:.82rem}
 form.formulario>button{align-self:flex-start}
+.opcoes-linha{display:flex;flex-wrap:wrap;gap:.35rem 1.1rem}.opcoes-linha label{font-weight:400}
+.formulario .card{display:flex;flex-direction:column;gap:.8rem}.formulario .card>h2,.formulario .card>h3{margin:0}
 form.formulario>p{margin:0}
 /* Campanha: os jobs por estado, cada um um filtro. */
 .camp-estados{list-style:none;padding:0;margin:0 0 1rem;display:flex;flex-wrap:wrap;gap:.5rem}

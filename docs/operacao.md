@@ -2328,3 +2328,49 @@ Linux, e vice-versa. O agente confere de novo na máquina e recusa o que não fo
 Um detalhe que custa caro quando falta: se o script deixar um processo em segundo plano, ele
 segura o cano da saída. O agente mata o processo no fim do prazo e espera no máximo mais 5 s
 pela saída — sem isso, o job ficaria preso até o processo em segundo plano morrer.
+
+## PatchD Shield — Missão 100%
+
+O Shield (docs/shield.md) dá a cada máquina uma pontuação de proteção e à pessoa que a usa uma
+sequência, XP, nível e conquistas. Ele lê o que o servidor já tem: não muda o compliance, não
+cria job e não pede nada novo ao agente além da operação `shield` da Central.
+
+**Ligar com piloto.** Em Shield › Política, marque **Shield ligado** e um ou mais **grupos
+piloto** (nenhum marcado: todos). Grave: é a versão 1 da política. Em até 5 minutos, as
+máquinas do piloto aparecem em Shield › Equipamentos; a Central delas passa a mostrar a aba
+**Minha Proteção** (agente com `shield-v1`; agente anterior simplesmente não mostra a aba).
+
+**Ajustar.** Pesos, critérios obrigatórios, prazos, créditos, níveis, conquistas (JSON), XP,
+textos, ranking e avisos ficam na mesma tela. Cada gravação é uma versão nova, auditada
+(Shield › Auditoria), com a lista do que mudou. O servidor recusa o que tornaria a pontuação
+desonesta (desconhecido valendo pontos, conforme valendo menos que 1).
+
+**Antivírus.** O agente ainda não coleta o estado do antivírus. O critério existe, mas vem
+desligado: ligado, ele fica "desconhecido" em todas as máquinas e impede o selo.
+
+**Exceções.** Shield › Exceções: um critério de uma máquina fora da conta até a validade (até
+365 dias), com motivo. Em critério obrigatório, a exceção impede o selo — exceção não é prova.
+
+**Missões.** Shield › Missões: individual (N dias protegidos no período) ou coletiva (X% das
+máquinas do escopo no selo, ou com um critério conforme). Rascunho → publicada; cancelar a
+qualquer momento. O XP é pago no fechamento do dia, uma vez por pessoa.
+
+**Ajuste de XP.** Shield › Pessoas: a compensação do administrador (por exemplo, XP perdido
+numa indisponibilidade), com motivo obrigatório. Fica no livro do XP e na auditoria; o reenvio
+do mesmo formulário não soma de novo. Não existe outra forma de dar XP.
+
+**Ranking.** O coletivo (por grupo de implantação) vem ligado e esconde grupos com menos
+máquinas que o mínimo (padrão 5). O individual vem desligado; ligado, mostra nome, XP, dias
+protegidos e sequência — nunca máquina, CVE ou programa.
+
+**Relatórios.** Shield › Equipamentos e Pessoas exportam CSV (UTF-8 com BOM, `;`, campos que
+começam com `=`, `+`, `-`, `@` neutralizados). A exportação entra na auditoria.
+
+**Métricas.** `patchd_shield_avaliacoes_total{resultado}`, `patchd_shield_maquinas{faixa}` e
+`patchd_shield_avaliacao_segundos` (sem rótulo de máquina ou pessoa).
+
+**Vários servidores.** Uma passada por vez no cluster (trava consultiva do PostgreSQL); o
+fechamento do dia e o XP são idempotentes (chaves únicas no banco).
+
+**Desligar.** Desmarque **Shield ligado** e grave. A avaliação para, a Central esconde a aba;
+pontuações, XP e conquistas ficam guardados para quando ligar de novo.
