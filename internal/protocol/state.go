@@ -20,6 +20,7 @@ import (
 // muda a cada hora e o IP muda a cada DHCP; dentro do hash, cada check-in viraria um
 // inventário novo, e a tabela que a retenção segura voltaria a crescer sem parar.
 type MachineState struct {
+	Services *RunningServices `json:"services,omitempty"`
 	CollectedAt time.Time      `json:"collected_at"`
 	Interfaces  []NetInterface `json:"interfaces"`
 	Disks       []Disk         `json:"disks"`
@@ -125,6 +126,9 @@ func IsLocalMAC(mac net.HardwareAddr) bool { return len(mac) > 0 && mac[0]&0x02 
 // Check confere o estado recebido: tamanhos, MACs, endereços e espaço. O servidor descarta
 // o estado inteiro (e mantém o check-in) quando ele não passa.
 func (s MachineState) Check() error {
+	if s.Services != nil {
+		if err := s.Services.Check(); err != nil { return err }
+	}
 	switch {
 	case s.CollectedAt.IsZero():
 		return errors.New("collected_at ausente")
