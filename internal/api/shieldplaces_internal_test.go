@@ -10,6 +10,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/shield"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 func TestShieldRankingsPorLugar(t *testing.T) {
@@ -111,5 +112,35 @@ func TestShieldRankingsPorLugar(t *testing.T) {
 	}
 	if r, _ := st.ShieldRankings(ctx, shield.RankRoom, "", 10); len(r) != 0 {
 		t.Fatalf("salas desligadas continuam: %+v", r)
+	}
+	// O cadastro físico não depende da política de ranking e preserva nomes legados.
+	view, err := a.floorLocationsView(ctx)
+	if err != nil || len(view) != 1 || view[0].Building != "Edifício Sede" || len(view[0].Rows) != 2 || view[0].Rows[1].Legacy != "2º andar" {
+		t.Fatalf("localizações detectadas: %+v, %v", view, err)
+	}
+	if err := st.SaveFloorLocations(ctx, []store.FloorLocation{
+		{FloorKey: store.FloorKey{Building: "Edifício Sede", Spec: "10.1.1.0/24"}, Name: "Térreo"},
+		{FloorKey: store.FloorKey{Building: "Edifício Sede", Spec: "10.1.2.0/24"}, Name: "1º andar"},
+	}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.shieldRun(ctx, st, agora.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	v, err = a.shieldView(ctx, st, "m3", protocol.SelfServiceUser{Account: `EXEMPLO\ana.souza`}, agora.Add(10*time.Minute))
+	if err != nil || len(v.Places) != 2 || v.Places[1].Mine != "1º andar" {
+		t.Fatalf("nome físico na Central: %+v, %v", v, err)
+	}
+	if err := st.SaveFloorLocations(ctx, []store.FloorLocation{
+		{FloorKey: store.FloorKey{Building: "Edifício Sede", Spec: "10.1.2.0/24"}, Name: "Térreo"},
+	}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.shieldRun(ctx, st, agora.Add(15*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// Duas faixas representam agora um único andar, sem disputa consigo mesmo.
+	if f, err := st.ShieldRankings(ctx, shield.RankFloor, "Edifício Sede", 10); err != nil || len(f) != 0 {
+		t.Fatalf("prédio de um único andar físico: %+v, %v", f, err)
 	}
 }
