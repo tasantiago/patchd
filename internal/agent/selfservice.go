@@ -64,3 +64,8 @@ func (a *Agent) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRe
 func (a *Agent) SelfServiceLogo(ctx context.Context, limit int64) ([]byte, error) {
 	return onDemand(ctx, a, func(c *Client) ([]byte, error) { return c.SelfServiceLogo(ctx, limit) })
 }
+
+// Shield pede ao servidor a "Minha Proteção" do usuário nesta máquina (docs/shield.md).
+func (a *Agent) Shield(ctx context.Context, u protocol.SelfServiceUser) (protocol.ShieldView, error) {
+	return onDemand(ctx, a, func(c *Client) (protocol.ShieldView, error) { return c.Shield(ctx, u) })
+}

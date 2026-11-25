@@ -4,13 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/shield"
 	"github.com/tasantiago/patchd/internal/store"
@@ -66,7 +71,9 @@ func (c *complianceShield) Fleet(context.Context) (protocol.ComplianceFleet, err
 func (c *complianceShield) Detail(context.Context, string) (protocol.ComplianceDetail, bool, error) {
 	return protocol.ComplianceDetail{}, false, nil
 }
-func (c *complianceShield) Items(context.Context) ([]protocol.MachineItems, error) { return c.items, nil }
+func (c *complianceShield) Items(context.Context) ([]protocol.MachineItems, error) {
+	return c.items, nil
+}
 
 func TestShieldAvaliadorDePontaAPonta(t *testing.T) {
 	st, pool := shieldPG(t)
@@ -179,5 +186,84 @@ func TestShieldAvaliadorDePontaAPonta(t *testing.T) {
 	}
 	if s, _, _ := st.ShieldScoreOf(ctx, "m-a"); !s.Result.Sealed {
 		t.Fatal("desligado e reavaliou")
+	}
+}
+
+// TestShieldRotaDoAgente: a "Minha Proteção" pela rota do agente, com a credencial da máquina;
+// a máquina vem da credencial e a pessoa do corpo (a identidade que o agente leu do token).
+func TestShieldRotaDoAgente(t *testing.T) {
+	st, pool := shieldPG(t)
+	ctx := context.Background()
+	agora := time.Now().UTC()
+	cred, hash := identity.NewSecret(identity.CredentialPrefix)
+	if _, err := pool.Exec(ctx, `INSERT INTO machines (id, ring, credential_hash, last_seen_at, agent_version) VALUES ('m-a', 1, $1, $2, 'v1.0.0')`, hash, agora); err != nil {
+		t.Fatal(err)
+	}
+	var scan int64
+	if err := pool.QueryRow(ctx, `INSERT INTO scan_reports (machine_id, schema_version, scanned_at, reboot_pending, report) VALUES ('m-a', 1, $1, true, '{}') RETURNING id`, agora).Scan(&scan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE machines SET current_scan_id = $1`, scan); err != nil {
+		t.Fatal(err)
+	}
+	inv := agora.Add(-time.Hour)
+	cs := &complianceShield{status: []protocol.ComplianceStatus{{MachineID: "m-a", State: "reboot_pendente", InventoryCollectedAt: &inv, Catalog: "x"}}}
+	h := New(st, slog.New(slog.DiscardHandler), WithCompliance(cs))
+	pede := func(cred, corpo string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "http://patchd.exemplo"+protocol.ShieldPath, strings.NewReader(corpo))
+		req.Header.Set("Content-Type", "application/json")
+		if cred != "" {
+			req.Header.Set("Authorization", "Bearer "+cred)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+	ana := `{"account":"EXEMPLO\\ana.souza","groups":[],"sid":"S-1-5-21-1-2-3-1001"}`
+	if w := pede("", ana); w.Code != http.StatusUnauthorized {
+		t.Fatalf("sem credencial: %d", w.Code)
+	}
+	var v protocol.ShieldView
+	w := pede(cred, ana)
+	if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil || w.Code != 200 || v.Enabled || v.Reason == "" {
+		t.Fatalf("desligado: %d %s", w.Code, w.Body.String())
+	}
+	pol := shield.Default()
+	pol.Enabled = true
+	if _, err := st.SaveShieldPolicy(ctx, pol, "", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	a := &api{store: st, compliance: cs, logger: slog.New(slog.DiscardHandler), now: func() time.Time { return agora }}
+	if err := a.shieldRun(ctx, st, agora); err != nil {
+		t.Fatal(err)
+	}
+	h = New(st, slog.New(slog.DiscardHandler), WithCompliance(cs)) // cache da política novo
+	w = pede(cred, ana)
+	v = protocol.ShieldView{}
+	if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil || !v.Enabled || v.Machine == nil || v.Player == nil {
+		t.Fatalf("ligado: %d %s", w.Code, w.Body.String())
+	}
+	if v.Machine.Sealed || v.Machine.Display >= 100 {
+		t.Fatalf("reinício pendente com selo: %+v", v.Machine)
+	}
+	acao := false
+	for _, c := range v.Machine.Criteria {
+		acao = acao || (c.Criterion == "reinicio" && c.Action == "reiniciar")
+	}
+	if !acao || len(v.Notices) == 0 {
+		t.Fatalf("a ação do reinício e o aviso: %+v", v)
+	}
+	// A visita conta como presença, e a pessoa ganha o SID.
+	pl, ok, _ := st.ShieldPlayerByAccount(ctx, `exemplo\ana.souza`)
+	if !ok || pl.SID != "S-1-5-21-1-2-3-1001" {
+		t.Fatalf("%+v", pl)
+	}
+	on, _ := st.ShieldPresentOn(ctx, dateOf(agora, time.UTC))
+	if len(on["m-a"]) != 1 {
+		t.Fatalf("presença: %+v", on)
+	}
+	// Identidade fora do formato: recusada.
+	if w := pede(cred, `{"account":"","groups":[]}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("conta vazia: %d", w.Code)
 	}
 }

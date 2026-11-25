@@ -39,6 +39,7 @@ const (
 	OpLogo                  = "logo"    // Aula 19.1b: o logotipo do painel, para a Central
 	OpStandardization       = "standardization"
 	OpStandardizationReport = "standardization_report"
+	OpShield                = "shield" // PatchD Shield: a "Minha Proteção" (docs/shield.md)
 )
 
 // Códigos de erro do canal (Response.Code).
@@ -80,6 +81,8 @@ type Response struct {
 	Groups      []string                      `json:"groups,omitempty"` // só no whoami
 	Catalog     *protocol.SelfServiceCatalog  `json:"catalog,omitempty"`
 	Result      *protocol.SelfServiceResponse `json:"result,omitempty"`
+	// Shield: no "shield", a "Minha Proteção" (nil: o servidor não tem o Shield).
+	Shield *protocol.ShieldView `json:"shield,omitempty"`
 	// Aula 19.1b: no "logo", a imagem já conferida pelo agente (vazia: nenhuma).
 	Logo     []byte `json:"logo,omitempty"`
 	LogoType string `json:"logo_type,omitempty"`
@@ -186,6 +189,11 @@ type Conn interface {
 type Backend interface {
 	SelfServiceCatalog(ctx context.Context, u protocol.SelfServiceUser) (protocol.SelfServiceCatalog, error)
 	SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error)
+}
+
+// ShieldBackend é o caminho da "Minha Proteção" (o agente; agentes de teste podem não ter).
+type ShieldBackend interface {
+	Shield(ctx context.Context, u protocol.SelfServiceUser) (protocol.ShieldView, error)
 }
 
 type StandardizationBackend interface {
@@ -387,6 +395,22 @@ func (s *Server) Serve(ctx context.Context, id Identity, req Request) Response {
 			go s.OnAppName(cat.AppName)
 		}
 		return Response{OK: true, Account: id.Account, Catalog: &cat, DisplayName: s.displayName(id.Account)}
+	case OpShield:
+		if wait, ok := s.allow("shield:"+id.Account, QueryLimit, QueryWindow); !ok {
+			return limited(wait)
+		}
+		backend, ok := s.Backend.(ShieldBackend)
+		if !ok {
+			return fail(CodeOff, "Shield indisponível neste agente.")
+		}
+		v, err := backend.Shield(ctx, u)
+		if err != nil {
+			return s.backendError("shield", err)
+		}
+		if err := v.Check(); err != nil {
+			return fail(CodeServer, "Resposta do Shield inválida.")
+		}
+		return Response{OK: true, Account: id.Account, Shield: &v, DisplayName: s.displayName(id.Account)}
 	case OpLogo:
 		if wait, ok := s.allow("q:"+id.Account, QueryLimit, QueryWindow); !ok {
 			return limited(wait)

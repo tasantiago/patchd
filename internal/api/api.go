@@ -382,6 +382,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST "+protocol.SelfServiceCatalogPath, a.machineAuth(a.selfServiceCatalog))
 	mux.Handle("POST "+protocol.SelfServiceRequestPath, a.machineAuth(a.selfServiceRequest))
 	mux.Handle("GET "+protocol.SelfServiceLogoPath, a.machineAuthDownload(a.selfServiceLogo)) // Aula 19.1b
+	mux.Handle("POST "+protocol.ShieldPath, a.machineAuth(a.shieldAgent))                     // PatchD Shield (docs/shield.md)
 	// Painel (Aula 7.2).
 	mux.HandleFunc("GET /painel/favicon.svg", favicon)
 	mux.HandleFunc("GET /painel/estilo.css", styleFile) // Aula 20.4: sem sessão, a tela de login também usa

@@ -279,6 +279,8 @@ func runLoop(ctx context.Context, logger *slog.Logger, opts loopOptions) int {
 		}
 	}
 	client.Capabilities = append(client.Capabilities, protocol.CapabilityStandardization)
+	// PatchD Shield: a operação "shield" do canal local (a "Minha Proteção" da Central).
+	client.Capabilities = append(client.Capabilities, protocol.CapabilityShield)
 	// Job script (Aula 23.8): em todos os sistemas. O bundle é baixado e extraído na pasta
 	// de dados do agente (só SYSTEM/root), e some ao fim do job.
 	ag.Script = (&scriptexec.Executor{

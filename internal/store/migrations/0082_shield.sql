@@ -108,6 +108,9 @@ CREATE TABLE shield_missions (
     state       text NOT NULL CHECK (state IN ('rascunho', 'publicada', 'cancelada')),
     xp          integer NOT NULL DEFAULT 0 CHECK (xp BETWEEN 0 AND 10000),
     completed_at timestamptz,
+    -- O progresso da coletiva, gravado pelo avaliador (qualquer servidor mostra o mesmo).
+    progress_done  integer NOT NULL DEFAULT 0,
+    progress_total integer NOT NULL DEFAULT 0,
     created_by  text NOT NULL,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now()

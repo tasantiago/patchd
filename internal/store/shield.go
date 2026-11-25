@@ -844,6 +844,8 @@ type ShieldMission struct {
 	State       string // rascunho, publicada ou cancelada
 	XP          int
 	CompletedAt *time.Time
+	// Done e Total: o progresso da coletiva (máquinas que cumprem / do escopo), do avaliador.
+	Done, Total int
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -883,13 +885,13 @@ func (m ShieldMission) check() error {
 	return nil
 }
 
-const missionCols = `id, title, description, scope, goal, ring, starts_at, ends_at, state, xp, completed_at, created_by, created_at, updated_at`
+const missionCols = `id, title, description, scope, goal, ring, starts_at, ends_at, state, xp, completed_at, progress_done, progress_total, created_by, created_at, updated_at`
 
 func scanMission(r pgx.CollectableRow) (ShieldMission, error) {
 	var m ShieldMission
 	var goal []byte
 	err := r.Scan(&m.ID, &m.Title, &m.Description, &m.Scope, &goal, &m.Ring, &m.StartsAt, &m.EndsAt, &m.State, &m.XP, &m.CompletedAt,
-		&m.CreatedBy, &m.CreatedAt, &m.UpdatedAt)
+		&m.Done, &m.Total, &m.CreatedBy, &m.CreatedAt, &m.UpdatedAt)
 	if err == nil {
 		err = json.Unmarshal(goal, &m.Goal)
 	}
@@ -940,6 +942,20 @@ func (p *Postgres) SetShieldMissionState(ctx context.Context, id int64, state st
 func (p *Postgres) CompleteShieldMission(ctx context.Context, id int64, at time.Time) (bool, error) {
 	tag, err := p.pool.Exec(ctx, `UPDATE shield_missions SET completed_at = $2 WHERE id = $1 AND completed_at IS NULL AND state = 'publicada'`, id, at)
 	return err == nil && tag.RowsAffected() == 1, err
+}
+
+// SetShieldMissionProgress grava o progresso da coletiva.
+func (p *Postgres) SetShieldMissionProgress(ctx context.Context, id int64, done, total int) error {
+	_, err := p.pool.Exec(ctx, `UPDATE shield_missions SET progress_done = $2, progress_total = $3 WHERE id = $1`, id, done, total)
+	return err
+}
+
+// ShieldProtectedDaysOf: os dias protegidos de uma pessoa no intervalo.
+func (p *Postgres) ShieldProtectedDaysOf(ctx context.Context, playerID int64, from, to time.Time) (int, error) {
+	var n int
+	err := p.pool.QueryRow(ctx, `SELECT count(*) FROM shield_xp WHERE player_id = $1 AND kind = 'dia_protegido' AND day >= $2 AND day <= $3`,
+		playerID, from.Format(time.DateOnly), to.Format(time.DateOnly)).Scan(&n)
+	return n, err
 }
 
 // ShieldProtectedDaysBetween: quantos dias protegidos cada pessoa teve no intervalo (pelos

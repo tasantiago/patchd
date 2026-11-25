@@ -29,7 +29,7 @@ Quem pode: qualquer um, só da própria origem. Sem sessão: atende. De outra or
 | POST | `/painel/entrar` | login (conferência de origem, limite de tentativas) |
 | POST | `/painel/sair` | saída (conferência de origem) |
 
-## Agente (16)
+## Agente (17)
 
 Quem pode: máquina registrada (credencial). Sem sessão: 401.
 
@@ -47,6 +47,7 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | POST | `/api/v1/agent/selfservice/catalog` |
 | GET | `/api/v1/agent/selfservice/logo` |
 | POST | `/api/v1/agent/selfservice/request` |
+| POST | `/api/v1/agent/shield` |
 | POST | `/api/v1/agent/standardization/report` |
 | POST | `/api/v1/agent/standardization` |
 | GET | `/api/v1/agent/wucache/{key}` |

@@ -61,6 +61,9 @@ type shieldStore interface {
 	SaveShieldMission(ctx context.Context, m store.ShieldMission) (int64, error)
 	SetShieldMissionState(ctx context.Context, id int64, state string) (bool, error)
 	CompleteShieldMission(ctx context.Context, id int64, at time.Time) (bool, error)
+	SetShieldMissionProgress(ctx context.Context, id int64, done, total int) error
+	ShieldProtectedDaysOf(ctx context.Context, playerID int64, from, to time.Time) (int, error)
+	MachineRing(ctx context.Context, id string) (int, bool, error)
 	ShieldProtectedDaysBetween(ctx context.Context, from, to time.Time) (map[int64]int, error)
 	ShieldPlayersInRings(ctx context.Context, ring *int, from, to time.Time) ([]int64, error)
 	PruneShield(ctx context.Context, before time.Time) (int64, error)
@@ -611,6 +614,11 @@ func (a *api) shieldCollective(ctx context.Context, db shieldStore, pol *shield.
 			}
 		}
 		done, total := shieldCollectiveProgress(m, pol, in, scores)
+		if done != m.Done || total != m.Total {
+			if err := db.SetShieldMissionProgress(ctx, m.ID, done, total); err != nil {
+				return err
+			}
+		}
 		if total > 0 && done*100 >= m.Goal.Percent*total {
 			if ok, err := db.CompleteShieldMission(ctx, m.ID, now); err != nil {
 				return err

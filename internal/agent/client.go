@@ -196,6 +196,13 @@ func (c *Client) SelfServiceCatalog(ctx context.Context, u protocol.SelfServiceU
 	return out, err
 }
 
+// Shield pede a "Minha Proteção" do usuário nesta máquina (docs/shield.md).
+func (c *Client) Shield(ctx context.Context, u protocol.SelfServiceUser) (protocol.ShieldView, error) {
+	var out protocol.ShieldView
+	_, err := c.post(ctx, protocol.ShieldPath, u, &out)
+	return out, err
+}
+
 // SelfServiceRequest manda o pedido do usuário; o servidor refaz a loja e decide.
 func (c *Client) SelfServiceRequest(ctx context.Context, r protocol.SelfServiceRequest) (protocol.SelfServiceResponse, error) {
 	var out protocol.SelfServiceResponse

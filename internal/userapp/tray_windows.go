@@ -338,6 +338,11 @@ func (t *tray) balloon() {
 	if n == nil {
 		return
 	}
+	if n.Tip != "" { // Shield: o estado da proteção no texto do ícone
+		t.nid.Flags = nifTip
+		copyUTF16(t.nid.Tip[:], n.Tip)
+		_ = t.notify(nimModify)
+	}
 	title, text := noticeText(*n)
 	if text == "" {
 		return

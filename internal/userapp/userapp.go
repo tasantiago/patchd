@@ -76,6 +76,11 @@ type App struct {
 	logoSHA, logoType string
 	logoData          []byte
 
+	// Shield (shield.go): a última "Minha Proteção" e quando chegou.
+	shieldMu   sync.Mutex
+	shieldView *protocol.ShieldView
+	shieldAt   time.Time
+
 	kickOnce      sync.Once
 	kick          chan struct{}
 	fast          time.Duration // FastCheck; os testes encurtam
@@ -333,6 +338,9 @@ type pageData struct {
 	Requests             []reqView
 	Reboot               *rebootView
 	Busy                 int64
+	// Shield: a aba "Minha Proteção" (Protection: o grupo do menu; vazio sem o Shield).
+	Protection []tab
+	Shield     *shieldPage
 }
 
 // maxStoreSearch: o tamanho da busca na loja.
@@ -426,7 +434,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	d := pageData{Title: Title, Base: a.base(), Checked: a.now().Format("02/01 15:04"), Tab: r.URL.Query().Get("aba")}
-	if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot {
+	if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot && d.Tab != tabShield {
 		d.Tab = tabUpdates
 	}
 	a.mu.Lock()
@@ -517,6 +525,17 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	if d.Tab == tabStore {
 		a.storeFilter(&d, r.URL.Query())
 	}
+	if d.Error == "" {
+		if sv := a.shieldFetch(ctx, d.Tab == tabShield); sv != nil {
+			sp := a.shieldPageOf(sv)
+			d.Protection = []tab{{ID: tabShield, Label: "Minha Proteção", Alert: len(sp.Actions) > 0}}
+			if d.Tab == tabShield {
+				d.Shield = sp
+			}
+		} else if d.Tab == tabShield {
+			d.Tab = tabUpdates // sem Shield (agente, servidor ou política): a aba não existe
+		}
+	}
 	d.Tabs = []tab{
 		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
 		{ID: tabStore, Label: "Loja"},
@@ -527,7 +546,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	} else if d.Tab == tabReboot && d.Error == "" {
 		d.Tab = tabUpdates
 	}
-	for _, l := range [][]tab{d.Tabs, d.Computer} {
+	for _, l := range [][]tab{d.Protection, d.Tabs, d.Computer} {
 		for i := range l {
 			l[i].Href = a.base() + "?aba=" + l[i].ID
 			if l[i].Active = l[i].ID == d.Tab; l[i].Active {
@@ -777,6 +796,9 @@ type Notice struct {
 	Updates []string // nomes dos programas com atualização para o usuário
 	Done    []string // pedidos que terminaram (17.5): "7-Zip 26.04: instalado"
 	Reboot  bool     // reinício pendente sem hora escolhida (17.6)
+	// Shield (shield.go): o aviso da "Minha Proteção" e o texto novo do ícone ("": o mesmo).
+	Shield *protocol.ShieldNotice
+	Tip    string
 }
 
 // Tab é a aba que o clique no aviso abre.
@@ -786,6 +808,8 @@ func (n Notice) Tab() string {
 		return tabRequests
 	case n.Reboot:
 		return tabReboot
+	case n.Shield != nil && len(n.Updates) == 0:
+		return tabShield
 	}
 	return tabUpdates
 }
@@ -802,6 +826,8 @@ func noticeText(n Notice) (title, text string) {
 		return "Pedidos concluídos", strings.Join(n.Done, "; ") + "."
 	case n.Reboot:
 		return "Reinício pendente", "Para concluir as atualizações, este computador precisa reiniciar. Clique para escolher a hora."
+	case n.Shield != nil && len(n.Updates) == 0:
+		return n.Shield.Title, n.Shield.Text
 	}
 	switch len(n.Updates) {
 	case 0:
@@ -959,6 +985,8 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 <a class="marca" href="{{.Base}}" title="{{.Title}}">{{if .Logo}}<img src="{{.Logo}}" alt="" width="36" height="36">{{else}}<span class="escudo">` + ui.ShieldSVG + `</span>{{end}}<span class="rot">{{.Title}}{{if .Brand}}<small>{{.Brand}}</small>{{end}}</span></a>
 {{if .Account}}<div class="usuario" title="{{.Account}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="rot">{{if .DisplayName}}<strong>{{.DisplayName}}</strong><small>({{.Account}}) · este computador</small>{{else}}<strong>{{.User}}</strong><small>{{if .Domain}}{{.Domain}} · {{end}}este computador</small>{{end}}</span></div>{{end}}
 <nav aria-label="seções">
+{{if .Protection}}<p class="grupo"><span class="rot">Proteção</span></p>
+{{range .Protection}}{{template "item" .}}{{end}}{{end}}
 <p class="grupo"><span class="rot">Software</span></p>
 {{range .Tabs}}{{template "item" .}}{{end}}
 {{if .Computer}}<p class="grupo"><span class="rot">Computador</span></p>
@@ -975,11 +1003,11 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{with .Flash}}<p class="aviso {{.Kind}}" role="status">{{.Text}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{else}}
 {{if .Busy}}<p class="aviso andamento" role="status"><span class="gira" aria-hidden="true"></span>Há uma instalação em andamento neste computador (pedido nº {{.Busy}}). Esta página se atualiza sozinha.</p>{{end}}
-{{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else}}{{template "pedidos" .}}{{end}}
+{{if eq .Tab "atualizacoes"}}{{template "atualizacoes" .}}{{else if eq .Tab "loja"}}{{template "loja" .}}{{else if eq .Tab "reinicio"}}{{template "reinicio" .}}{{else if eq .Tab "protecao"}}{{template "protecao" .}}{{else}}{{template "pedidos" .}}{{end}}
 {{end}}
 </main></div></body></html>
-{{define "icone"}}{{if eq . "atualizacoes"}}` + ui.IcAtualizar + `{{else if eq . "loja"}}` + ui.IcLoja + `{{else if eq . "pedidos"}}` + ui.IcPedidos + `{{else if eq . "reinicio"}}` + ui.IcReinicio + `{{end}}{{end}}
-{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{template "icone" .ID}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="reinício pendente">!</span>{{end}}</a>{{end}}
+{{define "icone"}}{{if eq . "atualizacoes"}}` + ui.IcAtualizar + `{{else if eq . "loja"}}` + ui.IcLoja + `{{else if eq . "pedidos"}}` + ui.IcPedidos + `{{else if eq . "reinicio"}}` + ui.IcReinicio + `{{else if eq . "protecao"}}` + IcEscudo + `{{end}}{{end}}
+{{define "item"}}<a href="{{.Href}}" title="{{.Label}}"{{if .Active}} class="ativo" aria-current="page"{{end}}>{{template "icone" .ID}}<span class="rot">{{.Label}}</span>{{if .Count}}<span class="cont" title="atualizações disponíveis">{{.Count}}</span>{{end}}{{if .Alert}}<span class="cont alerta" title="{{if eq .ID "protecao"}}ação sua pendente{{else}}reinício pendente{{end}}">!</span>{{end}}</a>{{end}}
 {{define "atualizacoes"}}<section><div class="cab"><h1>Atualizações para você</h1>{{if .UpdateAll}}<form method="post" action="{{$.Base}}atualizar-tudo"><button type="submit">Atualizar tudo ({{.UpdateAll}})</button></form>{{end}}</div>
 {{with .Queue}}{{if .Waiting}}<div class="fila" role="status"><span class="gira" aria-hidden="true"></span><span>Atualizando tudo, uma de cada vez: {{len .Waiting}} na fila. Deixe a Central aberta até terminar.</span><form method="post" action="{{$.Base}}cancelar-fila"><button class="sec" type="submit">Cancelar o restante</button></form></div>{{end}}
 {{if .Failed}}<ul class="falhas">{{range .Failed}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}
@@ -1032,7 +1060,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{end}}`))
 
 // pageCSS: o arquivo estilo.css da Central (Aula 20.6): o layout do painel e o da Central.
-var pageCSS = ui.LayoutCSS + css
+var pageCSS = ui.LayoutCSS + css + shieldCSS
 
 // css: o que é da Central, por cima do layout do painel (ui.LayoutCSS, Aula 19.1b).
 const css = `
