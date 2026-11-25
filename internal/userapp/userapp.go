@@ -338,6 +338,8 @@ type pageData struct {
 	Requests             []reqView
 	Reboot               *rebootView
 	Busy                 int64
+	// Windows: as atualizações do Windows aprovadas pela TI (nil: desligado ou sem Windows).
+	Windows *winView
 	// Shield: a aba "Minha Proteção" (Protection: o grupo do menu; vazio sem o Shield).
 	Protection []tab
 	Shield     *shieldPage
@@ -462,6 +464,9 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		a.syncLogo(ctx, resp.Catalog.Logo)
 		d.Busy = resp.Catalog.OpenJob
 		refresh = d.Busy > 0
+		if d.Windows = a.windowsView(resp.Catalog.Windows); d.Windows != nil && d.Windows.JobID > 0 {
+			refresh = true // acompanha a instalação do Windows
+		}
 		for _, it := range resp.Catalog.Items {
 			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
 				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category, PerUser: it.PerUser}
@@ -537,7 +542,7 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.Tabs = []tab{
-		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates)},
+		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates) + windowsCount(d.Windows)},
 		{ID: tabStore, Label: "Loja"},
 		{ID: tabRequests, Label: "Meus pedidos"},
 	}
@@ -833,6 +838,9 @@ func noticeText(n Notice) (title, text string) {
 	case 0:
 		return "", ""
 	case 1:
+		if strings.HasPrefix(n.Updates[0], "Atualizações do Windows") {
+			return "Atualizações do Windows", n.Updates[0] + " liberadas pela TI para este computador. Clique para instalar."
+		}
 		return "Atualização disponível", n.Updates[0] + " tem uma versão nova para você. Clique para atualizar."
 	default:
 		return "Atualizações disponíveis", fmt.Sprintf("%d programas têm versão nova para você: %s. Clique para ver.",
@@ -908,6 +916,14 @@ func (a *App) Watch(ctx context.Context, first, every time.Duration, out chan<- 
 			if it.Action == protocol.SelfServiceUpdate {
 				ids, n.Updates = append(ids, it.App), append(n.Updates, it.Name)
 			}
+		}
+		if w := resp.Catalog.Windows; w != nil && len(w.Updates) > 0 && w.JobID == 0 && w.Problem == "" {
+			kbs := make([]string, 0, len(w.Updates))
+			for _, u := range w.Updates {
+				kbs = append(kbs, u.KB)
+			}
+			ids = append(ids, "windows:"+strings.Join(kbs, ","))
+			n.Updates = append(n.Updates, fmt.Sprintf("Atualizações do Windows (%d)", len(w.Updates)))
 		}
 		if slices.Equal(ids, last) {
 			n.Updates = nil
@@ -1015,8 +1031,9 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{if .Pending}}<span class="selo atencao">Com a TI (pedido nº {{.Pending}})</span>{{else if .Running}}<span class="selo andamento">Instalando</span>{{else if .Queued}}<span class="selo neutro">Na fila</span>{{else}}<form method="post" action="{{$.Base}}pedir"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="action" value="atualizar">
 <button type="submit"{{if $.Busy}} disabled{{end}}>{{if .Approval}}Pedir à TI{{else}}Atualizar{{end}}</button></form>{{end}}</li>{{end}}</ul>
 <p class="nota">Feche o programa antes de atualizar. A instalação roda em segundo plano e leva poucos minutos.</p>
-{{else}}<p class="vazio">Nenhuma atualização disponível para você neste computador.</p>{{end}}
+{{else}}<p class="vazio">Nenhum programa com atualização para você neste computador.</p>{{end}}
 </section>
+{{template "windows" .}}
 {{if .Current}}<section><h2>Em dia</h2><ul class="lista">{{range .Current}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">✓ em dia</span></li>{{end}}</ul></section>{{end}}
 {{end}}
 {{define "loja"}}{{with .Confirm}}<section class="confirma"><h1>Instalar {{.Name}}?</h1>
@@ -1117,3 +1134,11 @@ nav.cats .n{font-size:.75rem;color:var(--muted)}nav.cats a.ativa .n{color:#dbe9f
 form.busca-loja{display:flex;align-items:center;gap:.5rem}
 form.busca-loja input[type=search]{flex:1;font:inherit;font-size:.9rem;padding:.45rem .7rem;border:1px solid var(--borda);border-radius:6px;min-width:0}
 `
+
+// windowsCount: as atualizações do Windows que contam no número do menu.
+func windowsCount(w *winView) int {
+	if w == nil || w.JobID > 0 || w.Problem != "" {
+		return 0
+	}
+	return len(w.Updates)
+}

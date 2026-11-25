@@ -26,7 +26,9 @@ conferir a loja e o pedido antes de existir o app do usuário (17.3 e 17.4).
 comandos:
   catalog  a loja do usuário na máquina: -machine ID -user DOMINIO\usuario [-groups DOMINIO\G1,DOMINIO\G2]
   request  o pedido: as mesmas opções, mais -app PROGRAMA -action atualizar|instalar,
-           ou -action reiniciar [-at HH:MM] (Aula 17.6: o reinício, agora ou na hora).
+           ou -action reiniciar [-at HH:MM] (Aula 17.6: o reinício, agora ou na hora),
+           ou -action windows (as atualizações do Windows aprovadas; só pelo agente,
+           com o servidor no ar: a linha de comando não avalia a máquina).
            Atendido, cria o job thirdparty de verdade (autor "autoatendimento: usuario");
            o pedido e a recusa entram na auditoria com a origem "autoatendimento (linha de comando)"
 
@@ -143,7 +145,7 @@ func selfServiceCommand(ctx context.Context, st selfServiceCLIStore, svc *selfse
 	case u.Check() != nil:
 		fmt.Fprintf(stderr, "patchd-server: -user/-groups: %v\n", u.Check())
 		return exitConfig
-	case args[0] == "request" && (*action == "" || *app == "" && *action != protocol.SelfServiceReboot):
+	case args[0] == "request" && (*action == "" || *app == "" && *action != protocol.SelfServiceReboot && *action != protocol.SelfServiceWindows):
 		fmt.Fprintln(stderr, "patchd-server: o request leva -app e -action (o reiniciar, só -action e, se quiser, -at)")
 		return exitConfig
 	}

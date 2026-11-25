@@ -26,6 +26,9 @@ const (
 	SelfServiceUpdate  = "atualizar"
 	SelfServiceInstall = "instalar"
 	SelfServiceReboot  = "reiniciar" // Aula 17.6: reiniciar agora ou na hora escolhida
+	// SelfServiceWindows: instalar as atualizações do Windows que a TI aprovou e a busca da
+	// máquina mostra pendentes (o job windows_update, sem reinício).
+	SelfServiceWindows = "windows"
 )
 
 // Respostas do pedido.
@@ -110,7 +113,30 @@ type SelfServiceCatalog struct {
 	// AppName (Aula 20.10): o nome da Central (parâmetro PATCHD_APP_NAME do painel), no título
 	// dos avisos do Windows, no ícone e no topo da página. Servidores até a 20.9 não mandam.
 	AppName string `json:"app_name,omitempty"`
+	// Windows: as atualizações do Windows que o usuário pode instalar (nil: desligado, máquina
+	// sem Windows ou sem busca). Servidores e agentes anteriores não mandam.
+	Windows *SelfServiceWindowsState `json:"windows,omitempty"`
 }
+
+// SelfServiceWindowsState são as atualizações do Windows da máquina para a Central.
+type SelfServiceWindowsState struct {
+	Updates []SelfServiceWinUpdate `json:"updates"`           // instaláveis agora (aprovadas e pendentes na busca)
+	Waiting int                    `json:"waiting,omitempty"` // pendentes que ainda esperam a aprovação da TI
+	JobID   int64                  `json:"job_id,omitempty"`  // instalação do Windows em andamento
+	Problem string                 `json:"problem,omitempty"` // a busca da máquina falhou: nada a instalar por aqui
+	ScanAt  *time.Time             `json:"scan_at,omitempty"`
+}
+
+// SelfServiceWinUpdate é uma atualização do Windows.
+type SelfServiceWinUpdate struct {
+	KB        string `json:"kb"`
+	Title     string `json:"title,omitempty"`
+	Exploited bool   `json:"exploited,omitempty"` // corrige falha com exploração conhecida
+	Restart   bool   `json:"restart,omitempty"`   // a instalação vai pedir reinício
+}
+
+// MaxSelfServiceWinUpdates: quantas a Central recebe (o job leva até jobs.MaxWinUpdates).
+const MaxSelfServiceWinUpdates = 50
 
 // DefaultAppName e MaxAppName: o nome da Central sem parâmetro, e o limite (Aula 20.10).
 const (

@@ -203,6 +203,16 @@ func settingDefs(look config.Lookup) []settings.Def {
 				}
 				return v, nil
 			}, Show: showChoice(winCacheChoices)},
+		{Key: api.SelfServiceWindowsKey, Group: "Agentes", Label: "Atualizações do Windows na Central de software", Kind: settings.Select,
+			Options: selfServiceWindowsChoices, Default: "ligado",
+			Help:   "Ligado: na Central, em Atualizações, o usuário instala na hora as atualizações do Windows que a TI já aprovou em Patch e que a busca do computador dele mostra pendentes (o mesmo job do botão da aba Pendências da máquina). O computador não reinicia sozinho; servidores ficam de fora.",
+			Effect: "na próxima vez que a Central consultar o agente", Check: func(v string) (string, error) {
+				v = strings.TrimSpace(v)
+				if v != "ligado" && v != "desligado" {
+					return "", errors.New("use ligado ou desligado")
+				}
+				return v, nil
+			}, Show: showChoice(selfServiceWindowsChoices)},
 		{Key: api.WinCacheFetchKey, Group: "Agentes", Label: "Horário para baixar da Microsoft (cache do Windows Update)", Kind: settings.Text,
 			Default: "", Help: "Vazio: o servidor baixa cada pacote da Microsoft na hora em que a primeira máquina pede. Com um horário (HH:MM-HH:MM, no fuso do painel; pode passar da meia-noite, como 22:00-06:00), o servidor só baixa da Microsoft dentro dele: o pacote pedido fora do horário fica na fila, o job da máquina fica adiado e a campanha tenta de novo depois que o horário abrir. A entrega às máquinas do que já está no cache não muda: vale a qualquer hora. O download em curso quando o horário fecha vai até o fim.",
 			Effect: "na hora: o próximo pacote que faltar já segue o horário; esvaziar o campo baixa a fila em até 1 minuto", Check: func(v string) (string, error) {
@@ -389,6 +399,8 @@ var winCacheChoices = []settings.Option{{Value: api.WinCacheOff, Label: "desliga
 const defaultWinCacheDays = 60
 
 var terminalChoices = []settings.Option{{Value: "0", Label: "desligado"}, {Value: "1", Label: "ligado: comandos pelo painel, com motivo e registro"}}
+
+var selfServiceWindowsChoices = []settings.Option{{Value: "ligado", Label: "ligado: o usuário instala as aprovadas pela TI"}, {Value: "desligado", Label: "desligado: só a TI instala"}}
 
 var channelChoices = []settings.Option{{Value: "1", Label: "ligado: jobs em segundos"}, {Value: "0", Label: "desligado: só o check-in"}}
 

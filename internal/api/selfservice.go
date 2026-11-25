@@ -16,7 +16,7 @@ import (
 
 func (a *api) selfService() *selfservice.Service {
 	return &selfservice.Service{Store: a.store, Manifest: a.tpManifest, Key: a.jobKey, PackagesDir: a.packagesDir(), Now: a.now,
-		PlanOptions: a.planOptions}
+		PlanOptions: a.planOptions, Windows: a.selfServiceWindows}
 }
 
 func (a *api) selfServiceCatalog(w http.ResponseWriter, r *http.Request, id string) {
@@ -110,6 +110,9 @@ func (a *api) selfServiceRequest(w http.ResponseWriter, r *http.Request, id stri
 // selfServiceWhat é o objeto do pedido na auditoria: o programa, ou o computador no
 // reinício (Aula 17.6).
 func selfServiceWhat(req protocol.SelfServiceRequest) string {
+	if req.Action == protocol.SelfServiceWindows {
+		return "atualizações do Windows"
+	}
 	if req.App == "" {
 		return "computador"
 	}

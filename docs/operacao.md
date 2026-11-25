@@ -2382,3 +2382,26 @@ fechamento do dia e o XP são idempotentes (chaves únicas no banco).
 
 **Desligar.** Desmarque **Shield ligado** e grave. A avaliação para, a Central esconde a aba;
 pontuações, XP e conquistas ficam guardados para quando ligar de novo.
+
+## Atualizações do Windows pela Central de software
+
+Na Central, a aba **Atualizações** tem a seção **Windows**: o usuário instala, quando quiser, as
+atualizações do Windows que a TI **já aprovou** em Patch e que a **busca do próprio computador**
+mostra pendentes — o mesmo plano do botão "Instalar" da aba Pendências da máquina no painel.
+
+- **O que aparece:** cada KB com o título que o Windows Update deu, "pede reinício" quando a
+  atualização exige, e "corrige falha já explorada" quando corrige CVE com exploração conhecida.
+  Sem nada liberado: "N atualização(ões) aguardam a liberação da equipe de TI", ou "O Windows
+  está em dia". Busca com falha: só a TI instala, até a próxima busca boa.
+- **O botão** cria o job `windows_update` em nome do usuário (`autoatendimento: DOMINIO\usuario`),
+  com até 20 KBs, da fonte da política da máquina (WSUS ou Windows Update) e com o cache do
+  servidor quando o parâmetro do cache inclui a máquina. O servidor refaz o plano na hora: o app
+  só pede. Com um `windows_update` já em aberto (de campanha, do painel ou de outro usuário), o
+  pedido espera. Vai para a auditoria como `autoatendimento.pedido` e aparece em Meus pedidos.
+- **Reinício:** o job nunca reinicia. Quando a atualização pede, o usuário escolhe a hora na aba
+  **Reinício**, como já era.
+- **Servidores** (Windows Server) ficam de fora: a atualização deles é da TI.
+- **Aviso:** o ícone perto do relógio avisa quando há atualização do Windows liberada.
+- **Ligar e desligar:** Configuração › Parâmetros › Agentes › **Atualizações do Windows na
+  Central de software** (ligado por padrão). Desligado, a seção some e o pedido é recusado.
+- Agente ou servidor anteriores: a seção não aparece (o campo novo não chega à Central).

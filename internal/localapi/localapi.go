@@ -499,12 +499,17 @@ func checkRequest(r Request) error {
 			return errors.New("o reiniciar não leva programa")
 		}
 		return nil
+	case protocol.SelfServiceWindows: // as atualizações do Windows: do computador, sem programa nem hora
+		if r.App != "" || r.Close || r.At != nil {
+			return errors.New("as atualizações do Windows não levam programa nem hora")
+		}
+		return nil
 	case protocol.SelfServiceUpdate, protocol.SelfServiceInstall:
 		if r.At != nil {
 			return errors.New("hora só no reiniciar")
 		}
 	default:
-		return fmt.Errorf("ação inválida: use %s, %s ou %s", protocol.SelfServiceUpdate, protocol.SelfServiceInstall, protocol.SelfServiceReboot)
+		return fmt.Errorf("ação inválida: use %s, %s, %s ou %s", protocol.SelfServiceUpdate, protocol.SelfServiceInstall, protocol.SelfServiceReboot, protocol.SelfServiceWindows)
 	}
 	if !appID.MatchString(r.App) {
 		return errors.New("programa inválido")
