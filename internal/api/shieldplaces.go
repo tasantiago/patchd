@@ -38,9 +38,13 @@ func (a *api) shieldPlaces(ctx context.Context, in *shieldInputs) error {
 	for _, r := range rr.ips {
 		in.floorStart[r.Spec] = addr4(r.rng.lo)
 	}
+	compiled := compileFloorRegex(names)
 	for _, e := range all {
 		p := shield.Place{Building: e.Asset.Building, Room: e.Asset.Room}
-		if best := floorIP(e, rr.ips); best != nil {
+		matches := matchingFloorRegex(e, compiled[p.Building])
+		if len(matches) > 0 {
+			if name, conflict := regexFloorName(matches); !conflict { p.Floor = namedFloorPrefix + name }
+		} else if best := floorIP(e, rr.ips); best != nil {
 			p.Floor = best.Spec
 			if name := names[store.FloorKey{Building: p.Building, Spec: best.Spec}]; name != "" {
 				p.Floor = namedFloorPrefix + name
