@@ -3,9 +3,9 @@ package api
 const dashboardTemplates = `
 {{define "inicio"}}{{template "topo" .}}
 <div class="dashboard">
-<div class="dash-cab">
+<div class="dash-cab ux-hero">
 <div><p class="dash-eyebrow">Centro de operações</p><h1>Visão geral do ambiente</h1><p class="muted">Priorize riscos, acompanhe a operação e decida onde agir primeiro.</p></div>
-<div class="dash-atualizacao"><span class="muted">Consultado em {{.AsOf}}</span><a class="btn" href="/painel/">Atualizar visão</a></div>
+<div class="dash-atualizacao ux-hero-side"><span class="muted">Consultado em {{.AsOf}}</span><a class="btn" href="/painel/">Atualizar visão</a></div>
 </div>
 <details class="dash-personalizar"><summary>Personalizar gráficos</summary><form method="get" action="/painel/"><input type="hidden" name="personalizar" value="1"><fieldset><legend>Escolha o que mostrar na sua página inicial</legend><div class="dash-opcoes">{{range .Options}}<label><input type="checkbox" name="bloco" value="{{.Key}}"{{if .Enabled}} checked{{end}}> {{.Label}}</label>{{end}}</div></fieldset><div class="dash-config-acoes"><button type="submit">Salvar seleção</button><a class="btn" href="/painel/?personalizar=restaurar">Restaurar todos</a></div></form></details>
 {{if .EmptySelection}}<p class="aviso atencao">Todos os gráficos estão ocultos. Abra <strong>Personalizar gráficos</strong> para escolher os que deseja acompanhar.</p>{{end}}

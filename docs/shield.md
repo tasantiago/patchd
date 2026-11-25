@@ -154,11 +154,12 @@ período. A missão não cria job, campanha nem mecanismo paralelo de implantaç
 - **Por lugar** (ligados por padrão; cada um pode ser desligado na Política):
   - **prédio**: o `DEPREDIO` do patrimônio (Configuração › Patrimônio), ligado pelo tombo no
     nome da máquina; mínimo de máquinas como nos grupos;
-  - **andar**: a faixa de IP das regras dos grupos de implantação, **só nos prédios com máquinas
-    em mais de uma faixa** (num prédio de uma faixa, andar e prédio seriam a mesma coisa). A
-    máquina fica na faixa mais específica (a menor) que contém algum IP dela. O admin dá nome às
-    faixas em Shield › Ranking ("2º andar"); sem nome, a Central mostra "Faixa N" (pela ordem do
-    começo da faixa no prédio) — **a faixa de IP nunca chega à Central**;
+  - **andar**: identificado pela faixa mais específica das regras de IP dos grupos de implantação.
+    Em [Configuração › Localizações](localizacoes.md), o administrador nomeia as faixas por prédio
+    e pode usar o mesmo nome para agregar várias faixas num único andar físico. O cadastro
+    independe do ranking e do Shield. Os nomes antigos da política ainda valem na ausência
+    de um vínculo físico. O ranking aparece quando há mais de um andar identificado no prédio;
+    sem nome, a Central mostra "Faixa N" — **a faixa de IP nunca chega à Central**;
   - **sala**: o `DESALA` do patrimônio, dentro do prédio; mínimo próprio (padrão 3), porque
     sala de 1 ou 2 computadores identifica a pessoa.
   - A Central mostra os 10 primeiros prédios e o da máquina, e, no prédio dela, os andares e as

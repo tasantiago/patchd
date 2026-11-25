@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/tasantiago/patchd/internal/shield"
 	"github.com/tasantiago/patchd/internal/store"
@@ -21,6 +22,10 @@ import (
 // shieldPlaces acha o lugar de cada máquina (uma leitura do parque, do patrimônio e das faixas).
 func (a *api) shieldPlaces(ctx context.Context, in *shieldInputs) error {
 	in.places, in.floorStart = map[string]shield.Place{}, map[string]uint32{}
+	names, err := a.floorNames(ctx)
+	if err != nil {
+		return err
+	}
 	all, err := a.fleetEquip(ctx)
 	if err != nil {
 		return err
@@ -34,18 +39,11 @@ func (a *api) shieldPlaces(ctx context.Context, in *shieldInputs) error {
 	}
 	for _, e := range all {
 		p := shield.Place{Building: e.Asset.Building, Room: e.Asset.Room}
-		var best *ipRule
-		for i := range rr.ips {
-			r := &rr.ips[i]
-			if !e.inRange(r.rng) {
-				continue
-			}
-			if best == nil || r.size < best.size || (r.size == best.size && r.Spec < best.Spec) {
-				best = r
-			}
-		}
-		if best != nil {
+		if best := floorIP(e, rr.ips); best != nil {
 			p.Floor = best.Spec
+			if name := names[store.FloorKey{Building: p.Building, Spec: best.Spec}]; name != "" {
+				p.Floor = namedFloorPrefix + name
+			}
 		}
 		if p != (shield.Place{}) {
 			in.places[e.ID] = p
@@ -80,7 +78,9 @@ func shieldLabels(pol *shield.Policy, ranks []shield.Rank, floorStart map[string
 		case shield.RankRoom:
 			x.Label = r.Name
 		case shield.RankFloor:
-			if n := pol.Ranking.FloorNames[r.Name]; n != "" {
+			if strings.HasPrefix(r.Name, namedFloorPrefix) {
+				x.Label = strings.TrimPrefix(r.Name, namedFloorPrefix)
+			} else if n := pol.Ranking.FloorNames[r.Name]; n != "" {
 				x.Label = n
 			} else {
 				x.Label = fmt.Sprintf("Faixa %d", slices.Index(floors[r.Building], r.Name)+1)

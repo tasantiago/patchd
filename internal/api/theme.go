@@ -223,4 +223,4 @@ colunas viram uma, o botão comprido quebra a linha em vez de alargar a página.
 @media (max-width:600px){dl.dados{grid-template-columns:minmax(0,1fr);gap:.1rem}dl.dados dt{margin-top:.55rem;font-size:.8rem}dl.dados dt:first-child{margin-top:0}
 button{white-space:normal}form.inline{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:.4rem 0 0}
 form.busca input[type=search]{flex:1 1 9rem;min-width:0}}
-`
+` + panelUXCSS

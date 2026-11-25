@@ -98,6 +98,7 @@ type settingsView struct {
 	NotifyOn    bool             // aba Sistema: notificações ligadas, com o botão de teste (Aula 18.5)
 	Appearance  *logoView        // aba Sistema: o cartão Aparência (Aula 19.1)
 	Params      []paramGroup     // aba Parâmetros (Aula 19.2)
+	Locations []floorBuildingView // localização física por prédio e faixa
 	Assets      *assetView       // aba Patrimônio (Aula 23.6)
 	Fleet       *biosFleetView   // aba BIOS: a senha padrão de cada fabricante (docs/bios-senha.md, seção 10)
 	Health      *healthView      // aba Saúde: o servidor e o que aumentar (docs/saude-servidor.md)
@@ -107,7 +108,7 @@ type settingsView struct {
 
 func (a *api) settingsTabs(tab string) string {
 	switch tab {
-	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio", "descoberta", "bios":
+	case "agente", "acesso", "auditoria", "autoatendimento", "patrimonio", "localizacoes", "descoberta", "bios":
 		return tab
 	case "parametros":
 		if a.params != nil {
@@ -157,6 +158,9 @@ func (a *api) settingsPage(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		}
 	case "agente":
 		err = a.agentView(r, &v)
+	case "localizacoes":
+		locationsFlash(q, &v.pageBase)
+		v.Locations, err = a.floorLocationsView(r.Context())
 	case "patrimonio":
 		assetsFlash(q, &v.pageBase)
 		err = a.assetsTab(r, &v)
