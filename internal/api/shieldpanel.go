@@ -1366,11 +1366,10 @@ var _ = template.Must(pages.New("shield-ranking").Parse(`<div class="card"><h2>R
 {{range .PlaceB}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Nenhum prédio ainda: o prédio vem do patrimônio (Configuração › Patrimônio), ligado pelo tombo no nome da máquina, e precisa do mínimo de {{.Pol.Ranking.MinGroup}} máquinas no Shield.</p>{{end}}</div>
 {{if .PlaceP}}<div class="card"><h2>Andares e salas, por prédio</h2>
-<p class="muted">O andar é a faixa de IP das regras dos grupos de implantação, nos prédios com máquinas em mais de uma faixa (a máquina fica na faixa mais específica). A Central mostra o nome do andar, nunca a faixa; sem nome, aparece "Faixa N".</p>
+<p class="muted">Os andares são identificados pelas faixas de IP. Nomes e agrupamentos são definidos em <a href="/painel/configuracao?aba=localizacoes">Configuração › Localizações</a>. A Central mostra somente o nome do andar.</p>
 {{range .PlaceP}}<details class="lugar"><summary><b>{{.Building}}</b> — {{len .Floors}} andar(es) e {{len .Rooms}} sala(s) no ranking</summary>
-{{if .Floors}}<h3>Andares</h3>{{if $.Admin}}<form class="formulario" method="post" action="/painel/shield/andares">{{end}}<table><thead><tr><th>#</th><th>Andar</th><th>Faixa</th><th>Máquinas</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
-{{range .Floors}}<tr><td>{{.Pos}}</td><td>{{if $.Admin}}<input type="hidden" name="faixa" value="{{.Spec}}"><label class="sr" for="n-{{.Spec}}">Nome do andar da faixa {{.Spec}}</label><input id="n-{{.Spec}}" name="nome" value="{{.Custom}}" maxlength="40" placeholder="{{.Label}} (ex.: 2º andar)">{{else}}{{.Label}}{{end}}</td><td>{{.Spec}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
-{{if $.Admin}}<button class="sec" type="submit">Gravar os nomes dos andares</button></form>{{end}}{{end}}
+{{if .Floors}}<h3>Andares</h3><table><thead><tr><th>#</th><th>Andar</th><th>Máquinas</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
+{{range .Floors}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>{{end}}
 {{if .Rooms}}<h3>Salas</h3><table><thead><tr><th>#</th><th>Sala</th><th>Máquinas</th><th>% no selo</th><th>Média</th><th>Entre todas as salas</th></tr></thead><tbody>
 {{range .Rooms}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td><td>{{.Overall}}º</td></tr>{{end}}</tbody></table>{{end}}
 </details>{{end}}

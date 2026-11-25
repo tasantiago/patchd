@@ -84,6 +84,7 @@ type Memory struct {
 	perfData      *memPerf                     // desempenho e alertas (docs/monitoramento.md)
 	wakeRequests  []WakeRequest                // pedidos de ligar pela rede (Aula 22.2), ID = posição + 1
 
+	floorLocations map[FloorKey]string
 	locations    []AssetLocation // localização do patrimônio (Aula 23.6)
 	assetImports []AssetImport
 	assetSeq     int64
