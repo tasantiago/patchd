@@ -1294,33 +1294,33 @@ func (a *api) shieldPlayersCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ = template.Must(pages.New("shield").Parse(`{{template "topo" .}}
-<h1>{{if .On}}{{.Pol.Brand.Name}} <span class="muted">› {{.Pol.Brand.Mission}}</span>{{else}}Shield{{end}}</h1>
+<div class="shield-admin"><header class="ux-hero"><div><span class="ux-eyebrow">Segurança e conformidade</span><h1>{{if .On}}{{.Pol.Brand.Name}}{{else}}Shield{{end}}</h1><p>{{if .On}}{{.Pol.Brand.Mission}} · {{end}}Acompanhe a proteção dos equipamentos e a colaboração dos participantes.</p></div><div class="ux-hero-side">{{if .On}}{{if .Pol.Enabled}}<span class="ux-status ux-status-on">Shield ativo</span>{{else}}<span class="ux-status ux-status-off">Shield desativado</span>{{end}}{{if .LastRun}}<span>Última avaliação: {{.LastRun}}</span>{{end}}{{end}}</div></header>
 {{if not .On}}<p class="aviso">O Shield precisa do PostgreSQL (este servidor está com o banco em memória).</p>{{else}}
 <nav class="abas" aria-label="abas do Shield">{{range .Tabs}}<a href="/painel/shield?aba={{.ID}}"{{if .Active}} class="ativa" aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
-<p class="muted">{{if .Pol.Enabled}}<b>Ligado</b> para {{.Scope}}{{else}}<b>Desligado</b>: nenhuma máquina é avaliada e a Central não mostra a Minha Proteção{{if .Admin}} (ligue em <a href="/painel/shield?aba=politica">Política</a>){{end}}{{end}}.
+<p class="ux-meta">{{if .Pol.Enabled}}<b>Ligado</b> para {{.Scope}}{{else}}<b>Desligado</b>: nenhuma máquina é avaliada e a Central não mostra a Minha Proteção{{if .Admin}} (ligue em <a href="/painel/shield?aba=politica">Política</a>){{end}}{{end}}.
 Política versão {{if .Version}}{{.Version}}{{if .PolBy}} ({{.PolBy}}, {{.PolAt}}){{end}}{{else}}padrão{{end}}.{{if .LastRun}} Última avaliação: {{.LastRun}}.{{end}}</p>
 {{with .LastErr}}<p class="aviso erro">A última avaliação falhou: {{.}}</p>{{end}}
 {{if eq .Tab "geral"}}{{template "shield-geral" .}}{{else if eq .Tab "equipamentos"}}{{template "shield-equip" .}}{{else if eq .Tab "pessoas"}}{{template "shield-pessoas" .}}{{else if eq .Tab "missoes"}}{{template "shield-missoes" .}}{{else if eq .Tab "ranking"}}{{template "shield-ranking" .}}{{else if eq .Tab "excecoes"}}{{template "shield-excecoes" .}}{{else if eq .Tab "politica"}}{{template "shield-politica" .}}{{else}}{{template "shield-auditoria" .}}{{end}}
-{{end}}
+{{end}}</div>
 {{template "fim"}}`))
 
-var _ = template.Must(pages.New("shield-geral").Parse(`<ul class="kpis">
+var _ = template.Must(pages.New("shield-geral").Parse(`<ul class="kpis shield-primary">
 <li><div class="kpi"><span class="kpi-rot">Máquinas no Shield</span><span class="kpi-val">{{.Total}}</span><span class="kpi-sub">com pontuação</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Selo 100%</span><span class="kpi-val {{cor "v-verde" .Sealed}}">{{.SealedPct}}%</span><span class="kpi-sub">{{.Sealed}} máquina(s); as sem dado contam no total</span></div></li>
 <li><div class="kpi"><span class="kpi-rot">Média</span><span class="kpi-val">{{if .Average}}{{.Average}}{{else}}—{{end}}</span><span class="kpi-sub">da pontuação (sem dado vale 0)</span></div></li></ul>
-<div class="card"><div class="card-cab"><h2>Faixas</h2><a href="/painel/shield/equipamentos.csv">exportar CSV</a></div>
+<div class="card"><div class="card-cab"><h2>Distribuição por estado de proteção</h2><a href="/painel/shield/equipamentos.csv">exportar CSV</a></div>
 <ul class="kpis">{{range .Counts}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">{{.Label}}</span><span class="kpi-val {{cor .Class .N}}">{{.N}}</span></a></li>{{end}}</ul></div>
-{{if .Blames}}<div class="card"><h2>De quem é o que falta (máquinas sem o selo)</h2><table><thead><tr><th>Responsável principal</th><th>Máquinas</th></tr></thead><tbody>{{range .Blames}}<tr><td>{{.Label}}</td><td>{{.N}}</td></tr>{{end}}</tbody></table>
+{{if .Blames}}<div class="card"><h2>Responsabilidade pelas pendências</h2><table><thead><tr><th>Responsável principal</th><th>Máquinas</th></tr></thead><tbody>{{range .Blames}}<tr><td>{{.Label}}</td><td>{{.N}}</td></tr>{{end}}</tbody></table>
 <p class="muted">O responsável principal é o do maior peso perdido. A sequência da pessoa só quebra com pendência vencida que é dela.</p></div>{{end}}
-{{if .Crit}}<div class="card"><h2>Critérios</h2><table><thead><tr><th>Critério</th><th>Conforme</th><th>Fora</th><th>Desconhecido</th><th>% conforme</th></tr></thead><tbody>
-{{range .Crit}}<tr><td>{{.Label}}</td><td>{{.Conforme}}</td><td>{{.Fora}}</td><td>{{.Unknown}}</td><td>{{.Pct}}%</td></tr>{{end}}</tbody></table></div>{{end}}
+{{if .Crit}}<div class="card"><h2>Conformidade por critério</h2><table><thead><tr><th>Critério</th><th>Conforme</th><th>Fora</th><th>Desconhecido</th><th>% conforme</th></tr></thead><tbody>
+{{range .Crit}}<tr><td>{{.Label}}</td><td>{{.Conforme}}</td><td>{{.Fora}}</td><td>{{.Unknown}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td></tr>{{end}}</tbody></table></div>{{end}}
 <div class="card"><h2>Evolução (fim de cada dia, últimos 30 dias)</h2>{{if .Trend}}<table><thead><tr><th>Dia</th><th>Máquinas</th><th>No selo</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
 {{range .Trend}}<tr><td>{{.Day}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Ainda sem histórico: o primeiro retrato do dia aparece depois da primeira avaliação com o Shield ligado.</p>{{end}}</div>`))
 
 var _ = template.Must(pages.New("shield-equip").Parse(`<div class="card"><div class="card-cab"><h2>Equipamentos ({{.Hit}})</h2><a href="/painel/shield/equipamentos.csv">exportar CSV</a></div>
 <form class="filtros" method="get" action="/painel/shield"><input type="hidden" name="aba" value="equipamentos">{{if .Filter}}<input type="hidden" name="faixa" value="{{.Filter}}">{{end}}<label for="q-shield" class="sr">Buscar</label><input id="q-shield" type="search" name="q" value="{{.Q}}" placeholder="nome, ID ou grupo" maxlength="100"><button type="submit">Buscar</button></form>
-<p class="muted">Faixa: <a href="/painel/shield?aba=equipamentos"{{if not .Filter}} aria-current="page"{{end}}>todas</a>{{range .Counts}} · <a href="{{.Href}}"{{if .Active}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</p>
+<p class="shield-filters"><span class="muted">Filtrar:</span> <a href="/painel/shield?aba=equipamentos"{{if not .Filter}} aria-current="page"{{end}}>todas</a>{{range .Counts}} <a href="{{.Href}}"{{if .Active}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</p>
 {{if .Machines}}<table><thead><tr><th>Máquina</th><th>Grupo</th><th>Proteção</th><th>Faixa</th><th>Responsável</th><th>Falta para o selo</th><th>Mudou em</th></tr></thead><tbody>
 {{range .Machines}}<tr><td><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td><td>{{.Ring}}</td><td>{{if .Sealed}}✓ 100%{{else}}{{.Display}}%{{end}}</td><td>{{.OverallLabel}}</td><td>{{if .Blame}}{{.Blame}}{{else}}—{{end}}</td><td>{{if .Blockers}}{{.Blockers}}{{else}}—{{end}}</td><td>{{.Changed}}</td></tr>{{end}}</tbody></table>
 {{if or .PrevHref .NextHref}}<p class="paginas">{{if .PrevHref}}<a href="{{.PrevHref}}">‹ anterior</a>{{end}} página {{.Page}} de {{.Pages}} {{if .NextHref}}<a href="{{.NextHref}}">próxima ›</a>{{end}}</p>{{end}}
@@ -1357,25 +1357,25 @@ var _ = template.Must(pages.New("shield-missoes").Parse(`<div class="card"><h2>M
 var _ = template.Must(pages.New("shield-ranking").Parse(`<div class="card"><h2>Ranking coletivo por grupo de implantação</h2>
 {{if not .Pol.Ranking.Collective}}<p class="vazio">O ranking coletivo está desligado na Política.</p>
 {{else if .Groups}}<table><thead><tr><th>#</th><th>Grupo</th><th>Máquinas</th><th>No selo</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
-{{range .Groups}}<tr><td>{{.Pos}}</td><td>{{.Name}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
+{{range .Groups}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Name}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Nenhum grupo com o mínimo de máquinas.</p>{{end}}
 {{if .Hidden}}<p class="muted">{{.Hidden}} grupo(s) com menos de {{.Pol.Ranking.MinGroup}} máquinas ficam de fora (privacidade).</p>{{end}}
 <p class="muted">O denominador inclui as máquinas sem dado. O ranking nunca mostra máquina, vulnerabilidade ou programa.</p></div>
 <div class="card"><h2>Ranking dos prédios</h2>{{if not .Pol.Ranking.Buildings}}<p class="vazio">Desligado na Política.</p>
 {{else if .PlaceB}}<table><thead><tr><th>#</th><th>Prédio</th><th>Máquinas</th><th>No selo</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
-{{range .PlaceB}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
+{{range .PlaceB}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Label}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Nenhum prédio ainda: o prédio vem do patrimônio (Configuração › Patrimônio), ligado pelo tombo no nome da máquina, e precisa do mínimo de {{.Pol.Ranking.MinGroup}} máquinas no Shield.</p>{{end}}</div>
 {{if .PlaceP}}<div class="card"><h2>Andares e salas, por prédio</h2>
 <p class="muted">Os andares são identificados pelas faixas de IP. Nomes e agrupamentos são definidos em <a href="/painel/configuracao?aba=localizacoes">Configuração › Localizações</a>. A Central mostra somente o nome do andar.</p>
 {{range .PlaceP}}<details class="lugar"><summary><b>{{.Building}}</b> — {{len .Floors}} andar(es) e {{len .Rooms}} sala(s) no ranking</summary>
 {{if .Floors}}<h3>Andares</h3><table><thead><tr><th>#</th><th>Andar</th><th>Máquinas</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
-{{range .Floors}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>{{end}}
+{{range .Floors}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Label}}</td><td>{{.Machines}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>{{end}}
 {{if .Rooms}}<h3>Salas</h3><table><thead><tr><th>#</th><th>Sala</th><th>Máquinas</th><th>% no selo</th><th>Média</th><th>Entre todas as salas</th></tr></thead><tbody>
-{{range .Rooms}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td><td>{{.Overall}}º</td></tr>{{end}}</tbody></table>{{end}}
+{{range .Rooms}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Label}}</td><td>{{.Machines}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td><td>{{.Overall}}º</td></tr>{{end}}</tbody></table>{{end}}
 </details>{{end}}
 <p class="muted">Salas com menos de {{.Pol.Ranking.MinRoom}} máquinas e andares com menos de {{.Pol.Ranking.MinGroup}} não aparecem (privacidade).</p></div>{{end}}
 <div class="card"><h2>Ranking individual</h2>{{if not .Pol.Ranking.Individual}}<p class="vazio">Desligado (o padrão). Ligue na Política só se a sua instituição aprovar: ele mostra nome, XP, dias protegidos e sequência — nada da máquina.</p>
-{{else if .Leaders}}<table><thead><tr><th>#</th><th>Pessoa</th><th>XP</th><th>Dias protegidos</th><th>Sequência</th></tr></thead><tbody>{{range .Leaders}}<tr><td>{{.Pos}}</td><td>{{.Name}}</td><td>{{.XP}}</td><td>{{.Protected}}</td><td>{{.Streak}}</td></tr>{{end}}</tbody></table>
+{{else if .Leaders}}<table><thead><tr><th>#</th><th>Pessoa</th><th>XP</th><th>Dias protegidos</th><th>Sequência</th></tr></thead><tbody>{{range .Leaders}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Name}}</td><td>{{.XP}}</td><td>{{.Protected}}</td><td>{{.Streak}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Ninguém com XP nos últimos 30 dias.</p>{{end}}</div>`))
 
 var _ = template.Must(pages.New("shield-excecoes").Parse(`<div class="card"><div class="card-cab"><h2>Exceções {{if .AllExc}}(todas){{else}}vigentes{{end}}</h2>{{if .AllExc}}<a href="/painel/shield?aba=excecoes">só as vigentes</a>{{else}}<a href="/painel/shield?aba=excecoes&amp;todas=1">ver todas</a>{{end}}</div>

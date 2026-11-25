@@ -51,6 +51,7 @@ type floorLocationRow struct {
 type floorBuildingView struct {
 	Building string
 	Rows []floorLocationRow
+	Machines, Named int
 }
 
 func (a *api) floorLocationsView(ctx context.Context) ([]floorBuildingView, error) {
@@ -111,7 +112,12 @@ func (a *api) floorLocationsView(ctx context.Context) ([]floorBuildingView, erro
 		}
 		row := floorBuildingView{Building: b}
 		for spec, n := range specs {
-			row.Rows = append(row.Rows, floorLocationRow{Spec: spec, Name: names[store.FloorKey{Building: b, Spec: spec}], Legacy: legacy[spec], Machines: n})
+			name := names[store.FloorKey{Building: b, Spec: spec}]
+			row.Rows = append(row.Rows, floorLocationRow{Spec: spec, Name: name, Legacy: legacy[spec], Machines: n})
+			row.Machines += n
+			if name != "" || legacy[spec] != "" {
+				row.Named++
+			}
 		}
 		slices.SortFunc(row.Rows, func(x, y floorLocationRow) int {
 			xr, xok := parseIPRange(x.Spec)
@@ -191,12 +197,11 @@ func (a *api) floorLocationsAction(w http.ResponseWriter, r *http.Request, s pan
 	back(url.Values{"gravado": {"1"}})
 }
 
-var _ = template.Must(pages.New("localizacoes").Parse(`<div class="card"><div class="card-cab"><h2>Prédios e andares</h2></div>
-<p>As faixas são identificadas pelas regras de IP dos grupos de implantação e pelo prédio do patrimônio. O cadastro funciona mesmo com o Shield desligado.</p>
-<p class="muted">Use o mesmo nome exato em duas ou mais faixas do mesmo prédio para representar um único andar. Os nomes são independentes por prédio. Deixe vazio para usar o nome antigo do Shield, se houver, ou o nome automático.</p>
-{{if .Locations}}{{range .Locations}}<details class="lugar" open><summary><b>{{.Building}}</b> — {{len .Rows}} faixa(s)</summary>
+var _ = template.Must(pages.New("localizacoes").Parse(`<div class="ux-locations"><header class="ux-hero"><div><span class="ux-eyebrow">Organização do parque</span><h2>Prédios e andares</h2><p>Associe as redes aos pavimentos físicos de cada prédio.</p></div><div class="ux-hero-side"><span class="ux-status">{{len .Locations}} prédio(s) identificado(s)</span></div></header>
+<div class="locations-guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg><div><b>Como organizar os andares</b><p>As faixas vêm das regras dos grupos de implantação e o prédio vem do patrimônio. Use o mesmo nome exato em duas ou mais faixas do mesmo prédio para representar um único andar. Deixe vazio para usar o nome anterior do Shield, se houver, ou o automático.</p></div></div>
+{{if .Locations}}{{range .Locations}}<details class="lugar" open><summary><span class="location-summary"><b>{{.Building}}</b><small>{{len .Rows}} faixa(s) · {{.Machines}} computador(es) · {{.Named}} faixa(s) nomeada(s)</small></span></summary>
 <form method="post" action="/painel/configuracao/localizacoes"><input type="hidden" name="predio" value="{{.Building}}">
-<div class="tabela"><table><thead><tr><th>Faixa de IP</th><th>Computadores</th><th>Nome do andar</th></tr></thead><tbody>
-{{range .Rows}}<tr><td>{{.Spec}}<input type="hidden" name="faixa" value="{{.Spec}}"></td><td>{{.Machines}}</td><td><input aria-label="Nome do andar da faixa {{.Spec}}" name="nome" value="{{.Name}}" maxlength="40" placeholder="{{if .Legacy}}{{.Legacy}}{{else}}Ex.: Térreo, 1º andar{{end}}">{{if .Legacy}}<small class="muted"> Nome anterior: {{.Legacy}}</small>{{end}}</td></tr>{{end}}
-</tbody></table></div><button type="submit">Gravar andares deste prédio</button></form></details>{{end}}
-{{else}}<p class="vazio">Nenhum prédio com mais de uma faixa identificada. Confira o <a href="/painel/configuracao?aba=patrimonio">patrimônio</a> e as regras de IP dos grupos de implantação.</p>{{end}}</div>`))
+<div class="location-table"><table><thead><tr><th scope="col">Faixa de IP</th><th scope="col">Computadores</th><th scope="col">Nome do andar</th></tr></thead><tbody>
+{{range .Rows}}<tr><td><code>{{.Spec}}</code><input type="hidden" name="faixa" value="{{.Spec}}"></td><td class="num">{{.Machines}}</td><td><input aria-label="Nome do andar da faixa {{.Spec}}" name="nome" value="{{.Name}}" maxlength="40" placeholder="{{if .Legacy}}{{.Legacy}}{{else}}Ex.: Térreo, 1º andar{{end}}">{{if .Legacy}}<small class="muted">Nome anterior: {{.Legacy}}</small>{{end}}</td></tr>{{end}}
+</tbody></table></div><div class="location-footer"><small>Os nomes são independentes por prédio.</small><button type="submit">Gravar andares deste prédio</button></div></form></details>{{end}}
+{{else}}<div class="vazio"><strong>Nenhum prédio com mais de uma faixa identificada</strong>Confira o <a href="/painel/configuracao?aba=patrimonio">patrimônio</a> e as regras de IP dos grupos de implantação.</div>{{end}}</div>`))
