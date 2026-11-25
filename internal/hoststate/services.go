@@ -16,7 +16,7 @@ import (
 func collectRunningServices(ctx context.Context) (*protocol.RunningServices, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	return runningServices(ctx, runtime.GOOS, platform.ExecRunner{Timeout: 10*time.Second})
+	return runningServices(ctx, runtime.GOOS, platform.ExecRunner{Timeout: 10 * time.Second})
 }
 
 func runningServices(ctx context.Context, family string, run platform.Runner) (*protocol.RunningServices, error) {

@@ -40,6 +40,7 @@ func (a *api) shieldAgent(w http.ResponseWriter, r *http.Request, id string) {
 
 // shieldView monta a "Minha Proteção" da pessoa u na máquina id.
 func (a *api) shieldView(ctx context.Context, db shieldStore, id string, u protocol.SelfServiceUser, now time.Time) (protocol.ShieldView, error) {
+	a.syncPlaceAcronyms()
 	pol, _, err := a.shieldPolicy(ctx)
 	if err != nil {
 		return protocol.ShieldView{}, err

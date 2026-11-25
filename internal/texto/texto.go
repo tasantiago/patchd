@@ -6,8 +6,10 @@
 package texto
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 )
@@ -105,18 +107,87 @@ func walk(v reflect.Value) int {
 	return 0
 }
 
+// Siglas que ficam em maiúsculas nos nomes de lugar. No código, só o que é genérico (os
+// algarismos romanos e "TI"); as siglas da instituição (as do patrimônio dela) vêm do
+// parâmetro do painel, por SetPlaceAcronyms — nada de nome de instituição no código.
+var (
+	baseAcronyms = map[string]bool{"TI": true, "I": true, "II": true, "III": true, "IV": true, "V": true, "VI": true, "VII": true,
+		"VIII": true, "IX": true, "X": true, "XI": true, "XII": true, "XIII": true, "XIV": true, "XV": true, "XVI": true, "XVII": true,
+		"XVIII": true, "XIX": true, "XX": true}
+	extraAcronyms atomic.Pointer[map[string]bool]
+)
+
+// MaxPlaceAcronyms e MaxPlaceAcronym: os limites do parâmetro.
+const (
+	MaxPlaceAcronyms = 100
+	MaxPlaceAcronym  = 12
+)
+
+// ParsePlaceAcronyms lê a lista do parâmetro (separada por vírgula, ponto e vírgula ou
+// espaço) e devolve as siglas em maiúsculas, sem repetição. Erro: sigla fora do formato
+// (letras e números, até MaxPlaceAcronym) ou siglas demais.
+func ParsePlaceAcronyms(v string) ([]string, error) {
+	fields := strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || unicode.IsSpace(r) })
+	if len(fields) > MaxPlaceAcronyms {
+		return nil, fmt.Errorf("no máximo %d siglas", MaxPlaceAcronyms)
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range fields {
+		f = strings.ToUpper(f)
+		if utf8.RuneCountInString(f) > MaxPlaceAcronym || strings.IndexFunc(f, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) >= 0 {
+			return nil, fmt.Errorf("sigla inválida %q: use letras e números, até %d", f, MaxPlaceAcronym)
+		}
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+// SetPlaceAcronyms troca as siglas da instituição (o valor do parâmetro). Valor inválido
+// vale como vazio: a tela só grava o que ParsePlaceAcronyms aceita.
+func SetPlaceAcronyms(v string) {
+	list, _ := ParsePlaceAcronyms(v)
+	m := make(map[string]bool, len(list))
+	for _, a := range list {
+		m[a] = true
+	}
+	extraAcronyms.Store(&m)
+}
+
+func isAcronym(upper string) bool {
+	if baseAcronyms[upper] {
+		return true
+	}
+	if m := extraAcronyms.Load(); m != nil {
+		return (*m)[upper]
+	}
+	return false
+}
+
+// placeDesignators: palavras que vêm antes da letra de um bloco ("Bloco A", "Torre B").
+var placeDesignators = map[string]bool{"bloco": true, "torre": true, "ala": true, "setor": true, "módulo": true, "modulo": true,
+	"prédio": true, "predio": true, "edifício": true, "edificio": true, "anexo": true, "pavimento": true, "andar": true, "sala": true}
+
 // PlaceName formats a physical location for display only. Never use as a storage key.
 func PlaceName(s string) string {
 	words := strings.Fields(s)
 	for i, word := range words {
-		// Keep acronyms and Roman numerals only when explicitly recognized.
-		switch strings.ToUpper(word) {
-		case "TJRO", "TJ", "STIC", "CEJUSC", "NUPEMEC", "RO", "TI", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X":
-			words[i] = strings.ToUpper(word)
+		upper := strings.ToUpper(word)
+		lower := strings.ToLower(word)
+		if isAcronym(upper) {
+			words[i] = upper
 			continue
 		}
-		lower := strings.ToLower(word)
-		if i > 0 {
+		// A letra de um bloco ("Bloco A") não é o artigo "a".
+		if utf8.RuneCountInString(word) == 1 && i > 0 && placeDesignators[strings.ToLower(words[i-1])] {
+			words[i] = upper
+			continue
+		}
+		// Artigos e preposições só no meio do nome (nunca a primeira nem a última palavra).
+		if i > 0 && i < len(words)-1 {
 			switch lower {
 			case "a", "o", "as", "os", "de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos":
 				words[i] = lower

@@ -810,6 +810,7 @@ func (a *api) stamp(t time.Time) string {
 
 // equipmentCSV: a mesma busca e a mesma ordem da página, sem páginas.
 func (a *api) equipmentCSV(w http.ResponseWriter, r *http.Request) {
+	a.syncPlaceAcronyms()
 	q := parseEquipQuery(r.URL.Query())
 	rows, err := a.inventoryList(r.Context())
 	if err != nil {

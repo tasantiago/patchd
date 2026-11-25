@@ -151,12 +151,12 @@ type groupCard struct {
 // buildingDeploymentCard is a physical grouping, not a campaign execution ring.
 type buildingDeploymentCard struct {
 	Name, Href, RulesHref, Window, Next string
-	Machines, Pinned int
-	Groups []buildingDeploymentGroup
+	Machines, Pinned                    int
+	Groups                              []buildingDeploymentGroup
 }
 type buildingDeploymentGroup struct {
 	Label, Href string
-	Machines int
+	Machines    int
 }
 
 func buildingDeploymentCards(g groupFleet, windows []store.RingWindow, now time.Time) ([]buildingDeploymentCard, int) {
@@ -197,7 +197,9 @@ func buildingDeploymentCards(g groupFleet, windows []store.RingWindow, now time.
 		}
 		out = append(out, *c)
 	}
-	slices.SortFunc(out, func(x, y buildingDeploymentCard) int { return cmp.Compare(strings.ToLower(x.Name), strings.ToLower(y.Name)) })
+	slices.SortFunc(out, func(x, y buildingDeploymentCard) int {
+		return cmp.Compare(strings.ToLower(x.Name), strings.ToLower(y.Name))
+	})
 	return out, unknown
 }
 

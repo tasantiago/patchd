@@ -78,8 +78,8 @@ func TestPatrimonioNoInventario(t *testing.T) {
 
 	// O Inventário: a coluna, o prédio na lista e o filtro; a busca pela sala.
 	b = pagina(h, "GET", "/painel/inventario?q=EQ0&campo=nome", sessaoTeste, nil).Body.String()
-	for _, tr := range []string{"<code>77001</code>", `title="UOX · DESKTOP EXEMPLO · COMPUTADOR">FORUM EXEMPLO<div class="muted nota">SALA 102</div>`,
-		`<option value="ANEXO EXEMPLO" >ANEXO EXEMPLO</option>`} {
+	for _, tr := range []string{"<code>77001</code>", `title="UOX · DESKTOP EXEMPLO · COMPUTADOR">Forum Exemplo<div class="muted nota">Sala 102</div>`,
+		`<option value="ANEXO EXEMPLO" >Anexo Exemplo</option>`} { // o nome formatado na tela; o valor (a chave) como no patrimônio
 		if !strings.Contains(b, tr) {
 			t.Errorf("inventário: faltou %q", tr)
 		}

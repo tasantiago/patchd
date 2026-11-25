@@ -885,7 +885,9 @@ func shieldPolicyFrom(r *http.Request, base shield.Policy) (shield.Policy, error
 		parseServices := func(field string) []string {
 			var out []string
 			for _, line := range strings.Split(r.PostFormValue(field), "\n") {
-				if n := strings.TrimSpace(line); n != "" && !slices.Contains(out, n) { out = append(out, n) }
+				if n := strings.TrimSpace(line); n != "" && !slices.Contains(out, n) {
+					out = append(out, n)
+				}
 			}
 			return out
 		}

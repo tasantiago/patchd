@@ -341,8 +341,11 @@ type api struct {
 	notifier    *notifierState                       // e-mail para a equipe (Aula 18.5); nil: desligado
 	chrome      chromeCache                          // contadores do menu e logotipo (Aula 19.1)
 	shield      shieldState                          // Atende+ Shield (shield.go)
-	params      Settings                             // parâmetros pela tela (Aula 19.2); nil: só o .env
-	repoCacheFn func() *protocol.RepoCache           // anúncio do cache calculado a cada check-in (Aula 19.2)
+	acronymsMu  sync.Mutex                           // as siglas dos nomes de lugar (params.go)
+	acronyms    string
+	acronymsSet bool
+	params      Settings                   // parâmetros pela tela (Aula 19.2); nil: só o .env
+	repoCacheFn func() *protocol.RepoCache // anúncio do cache calculado a cada check-in (Aula 19.2)
 }
 
 // New monta o handler da API, já com ID de requisição, log de acesso e recuperação de pânico.

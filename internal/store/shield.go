@@ -226,8 +226,8 @@ type ShieldMachine struct {
 	Ring         int
 	AgentVersion string
 	Users        []protocol.LoggedUser
-	Services *protocol.RunningServices
-	StateAt *time.Time
+	Services     *protocol.RunningServices
+	StateAt      *time.Time
 }
 
 // ShieldMachines: as máquinas ativas, numa consulta só.

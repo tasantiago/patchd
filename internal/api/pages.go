@@ -63,6 +63,7 @@ func (a *api) base(r *http.Request, title, nav string) pageBase {
 // baseFor: a base de uma página montada por uma ação de admin (a sessão vem do
 // adminAction, não do contexto).
 func (a *api) baseFor(ctx context.Context, s panel.Session, title, nav string) pageBase {
+	a.syncPlaceAcronyms() // os nomes de prédio e sala com as siglas do parâmetro
 	b := pageBase{Brand: a.brandName(), Title: title, Session: s, Admin: s.Role == panel.RoleAdmin, Nav: nav,
 		ServerVersion: a.serverVersion, Logo: a.logoURL(ctx), ParamsOn: a.params != nil, CheckinWait: a.checkinWait()}
 	if b.ServerVersion == "" && a.system != nil {

@@ -17,7 +17,7 @@ func TestJanelasPeloPainel(t *testing.T) {
 	// O resumo tem um cartão por grupo; a janela fica nas regras do grupo. Leitura vê, sem
 	// formulário; o admin vê o formulário com o fuso sugerido.
 	b := pagina(h, "GET", "/painel/grupos-implantacao", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Grupos de implantação e janelas</span></h1>") || !strings.Contains(b, "Grupo 1 (padrão)") ||
+	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Prédios e implantação</span></h1>") || !strings.Contains(b, "Grupo 1 (padrão)") ||
 		!strings.Contains(b, `href="/painel/grupos-implantacao/0"`) {
 		t.Errorf("resumo:\n%s", b)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/settings"
+	"github.com/tasantiago/patchd/internal/texto"
 	"github.com/tasantiago/patchd/internal/tpinstall"
 )
 
@@ -40,6 +41,25 @@ func WithSettings(s Settings) Option {
 // WithRepoCacheLive: o anúncio do cache calculado a cada check-in (a URL muda pela tela).
 func WithRepoCacheLive(f func() *protocol.RepoCache) Option {
 	return func(a *api) { a.repoCacheFn = f }
+}
+
+// PlaceAcronymsKey: as siglas que ficam em maiúsculas nos nomes de prédio e sala (as da
+// instituição; o código só conhece as genéricas). Configuração › Parâmetros › Aparência.
+const PlaceAcronymsKey = "PATCHD_PLACE_ACRONYMS"
+
+// syncPlaceAcronyms passa o parâmetro para a formatação dos nomes de lugar, quando mudou.
+func (a *api) syncPlaceAcronyms() {
+	if a.params == nil {
+		return
+	}
+	v := a.params.Value(PlaceAcronymsKey)
+	a.acronymsMu.Lock()
+	defer a.acronymsMu.Unlock()
+	if a.acronymsSet && v == a.acronyms {
+		return
+	}
+	texto.SetPlaceAcronyms(v)
+	a.acronyms, a.acronymsSet = v, true
 }
 
 // brandName: o nome do painel que vale agora.

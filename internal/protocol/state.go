@@ -20,10 +20,10 @@ import (
 // muda a cada hora e o IP muda a cada DHCP; dentro do hash, cada check-in viraria um
 // inventário novo, e a tabela que a retenção segura voltaria a crescer sem parar.
 type MachineState struct {
-	Services *RunningServices `json:"services,omitempty"`
-	CollectedAt time.Time      `json:"collected_at"`
-	Interfaces  []NetInterface `json:"interfaces"`
-	Disks       []Disk         `json:"disks"`
+	Services    *RunningServices `json:"services,omitempty"`
+	CollectedAt time.Time        `json:"collected_at"`
+	Interfaces  []NetInterface   `json:"interfaces"`
+	Disks       []Disk           `json:"disks"`
 	// Users: quem está conectado (Aula 15.6). null = o agente não coleta (anterior à 15.6
 	// ou SO sem suporte); [] = ninguém conectado.
 	Users  []LoggedUser `json:"users"`
@@ -127,7 +127,9 @@ func IsLocalMAC(mac net.HardwareAddr) bool { return len(mac) > 0 && mac[0]&0x02 
 // o estado inteiro (e mantém o check-in) quando ele não passa.
 func (s MachineState) Check() error {
 	if s.Services != nil {
-		if err := s.Services.Check(); err != nil { return err }
+		if err := s.Services.Check(); err != nil {
+			return err
+		}
 	}
 	switch {
 	case s.CollectedAt.IsZero():

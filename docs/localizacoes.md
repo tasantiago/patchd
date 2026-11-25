@@ -19,3 +19,14 @@ O cadastro não modifica os grupos de implantação nem inicia jobs.
 A migração 0084 cria a tabela de vínculos físicos. A alteração é administrativa
 e auditada. O cadastro é uma base reutilizável; filtros de inventário e campanhas
 por andar não fazem parte desta implementação.
+
+## Como os nomes aparecem
+
+Os nomes de prédio e sala vêm do patrimônio, quase sempre em maiúsculas, e as telas os
+mostram formatados ("FÓRUM CENTRAL" vira "Fórum Central", "BLOCO A" fica "Bloco A"). A chave
+continua sendo o texto do patrimônio, sem mudança: filtros, regras e CSV usam o original.
+
+As siglas que devem ficar em maiúsculas além das genéricas (algarismos romanos e TI) — as da
+instituição — ficam em **Configuração › Parâmetros › Aparência › Siglas nos nomes de lugar**
+(separadas por vírgula; letras e números, até 12 cada). Nenhuma sigla de instituição é
+gravada no código.

@@ -226,11 +226,11 @@ type Notify struct {
 
 // Policy é a política do Shield. Versionada no banco: cada gravação é uma versão nova.
 type Policy struct {
-	AntivirusServices AntivirusServices `json:"antivirus_services"`
-	Enabled    bool                          `json:"enabled"`     // a chave geral do módulo
-	PilotRings []int                         `json:"pilot_rings"` // vazio: todos os grupos; senão, só estes
-	Criteria   map[Criterion]CriterionPolicy `json:"criteria"`
-	Credits    map[Status]float64            `json:"credits"` // fração do peso que cada situação vale
+	AntivirusServices AntivirusServices             `json:"antivirus_services"`
+	Enabled           bool                          `json:"enabled"`     // a chave geral do módulo
+	PilotRings        []int                         `json:"pilot_rings"` // vazio: todos os grupos; senão, só estes
+	Criteria          map[Criterion]CriterionPolicy `json:"criteria"`
+	Credits           map[Status]float64            `json:"credits"` // fração do peso que cada situação vale
 	// InventoryDays: inventário mais velho que isso é parcial; InventoryHardDays, não conforme.
 	InventoryDays     int `json:"inventory_days"`
 	InventoryHardDays int `json:"inventory_hard_days"`
@@ -317,7 +317,9 @@ func (p *Policy) Validate() error {
 	var errs []error
 	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
 	total := 0.0
-	if err := p.AntivirusServices.Validate(); err != nil { errs = append(errs, err) }
+	if err := p.AntivirusServices.Validate(); err != nil {
+		errs = append(errs, err)
+	}
 	for c, cp := range p.Criteria {
 		if !c.Valid() {
 			bad("critério desconhecido %q", c)

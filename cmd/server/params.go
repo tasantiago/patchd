@@ -23,6 +23,7 @@ import (
 	"github.com/tasantiago/patchd/internal/repocache"
 	"github.com/tasantiago/patchd/internal/settings"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Parâmetros pela tela (Aula 19.2). A lista do que a tela muda fica aqui, com a mesma
@@ -89,6 +90,15 @@ func settingDefs(look config.Lookup) []settings.Def {
 					return "", err
 				}
 				return t, nil
+			}},
+		{Key: api.PlaceAcronymsKey, Group: "Aparência", Label: "Siglas nos nomes de lugar", Kind: settings.Text,
+			Help:   "Os nomes de prédio e sala do patrimônio aparecem formatados (\"FÓRUM CENTRAL\" vira \"Fórum Central\"). As siglas desta lista ficam em maiúsculas, além dos algarismos romanos e de TI. Separe por vírgula, ex.: STIC, NUPEMEC. Letras e números, até 12 cada, no máximo 100.",
+			Effect: "na hora (nos rankings do Shield, na próxima avaliação)", Check: func(v string) (string, error) {
+				list, err := texto.ParsePlaceAcronyms(v)
+				if err != nil {
+					return "", err
+				}
+				return strings.Join(list, ", "), nil
 			}},
 		{Key: "PATCHD_TIMEZONE", Group: "Aparência", Label: "Fuso horário",
 			Help:   "Fuso IANA sugerido nas janelas de manutenção e usado nas datas da lista de Equipamentos, ex.: America/Porto_Velho. Vazio: UTC.",

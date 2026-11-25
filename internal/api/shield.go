@@ -312,6 +312,7 @@ func shieldEvidenceFor(in *shieldInputs, id string, prev map[shield.Criterion]ti
 // shieldRun é uma passada do avaliador.
 func (a *api) shieldRun(ctx context.Context, db shieldStore, now time.Time) error {
 	start := time.Now()
+	a.syncPlaceAcronyms() // os nomes de lugar dos rankings
 	pol, ver, err := a.shieldPolicy(ctx)
 	if err != nil {
 		return err
