@@ -1935,15 +1935,19 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "aneis"}}{{template "topo" .}}
-<h1>Automação <span class="muted">› Grupos de implantação e janelas</span></h1>
+<h1>Automação <span class="muted">› Prédios e implantação</span></h1>
 {{template "automacao-abas" "aneis"}}
+<header class="ux-hero"><div><span class="ux-eyebrow">Organização física</span><h2>Implantação por prédio</h2><p>Veja os equipamentos por localização do patrimônio, sem alterar a execução das campanhas existentes.</p></div><div class="ux-hero-side"><span class="ux-status">{{len .Buildings}} prédio(s) identificado(s)</span><a class="btn" href="/painel/configuracao?aba=localizacoes">Configurar andares</a></div></header>
+<div class="deployment-summary"><span><b>{{.Total}}</b> equipamentos no parque</span><span><b>{{.Unlocated}}</b> sem prédio identificado</span></div>
+{{if .Buildings}}<div class="deployment-buildings">{{range .Buildings}}<article class="card deployment-building"><div class="card-cab"><h2>{{.Name}}</h2><a href="{{.Href}}">Ver inventário →</a></div><span class="kpi-val">{{.Machines}}</span><p class="muted">equipamento(s){{if .Pinned}} · {{.Pinned}} com grupo definido à mão{{end}}</p>{{if .RulesHref}}<p><a href="{{.RulesHref}}">Regra e janela do grupo vinculado →</a><small class="deployment-note">{{.Window}} · próxima {{.Next}}</small></p>{{else}}<p class="muted">Sem grupo vinculado ao prédio.</p>{{end}}{{if .Groups}}<details><summary>Distribuição atual nos grupos técnicos</summary><ul class="deployment-groups">{{range .Groups}}<li><a href="{{.Href}}">{{.Label}}</a><b>{{.Machines}}</b></li>{{end}}</ul></details>{{end}}</article>{{end}}</div>{{else}}<p class="vazio">Nenhum prédio identificado. Importe o <a href="/painel/configuracao?aba=patrimonio">patrimônio</a> para organizar os equipamentos por localização.</p>{{end}}
+<details class="card deployment-legacy"><summary>Grupos técnicos legados e janelas de manutenção</summary>
 <p class="muted">Campanhas passam pelos grupos em ordem: 0 é o piloto e 1 é o padrão (máquina nova entra no 1). Abra um grupo para ver as máquinas dele, adicionar outras (por filtro ou colando uma lista de nomes, IPs ou tombos), ligar prédios e faixas de IP e definir a janela de manutenção.</p>
 <p class="muted">{{.Total}} máquina(s) no parque.</p>
 <ul class="kpis">{{range .Cards}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">Grupo {{.Label}}</span><span class="kpi-val">{{.Machines}}</span><span class="kpi-sub">máquina(s){{if .Pinned}} · {{.Pinned}} à mão{{end}}{{if .Conflicts}} · <span class="v-laranja">{{.Conflicts}} em conflito</span>{{end}}</span>
 <span class="kpi-sub">{{if .HasWindow}}Janela {{.Window}} · próxima {{.Next}}{{else}}Sem janela{{end}}</span>
 <span class="kpi-sub">{{if or .Buildings .Ranges}}Regras: {{if .Buildings}}{{.Buildings}} prédio(s){{end}}{{if and .Buildings .Ranges}}, {{end}}{{if .Ranges}}{{.Ranges}} faixa(s) de IP{{end}}{{else}}Sem regras{{end}}</span></a></li>{{end}}</ul>
 {{if .Empty}}<p class="muted">Grupos vazios: {{range $i, $c := .Empty}}{{if $i}}, {{end}}<a href="{{$c.Href}}">{{$c.Ring}}</a>{{end}}.</p>{{end}}
-{{template "fim"}}{{end}}
+</details>{{template "fim"}}{{end}}
 
 {{define "grupo-abas"}}<nav class="abas" aria-label="abas do grupo"><a href="{{index .TabHrefs "maquinas"}}"{{if eq .Tab "maquinas"}} class="ativa" aria-current="page"{{end}}>Máquinas ({{.Machines}})</a>{{if .Admin}}<a href="{{index .TabHrefs "adicionar"}}"{{if eq .Tab "adicionar"}} class="ativa" aria-current="page"{{end}}>Adicionar</a><a href="{{index .TabHrefs "colar"}}"{{if eq .Tab "colar"}} class="ativa" aria-current="page"{{end}}>Colar lista</a>{{end}}<a href="{{index .TabHrefs "regras"}}"{{if eq .Tab "regras"}} class="ativa" aria-current="page"{{end}}>Regras e janela</a></nav>{{end}}
 
