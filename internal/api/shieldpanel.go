@@ -91,6 +91,17 @@ type shieldLeaderRow struct {
 	XP                     int64
 }
 
+type shieldPlaceRow struct {
+	Pos, Overall, Machines, Sealed, Pct int
+	Label, Spec, Avg, Custom            string
+}
+
+type shieldBuildingPlaces struct {
+	Building string
+	Floors   []shieldPlaceRow
+	Rooms    []shieldPlaceRow
+}
+
 type shieldExcRow struct {
 	ID                                                  int64
 	MachineID, Host, Criterion, Reason, Expires, By, At string
@@ -162,6 +173,9 @@ type shieldPanelView struct {
 	Groups  []shieldGroupRow
 	Hidden  int
 	Leaders []shieldLeaderRow
+	// Rankings por lugar: os prédios e, por prédio, os andares (faixas) e as salas.
+	PlaceB []shieldPlaceRow
+	PlaceP []shieldBuildingPlaces
 	// Exceções.
 	Exceptions []shieldExcRow
 	AllExc     bool
@@ -266,6 +280,10 @@ func shieldFlash(q url.Values, b *pageBase) {
 		b.Flash = "Exceção registrada. Vale na próxima avaliação (em até 5 minutos)."
 	case q.Has("revogada"):
 		b.Flash = "Exceção revogada."
+	case q.Get("andares") == "0":
+		b.Flash = "Nenhum nome de andar mudou."
+	case q.Has("andares"):
+		b.Flash = "Nomes dos andares gravados (" + numOnly(q.Get("andares")) + "). Aparecem na próxima avaliação (em até 5 minutos)."
 	case q.Has("ajuste"):
 		b.Flash = "Ajuste de XP registrado no livro do XP e na auditoria."
 	case q.Has("repetido"):
@@ -596,7 +614,124 @@ func (a *api) shieldRankingTab(ctx context.Context, db shieldStore, v *shieldPan
 			v.Leaders = append(v.Leaders, shieldLeaderRow{Pos: i + 1, Name: name, XP: x.XP, Protected: x.Protected, Streak: x.Streak})
 		}
 	}
+	row := func(r store.ShieldRank) shieldPlaceRow {
+		x := shieldPlaceRow{Pos: r.Pos, Overall: r.Overall, Machines: r.Machines, Sealed: r.Sealed, Pct: r.Percent(), Label: r.Label, Avg: pct1(r.Average)}
+		if r.Kind == shield.RankFloor {
+			x.Spec, x.Custom = r.Name, v.Pol.Ranking.FloorNames[r.Name]
+		}
+		return x
+	}
+	buildings, err := db.ShieldRankings(ctx, shield.RankBuilding, "", 500)
+	if err != nil {
+		return err
+	}
+	byB := map[string]*shieldBuildingPlaces{}
+	for _, b := range buildings {
+		v.PlaceB = append(v.PlaceB, row(b))
+		v.PlaceP = append(v.PlaceP, shieldBuildingPlaces{Building: b.Building})
+	}
+	for i := range v.PlaceP {
+		byB[v.PlaceP[i].Building] = &v.PlaceP[i]
+	}
+	for _, kind := range []string{shield.RankFloor, shield.RankRoom} {
+		list, err := db.ShieldRankings(ctx, kind, "", 5000)
+		if err != nil {
+			return err
+		}
+		for _, r := range list {
+			bp := byB[r.Building]
+			if bp == nil { // o prédio é pequeno demais para o ranking, mas os andares ou as salas não
+				v.PlaceP = append(v.PlaceP, shieldBuildingPlaces{Building: r.Building})
+				bp = &v.PlaceP[len(v.PlaceP)-1]
+				byB = map[string]*shieldBuildingPlaces{}
+				for i := range v.PlaceP {
+					byB[v.PlaceP[i].Building] = &v.PlaceP[i]
+				}
+			}
+			if kind == shield.RankFloor {
+				bp.Floors = append(bp.Floors, row(r))
+			} else {
+				bp.Rooms = append(bp.Rooms, row(r))
+			}
+		}
+	}
+	kept := v.PlaceP[:0]
+	for _, bp := range v.PlaceP {
+		if len(bp.Floors) > 0 || len(bp.Rooms) > 0 {
+			kept = append(kept, bp)
+		}
+	}
+	v.PlaceP = kept
 	return nil
+}
+
+var errFloorName = errors.New("nome de andar: de 1 a 40 caracteres, sem caracteres de controle")
+
+// shieldFloorsAction: POST /painel/shield/andares — os nomes das faixas de IP como andares
+// (uma versão nova da política, auditada). Nome vazio volta ao "Faixa N".
+func (a *api) shieldFloorsAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	db, ok := a.shieldDB()
+	if !ok {
+		shieldFail(w, r, "ranking", errShieldOff)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		shieldFail(w, r, "ranking", errShieldForm)
+		return
+	}
+	cur, _, err := a.shieldPolicy(r.Context())
+	if err != nil {
+		a.internalError(w, r, "ler a política do Shield", err)
+		return
+	}
+	specs, names := r.PostForm["faixa"], r.PostForm["nome"]
+	if len(specs) != len(names) || len(specs) == 0 || len(specs) > 500 {
+		shieldFail(w, r, "ranking", errShieldForm)
+		return
+	}
+	pol := cur
+	pol.Ranking.FloorNames = map[string]string{}
+	for k, n := range cur.Ranking.FloorNames {
+		pol.Ranking.FloorNames[k] = n
+	}
+	var changed []string
+	for i, spec := range specs {
+		spec = strings.TrimSpace(spec)
+		name := strings.TrimSpace(names[i])
+		if spec == "" || len(spec) > 64 {
+			shieldFail(w, r, "ranking", errShieldForm)
+			return
+		}
+		if pol.Ranking.FloorNames[spec] == name {
+			continue
+		}
+		if name == "" {
+			delete(pol.Ranking.FloorNames, spec)
+		} else {
+			if len([]rune(name)) > 40 {
+				shieldFail(w, r, "ranking", errFloorName)
+				return
+			}
+			pol.Ranking.FloorNames[spec] = name
+		}
+		changed = append(changed, fmt.Sprintf("%s=%q", spec, name))
+	}
+	if len(changed) == 0 {
+		shieldBack(w, r, "ranking", "andares=0")
+		return
+	}
+	if err := pol.Validate(); err != nil {
+		shieldFail(w, r, "ranking", err)
+		return
+	}
+	ver, err := db.SaveShieldPolicy(r.Context(), pol, "nomes dos andares", s.Username)
+	if err != nil {
+		shieldFail(w, r, "ranking", err)
+		return
+	}
+	a.shieldPolicyStale()
+	a.audit(r, s, "shield.andares", fmt.Sprintf("versão %d", ver), strings.Join(changed, "; "))
+	shieldBack(w, r, "ranking", "andares="+strconv.Itoa(len(changed)))
 }
 
 func (a *api) shieldExceptionsTab(ctx context.Context, db shieldStore, v *shieldPanelView, q url.Values) error {
@@ -816,7 +951,11 @@ func shieldPolicyFrom(r *http.Request, base shield.Policy) (shield.Policy, error
 		Slogan: strings.TrimSpace(r.PostFormValue("slogan"))}
 	p.Ranking.Collective = r.PostFormValue("rank_coletivo") == "1"
 	p.Ranking.Individual = r.PostFormValue("rank_individual") == "1"
+	p.Ranking.Buildings = r.PostFormValue("rank_predios") == "1"
+	p.Ranking.Floors = r.PostFormValue("rank_andares") == "1"
+	p.Ranking.Rooms = r.PostFormValue("rank_salas") == "1"
 	integer("rank_min", &p.Ranking.MinGroup)
+	integer("rank_min_sala", &p.Ranking.MinRoom)
 	p.Notify.Enabled = r.PostFormValue("avisos") == "1"
 	integer("avisos_horas", &p.Notify.MinHours)
 	integer("exp_inicio", &p.Notify.WorkStart)
@@ -1222,6 +1361,20 @@ var _ = template.Must(pages.New("shield-ranking").Parse(`<div class="card"><h2>R
 {{else}}<p class="vazio">Nenhum grupo com o mínimo de máquinas.</p>{{end}}
 {{if .Hidden}}<p class="muted">{{.Hidden}} grupo(s) com menos de {{.Pol.Ranking.MinGroup}} máquinas ficam de fora (privacidade).</p>{{end}}
 <p class="muted">O denominador inclui as máquinas sem dado. O ranking nunca mostra máquina, vulnerabilidade ou programa.</p></div>
+<div class="card"><h2>Ranking dos prédios</h2>{{if not .Pol.Ranking.Buildings}}<p class="vazio">Desligado na Política.</p>
+{{else if .PlaceB}}<table><thead><tr><th>#</th><th>Prédio</th><th>Máquinas</th><th>No selo</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
+{{range .PlaceB}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
+{{else}}<p class="vazio">Nenhum prédio ainda: o prédio vem do patrimônio (Configuração › Patrimônio), ligado pelo tombo no nome da máquina, e precisa do mínimo de {{.Pol.Ranking.MinGroup}} máquinas no Shield.</p>{{end}}</div>
+{{if .PlaceP}}<div class="card"><h2>Andares e salas, por prédio</h2>
+<p class="muted">O andar é a faixa de IP das regras dos grupos de implantação, nos prédios com máquinas em mais de uma faixa (a máquina fica na faixa mais específica). A Central mostra o nome do andar, nunca a faixa; sem nome, aparece "Faixa N".</p>
+{{range .PlaceP}}<details class="lugar"><summary><b>{{.Building}}</b> — {{len .Floors}} andar(es) e {{len .Rooms}} sala(s) no ranking</summary>
+{{if .Floors}}<h3>Andares</h3>{{if $.Admin}}<form class="formulario" method="post" action="/painel/shield/andares">{{end}}<table><thead><tr><th>#</th><th>Andar</th><th>Faixa</th><th>Máquinas</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
+{{range .Floors}}<tr><td>{{.Pos}}</td><td>{{if $.Admin}}<input type="hidden" name="faixa" value="{{.Spec}}"><label class="sr" for="n-{{.Spec}}">Nome do andar da faixa {{.Spec}}</label><input id="n-{{.Spec}}" name="nome" value="{{.Custom}}" maxlength="40" placeholder="{{.Label}} (ex.: 2º andar)">{{else}}{{.Label}}{{end}}</td><td>{{.Spec}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
+{{if $.Admin}}<button class="sec" type="submit">Gravar os nomes dos andares</button></form>{{end}}{{end}}
+{{if .Rooms}}<h3>Salas</h3><table><thead><tr><th>#</th><th>Sala</th><th>Máquinas</th><th>% no selo</th><th>Média</th><th>Entre todas as salas</th></tr></thead><tbody>
+{{range .Rooms}}<tr><td>{{.Pos}}</td><td>{{.Label}}</td><td>{{.Machines}}</td><td><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td><td>{{.Overall}}º</td></tr>{{end}}</tbody></table>{{end}}
+</details>{{end}}
+<p class="muted">Salas com menos de {{.Pol.Ranking.MinRoom}} máquinas e andares com menos de {{.Pol.Ranking.MinGroup}} não aparecem (privacidade).</p></div>{{end}}
 <div class="card"><h2>Ranking individual</h2>{{if not .Pol.Ranking.Individual}}<p class="vazio">Desligado (o padrão). Ligue na Política só se a sua instituição aprovar: ele mostra nome, XP, dias protegidos e sequência — nada da máquina.</p>
 {{else if .Leaders}}<table><thead><tr><th>#</th><th>Pessoa</th><th>XP</th><th>Dias protegidos</th><th>Sequência</th></tr></thead><tbody>{{range .Leaders}}<tr><td>{{.Pos}}</td><td>{{.Name}}</td><td>{{.XP}}</td><td>{{.Protected}}</td><td>{{.Streak}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Ninguém com XP nos últimos 30 dias.</p>{{end}}</div>`))
@@ -1274,7 +1427,11 @@ var _ = template.Must(pages.New("shield-politica").Parse(`{{if not .Admin}}<p cl
 <div class="campo"><label for="b3">Slogan</label><input id="b3" name="slogan" value="{{.Pol.Brand.Slogan}}" maxlength="120"></div>
 <div><label class="check"><input type="checkbox" name="rank_coletivo" value="1"{{if .Pol.Ranking.Collective}} checked{{end}}> Ranking coletivo por grupo</label></div>
 <div><label class="check"><input type="checkbox" name="rank_individual" value="1"{{if .Pol.Ranking.Individual}} checked{{end}}> Ranking individual (nome, XP e sequência)</label></div>
-<div class="campo"><label for="r1">Tamanho mínimo do grupo no ranking</label><input id="r1" name="rank_min" type="number" value="{{.Pol.Ranking.MinGroup}}"></div>
+<div><label class="check"><input type="checkbox" name="rank_predios" value="1"{{if .Pol.Ranking.Buildings}} checked{{end}}> Ranking dos prédios (do patrimônio)</label></div>
+<div><label class="check"><input type="checkbox" name="rank_andares" value="1"{{if .Pol.Ranking.Floors}} checked{{end}}> Ranking dos andares (as faixas de IP, nos prédios com mais de uma)</label></div>
+<div><label class="check"><input type="checkbox" name="rank_salas" value="1"{{if .Pol.Ranking.Rooms}} checked{{end}}> Ranking das salas (do patrimônio)</label></div>
+<div class="campo"><label for="r2">Tamanho mínimo da sala no ranking</label><input id="r2" name="rank_min_sala" type="number" value="{{.Pol.Ranking.MinRoom}}"></div>
+<div class="campo"><label for="r1">Tamanho mínimo do grupo, do prédio e do andar no ranking</label><input id="r1" name="rank_min" type="number" value="{{.Pol.Ranking.MinGroup}}"></div>
 <div><label class="check"><input type="checkbox" name="avisos" value="1"{{if .Pol.Notify.Enabled}} checked{{end}}> Avisos do Shield perto do relógio</label></div>
 <div class="campo"><label for="a1">No máximo um aviso a cada (horas)</label><input id="a1" name="avisos_horas" type="number" value="{{.Pol.Notify.MinHours}}"></div>
 <div class="campo"><label for="a2">Expediente: das (hora)</label><input id="a2" name="exp_inicio" type="number" min="0" max="23" value="{{.Pol.Notify.WorkStart}}"></div>

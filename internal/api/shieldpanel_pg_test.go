@@ -56,6 +56,10 @@ func formPolitica(p shield.Policy) url.Values {
 	f.Set("missao", p.Brand.Mission)
 	f.Set("slogan", p.Brand.Slogan)
 	f.Set("rank_coletivo", "1")
+	f.Set("rank_predios", "1")
+	f.Set("rank_andares", "1")
+	f.Set("rank_salas", "1")
+	f.Set("rank_min_sala", strconv.Itoa(p.Ranking.MinRoom))
 	f.Set("avisos", "1")
 	return f
 }
@@ -164,9 +168,31 @@ func TestPainelDoShield(t *testing.T) {
 	if pagina(h, "GET", "/painel/shield/equipamentos.csv", sessaoTeste, nil).Code != 200 {
 		t.Fatal("CSV das máquinas")
 	}
+	// Nomes das faixas como andares: só o admin; nome vazio volta ao padrão.
+	andar := url.Values{"faixa": {"10.1.2.0/24", "10.1.3.0/24"}, "nome": {"2º andar", ""}}
+	if r := pagina(h, "POST", "/painel/shield/andares", sessaoTeste, andar); r.Code != 403 {
+		t.Fatalf("leitura nomeou andar: %d", r.Code)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/andares", sessaoAdmin, andar).Header().Get("Location"); !strings.Contains(loc, "andares=1") {
+		t.Fatalf("andares: %s", loc)
+	}
+	row, _, _ = st.ShieldPolicy(ctx)
+	got, _ = shield.Parse(row.Body)
+	if got.Ranking.FloorNames["10.1.2.0/24"] != "2º andar" || len(got.Ranking.FloorNames) != 1 || !got.Ranking.Rooms || got.Ranking.MinRoom != 3 {
+		t.Fatalf("nomes dos andares: %+v", got.Ranking)
+	}
+	andar.Set("nome", strings.Repeat("x", 41))
+	andar.Del("faixa")
+	andar.Set("faixa", "10.1.2.0/24")
+	if loc := pagina(h, "POST", "/painel/shield/andares", sessaoAdmin, andar).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("nome longo demais: %s", loc)
+	}
+	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoTeste, nil).Body.String(); !strings.Contains(b, "Ranking dos prédios") {
+		t.Fatal("aba Ranking sem os prédios")
+	}
 	// A auditoria do Shield mostra tudo isso.
 	b = pagina(h, "GET", "/painel/shield?aba=auditoria", sessaoAdmin, nil).Body.String()
-	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido"} {
+	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido", "shield.andares"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("auditoria sem %q", want)
 		}

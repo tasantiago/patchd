@@ -151,12 +151,27 @@ período. A missão não cria job, campanha nem mecanismo paralelo de implantaç
 - **Individual** (desligado por padrão): nome de exibição, nível, XP e sequência. Nunca máquina,
   vulnerabilidade ou pendência.
 - Em nenhum ranking aparece CVE, programa vulnerável ou nome de máquina.
+- **Por lugar** (ligados por padrão; cada um pode ser desligado na Política):
+  - **prédio**: o `DEPREDIO` do patrimônio (Configuração › Patrimônio), ligado pelo tombo no
+    nome da máquina; mínimo de máquinas como nos grupos;
+  - **andar**: a faixa de IP das regras dos grupos de implantação, **só nos prédios com máquinas
+    em mais de uma faixa** (num prédio de uma faixa, andar e prédio seriam a mesma coisa). A
+    máquina fica na faixa mais específica (a menor) que contém algum IP dela. O admin dá nome às
+    faixas em Shield › Ranking ("2º andar"); sem nome, a Central mostra "Faixa N" (pela ordem do
+    começo da faixa no prédio) — **a faixa de IP nunca chega à Central**;
+  - **sala**: o `DESALA` do patrimônio, dentro do prédio; mínimo próprio (padrão 3), porque
+    sala de 1 ou 2 computadores identifica a pessoa.
+  - A Central mostra os 10 primeiros prédios e o da máquina, e, no prédio dela, os andares e as
+    10 primeiras salas e a dela, com "está em Nº de M". Máquinas sem prédio no patrimônio ficam
+    fora desses rankings; sem dado contam como zero, como nos grupos.
 
 ## 7. Banco (migração 0082)
 
 `shield_policies` (versões), `shield_scores` (atual por máquina), `shield_daily` (retrato do dia,
 400 dias), `shield_players`, `shield_presence` (400 dias), `shield_xp` (livro do XP),
-`shield_badges`, `shield_missions`, `shield_exceptions`. Chaves estrangeiras com `ON DELETE
+`shield_badges`, `shield_missions`, `shield_exceptions`. A migração `0083` grava o lugar
+(prédio, sala, faixa) junto da pontuação e o ranking pronto por lugar (`shield_rankings`), que o
+avaliador troca inteiro quando muda (qualquer servidor mostra o mesmo). Chaves estrangeiras com `ON DELETE
 CASCADE` nas máquinas; chaves únicas para a idempotência; nenhuma migração publicada foi alterada.
 
 ## 8. API

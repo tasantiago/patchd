@@ -76,14 +76,17 @@ func (p *Postgres) SaveShieldPolicy(ctx context.Context, pol shield.Policy, note
 type ShieldScore struct {
 	MachineID     string
 	PolicyVersion int
-	Result        shield.Result
-	EvaluatedAt   time.Time
-	ChangedAt     time.Time
+	// Place: o prédio e a sala do patrimônio e a faixa de IP (rankings por lugar).
+	Place       shield.Place
+	Result      shield.Result
+	EvaluatedAt time.Time
+	ChangedAt   time.Time
 }
 
 // ShieldScores: as pontuações guardadas das máquinas ativas.
 func (p *Postgres) ShieldScores(ctx context.Context) (map[string]ShieldScore, error) {
-	rows, err := p.pool.Query(ctx, `SELECT s.machine_id, s.policy_version, s.details, s.evaluated_at, s.changed_at
+	rows, err := p.pool.Query(ctx, `SELECT s.machine_id, s.policy_version, s.details, s.evaluated_at, s.changed_at,
+		s.place_building, s.place_room, s.place_floor
 		FROM shield_scores s JOIN machines m ON m.id = s.machine_id WHERE m.retired_at IS NULL`)
 	if err != nil {
 		return nil, err
@@ -93,7 +96,7 @@ func (p *Postgres) ShieldScores(ctx context.Context) (map[string]ShieldScore, er
 	for rows.Next() {
 		var s ShieldScore
 		var det []byte
-		if err := rows.Scan(&s.MachineID, &s.PolicyVersion, &det, &s.EvaluatedAt, &s.ChangedAt); err != nil {
+		if err := rows.Scan(&s.MachineID, &s.PolicyVersion, &det, &s.EvaluatedAt, &s.ChangedAt, &s.Place.Building, &s.Place.Room, &s.Place.Floor); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(det, &s.Result); err != nil {
@@ -109,8 +112,9 @@ func (p *Postgres) ShieldScores(ctx context.Context) (map[string]ShieldScore, er
 func (p *Postgres) ShieldScoreOf(ctx context.Context, id string) (ShieldScore, bool, error) {
 	s := ShieldScore{MachineID: id}
 	var det []byte
-	err := p.pool.QueryRow(ctx, `SELECT policy_version, details, evaluated_at, changed_at FROM shield_scores WHERE machine_id = $1`, id).
-		Scan(&s.PolicyVersion, &det, &s.EvaluatedAt, &s.ChangedAt)
+	err := p.pool.QueryRow(ctx, `SELECT policy_version, details, evaluated_at, changed_at, place_building, place_room, place_floor
+		FROM shield_scores WHERE machine_id = $1`, id).
+		Scan(&s.PolicyVersion, &det, &s.EvaluatedAt, &s.ChangedAt, &s.Place.Building, &s.Place.Room, &s.Place.Floor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s, false, nil
 	}
@@ -132,13 +136,15 @@ func (p *Postgres) SaveShieldScores(ctx context.Context, list []ShieldScore) err
 			if err != nil {
 				return err
 			}
-			b.Queue(`INSERT INTO shield_scores (machine_id, policy_version, score, sealed, overall, user_fault, blame, details, evaluated_at, changed_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			b.Queue(`INSERT INTO shield_scores (machine_id, policy_version, score, sealed, overall, user_fault, blame, details, evaluated_at, changed_at,
+				place_building, place_room, place_floor)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 				ON CONFLICT (machine_id) DO UPDATE SET policy_version=excluded.policy_version, score=excluded.score, sealed=excluded.sealed,
 				overall=excluded.overall, user_fault=excluded.user_fault, blame=excluded.blame, details=excluded.details,
-				evaluated_at=excluded.evaluated_at, changed_at=excluded.changed_at`,
+				evaluated_at=excluded.evaluated_at, changed_at=excluded.changed_at,
+				place_building=excluded.place_building, place_room=excluded.place_room, place_floor=excluded.place_floor`,
 				s.MachineID, s.PolicyVersion, s.Result.Score, s.Result.Sealed, string(s.Result.Overall), s.Result.UserFault,
-				string(s.Result.Blame), det, s.EvaluatedAt, s.ChangedAt)
+				string(s.Result.Blame), det, s.EvaluatedAt, s.ChangedAt, clip(s.Place.Building, 200), clip(s.Place.Room, 200), clip(s.Place.Floor, 64))
 		}
 		if err := p.pool.SendBatch(ctx, b).Close(); err != nil {
 			return err
@@ -1027,4 +1033,54 @@ func (p *Postgres) ShieldRingStats(ctx context.Context) ([]ShieldRingStat, error
 		err := r.Scan(&s.Ring, &s.Machines, &s.Scored, &s.Sealed, &s.Average)
 		return s, err
 	})
+}
+
+func clip(s string, n int) string { return clipText(s, n) }
+
+// ShieldRank é um lugar no ranking gravado, com o nome que as pessoas veem.
+type ShieldRank struct {
+	shield.Rank
+	Label string
+}
+
+// ReplaceShieldRankings troca os rankings por lugar inteiros, numa transação.
+func (p *Postgres) ReplaceShieldRankings(ctx context.Context, list []ShieldRank) error {
+	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM shield_rankings`); err != nil {
+			return err
+		}
+		b := &pgx.Batch{}
+		for _, r := range list {
+			b.Queue(`INSERT INTO shield_rankings (kind, key, building, name, label, machines, sealed, average, pos, overall, of_total)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, r.Kind, clip(r.Key, 500), clip(r.Building, 200), clip(r.Name, 200), clip(r.Label, 200),
+				r.Machines, r.Sealed, r.Average, r.Pos, r.Overall, r.Of)
+		}
+		return tx.SendBatch(ctx, b).Close()
+	})
+}
+
+// ShieldRankings: os lugares de um tipo, na ordem (building vazio: de todos os prédios).
+func (p *Postgres) ShieldRankings(ctx context.Context, kind, building string, limit int) ([]ShieldRank, error) {
+	rows, err := p.pool.Query(ctx, `SELECT kind, key, building, name, label, machines, sealed, average::float8, pos, overall, of_total
+		FROM shield_rankings WHERE kind = $1 AND ($2 = '' OR building = $2) ORDER BY overall LIMIT $3`, kind, building, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ShieldRank, error) {
+		var x ShieldRank
+		err := r.Scan(&x.Kind, &x.Key, &x.Building, &x.Name, &x.Label, &x.Machines, &x.Sealed, &x.Average, &x.Pos, &x.Overall, &x.Of)
+		return x, err
+	})
+}
+
+// ShieldRankOf: um lugar (ok falso: não está no ranking, pequeno demais ou sem lugar).
+func (p *Postgres) ShieldRankOf(ctx context.Context, kind, key string) (ShieldRank, bool, error) {
+	var x ShieldRank
+	err := p.pool.QueryRow(ctx, `SELECT kind, key, building, name, label, machines, sealed, average::float8, pos, overall, of_total
+		FROM shield_rankings WHERE kind = $1 AND key = $2`, kind, key).
+		Scan(&x.Kind, &x.Key, &x.Building, &x.Name, &x.Label, &x.Machines, &x.Sealed, &x.Average, &x.Pos, &x.Overall, &x.Of)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return x, false, nil
+	}
+	return x, err == nil, err
 }

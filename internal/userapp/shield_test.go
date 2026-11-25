@@ -29,6 +29,11 @@ func vistaShield(sealed bool, display int) *protocol.ShieldView {
 			Recent: []protocol.ShieldXPView{{Reason: "dia útil 100% protegido", Points: 10, Day: prazo}}},
 		Missions: []protocol.ShieldMissionView{{ID: 1, Title: "Semana do reinício", Scope: "coletiva", Status: "ativa", Progress: "80% das máquinas", Percent: 80,
 			StartsAt: prazo.AddDate(0, 0, -2), EndsAt: prazo.AddDate(0, 0, 5)}},
+		Places: []protocol.ShieldPlaceView{
+			{Kind: "predio", Title: "Prédios", Mine: "Edifício Sede", Pos: 2, Of: 7, Rows: []protocol.ShieldGroupView{{Pos: 1, Name: "Anexo", Machines: 40, Percent: 90}, {Pos: 2, Name: "Edifício Sede", Machines: 120, Percent: 70, Mine: true}}},
+			{Kind: "andar", Title: "Andares do Edifício Sede", Mine: "2º andar", Pos: 1, Of: 3, Rows: []protocol.ShieldGroupView{{Pos: 1, Name: "2º andar", Machines: 30, Percent: 80, Mine: true}}},
+			{Kind: "sala", Title: "Salas do Edifício Sede", Mine: "201", Pos: 4, Of: 9, Rows: []protocol.ShieldGroupView{{Pos: 1, Name: "101", Machines: 5, Percent: 100}, {Pos: 4, Name: "201", Machines: 6, Percent: 50, Mine: true}}},
+		},
 		Groups:  []protocol.ShieldGroupView{{Pos: 1, Name: "3 · Prédio Sede", Machines: 12, Percent: 75, Mine: true}},
 		Notices: []protocol.ShieldNotice{{ID: "acao:reinicio:1", Title: "Sua proteção precisa de você", Text: "Reinicie."}, {ID: "missao:1", Title: "Missão", Text: "x"}},
 	}
@@ -62,6 +67,8 @@ func TestAbaMinhaProtecao(t *testing.T) {
 		"Minha Proteção", `aria-label="proteção 93%"`, "93%", "quase lá", "Escolher a hora do reinício", "?aba=reinicio",
 		"aguardando você", "responsável: usuário", "3,75 de 15 pontos", "Prata — Sentinela", "faltam 3 dia(s) para Ouro — Guardião",
 		"<meter", "<progress", "Semana do reinício", "Primeiro escudo", "Semana blindada", "+10 XP", "Sua máquina protegida.", "1º 3 · Prédio Sede · seu grupo", "75% no selo",
+		"Ranking: Prédios", "<b>Edifício Sede</b> está em <b>2º</b> de 7", "Ranking: Andares do Edifício Sede", "<b>2º andar</b> está em <b>1º</b> de 3",
+		"Ranking: Salas do Edifício Sede", "4º 201 · o seu", "ninguém vê o seu nome",
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("faltou %q", want)

@@ -187,6 +187,13 @@ func (a *api) shieldView(ctx context.Context, db shieldStore, id string, u proto
 			v.Groups = v.Groups[len(v.Groups)-20:]
 		}
 	}
+	if have {
+		places, err := a.shieldPlaceViews(ctx, db, &pol, sc.Place)
+		if err != nil {
+			return v, err
+		}
+		v.Places = places
+	}
 	if len(v.Notices) > 20 {
 		v.Notices = v.Notices[:20]
 	}
@@ -217,4 +224,48 @@ func shieldMachineView(r shield.Result, at time.Time) *protocol.ShieldMachineVie
 		m.Criteria = append(m.Criteria, cv)
 	}
 	return m
+}
+
+// shieldPlaceViews: os rankings por lugar para a Central — os prédios (os 10 primeiros e o
+// desta máquina), e, no prédio desta máquina, os andares e as salas (as 10 primeiras e a dela).
+func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.Policy, me shield.Place) ([]protocol.ShieldPlaceView, error) {
+	var out []protocol.ShieldPlaceView
+	build := func(kind, title, building, mineKey string, top int) error {
+		list, err := db.ShieldRankings(ctx, kind, building, 500)
+		if err != nil || len(list) == 0 {
+			return err
+		}
+		pv := protocol.ShieldPlaceView{Kind: kind, Title: title}
+		for i, r := range list {
+			mine := mineKey != "" && r.Key == mineKey
+			if mine {
+				pv.Mine, pv.Pos = r.Label, r.Pos
+			}
+			pv.Of = r.Of
+			if i < top || mine {
+				pv.Rows = append(pv.Rows, protocol.ShieldGroupView{Pos: r.Pos, Name: r.Label, Machines: r.Machines, Percent: r.Percent(), Mine: mine})
+			}
+		}
+		out = append(out, pv)
+		return nil
+	}
+	if pol.Ranking.Buildings {
+		if err := build(shield.RankBuilding, "Prédios", "", shield.PlaceKey(me.Building, ""), 10); err != nil {
+			return nil, err
+		}
+	}
+	if me.Building == "" {
+		return out, nil
+	}
+	if pol.Ranking.Floors && me.Floor != "" {
+		if err := build(shield.RankFloor, "Andares do "+me.Building, me.Building, shield.PlaceKey(me.Building, me.Floor), 30); err != nil {
+			return nil, err
+		}
+	}
+	if pol.Ranking.Rooms && me.Room != "" {
+		if err := build(shield.RankRoom, "Salas do "+me.Building, me.Building, shield.PlaceKey(me.Building, me.Room), 10); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }

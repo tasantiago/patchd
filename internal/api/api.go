@@ -457,6 +457,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/shield/missoes/{id}/estado", a.sameOrigin(a.adminAction(a.shieldMissionStateAction)))                         // PatchD Shield
 	mux.Handle("POST /painel/shield/excecoes", a.sameOrigin(a.adminAction(a.shieldExceptionAction)))                                       // PatchD Shield
 	mux.Handle("POST /painel/shield/excecoes/{id}/revogar", a.sameOrigin(a.adminAction(a.shieldRevokeAction)))                             // PatchD Shield
+	mux.Handle("POST /painel/shield/andares", a.sameOrigin(a.adminAction(a.shieldFloorsAction)))                                           // PatchD Shield: nomes das faixas como andares
 	mux.Handle("POST /painel/shield/pessoas/{id}/ajuste", a.sameOrigin(a.adminAction(a.shieldAdjustAction)))                               // PatchD Shield: a compensação do admin, auditada
 	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
 	mux.Handle("POST /painel/alertas/lote", a.sameOrigin(a.adminAction(a.staleAfter(a.alertBatchAction))))                                 // fechar ou reconhecer em lote

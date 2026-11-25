@@ -66,6 +66,9 @@ type shieldStore interface {
 	MachineRing(ctx context.Context, id string) (int, bool, error)
 	ShieldRingStats(ctx context.Context) ([]store.ShieldRingStat, error)
 	ResolveMachine(ctx context.Context, prefix string) (string, bool, error)
+	ReplaceShieldRankings(ctx context.Context, list []store.ShieldRank) error
+	ShieldRankings(ctx context.Context, kind, building string, limit int) ([]store.ShieldRank, error)
+	ShieldRankOf(ctx context.Context, kind, key string) (store.ShieldRank, bool, error)
 	ShieldProtectedDaysBetween(ctx context.Context, from, to time.Time) (map[int64]int, error)
 	ShieldPlayersInRings(ctx context.Context, ring *int, from, to time.Time) ([]int64, error)
 	PruneShield(ctx context.Context, before time.Time) (int64, error)
@@ -92,6 +95,7 @@ type shieldState struct {
 	version  int
 	polAt    time.Time
 	closed   string                       // o último dia fechado por este servidor
+	rankSum  string                       // o resumo dos rankings por lugar gravados (só regrava o que mudou)
 	daily    map[string]store.ShieldDaily // o último retrato gravado hoje, por máquina
 	lastRun  time.Time
 	lastErr  string
@@ -183,6 +187,8 @@ type shieldInputs struct {
 	exceptions map[string]map[shield.Criterion]bool
 	offers     map[string]bool // programas que a Central oferece para atualizar
 	published  string
+	places     map[string]shield.Place // o lugar de cada máquina (rankings por lugar)
+	floorStart map[string]uint32       // o começo de cada faixa (a ordem dos andares sem nome)
 }
 
 func (a *api) shieldGather(ctx context.Context, db shieldStore, now time.Time) (shieldInputs, error) {
@@ -240,6 +246,9 @@ func (a *api) shieldGather(ctx context.Context, db shieldStore, now time.Time) (
 		}
 	}
 	in.published, _ = a.publishedVersion()
+	if err := a.shieldPlaces(ctx, &in); err != nil {
+		return in, fmt.Errorf("lugares: %w", err)
+	}
 	return in, nil
 }
 
@@ -336,6 +345,7 @@ func (a *api) shieldRun(ctx context.Context, db shieldStore, now time.Time) erro
 	lastDaily := a.shield.daily
 	a.shield.mu.Unlock()
 	nextDaily := map[string]store.ShieldDaily{}
+	var placed []shield.PlaceScore
 	for _, m := range in.machines {
 		old, had := prev[m.ID]
 		if !pol.InScope(m.Ring) {
@@ -350,13 +360,15 @@ func (a *api) shieldRun(ctx context.Context, db shieldStore, now time.Time) erro
 		}
 		res := shield.Evaluate(&pol, shieldEvidenceFor(&in, m.ID, since, now), now)
 		counts[res.Overall]++
-		s := store.ShieldScore{MachineID: m.ID, PolicyVersion: ver, Result: res, EvaluatedAt: now, ChangedAt: now}
+		place := in.places[m.ID]
+		placed = append(placed, shield.PlaceScore{Place: place, Sealed: res.Sealed, Score: res.Score})
+		s := store.ShieldScore{MachineID: m.ID, PolicyVersion: ver, Place: place, Result: res, EvaluatedAt: now, ChangedAt: now}
 		if had {
 			same := sameResult(old.Result, res)
 			if same {
 				s.ChangedAt = old.ChangedAt
 			}
-			if same && old.PolicyVersion == ver && now.Sub(old.EvaluatedAt) < shieldRefresh {
+			if same && old.Place == place && old.PolicyVersion == ver && now.Sub(old.EvaluatedAt) < shieldRefresh {
 				s = old // nada mudou: não grava
 			} else {
 				writes = append(writes, s)
@@ -408,6 +420,9 @@ func (a *api) shieldRun(ctx context.Context, db shieldStore, now time.Time) erro
 		}
 	}
 	if err := db.AddShieldPresence(ctx, pres); err != nil {
+		return err
+	}
+	if err := a.shieldSaveRankings(ctx, db, &pol, in, placed); err != nil {
 		return err
 	}
 	if err := a.shieldRebootXP(ctx, db, &pol, rebooted, today); err != nil {

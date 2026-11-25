@@ -204,6 +204,16 @@ type Ranking struct {
 	Collective bool `json:"collective"` // por grupo de implantação (o padrão)
 	Individual bool `json:"individual"` // por pessoa: desligado por padrão
 	MinGroup   int  `json:"min_group"`  // grupos menores que isso não aparecem (privacidade)
+	// Os rankings por lugar (places.go): o prédio e a sala vêm do patrimônio; o andar é a
+	// faixa de IP, nos prédios que têm máquinas em mais de uma faixa. Prédio e andar usam
+	// MinGroup; a sala, MinRoom (salas são pequenas, mas uma sala de 1 ou 2 é uma pessoa).
+	Buildings bool `json:"buildings"`
+	Floors    bool `json:"floors"`
+	Rooms     bool `json:"rooms"`
+	MinRoom   int  `json:"min_room"`
+	// FloorNames: o nome de cada faixa de IP como andar ("10.1.2.0/24" → "2º andar"). A
+	// Central nunca mostra a faixa: sem nome, o andar aparece como "Faixa N" do prédio.
+	FloorNames map[string]string `json:"floor_names,omitempty"`
 }
 
 // Notify: os avisos da Central.
@@ -272,7 +282,7 @@ func Default() Policy {
 		XP: XPRules{ProtectedDay: 10, Reboot: 15, Update: 5, MaxPerDay: 60,
 			StreakBonus: []StreakBonus{{5, 20}, {10, 40}, {22, 80}, {66, 200}}},
 		Brand:   Brand{Name: "PatchD Shield", Mission: "Missão 100%", Slogan: "Sua máquina protegida. Nosso ambiente mais seguro."},
-		Ranking: Ranking{Collective: true, Individual: false, MinGroup: 5},
+		Ranking: Ranking{Collective: true, Individual: false, MinGroup: 5, Buildings: true, Floors: true, Rooms: true, MinRoom: 3},
 		Notify:  Notify{Enabled: true, MinHours: 4, WorkStart: 8, WorkEnd: 18},
 	}
 }
@@ -431,6 +441,21 @@ func (p *Policy) Validate() error {
 	}
 	if p.Ranking.MinGroup < 1 || p.Ranking.MinGroup > 1000 {
 		bad("tamanho mínimo do grupo no ranking: de 1 a 1.000")
+	}
+	if p.Ranking.MinRoom < 1 || p.Ranking.MinRoom > 1000 {
+		bad("tamanho mínimo da sala no ranking: de 1 a 1.000")
+	}
+	if len(p.Ranking.FloorNames) > 500 {
+		bad("nomes de andar demais (até 500)")
+	}
+	for spec, name := range p.Ranking.FloorNames {
+		if spec == "" || len(spec) > 64 || strings.IndexFunc(spec, unicode.IsControl) >= 0 {
+			bad("faixa inválida no nome de andar")
+			continue
+		}
+		if err := text(name, 40); err != nil {
+			bad("nome do andar da faixa %s: %v", spec, err)
+		}
 	}
 	n := p.Notify
 	if n.MinHours < 1 || n.MinHours > 168 || n.WorkStart < 0 || n.WorkEnd > 24 || n.WorkStart >= n.WorkEnd {

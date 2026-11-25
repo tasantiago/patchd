@@ -2363,6 +2363,14 @@ do mesmo formulário não soma de novo. Não existe outra forma de dar XP.
 máquinas que o mínimo (padrão 5). O individual vem desligado; ligado, mostra nome, XP, dias
 protegidos e sequência — nunca máquina, CVE ou programa.
 
+**Ranking por prédio, andar e sala.** Para a disputa entre as pessoas, o Shield também
+classifica os **prédios** e as **salas** do patrimônio e, nos prédios com máquinas em mais de
+uma faixa de IP (as das regras dos grupos de implantação), os **andares** — cada faixa é um
+andar. Em Shield › Ranking, abra o prédio e dê nome a cada faixa ("Térreo", "2º andar") e grave:
+é uma versão nova da política (auditoria `shield.andares`); nome vazio volta a "Faixa N". A
+Central mostra o nome, nunca a faixa. Salas com menos de 3 computadores (ajustável) e prédios ou
+andares abaixo do mínimo não aparecem. Sem patrimônio importado, não há ranking por lugar.
+
 **Relatórios.** Shield › Equipamentos e Pessoas exportam CSV (UTF-8 com BOM, `;`, campos que
 começam com `=`, `+`, `-`, `@` neutralizados). A exportação entra na auditoria.
 

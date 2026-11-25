@@ -37,6 +37,19 @@ type ShieldView struct {
 	// Groups: o ranking coletivo (só grupos de implantação, nunca pessoas ou máquinas), com o
 	// grupo desta máquina marcado. Vazio: desligado.
 	Groups []ShieldGroupView `json:"groups,omitempty"`
+	// Places: os rankings por lugar (prédios; andares e salas do prédio desta máquina). Só
+	// nomes de lugar e números: nada de pessoa, máquina ou IP.
+	Places []ShieldPlaceView `json:"places,omitempty"`
+}
+
+// ShieldPlaceView é um ranking por lugar.
+type ShieldPlaceView struct {
+	Kind  string            `json:"kind"`  // predio, andar ou sala
+	Title string            `json:"title"` // "Prédios", "Andares do Edifício Sede"...
+	Mine  string            `json:"mine,omitempty"`
+	Pos   int               `json:"pos,omitempty"` // a posição do lugar desta máquina (0: fora do ranking)
+	Of    int               `json:"of,omitempty"`
+	Rows  []ShieldGroupView `json:"rows"`
 }
 
 // ShieldGroupView é um grupo no ranking coletivo.
@@ -138,11 +151,16 @@ type ShieldNotify struct {
 
 // Check confere os limites da resposta (a Central só desenha o que passa aqui).
 func (v ShieldView) Check() error {
-	if len(v.Missions) > 50 || len(v.Notices) > 20 || len(v.Groups) > 20 || len(v.Brand) > 200 || len(v.Mission) > 200 || len(v.Slogan) > 400 {
+	if len(v.Missions) > 50 || len(v.Notices) > 20 || len(v.Groups) > 20 || len(v.Places) > 3 || len(v.Brand) > 200 || len(v.Mission) > 200 || len(v.Slogan) > 400 {
 		return errShieldView
 	}
 	if m := v.Machine; m != nil && (len(m.Criteria) > 20 || len(m.Blockers) > 20 || m.Display < 0 || m.Display > 100 || (m.Display == 100 && !m.Sealed)) {
 		return errShieldView
+	}
+	for _, pl := range v.Places {
+		if len(pl.Rows) > 40 {
+			return errShieldView
+		}
 	}
 	if p := v.Player; p != nil && (len(p.Badges) > 200 || len(p.Locked) > 20 || len(p.Recent) > 50) {
 		return errShieldView

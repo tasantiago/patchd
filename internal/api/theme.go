@@ -208,6 +208,7 @@ form.formulario .campo>label{font-weight:600;font-size:.88rem}
 form.formulario .campo input:not([type=checkbox]):not([type=radio]),form.formulario .campo select{width:100%}
 form.formulario .campo .muted{font-size:.82rem}
 form.formulario>button{align-self:flex-start}
+details.lugar{border-top:1px solid var(--borda);padding:.55rem 0}details.lugar summary{cursor:pointer}details.lugar h3{font-size:.92rem;margin:.8rem 0 .4rem}details.lugar form{margin:0}
 .opcoes-linha{display:flex;flex-wrap:wrap;gap:.35rem 1.1rem}.opcoes-linha label{font-weight:400}
 .formulario .card{display:flex;flex-direction:column;gap:.8rem}.formulario .card>h2,.formulario .card>h3{margin:0}
 form.formulario>p{margin:0}
