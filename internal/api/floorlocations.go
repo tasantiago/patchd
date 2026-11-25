@@ -45,12 +45,12 @@ func floorIP(e equip, rules []ipRule) *ipRule {
 
 type floorLocationRow struct {
 	Spec, Name, Legacy string
-	Machines int
+	Machines           int
 }
 
 type floorBuildingView struct {
-	Building string
-	Rows []floorLocationRow
+	Building        string
+	Rows            []floorLocationRow
 	Machines, Named int
 }
 

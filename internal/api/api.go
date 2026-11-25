@@ -516,7 +516,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/configuracao/parametros/restaurar", a.sameOrigin(a.adminAction(a.paramsResetAction))) // Aula 19.2
 	mux.Handle("POST /painel/configuracao/aparencia/logo", a.sameOrigin(a.adminAction(a.logoAction)))              // Aula 19.1
 	mux.Handle("POST /painel/configuracao/localizacoes", a.sameOrigin(a.adminAction(a.floorLocationsAction)))
-	mux.Handle("POST /painel/configuracao/patrimonio", a.sameOrigin(a.adminAction(a.importAssetsAction)))          // Aula 23.6
+	mux.Handle("POST /painel/configuracao/patrimonio", a.sameOrigin(a.adminAction(a.importAssetsAction))) // Aula 23.6
 	// Execução de scripts remotos (Aula 23.8).
 	mux.Handle("GET /painel/scripts", a.adminAction(a.scriptsPage))
 	mux.Handle("POST /painel/scripts", a.sameOrigin(a.adminAction(a.uploadBundleAction)))
