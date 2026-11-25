@@ -340,6 +340,7 @@ type api struct {
 	adInfo      *ADInfo                              // Configuração › Acesso: as variáveis do AD e o teste (Aula 15.3)
 	notifier    *notifierState                       // e-mail para a equipe (Aula 18.5); nil: desligado
 	chrome      chromeCache                          // contadores do menu e logotipo (Aula 19.1)
+	shield      shieldState                          // PatchD Shield (shield.go)
 	params      Settings                             // parâmetros pela tela (Aula 19.2); nil: só o .env
 	repoCacheFn func() *protocol.RepoCache           // anúncio do cache calculado a cada check-in (Aula 19.2)
 }
@@ -354,6 +355,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	}
 	if a.bg != nil {
 		go a.ringRuleLoop(a.bg)
+		go a.shieldLoop(a.bg) // PatchD Shield: sai na hora sem PostgreSQL
 	}
 	if a.winCache != nil && a.params != nil {
 		// O horário para baixar da Microsoft (o parâmetro WinCacheFetchKey), lido a cada pedido.
