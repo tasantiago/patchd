@@ -8,6 +8,7 @@ package texto
 import (
 	"reflect"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -102,4 +103,31 @@ func walk(v reflect.Value) int {
 		return n
 	}
 	return 0
+}
+
+// PlaceName formats a physical location for display only. Never use as a storage key.
+func PlaceName(s string) string {
+	words := strings.Fields(s)
+	for i, word := range words {
+		// Keep acronyms and Roman numerals only when explicitly recognized.
+		switch strings.ToUpper(word) {
+		case "TJRO", "TJ", "STIC", "CEJUSC", "NUPEMEC", "RO", "TI", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X":
+			words[i] = strings.ToUpper(word)
+			continue
+		}
+		lower := strings.ToLower(word)
+		if i > 0 {
+			switch lower {
+			case "a", "o", "as", "os", "de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos":
+				words[i] = lower
+				continue
+			}
+		}
+		runes := []rune(lower)
+		if len(runes) > 0 {
+			runes[0] = unicode.ToUpper(runes[0])
+		}
+		words[i] = string(runes)
+	}
+	return strings.Join(words, " ")
 }

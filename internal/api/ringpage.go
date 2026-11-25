@@ -479,7 +479,7 @@ func (a *api) groupPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.Buildings = []optView{{Value: "", Label: "Qualquer prédio"}}
 	for _, b := range slices.Sorted(maps.Keys(buildings)) {
-		v.Buildings = append(v.Buildings, optView{Value: b, Label: b, Selected: b == q.Building})
+		v.Buildings = append(v.Buildings, optView{Value: b, Label: texto.PlaceName(b), Selected: b == q.Building})
 	}
 	for _, o := range originFilters {
 		v.Origins = append(v.Origins, optView{Value: o.V, Label: o.L, Selected: o.V == q.Origin})
