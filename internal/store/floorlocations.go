@@ -21,7 +21,7 @@ type FloorLocation struct {
 
 func validFloorLocation(l FloorLocation) bool {
 	return strings.TrimSpace(l.Building) != "" && len(l.Building) <= 500 &&
-		strings.TrimSpace(l.Spec) != "" && len(l.Spec) <= 64 &&
+		strings.TrimSpace(l.Spec) != "" && len(l.Spec) <= 256 &&
 		utf8.ValidString(l.Name) && utf8.RuneCountInString(l.Name) <= 40 &&
 		strings.IndexFunc(l.Building, unicode.IsControl) < 0 &&
 		strings.IndexFunc(l.Spec, unicode.IsControl) < 0 &&
