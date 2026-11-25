@@ -182,7 +182,7 @@ var (
 	IcSair        = Icon(`<path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5M21 12H9"/>`)
 	IcAtualizar   = Icon(`<path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 21v-5h-5"/>`)
 	IcPedidos     = Icon(`<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>`)
-	IcEscudo      = Icon(`<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>`) // PatchD Shield
+	IcEscudo      = Icon(`<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>`) // Atende+ Shield
 	IcReinicio    = Icon(`<path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>`)
 	IcAbaixo      = Icon(`<path d="M6 9l6 6 6-6"/>`)
 )

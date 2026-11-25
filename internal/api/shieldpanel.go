@@ -25,7 +25,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 )
 
-// PatchD Shield no painel (docs/shield.md): Shield › Visão geral, Equipamentos, Pessoas,
+// Atende+ Shield no painel (docs/shield.md): Shield › Visão geral, Equipamentos, Pessoas,
 // Missões, Ranking, Exceções, Política e Auditoria. Ler é de qualquer perfil do painel;
 // mudar é do admin, com a conferência de origem (CSRF) e a auditoria. O ranking nunca mostra
 // máquina, CVE ou programa: só grupos (e, se ligado, nome e números da pessoa).

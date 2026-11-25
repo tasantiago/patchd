@@ -18,7 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/version"
 )
 
-// PatchD Shield (docs/shield.md): o avaliador periódico. A cada shieldEvery, um servidor (o
+// Atende+ Shield (docs/shield.md): o avaliador periódico. A cada shieldEvery, um servidor (o
 // que pega a trava consultiva) recalcula a pontuação de todas as máquinas do Shield a partir
 // do que o servidor já sabe (a avaliação de compliance em cache, o inventário, a padronização,
 // a versão do agente) e grava só o que mudou, em lote. Na virada do dia (no fuso da política),

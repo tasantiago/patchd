@@ -1,4 +1,4 @@
-# PatchD Shield — Missão 100%
+# Atende+ Shield — Missão 100%
 
 > *Sua máquina protegida. Nosso ambiente mais seguro.* (o slogan, o nome do módulo e o da missão
 > são configuráveis em Configuração › Shield; nada de nome de instituição no código.)

@@ -13,7 +13,7 @@ import (
 func vistaShield(sealed bool, display int) *protocol.ShieldView {
 	score := float64(display)
 	prazo := time.Date(2026, 11, 26, 9, 0, 0, 0, time.UTC)
-	v := &protocol.ShieldView{Enabled: true, Brand: "PatchD Shield", Mission: "Missão 100%", Slogan: "Sua máquina protegida. Nosso ambiente mais seguro.",
+	v := &protocol.ShieldView{Enabled: true, Brand: "Atende+ Shield", Mission: "Missão 100%", Slogan: "Sua máquina protegida. Nosso ambiente mais seguro.",
 		Notify: protocol.ShieldNotify{Enabled: true, MinHours: 4, WorkStart: 8, WorkEnd: 18},
 		Machine: &protocol.ShieldMachineView{Score: &score, Display: display, Sealed: sealed, Overall: "quase", OverallLabel: "quase lá",
 			Blockers: []string{"Sem reinício pendente: aguardando você"}, EvaluatedAt: prazo.Add(-time.Hour),

@@ -1,4 +1,4 @@
-// Package shield é o PatchD Shield — Missão 100% (docs/shield.md): a pontuação de proteção de
+// Package shield é o Atende+ Shield — Missão 100% (docs/shield.md): a pontuação de proteção de
 // cada máquina (0 a 100%), o selo 100%, a sequência de dias protegidos, o XP, os níveis, as
 // conquistas e as missões. Este pacote é puro (sem banco e sem rede): recebe as evidências que
 // o servidor já tem (compliance, inventário, padronização, versão do agente) e a política, e
@@ -251,6 +251,9 @@ type Policy struct {
 	Notify       Notify        `json:"notify"`
 }
 
+// OldDefaultName: o nome padrão do módulo até a troca para "Atende+ Shield".
+const OldDefaultName = "PatchD Shield"
+
 // Default é a política inicial: desligada (o administrador liga, de preferência para um grupo
 // piloto), com os pesos da especificação. O antivírus fica desligado: o agente ainda não coleta
 // essa evidência, e um critério sem evidência impediria o selo de todo o parque.
@@ -281,7 +284,7 @@ func Default() Policy {
 		Achievements: DefaultAchievements(),
 		XP: XPRules{ProtectedDay: 10, Reboot: 15, Update: 5, MaxPerDay: 60,
 			StreakBonus: []StreakBonus{{5, 20}, {10, 40}, {22, 80}, {66, 200}}},
-		Brand:   Brand{Name: "PatchD Shield", Mission: "Missão 100%", Slogan: "Sua máquina protegida. Nosso ambiente mais seguro."},
+		Brand:   Brand{Name: "Atende+ Shield", Mission: "Missão 100%", Slogan: "Sua máquina protegida. Nosso ambiente mais seguro."},
 		Ranking: Ranking{Collective: true, Individual: false, MinGroup: 5, Buildings: true, Floors: true, Rooms: true, MinRoom: 3},
 		Notify:  Notify{Enabled: true, MinHours: 4, WorkStart: 8, WorkEnd: 18},
 	}
@@ -484,6 +487,11 @@ func Parse(b []byte) (Policy, error) {
 		return Default(), err
 	}
 	def := Default()
+	// O nome padrão mudou: a política gravada com o padrão antigo passa a mostrar o novo (um
+	// nome escolhido pelo admin fica como está).
+	if p.Brand.Name == OldDefaultName {
+		p.Brand.Name = def.Brand.Name
+	}
 	for c, cp := range def.Criteria {
 		if _, ok := p.Criteria[c]; !ok {
 			if p.Criteria == nil {

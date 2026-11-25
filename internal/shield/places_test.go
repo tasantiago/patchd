@@ -65,6 +65,13 @@ func TestRankingsPorLugar(t *testing.T) {
 	if err != nil || !old.Ranking.Buildings || !old.Ranking.Floors || !old.Ranking.Rooms || old.Ranking.MinRoom != 3 {
 		t.Fatalf("%+v %v", old.Ranking, err)
 	}
+	renomeada, err := Parse([]byte(`{"brand":{"name":"PatchD Shield","mission":"Missão 100%","slogan":"x"}}`))
+	if err != nil || renomeada.Brand.Name != "Atende+ Shield" || renomeada.Brand.Slogan != "x" {
+		t.Fatalf("nome padrão antigo: %+v %v", renomeada.Brand, err)
+	}
+	if outro, _ := Parse([]byte(`{"brand":{"name":"Meu Escudo","mission":"M","slogan":"x"}}`)); outro.Brand.Name != "Meu Escudo" {
+		t.Fatalf("nome do admin trocado: %+v", outro.Brand)
+	}
 	bad := Default()
 	bad.Ranking.FloorNames = map[string]string{"10.1.2.0/24": ""}
 	if bad.Validate() == nil {

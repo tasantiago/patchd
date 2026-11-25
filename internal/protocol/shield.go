@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// PatchD Shield (docs/shield.md): a "Minha Proteção" da Central de software. O agente pede com
+// Atende+ Shield (docs/shield.md): a "Minha Proteção" da Central de software. O agente pede com
 // a credencial da máquina e a identidade que leu do token do Windows (SelfServiceUser); o
 // servidor responde com a pontuação da máquina e o progresso da pessoa. Nada aqui dá XP: o XP
 // é decidido pelo servidor, a partir de evidência.

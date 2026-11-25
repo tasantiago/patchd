@@ -14,7 +14,7 @@ import (
 	"github.com/tasantiago/patchd/internal/shield"
 )
 
-// PatchD Shield (migração 0082, docs/shield.md). Só no PostgreSQL: sem ele, o módulo não liga.
+// Atende+ Shield (migração 0082, docs/shield.md). Só no PostgreSQL: sem ele, o módulo não liga.
 
 // LockShield é a chave da trava do avaliador do Shield: um servidor por vez recalcula e fecha
 // o dia (os outros pulam a vez).

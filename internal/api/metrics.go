@@ -20,7 +20,7 @@ type Metrics struct {
 	logins   *metrics.CounterVec
 	// Aula 20.5: requisições de máquinas recusadas pelo limite, por classe.
 	agentLimits *metrics.CounterVec
-	// PatchD Shield (docs/shield.md): as passadas do avaliador e as máquinas por faixa (a da
+	// Atende+ Shield (docs/shield.md): as passadas do avaliador e as máquinas por faixa (a da
 	// última passada deste servidor). Sem rótulo de máquina ou de pessoa.
 	shieldRuns *metrics.CounterVec
 	shieldMu   sync.Mutex

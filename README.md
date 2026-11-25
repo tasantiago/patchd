@@ -740,7 +740,7 @@ Consulte [docs/seguranca.md](docs/seguranca.md) e [Segurança no desenvolvimento
 | [docs/tls-laboratorio.md](docs/tls-laboratorio.md) | TLS com CA nova para laboratório isolado. |
 | [docs/build-agentes-sem-dev.md](docs/build-agentes-sem-dev.md) | Build, assinatura e publicação de agentes com imagem oficial de Go. |
 | [docs/pacotes-de-scripts.md](docs/pacotes-de-scripts.md) | Cadastro e execução de ZIPs e scripts avulsos, parâmetros, timeout e migração do ITOM. |
-| [docs/shield.md](docs/shield.md) | PatchD Shield — Missão 100%: pontuação, selo, gamificação, privacidade e operação. |
+| [docs/shield.md](docs/shield.md) | Atende+ Shield — Missão 100%: pontuação, selo, gamificação, privacidade e operação. |
 | [docs/rotas.md](docs/rotas.md) | Inventário de rotas, quando presente na revisão utilizada. |
 | [Mapa do repositório](https://github.com/tasantiago/patchd/wiki/Mapa-do-repositorio) | Orientação para localizar entradas e implementações no código. |
 | [Exemplos práticos](https://github.com/tasantiago/patchd/wiki/Exemplos-praticos) | Atividades comentadas nas trilhas e manuais. |
@@ -762,7 +762,7 @@ Windows usa os instaladores aprovados do catálogo; Windows, Linux e macOS tamb�
 
 Veja [Padronização: instalação, grupos, aplicativos e atalhos](docs/padronizacao.md) para configurar, ativar e acompanhar os padrões.
 
-## PatchD Shield — Missão 100%
+## Atende+ Shield — Missão 100%
 
 Em **Shield** (menu Navegação), o painel mostra a pontuação de proteção de cada máquina (0 a 100%), calculada pelo servidor com o que ele já sabe (atualizações do sistema e de terceiros, reinício pendente, padronização, inventário e versão do agente), e quem resolve o que falta. Na Central de software, a pessoa vê a **Minha Proteção**: o anel com a pontuação, o que fazer agora, a sequência de dias protegidos, o nível, as conquistas, as missões e o ranking dos grupos.
 

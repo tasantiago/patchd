@@ -77,7 +77,8 @@ func TestPainelDoShield(t *testing.T) {
 	h := api.New(st, slog.New(slog.DiscardHandler), api.WithCompliance(&complianceFalso{}))
 
 	b := pagina(h, "GET", "/painel/shield", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "Desligado") || !strings.Contains(b, "PatchD Shield") {
+	// O "+" sai escapado no HTML (o navegador mostra "Atende+ Shield").
+	if !strings.Contains(b, "Desligado") || !strings.Contains(b, "Atende&#43; Shield") {
 		t.Fatalf("visão geral desligada: %s", b)
 	}
 	for _, aba := range []string{"geral", "equipamentos", "pessoas", "missoes", "ranking", "excecoes", "politica", "auditoria", "xyz"} {

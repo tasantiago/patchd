@@ -39,7 +39,7 @@ const (
 	OpLogo                  = "logo"    // Aula 19.1b: o logotipo do painel, para a Central
 	OpStandardization       = "standardization"
 	OpStandardizationReport = "standardization_report"
-	OpShield                = "shield" // PatchD Shield: a "Minha Proteção" (docs/shield.md)
+	OpShield                = "shield" // Atende+ Shield: a "Minha Proteção" (docs/shield.md)
 )
 
 // Códigos de erro do canal (Response.Code).

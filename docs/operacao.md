@@ -2329,7 +2329,7 @@ Um detalhe que custa caro quando falta: se o script deixar um processo em segund
 segura o cano da saída. O agente mata o processo no fim do prazo e espera no máximo mais 5 s
 pela saída — sem isso, o job ficaria preso até o processo em segundo plano morrer.
 
-## PatchD Shield — Missão 100%
+## Atende+ Shield — Missão 100%
 
 O Shield (docs/shield.md) dá a cada máquina uma pontuação de proteção e à pessoa que a usa uma
 sequência, XP, nível e conquistas. Ele lê o que o servidor já tem: não muda o compliance, não

@@ -130,7 +130,7 @@ func Run(args []string, stdout, stderr io.Writer, call userapp.Caller, managed s
 	}()
 	notices := make(chan userapp.Notice, 1)
 	go app.Watch(ctx, appFirstCheck, appCheckEvery, notices)
-	go app.WatchShield(ctx, appFirstCheck+time.Minute, appShieldEvery, notices) // PatchD Shield: o estado no ícone e os avisos
+	go app.WatchShield(ctx, appFirstCheck+time.Minute, appShieldEvery, notices) // Atende+ Shield: o estado no ícone e os avisos
 	// Aula 18.8: a cópia em disco trocada pela atualização do agente reabre o app com ela.
 	renew := make(chan userapp.Renewal, 1)
 	self := managed

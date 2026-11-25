@@ -13,7 +13,7 @@ import (
 	"github.com/tasantiago/patchd/internal/ui"
 )
 
-// PatchD Shield (docs/shield.md): a aba "Minha Proteção". Tudo vem do canal local (operação
+// Atende+ Shield (docs/shield.md): a aba "Minha Proteção". Tudo vem do canal local (operação
 // shield): o servidor calcula, a Central só desenha. Sem JavaScript e sem estilo inline: o
 // anel é um SVG com stroke-dasharray (atributo, não estilo), e as cores vêm de classes, sempre
 // acompanhadas de ícone e texto (a cor nunca é a única pista).
