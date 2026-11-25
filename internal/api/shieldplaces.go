@@ -12,6 +12,7 @@ import (
 
 	"github.com/tasantiago/patchd/internal/shield"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Rankings do Shield por lugar (docs/shield.md): prédio e sala do patrimônio (o tombo no nome
@@ -74,9 +75,9 @@ func shieldLabels(pol *shield.Policy, ranks []shield.Rank, floorStart map[string
 		x := store.ShieldRank{Rank: r}
 		switch r.Kind {
 		case shield.RankBuilding:
-			x.Label = r.Building
+			x.Label = texto.PlaceName(r.Building)
 		case shield.RankRoom:
-			x.Label = r.Name
+			x.Label = texto.PlaceName(r.Name)
 		case shield.RankFloor:
 			if strings.HasPrefix(r.Name, namedFloorPrefix) {
 				x.Label = strings.TrimPrefix(r.Name, namedFloorPrefix)

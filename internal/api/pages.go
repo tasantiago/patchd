@@ -673,7 +673,7 @@ func (a *api) restoreAction(w http.ResponseWriter, r *http.Request, s panel.Sess
 
 // --- Modelos -----------------------------------------------------------------------
 
-var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMais, "cor": kpiColor}).Parse(`
+var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMais, "cor": kpiColor, "localNome": texto.PlaceName}).Parse(`
 {{define "leia-mais"}}{{if .Long}}<details class="leia-mais"><summary><span class="curto">{{.Short}}</span> <span class="mais">leia mais</span><span class="menos">mostrar menos</span></summary><div class="todo">{{.Full}}</div></details>{{else}}{{.Full}}{{end}}{{end}}
 {{define "topo"}}<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -807,7 +807,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <tbody>{{range .Rows}}<tr>
 <td class="nowrap"><a href="/painel/maquinas/{{.ID}}">{{.Name}}</a></td>
 <td>{{if .Tombo}}<code>{{.Tombo}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
-<td{{if .AssetHint}} title="{{.AssetHint}}"{{end}}>{{if .Building}}{{.Building}}{{if .Room}}<div class="muted nota">{{.Room}}</div>{{end}}{{else if .Room}}{{.Room}}{{else}}<span class="muted">—</span>{{end}}</td>
+<td{{if .AssetHint}} title="{{.AssetHint}}"{{end}}>{{if .Building}}{{localNome .Building}}{{if .Room}}<div class="muted nota">{{localNome .Room}}</div>{{end}}{{else if .Room}}{{localNome .Room}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if .Online}}<span class="estado em_dia">online</span>{{else}}<span class="estado sem_dado_recente">offline</span>{{end}}</td>
 <td>{{.Agent}}</td>
 <td>{{.IP}}{{if .IPFromCheckin}} <span class="muted" title="O agente ainda não manda as interfaces: é o endereço de onde veio o check-in.">(check-in)</span>{{end}}</td>
@@ -1935,15 +1935,19 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "aneis"}}{{template "topo" .}}
-<h1>Automação <span class="muted">› Grupos de implantação e janelas</span></h1>
+<h1>Automação <span class="muted">› Prédios e implantação</span></h1>
 {{template "automacao-abas" "aneis"}}
+<header class="ux-hero"><div><span class="ux-eyebrow">Organização física</span><h2>Implantação por prédio</h2><p>Veja os equipamentos por localização do patrimônio, sem alterar a execução das campanhas existentes.</p></div><div class="ux-hero-side"><span class="ux-status">{{len .Buildings}} prédio(s) identificado(s)</span><a class="btn" href="/painel/configuracao?aba=localizacoes">Configurar andares</a></div></header>
+<div class="deployment-summary"><span><b>{{.Total}}</b> equipamentos no parque</span><span><b>{{.Unlocated}}</b> sem prédio identificado</span></div>
+{{if .Buildings}}<div class="deployment-buildings">{{range .Buildings}}<article class="card deployment-building"><div class="card-cab"><h2>{{localNome .Name}}</h2><a href="{{.Href}}">Ver inventário →</a></div><span class="kpi-val">{{.Machines}}</span><p class="muted">equipamento(s){{if .Pinned}} · {{.Pinned}} com grupo definido à mão{{end}}</p>{{if .RulesHref}}<p><a href="{{.RulesHref}}">Regra e janela do grupo vinculado →</a><small class="deployment-note">{{.Window}} · próxima {{.Next}}</small></p>{{else}}<p class="muted">Sem grupo vinculado ao prédio.</p>{{end}}{{if .Groups}}<details><summary>Distribuição atual nos grupos técnicos</summary><ul class="deployment-groups">{{range .Groups}}<li><a href="{{.Href}}">{{.Label}}</a><b>{{.Machines}}</b></li>{{end}}</ul></details>{{end}}</article>{{end}}</div>{{else}}<p class="vazio">Nenhum prédio identificado. Importe o <a href="/painel/configuracao?aba=patrimonio">patrimônio</a> para organizar os equipamentos por localização.</p>{{end}}
+<details class="card deployment-legacy"><summary>Grupos técnicos legados e janelas de manutenção</summary>
 <p class="muted">Campanhas passam pelos grupos em ordem: 0 é o piloto e 1 é o padrão (máquina nova entra no 1). Abra um grupo para ver as máquinas dele, adicionar outras (por filtro ou colando uma lista de nomes, IPs ou tombos), ligar prédios e faixas de IP e definir a janela de manutenção.</p>
 <p class="muted">{{.Total}} máquina(s) no parque.</p>
 <ul class="kpis">{{range .Cards}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">Grupo {{.Label}}</span><span class="kpi-val">{{.Machines}}</span><span class="kpi-sub">máquina(s){{if .Pinned}} · {{.Pinned}} à mão{{end}}{{if .Conflicts}} · <span class="v-laranja">{{.Conflicts}} em conflito</span>{{end}}</span>
 <span class="kpi-sub">{{if .HasWindow}}Janela {{.Window}} · próxima {{.Next}}{{else}}Sem janela{{end}}</span>
 <span class="kpi-sub">{{if or .Buildings .Ranges}}Regras: {{if .Buildings}}{{.Buildings}} prédio(s){{end}}{{if and .Buildings .Ranges}}, {{end}}{{if .Ranges}}{{.Ranges}} faixa(s) de IP{{end}}{{else}}Sem regras{{end}}</span></a></li>{{end}}</ul>
 {{if .Empty}}<p class="muted">Grupos vazios: {{range $i, $c := .Empty}}{{if $i}}, {{end}}<a href="{{$c.Href}}">{{$c.Ring}}</a>{{end}}.</p>{{end}}
-{{template "fim"}}{{end}}
+</details>{{template "fim"}}{{end}}
 
 {{define "grupo-abas"}}<nav class="abas" aria-label="abas do grupo"><a href="{{index .TabHrefs "maquinas"}}"{{if eq .Tab "maquinas"}} class="ativa" aria-current="page"{{end}}>Máquinas ({{.Machines}})</a>{{if .Admin}}<a href="{{index .TabHrefs "adicionar"}}"{{if eq .Tab "adicionar"}} class="ativa" aria-current="page"{{end}}>Adicionar</a><a href="{{index .TabHrefs "colar"}}"{{if eq .Tab "colar"}} class="ativa" aria-current="page"{{end}}>Colar lista</a>{{end}}<a href="{{index .TabHrefs "regras"}}"{{if eq .Tab "regras"}} class="ativa" aria-current="page"{{end}}>Regras e janela</a></nav>{{end}}
 
@@ -1997,11 +2001,11 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted">As máquinas de um prédio ligado vão para este grupo: ao gravar, a cada importação do patrimônio e no primeiro inventário de uma máquina nova. O prédio vence a faixa de IP; quem foi movido à mão fica onde está.</p>
 {{if .BuildingRows}}<div class="tabela"><table>
 <thead><tr><th>Prédio</th><th>Máquinas no prédio</th><th>No grupo</th><th>Movidas à mão</th><th>Definido por</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
-<tbody>{{range .BuildingRows}}<tr><td>{{.Building}}{{if .Missing}} <span class="muted">fora do patrimônio atual</span>{{end}}</td><td class="num">{{.Machines}}</td><td class="num">{{.InRing}}</td><td class="num">{{.Pinned}}</td><td>{{.By}} · {{.Updated}}</td>
+<tbody>{{range .BuildingRows}}<tr><td>{{localNome .Building}}{{if .Missing}} <span class="muted">fora do patrimônio atual</span>{{end}}</td><td class="num">{{.Machines}}</td><td class="num">{{.InRing}}</td><td class="num">{{.Pinned}}</td><td>{{.By}} · {{.Updated}}</td>
 {{if $.Admin}}<td>{{if .Pinned}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/excecoes"><input type="hidden" name="predio" value="{{.Building}}"><button class="sec" type="submit">Devolver as {{.Pinned}} ao grupo</button></form> {{end}}<form class="inline" method="post" action="/painel/grupos-implantacao/predio/remover"><input type="hidden" name="predio" value="{{.Building}}"><button class="perigo" type="submit">Remover</button></form></td>{{end}}</tr>{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nenhum prédio ligado a este grupo.</p>{{end}}
 {{if .Admin}}{{if .BuildingOpts}}<form class="grade" method="post" action="/painel/grupos-implantacao/predio"><input type="hidden" name="anel" value="{{.Ring}}">
-<label for="predio">Ligar o prédio</label><select id="predio" name="predio" required>{{range .BuildingOpts}}<option value="{{.Name}}">{{.Name}} · {{.Machines}} máquina(s){{if ge .Ring 0}} · hoje ligado ao grupo {{.Ring}}{{end}}</option>{{end}}</select>
+<label for="predio">Ligar o prédio</label><select id="predio" name="predio" required>{{range .BuildingOpts}}<option value="{{.Name}}">{{localNome .Name}} · {{.Machines}} máquina(s){{if ge .Ring 0}} · hoje ligado ao grupo {{.Ring}}{{end}}</option>{{end}}</select>
 <span></span><label><input type="checkbox" name="excecoes" value="1"> Incluir as máquinas do prédio movidas à mão</label>
 <span></span><span><button type="submit">Conferir</button> <span class="muted">a próxima tela diz quantas máquinas mudam</span></span>
 </form>{{else if not .HasAssets}}<p class="muted">Importe o CSV do patrimônio em <a href="/painel/configuracao?aba=patrimonio">Configuração › Patrimônio</a> para ligar prédios.</p>{{end}}{{end}}</div>

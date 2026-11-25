@@ -155,9 +155,9 @@ func (e equip) localText() string {
 	case e.Asset.Building == "":
 		return e.Asset.Room
 	case e.Asset.Room == "":
-		return e.Asset.Building
+		return texto.PlaceName(e.Asset.Building)
 	}
-	return e.Asset.Building + " · " + e.Asset.Room
+	return texto.PlaceName(e.Asset.Building) + " · " + texto.PlaceName(e.Asset.Room)
 }
 
 // fwMatch: a máquina entra no filtro do firmware.
@@ -654,7 +654,7 @@ func (a *api) equipmentPage(w http.ResponseWriter, r *http.Request) {
 	for _, e := range all {
 		if b := e.Asset.Building; b != "" && !seen[b] {
 			seen[b] = true
-			v.Buildings = append(v.Buildings, optView{Value: b, Label: b, Selected: b == q.Building})
+			v.Buildings = append(v.Buildings, optView{Value: b, Label: texto.PlaceName(b), Selected: b == q.Building})
 		}
 	}
 	slices.SortFunc(v.Buildings, func(x, y optView) int { return cmp.Compare(x.Label, y.Label) })

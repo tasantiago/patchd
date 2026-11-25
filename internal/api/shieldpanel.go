@@ -1367,7 +1367,7 @@ var _ = template.Must(pages.New("shield-ranking").Parse(`<div class="card"><h2>R
 {{else}}<p class="vazio">Nenhum prédio ainda: o prédio vem do patrimônio (Configuração › Patrimônio), ligado pelo tombo no nome da máquina, e precisa do mínimo de {{.Pol.Ranking.MinGroup}} máquinas no Shield.</p>{{end}}</div>
 {{if .PlaceP}}<div class="card"><h2>Andares e salas, por prédio</h2>
 <p class="muted">Os andares são identificados pelas faixas de IP. Nomes e agrupamentos são definidos em <a href="/painel/configuracao?aba=localizacoes">Configuração › Localizações</a>. A Central mostra somente o nome do andar.</p>
-{{range .PlaceP}}<details class="lugar"><summary><b>{{.Building}}</b> — {{len .Floors}} andar(es) e {{len .Rooms}} sala(s) no ranking</summary>
+{{range .PlaceP}}<details class="lugar"><summary><b>{{localNome .Building}}</b> — {{len .Floors}} andar(es) e {{len .Rooms}} sala(s) no ranking</summary>
 {{if .Floors}}<h3>Andares</h3><table><thead><tr><th>#</th><th>Andar</th><th>Máquinas</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
 {{range .Floors}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Label}}</td><td>{{.Machines}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>{{end}}
 {{if .Rooms}}<h3>Salas</h3><table><thead><tr><th>#</th><th>Sala</th><th>Máquinas</th><th>% no selo</th><th>Média</th><th>Entre todas as salas</th></tr></thead><tbody>

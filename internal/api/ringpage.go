@@ -148,7 +148,62 @@ type groupCard struct {
 	Buildings, Ranges           int
 }
 
+// buildingDeploymentCard is a physical grouping, not a campaign execution ring.
+type buildingDeploymentCard struct {
+	Name, Href, RulesHref, Window, Next string
+	Machines, Pinned int
+	Groups []buildingDeploymentGroup
+}
+type buildingDeploymentGroup struct {
+	Label, Href string
+	Machines int
+}
+
+func buildingDeploymentCards(g groupFleet, windows []store.RingWindow, now time.Time) ([]buildingDeploymentCard, int) {
+	byName := map[string]*buildingDeploymentCard{}
+	counts := map[string]map[int]int{}
+	get := func(name string) *buildingDeploymentCard {
+		if byName[name] == nil {
+			c := &buildingDeploymentCard{Name: name, Href: "/painel/inventario?" + (url.Values{"predio": {name}}).Encode()}
+			if ring, ok := g.rules.buildings[name]; ok {
+				c.RulesHref = groupPath(ring, "regras", nil)
+				c.Window, c.Next, _, _ = windowTexts(windows, ring, now)
+			}
+			byName[name] = c
+			counts[name] = map[int]int{}
+		}
+		return byName[name]
+	}
+	for name := range g.rules.buildings {
+		get(name)
+	}
+	unknown := 0
+	for _, e := range g.all {
+		if e.Asset.Building == "" {
+			unknown++
+			continue
+		}
+		c := get(e.Asset.Building)
+		c.Machines++
+		counts[c.Name][e.Ring]++
+		if g.pins[e.ID] {
+			c.Pinned++
+		}
+	}
+	var out []buildingDeploymentCard
+	for _, c := range byName {
+		for _, ring := range slices.Sorted(maps.Keys(counts[c.Name])) {
+			c.Groups = append(c.Groups, buildingDeploymentGroup{Label: groupLabel(ring, g.names), Href: groupPath(ring, "", url.Values{"predio": {c.Name}}), Machines: counts[c.Name][ring]})
+		}
+		out = append(out, *c)
+	}
+	slices.SortFunc(out, func(x, y buildingDeploymentCard) int { return cmp.Compare(strings.ToLower(x.Name), strings.ToLower(y.Name)) })
+	return out, unknown
+}
+
 type ringsView struct {
+	Buildings []buildingDeploymentCard
+	Unlocated int
 	pageBase
 	Cards []groupCard
 	Empty []groupCard // grupos sem nada: só o link
@@ -196,6 +251,7 @@ func (a *api) ringsPage(w http.ResponseWriter, r *http.Request) {
 		cards[ip.Ring].Ranges++
 	}
 	v.Total = len(g.all)
+	v.Buildings, v.Unlocated = buildingDeploymentCards(g, windows, now)
 	for _, c := range cards {
 		if c.Machines > 0 || c.HasWindow || c.Buildings > 0 || c.Ranges > 0 || c.Name != "" || c.Ring <= store.DefaultRing {
 			v.Cards = append(v.Cards, c)
@@ -423,7 +479,7 @@ func (a *api) groupPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.Buildings = []optView{{Value: "", Label: "Qualquer prédio"}}
 	for _, b := range slices.Sorted(maps.Keys(buildings)) {
-		v.Buildings = append(v.Buildings, optView{Value: b, Label: b, Selected: b == q.Building})
+		v.Buildings = append(v.Buildings, optView{Value: b, Label: texto.PlaceName(b), Selected: b == q.Building})
 	}
 	for _, o := range originFilters {
 		v.Origins = append(v.Origins, optView{Value: o.V, Label: o.L, Selected: o.V == q.Origin})

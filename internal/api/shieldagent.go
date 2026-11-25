@@ -9,6 +9,7 @@ import (
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/shield"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // shieldAgent: POST /api/v1/agent/shield (docs/shield.md), com a credencial da máquina. A
@@ -258,12 +259,12 @@ func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.
 		return out, nil
 	}
 	if pol.Ranking.Floors && me.Floor != "" {
-		if err := build(shield.RankFloor, "Andares do "+me.Building, me.Building, shield.PlaceKey(me.Building, me.Floor), 30); err != nil {
+		if err := build(shield.RankFloor, "Andares do "+texto.PlaceName(me.Building), me.Building, shield.PlaceKey(me.Building, me.Floor), 30); err != nil {
 			return nil, err
 		}
 	}
 	if pol.Ranking.Rooms && me.Room != "" {
-		if err := build(shield.RankRoom, "Salas do "+me.Building, me.Building, shield.PlaceKey(me.Building, me.Room), 10); err != nil {
+		if err := build(shield.RankRoom, "Salas do "+texto.PlaceName(me.Building), me.Building, shield.PlaceKey(me.Building, me.Room), 10); err != nil {
 			return nil, err
 		}
 	}
