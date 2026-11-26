@@ -162,6 +162,27 @@ func TestPainelDoShield(t *testing.T) {
 	if pl.XP != 25 {
 		t.Fatalf("XP: %d", pl.XP)
 	}
+	// Zerar a pontuação: só o admin, com motivo e a palavra de confirmação.
+	z := url.Values{"motivo": {"início do programa"}, "confirmar": {"zerar"}}
+	if r := pagina(h, "POST", "/painel/shield/zerar", sessaoTeste, z); r.Code != 403 {
+		t.Fatalf("leitura zerou: %d", r.Code)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/zerar", sessaoAdmin, z).Header().Get("Location"); !strings.Contains(loc, "erro=1") || !strings.Contains(loc, "ZERAR") {
+		t.Fatalf("zerar sem a confirmação: %s", loc)
+	}
+	if pl, _, _ := st.ShieldPlayerByAccount(ctx, `exemplo\ana`); pl.XP != 25 {
+		t.Fatalf("a confirmação errada zerou: %d", pl.XP)
+	}
+	z.Set("confirmar", "ZERAR")
+	if loc := pagina(h, "POST", "/painel/shield/zerar", sessaoAdmin, z).Header().Get("Location"); !strings.Contains(loc, "zerada=1") {
+		t.Fatalf("zerar: %s", loc)
+	}
+	if pl, _, _ := st.ShieldPlayerByAccount(ctx, `exemplo\ana`); pl.XP != 0 || pl.Streak.LastDay == "" {
+		t.Fatalf("depois de zerar: %+v", pl)
+	}
+	if b := pagina(h, "GET", "/painel/shield?aba=pessoas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Pontuação zerada em") || !strings.Contains(b, "25 XP antes") {
+		t.Fatalf("aba Pessoas sem o último zerar: %s", b)
+	}
 	csv := pagina(h, "GET", "/painel/shield/pessoas.csv", sessaoTeste, nil)
 	if !strings.HasPrefix(csv.Body.String(), "\xef\xbb\xbf") || !strings.Contains(csv.Body.String(), `'=HYPERLINK`) {
 		t.Fatalf("CSV: %q", csv.Body.String())
@@ -193,14 +214,14 @@ func TestPainelDoShield(t *testing.T) {
 	}
 	// A auditoria do Shield mostra tudo isso.
 	b = pagina(h, "GET", "/painel/shield?aba=auditoria", sessaoAdmin, nil).Body.String()
-	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido", "shield.andares"} {
+	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido", "shield.andares", "shield.zerar", "início do programa"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("auditoria sem %q", want)
 		}
 	}
 	// A visão de leitura não tem os formulários de admin.
 	b = pagina(h, "GET", "/painel/shield?aba=pessoas", sessaoTeste, nil).Body.String()
-	if strings.Contains(b, "/ajuste") {
-		t.Error("leitura vê o ajuste de XP")
+	if strings.Contains(b, "/ajuste") || strings.Contains(b, "/zerar") {
+		t.Error("leitura vê o ajuste de XP ou o zerar")
 	}
 }

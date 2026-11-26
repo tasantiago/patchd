@@ -267,3 +267,42 @@ func TestShieldRotaDoAgente(t *testing.T) {
 		t.Fatalf("conta vazia: %d", w.Code)
 	}
 }
+
+// A missão coletiva cumprida antes de zerar não paga de novo nos dias seguintes (o XP dela
+// ficou para trás com o zerar); a cumprida depois paga.
+func TestShieldZerarNaoRepagaMissao(t *testing.T) {
+	st, pool := shieldPG(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `INSERT INTO machines (id, ring) VALUES ('m-a', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := st.ShieldTouchAccounts(ctx, map[string]string{`exemplo\ana`: ""})
+	ana := ids[`exemplo\ana`]
+	d := time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)
+	if err := st.AddShieldPresence(ctx, []store.ShieldPresence{{PlayerID: ana, MachineID: "m-a", Day: d}}); err != nil {
+		t.Fatal(err)
+	}
+	mid, err := st.SaveShieldMission(ctx, store.ShieldMission{Title: "Semana", Scope: "coletiva", Goal: store.MissionGoal{Percent: 90},
+		StartsAt: d, EndsAt: d.AddDate(0, 0, 7), State: "publicada", XP: 50, CreatedBy: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.CompleteShieldMission(ctx, mid, d.Add(10*time.Hour)); err != nil || !ok {
+		t.Fatalf("cumprir: %v %v", ok, err)
+	}
+	pol := shield.Default()
+	a := &api{store: st, logger: slog.New(slog.DiscardHandler), now: time.Now}
+	xp := func() int64 {
+		pls, _ := st.ShieldPlayersByID(ctx, []int64{ana})
+		return pls[ana].XP
+	}
+	if err := a.shieldCloseDay(ctx, st, &pol, d); err != nil || xp() < 50 {
+		t.Fatalf("antes de zerar, a missão paga: %d %v", xp(), err)
+	}
+	if _, err := st.ResetShieldPoints(ctx, d, "início do programa", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.shieldCloseDay(ctx, st, &pol, d.AddDate(0, 0, 1)); err != nil || xp() != 0 {
+		t.Fatalf("a missão cumprida antes de zerar pagou de novo: %d %v", xp(), err)
+	}
+}

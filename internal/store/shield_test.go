@@ -280,3 +280,74 @@ func TestShieldExcecoesEMissoes(t *testing.T) {
 		t.Fatalf("%+v", l)
 	}
 }
+
+// Zerar: XP, sequência, conquistas e livro voltam a zero; um dia até o zerar não grava mais
+// nada (o servidor que refaz os dias na partida não devolve os pontos); depois dele, conta.
+func TestShieldZerarPontuacao(t *testing.T) {
+	st, ctx := shieldDeTeste(t)
+	ids, _ := st.ShieldTouchAccounts(ctx, map[string]string{`exemplo\ana`: "", `exemplo\rui`: ""})
+	ana := ids[`exemplo\ana`]
+	p := shield.Default()
+	d1 := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	s := shield.Streak{}
+	s.Step(d1, shield.DayProtected)
+	a := shield.DefaultAchievements()[0]
+	if got, err := st.CommitShield(ctx, ShieldCommit{PlayerID: ana, Day: d1, Streak: &s, Events: shield.DayXP(&p, d1, shield.DayProtected, s), Badges: []shield.Achievement{a}}); err != nil || got.Points == 0 {
+		t.Fatalf("antes: %+v %v", got, err)
+	}
+	if _, ok, err := st.ShieldLastReset(ctx); ok || err != nil {
+		t.Fatalf("nunca zerado: %v %v", ok, err)
+	}
+	if _, err := st.ResetShieldPoints(ctx, d1, " ", "admin"); !errors.Is(err, ErrShieldReset) {
+		t.Fatal("zerar sem motivo aceito")
+	}
+	cut := d1.AddDate(0, 0, 2) // 22/11: o último dia que fica para trás
+	r, err := st.ResetShieldPoints(ctx, cut, "início do programa", "admin")
+	if err != nil || r.Players != 2 || r.XP == 0 || r.ID == 0 {
+		t.Fatalf("zerar: %+v %v", r, err)
+	}
+	pls, _ := st.ShieldPlayersByID(ctx, []int64{ana})
+	if pl := pls[ana]; pl.XP != 0 || pl.Streak.Protected != 0 || pl.Streak.Best != 0 || pl.Streak.LastDay != "2026-11-22" {
+		t.Fatalf("depois de zerar: %+v", pl)
+	}
+	if b, _ := st.ShieldBadgesOf(ctx, ana); len(b) != 0 {
+		t.Fatalf("conquistas: %+v", b)
+	}
+	if ev, _ := st.ShieldXPOf(ctx, ana, 10); len(ev) != 0 {
+		t.Fatalf("livro do XP: %+v", ev)
+	}
+	// Refazer um dia até o zerar (21 e 22): nada; nem a conquista.
+	for _, d := range []time.Time{d1.AddDate(0, 0, 1), cut} {
+		s2 := shield.Streak{}
+		s2.Step(d, shield.DayProtected)
+		got, err := st.CommitShield(ctx, ShieldCommit{PlayerID: ana, Day: d, Streak: &s2, Events: shield.DayXP(&p, d, shield.DayProtected, s2), Badges: []shield.Achievement{a}})
+		if err != nil || got.Points != 0 || len(got.Badges) != 0 {
+			t.Fatalf("dia %s refeito depois do zerar: %+v %v", d.Format(time.DateOnly), got, err)
+		}
+	}
+	// O dia seguinte conta, a partir do zero.
+	next := cut.AddDate(0, 0, 1)
+	pls, _ = st.ShieldPlayersByID(ctx, []int64{ana})
+	s3 := pls[ana].Streak
+	if !s3.Step(next, shield.DayProtected) {
+		t.Fatal("o dia seguinte já estava fechado")
+	}
+	if got, err := st.CommitShield(ctx, ShieldCommit{PlayerID: ana, Day: next, Streak: &s3, Events: shield.DayXP(&p, next, shield.DayProtected, s3)}); err != nil || got.Points == 0 {
+		t.Fatalf("depois do zerar: %+v %v", got, err)
+	}
+	pls, _ = st.ShieldPlayersByID(ctx, []int64{ana})
+	if pl := pls[ana]; pl.Streak.Protected != 1 || pl.Streak.Current != 1 || pl.XP == 0 {
+		t.Fatalf("recomeço: %+v", pl)
+	}
+	// Nunca para trás; o mesmo dia de novo pode.
+	if _, err := st.ResetShieldPoints(ctx, d1, "voltar", "admin"); !errors.Is(err, ErrShieldReset) {
+		t.Fatal("zerar para trás aceito")
+	}
+	if _, err := st.ResetShieldPoints(ctx, cut, "de novo", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	last, ok, err := st.ShieldLastReset(ctx)
+	if err != nil || !ok || last.Reason != "de novo" || last.Day.Format(time.DateOnly) != "2026-11-22" || last.By != "admin" {
+		t.Fatalf("último zerar: %+v %v %v", last, ok, err)
+	}
+}

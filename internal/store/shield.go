@@ -542,6 +542,15 @@ func (p *Postgres) CommitShield(ctx context.Context, c ShieldCommit) (ShieldComm
 		if err := tx.QueryRow(ctx, `SELECT streak FROM shield_players WHERE id = $1 FOR UPDATE`, c.PlayerID).Scan(&st); err != nil {
 			return err
 		}
+		// Depois da trava, de propósito: um zerar em andamento segura a linha, e esta leitura já
+		// vê o dia dele. Um dia até o último zerar não grava nada (nem refeito na partida).
+		var resetDay string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(max(day)::text, '') FROM shield_resets`).Scan(&resetDay); err != nil {
+			return err
+		}
+		if resetDay != "" && day <= resetDay {
+			return nil
+		}
 		if c.Streak != nil {
 			var cur shield.Streak
 			_ = json.Unmarshal(st, &cur)
@@ -591,6 +600,77 @@ func (p *Postgres) CommitShield(ctx context.Context, c ShieldCommit) (ShieldComm
 		return nil
 	})
 	return out, err
+}
+
+// ShieldReset é uma vez que o administrador zerou a pontuação de todas as pessoas.
+type ShieldReset struct {
+	ID        int64
+	Day       time.Time // o último dia que ficou para trás
+	Reason    string
+	Players   int
+	XP        int64 // o XP somado que havia antes
+	By        string
+	CreatedAt time.Time
+}
+
+// ErrShieldReset: zerar sem motivo, sem autor ou para um dia antes do último zerar.
+var ErrShieldReset = errors.New("zerar a pontuação: motivo obrigatório (até 200 caracteres), e nunca para um dia antes do último zerar")
+
+// ResetShieldPoints zera, numa transação, o XP, a sequência (atual, melhor, dias protegidos:
+// o nível), as conquistas e o livro do XP de todas as pessoas. day é o último dia que fica para
+// trás: a sequência passa a tê-lo como fechado, e o CommitShield não grava mais nada até ele.
+// As pessoas continuam (conta, nome, presenças); a pontuação das máquinas não muda.
+func (p *Postgres) ResetShieldPoints(ctx context.Context, day time.Time, reason, by string) (ShieldReset, error) {
+	reason = strings.TrimSpace(reason)
+	out := ShieldReset{Day: day, Reason: reason, By: strings.TrimSpace(by)}
+	if reason == "" || len([]rune(reason)) > 200 || out.By == "" {
+		return out, ErrShieldReset
+	}
+	d := day.Format(time.DateOnly)
+	streak, _ := json.Marshal(shield.Streak{LastDay: d})
+	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		// Um zerar por vez, e nunca para trás (o mesmo dia de novo pode: zera o que entrou depois).
+		if _, err := tx.Exec(ctx, `LOCK TABLE shield_resets IN EXCLUSIVE MODE`); err != nil {
+			return err
+		}
+		var last string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(max(day)::text, '') FROM shield_resets`).Scan(&last); err != nil {
+			return err
+		}
+		if last != "" && d < last {
+			return ErrShieldReset
+		}
+		if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(sum(xp), 0) FROM shield_players`).Scan(&out.Players, &out.XP); err != nil {
+			return err
+		}
+		// As linhas das pessoas primeiro (a mesma ordem do CommitShield: trava a pessoa, depois
+		// grava o XP), para um fechamento em andamento esperar e não cruzar.
+		if _, err := tx.Exec(ctx, `UPDATE shield_players SET xp = 0, streak = $1`, streak); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM shield_xp`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM shield_badges`); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `INSERT INTO shield_resets (day, reason, players, xp, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
+			d, reason, out.Players, out.XP, out.By).Scan(&out.ID, &out.CreatedAt)
+	})
+	out.CreatedAt = out.CreatedAt.UTC()
+	return out, err
+}
+
+// ShieldLastReset: o último zerar (ok = false: nunca zerado).
+func (p *Postgres) ShieldLastReset(ctx context.Context) (ShieldReset, bool, error) {
+	var r ShieldReset
+	err := p.pool.QueryRow(ctx, `SELECT id, day, reason, players, xp, created_by, created_at FROM shield_resets ORDER BY day DESC, id DESC LIMIT 1`).
+		Scan(&r.ID, &r.Day, &r.Reason, &r.Players, &r.XP, &r.By, &r.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ShieldReset{}, false, nil
+	}
+	r.CreatedAt = r.CreatedAt.UTC()
+	return r, err == nil, err
 }
 
 // ErrShieldNotFound: a máquina (ou a missão em rascunho) não existe.

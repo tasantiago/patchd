@@ -180,7 +180,7 @@ CASCADE` nas máquinas; chaves únicas para a idempotência; nenhuma migração 
 |---|---|---|
 | `POST /api/v1/agent/shield` | agente (credencial da máquina) | a "Minha Proteção": a máquina pela credencial, a pessoa pelo token lido pelo agente |
 | `GET /painel/shield…` | painel (leitura) | visão geral, equipamentos, pessoas, missões, exceções, ranking, CSV |
-| `POST /painel/shield/…` | admin, com CSRF (mesma origem) | política, missões, exceções, ajuste de XP — tudo auditado |
+| `POST /painel/shield/…` | admin, com CSRF (mesma origem) | política, missões, exceções, ajuste de XP, zerar a pontuação — tudo auditado |
 
 A máquina nunca vem de parâmetro (IDOR): vem da credencial. A pessoa nunca vem do app: vem do
 token do Windows, como no autoatendimento.
@@ -290,3 +290,26 @@ implantação** e o por **sala** ficam só no painel do admin: os grupos numéri
 legada (quase todo o parque está no grupo 1) e não dizem nada à pessoa; e o nome de uma sala
 pequena (um gabinete, por exemplo) identifica quem trabalha nela, o que pede cuidado com a LGPD.
 Os dois continuam calculados e podem ser ligados ou desligados na política.
+
+### Zerar a pontuação
+
+Para recomeçar a contagem (o início do programa, o fim de um período de testes): **Shield ›
+Pessoas › Zerar a pontuação**, só para o administrador, com motivo e a palavra `ZERAR` digitada
+para confirmar. Numa transação (`ResetShieldPoints`, migração 0086), para **todas as pessoas**:
+
+- o XP volta a 0, a sequência (atual e melhor), os dias protegidos (o nível), as voltas por cima
+  e as conquistas são apagados, e o livro do XP é esvaziado;
+- o dia de hoje (no fuso da política) conta inteiro no fechamento de amanhã; o último dia que
+  fica para trás é ontem;
+- nada de antes volta: a sequência de cada pessoa passa a ter ontem como último dia fechado, e o
+  `CommitShield` não grava XP, sequência nem conquista de um dia até o do último zerar (o servidor
+  que refaz os últimos 7 dias na partida, ou outro servidor no meio do zerar, não devolve
+  pontos);
+- a missão coletiva cumprida antes de zerar não paga de novo; a individual conta só os dias
+  protegidos depois de zerar.
+
+Não mudam: a pontuação de proteção das máquinas, os retratos do dia, os rankings de prédio e
+andar (são das máquinas), as pessoas (conta, nome, presenças), as exceções e as missões. Não há
+desfazer; cada zerar fica em `shield_resets` (quem, quando, motivo, quantas pessoas, o XP somado
+antes), na auditoria (`shield.zerar`) e no aviso da aba Pessoas. Zerar de novo no mesmo dia
+pode; para um dia antes do último zerar, não.

@@ -73,6 +73,8 @@ type shieldStore interface {
 	ShieldProtectedDaysBetween(ctx context.Context, from, to time.Time) (map[int64]int, error)
 	ShieldPlayersInRings(ctx context.Context, ring *int, from, to time.Time) ([]int64, error)
 	PruneShield(ctx context.Context, before time.Time) (int64, error)
+	ResetShieldPoints(ctx context.Context, day time.Time, reason, by string) (store.ShieldReset, error)
+	ShieldLastReset(ctx context.Context) (store.ShieldReset, bool, error)
 }
 
 var _ shieldStore = (*store.Postgres)(nil)
@@ -723,8 +725,13 @@ func (a *api) shieldCloseDay(ctx context.Context, db shieldStore, pol *shield.Po
 	if err := shieldCommitAll(ctx, db, commits); err != nil {
 		return err
 	}
-	// Missões: as individuais com o dia dentro, e as coletivas cumpridas.
+	// Missões: as individuais com o dia dentro, e as coletivas cumpridas (as cumpridas antes do
+	// último zerar não pagam de novo: o XP delas ficou para trás).
 	ms, err := db.ShieldMissions(ctx, 200)
+	if err != nil {
+		return err
+	}
+	reset, _, err := db.ShieldLastReset(ctx)
 	if err != nil {
 		return err
 	}
@@ -752,7 +759,7 @@ func (a *api) shieldCloseDay(ctx context.Context, db shieldStore, pol *shield.Po
 					touched[pid] = true
 				}
 			}
-		case m.Scope == "coletiva" && m.CompletedAt != nil && !m.CompletedAt.Before(m.StartsAt) && day.Sub(dateOf(*m.CompletedAt, time.UTC)) < 7*24*time.Hour:
+		case m.Scope == "coletiva" && m.CompletedAt != nil && !m.CompletedAt.Before(m.StartsAt) && !m.CompletedAt.Before(reset.CreatedAt) && day.Sub(dateOf(*m.CompletedAt, time.UTC)) < 7*24*time.Hour:
 			inScope, err := db.ShieldPlayersInRings(ctx, m.Ring, m.StartsAt, *m.CompletedAt)
 			if err != nil {
 				return err

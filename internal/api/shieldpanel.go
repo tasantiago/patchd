@@ -167,6 +167,7 @@ type shieldPanelView struct {
 	// Pessoas.
 	Players []shieldPlayerRow
 	Ref     string // a chave do formulário de ajuste (o reenvio não soma duas vezes)
+	Reset   string // o último zerar ("" nunca)
 	// Missões.
 	Missions []shieldMissionRow
 	// Ranking.
@@ -286,6 +287,8 @@ func shieldFlash(q url.Values, b *pageBase) {
 		b.Flash = "Nomes dos andares gravados (" + numOnly(q.Get("andares")) + "). Aparecem na próxima avaliação (em até 5 minutos)."
 	case q.Has("ajuste"):
 		b.Flash = "Ajuste de XP registrado no livro do XP e na auditoria."
+	case q.Has("zerada"):
+		b.Flash = "Pontuação zerada: XP, sequência, nível e conquistas de todas as pessoas voltaram a zero. Hoje já conta; o que veio antes não volta."
 	case q.Has("repetido"):
 		b.Flash = "Esse formulário já tinha sido enviado: nada mudou."
 	case q.Get("erro") != "":
@@ -497,6 +500,11 @@ func (a *api) shieldPlayersTab(ctx context.Context, db shieldStore, v *shieldPan
 		v.NextHref = link(v.Page + 1)
 	}
 	v.Ref = newShieldRef()
+	if r, ok, err := db.ShieldLastReset(ctx); err != nil {
+		return err
+	} else if ok {
+		v.Reset = fmt.Sprintf("Pontuação zerada em %s por %s (%s): %d pessoa(s), %d XP antes.", a.stamp(r.CreatedAt), r.By, r.Reason, r.Players, r.XP)
+	}
 	return nil
 }
 
@@ -1246,6 +1254,42 @@ func (a *api) shieldAdjustAction(w http.ResponseWriter, r *http.Request, s panel
 	shieldBack(w, r, "pessoas", "ajuste=1")
 }
 
+// shieldResetConfirm: o que o administrador digita para confirmar o zerar.
+const shieldResetConfirm = "ZERAR"
+
+// shieldResetAction: POST /painel/shield/zerar — zera o XP, a sequência, o nível e as
+// conquistas de todas as pessoas, para a contagem recomeçar hoje (no fuso da política). Pede o
+// motivo e a palavra de confirmação; fica na auditoria e no histórico do zerar.
+func (a *api) shieldResetAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	db, ok := a.shieldDB()
+	if !ok {
+		shieldFail(w, r, "pessoas", errShieldOff)
+		return
+	}
+	if strings.TrimSpace(r.PostFormValue("confirmar")) != shieldResetConfirm {
+		shieldFail(w, r, "pessoas", errors.New("para zerar, digite "+shieldResetConfirm+" no campo de confirmação"))
+		return
+	}
+	pol, _, err := a.shieldPolicy(r.Context())
+	if err != nil {
+		a.internalError(w, r, "ler a política do Shield", err)
+		return
+	}
+	// O último dia que fica para trás é ontem: o dia de hoje conta inteiro no fechamento de amanhã.
+	yesterday := dateOf(a.now(), pol.Location(a.panelLocation())).AddDate(0, 0, -1)
+	res, err := db.ResetShieldPoints(r.Context(), yesterday, r.PostFormValue("motivo"), s.Username)
+	if errors.Is(err, store.ErrShieldReset) {
+		shieldFail(w, r, "pessoas", err)
+		return
+	}
+	if err != nil {
+		a.internalError(w, r, "zerar a pontuação", err)
+		return
+	}
+	a.audit(r, s, "shield.zerar", "todas as pessoas", fmt.Sprintf("%d pessoa(s), %d XP antes; até %s: %s", res.Players, res.XP, res.Day.Format(time.DateOnly), res.Reason))
+	shieldBack(w, r, "pessoas", "zerada=1")
+}
+
 // shieldMachinesCSV: GET /painel/shield/equipamentos.csv.
 func (a *api) shieldMachinesCSV(w http.ResponseWriter, r *http.Request) {
 	db, ok := a.shieldDB()
@@ -1345,7 +1389,13 @@ var _ = template.Must(pages.New("shield-pessoas").Parse(`<div class="card"><div 
 {{if $.Admin}}<td><form class="linha" method="post" action="/painel/shield/pessoas/{{.ID}}/ajuste"><input type="hidden" name="ref" value="{{$.Ref}}"><label class="sr" for="p{{.ID}}">Pontos</label><input id="p{{.ID}}" name="pontos" type="number" min="-10000" max="10000" required placeholder="±XP"><label class="sr" for="m{{.ID}}">Motivo</label><input id="m{{.ID}}" name="motivo" maxlength="200" required placeholder="motivo (obrigatório)"><button class="sec" type="submit">Ajustar</button></form></td>{{end}}</tr>{{end}}</tbody></table>
 {{if or .PrevHref .NextHref}}<p class="paginas">{{if .PrevHref}}<a href="{{.PrevHref}}">‹ anterior</a>{{end}} página {{.Page}} de {{.Pages}} {{if .NextHref}}<a href="{{.NextHref}}">próxima ›</a>{{end}}</p>{{end}}
 <p class="muted">O XP vem só de eventos do servidor. O ajuste é a compensação do administrador (um erro, uma indisponibilidade): fica no livro do XP com o motivo e na auditoria.</p>
-{{else}}<p class="vazio">Ninguém ainda. A pessoa aparece quando usa uma máquina do Shield (sessão no check-in) ou abre a Minha Proteção na Central.</p>{{end}}</div>`))
+{{else}}<p class="vazio">Ninguém ainda. A pessoa aparece quando usa uma máquina do Shield (sessão no check-in) ou abre a Minha Proteção na Central.</p>{{end}}</div>
+{{if .Admin}}<div class="card"><h2>Zerar a pontuação</h2>
+<p>Volta a zero o XP, a sequência (atual e melhor), os dias protegidos (o nível), as conquistas e o livro do XP de <strong>todas as pessoas</strong>, para a contagem recomeçar hoje. O dia de hoje conta inteiro; nada de antes volta, nem se o servidor refizer os dias. Não muda a pontuação de proteção das máquinas, os rankings de prédio e andar, as exceções nem as missões (as já cumpridas não pagam de novo). Não dá para desfazer.</p>
+{{if .Reset}}<p class="muted">{{.Reset}}</p>{{end}}
+<form method="post" action="/painel/shield/zerar"><div class="campo"><label for="z-motivo">Motivo</label><input id="z-motivo" name="motivo" maxlength="200" required placeholder="ex.: início do programa, fim do período de testes"></div>
+<div class="campo"><label for="z-conf">Para confirmar, digite ZERAR</label><input id="z-conf" name="confirmar" required pattern="ZERAR" autocomplete="off"></div>
+<button class="perigo" type="submit">Zerar a pontuação de todos</button></form></div>{{end}}`))
 
 var _ = template.Must(pages.New("shield-missoes").Parse(`<div class="card"><h2>Missões</h2>{{if .Missions}}<table><thead><tr><th>Missão</th><th>Tipo</th><th>Meta</th><th>Escopo</th><th>Período</th><th>Situação</th><th>XP</th>{{if .Admin}}<th></th>{{end}}</tr></thead><tbody>
 {{range .Missions}}<tr><td><b>{{.Title}}</b>{{if .Description}}<br><span class="muted">{{.Description}}</span>{{end}}</td><td>{{.Scope}}</td><td>{{.Goal}}{{if .Progress}}<br><meter min="0" max="100" value="{{.Percent}}">{{.Percent}}%</meter> <span class="muted">{{.Progress}}</span>{{end}}</td><td>{{.Scope2}}</td><td>{{.Period}}</td><td>{{.StatusLabel}}</td><td>{{.XP}}</td>
