@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -349,5 +350,76 @@ func TestShieldZerarPontuacao(t *testing.T) {
 	last, ok, err := st.ShieldLastReset(ctx)
 	if err != nil || !ok || last.Reason != "de novo" || last.Day.Format(time.DateOnly) != "2026-11-22" || last.By != "admin" {
 		t.Fatalf("último zerar: %+v %v %v", last, ok, err)
+	}
+}
+
+// Grupos de competição: um prédio em um grupo só, o grupo segue o ID do prédio (renomeado no
+// patrimônio continua no grupo), nome único, e excluir solta os prédios.
+func TestShieldGruposDeCompeticao(t *testing.T) {
+	st, ctx := shieldDeTeste(t)
+	ids := map[string]int64{}
+	for _, n := range []string{"PREDIO SEDE", "FORUM GERAL", "ANEXO NORTE"} {
+		var id int64
+		if err := st.pool.QueryRow(ctx, `INSERT INTO buildings (name) VALUES ($1) RETURNING id`, n).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids[n] = id
+	}
+	g := ShieldCompetition{Name: "  Fóruns   do interior ", Kind: CompetitionBuildings}
+	if _, err := st.SaveShieldCompetition(ctx, g, []int64{ids["PREDIO SEDE"]}, "admin"); !IsShieldCompetitionError(err) {
+		t.Fatalf("grupo de prédios com um prédio só: %v", err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, g, []int64{ids["PREDIO SEDE"], 999999}, "admin"); !IsShieldCompetitionError(err) {
+		t.Fatalf("prédio desconhecido: %v", err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{Name: "x", Kind: CompetitionFloors}, []int64{ids["PREDIO SEDE"], ids["FORUM GERAL"]}, "admin"); !IsShieldCompetitionError(err) {
+		t.Fatalf("grupo por andar com dois prédios: %v", err)
+	}
+	gid, err := st.SaveShieldCompetition(ctx, g, []int64{ids["PREDIO SEDE"], ids["FORUM GERAL"], ids["FORUM GERAL"]}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// O mesmo prédio em outro grupo: recusa com os nomes; nome repetido: recusa.
+	err = func() error {
+		_, err := st.SaveShieldCompetition(ctx, ShieldCompetition{Name: "Anexos", Kind: CompetitionFloors}, []int64{ids["PREDIO SEDE"]}, "rui")
+		return err
+	}()
+	if !IsShieldCompetitionError(err) || !strings.Contains(err.Error(), "PREDIO SEDE (no grupo Fóruns do interior)") {
+		t.Fatalf("prédio em dois grupos: %v", err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{Name: "Fóruns do interior", Kind: CompetitionFloors}, []int64{ids["ANEXO NORTE"]}, "rui"); !IsShieldCompetitionError(err) {
+		t.Fatalf("nome repetido: %v", err)
+	}
+	aid, err := st.SaveShieldCompetition(ctx, ShieldCompetition{Name: "Anexo", Kind: CompetitionFloors}, []int64{ids["ANEXO NORTE"]}, "rui")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Renomeado no patrimônio: continua no grupo, com o nome novo.
+	if _, err := st.pool.Exec(ctx, `UPDATE buildings SET name = 'FORUM GERAL - BLOCO A' WHERE id = $1`, ids["FORUM GERAL"]); err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ShieldCompetitions(ctx)
+	if err != nil || len(list) != 2 || list[0].Name != "Anexo" || list[1].Name != "Fóruns do interior" || len(list[1].Buildings) != 2 ||
+		list[1].Buildings[0].Name != "FORUM GERAL - BLOCO A" || list[1].UpdatedBy != "admin" {
+		t.Fatalf("grupos: %+v %v", list, err)
+	}
+	// Trocar os prédios do grupo: o que saiu fica livre para outro.
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{ID: gid, Name: "Fóruns", Kind: CompetitionBuildings}, []int64{ids["FORUM GERAL"], ids["ANEXO NORTE"]}, "ana"); !IsShieldCompetitionError(err) {
+		t.Fatalf("o anexo já está no grupo por andar: %v", err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{ID: aid, Name: "Anexo", Kind: CompetitionFloors}, []int64{ids["PREDIO SEDE"]}, "ana"); !IsShieldCompetitionError(err) {
+		t.Fatalf("a sede continua no outro grupo: %v", err)
+	}
+	if name, ok, err := st.DeleteShieldCompetition(ctx, aid); err != nil || !ok || name != "Anexo" {
+		t.Fatalf("excluir: %q %v %v", name, ok, err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{ID: gid, Name: "Fóruns", Kind: CompetitionBuildings}, []int64{ids["FORUM GERAL"], ids["ANEXO NORTE"]}, "ana"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{ID: 424242, Name: "Outro", Kind: CompetitionBuildings}, []int64{ids["PREDIO SEDE"], 1}, "ana"); err == nil {
+		t.Fatal("grupo inexistente alterado")
+	}
+	if _, ok, _ := st.DeleteShieldCompetition(ctx, aid); ok {
+		t.Fatal("excluído duas vezes")
 	}
 }

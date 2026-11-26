@@ -13,6 +13,7 @@ import (
 	"github.com/tasantiago/patchd/internal/identity"
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/shield"
+	"github.com/tasantiago/patchd/internal/store"
 )
 
 // formPolitica: o formulário da Política com os valores da política p.
@@ -183,6 +184,49 @@ func TestPainelDoShield(t *testing.T) {
 	if b := pagina(h, "GET", "/painel/shield?aba=pessoas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Pontuação zerada em") || !strings.Contains(b, "25 XP antes") {
 		t.Fatalf("aba Pessoas sem o último zerar: %s", b)
 	}
+	// Grupos de competição: só o admin; grupo de prédios com dois prédios; o grupo por andar
+	// recusa prédio com 3 andares ou menos; excluir solta os prédios.
+	if err := st.ReplaceAssetLocations(ctx, []store.AssetLocation{{Tombo: "1", Building: "PREDIO SEDE"}, {Tombo: "2", Building: "FORUM GERAL"}},
+		store.AssetImport{By: "t", File: "p.csv"}); err != nil {
+		t.Fatal(err)
+	}
+	pr := map[string]string{}
+	bl, _ := st.Buildings(ctx)
+	for _, b := range bl {
+		pr[b.Name] = strconv.FormatInt(b.ID, 10)
+	}
+	cg := url.Values{"tipo": {"predios"}, "nome": {"Fóruns do interior"}, "predio": {pr["PREDIO SEDE"], pr["FORUM GERAL"]}}
+	if r := pagina(h, "POST", "/painel/shield/competicoes", sessaoTeste, cg); r.Code != 403 {
+		t.Fatalf("leitura criou grupo de competição: %d", r.Code)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/competicoes", sessaoAdmin, cg).Header().Get("Location"); !strings.Contains(loc, "competicao=1") {
+		t.Fatalf("grupo de prédios: %s", loc)
+	}
+	if loc := pagina(h, "POST", "/painel/shield/competicoes", sessaoAdmin, cg).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
+		t.Fatalf("nome e prédios repetidos aceitos: %s", loc)
+	}
+	ca := url.Values{"tipo": {"andares"}, "predio": {pr["FORUM GERAL"]}}
+	if loc := pagina(h, "POST", "/painel/shield/competicoes", sessaoAdmin, ca).Header().Get("Location"); !strings.Contains(loc, "erro=1") || !strings.Contains(loc, "mais+de+3+andares") {
+		t.Fatalf("grupo por andar num prédio sem andares: %s", loc)
+	}
+	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Grupos de competição") ||
+		!strings.Contains(b, "<b>Fóruns do interior</b>") || !strings.Contains(b, "Novo grupo por andar") || !strings.Contains(b, "Ranking de todos os prédios") {
+		t.Fatalf("aba Ranking sem o grupo: %s", b)
+	}
+	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoTeste, nil).Body.String(); strings.Contains(b, "/painel/shield/competicoes") {
+		t.Error("leitura vê os formulários dos grupos de competição")
+	}
+	comps, _ := st.ShieldCompetitions(ctx)
+	if len(comps) != 1 || len(comps[0].Buildings) != 2 {
+		t.Fatalf("grupos: %+v", comps)
+	}
+	cid := strconv.FormatInt(comps[0].ID, 10)
+	if loc := pagina(h, "POST", "/painel/shield/competicoes/"+cid+"/excluir", sessaoAdmin, url.Values{}).Header().Get("Location"); !strings.Contains(loc, "competicao_excluida=1") {
+		t.Fatalf("excluir: %s", loc)
+	}
+	if comps, _ := st.ShieldCompetitions(ctx); len(comps) != 0 {
+		t.Fatalf("grupo continua: %+v", comps)
+	}
 	csv := pagina(h, "GET", "/painel/shield/pessoas.csv", sessaoTeste, nil)
 	if !strings.HasPrefix(csv.Body.String(), "\xef\xbb\xbf") || !strings.Contains(csv.Body.String(), `'=HYPERLINK`) {
 		t.Fatalf("CSV: %q", csv.Body.String())
@@ -209,12 +253,12 @@ func TestPainelDoShield(t *testing.T) {
 	if loc := pagina(h, "POST", "/painel/shield/andares", sessaoAdmin, andar).Header().Get("Location"); !strings.Contains(loc, "erro=1") {
 		t.Fatalf("nome longo demais: %s", loc)
 	}
-	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoTeste, nil).Body.String(); !strings.Contains(b, "Ranking dos prédios") {
+	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoTeste, nil).Body.String(); !strings.Contains(b, "Ranking de todos os prédios") {
 		t.Fatal("aba Ranking sem os prédios")
 	}
 	// A auditoria do Shield mostra tudo isso.
 	b = pagina(h, "GET", "/painel/shield?aba=auditoria", sessaoAdmin, nil).Body.String()
-	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido", "shield.andares", "shield.zerar", "início do programa"} {
+	for _, want := range []string{"shield.politica", "shield.missao", "shield.missao_estado", "shield.ajuste_xp", "XP perdido", "shield.andares", "shield.zerar", "início do programa", "shield.competicao", "shield.competicao_excluir"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("auditoria sem %q", want)
 		}

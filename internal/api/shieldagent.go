@@ -211,43 +211,82 @@ func shieldMachineView(r shield.Result, at time.Time) *protocol.ShieldMachineVie
 	return m
 }
 
-// shieldPlaceViews: os rankings por lugar para a Central — os prédios (os 10 primeiros e o
-// desta máquina), e, no prédio desta máquina, os andares e as salas (as 10 primeiras e a dela).
+// shieldPlaceViews: os rankings por lugar para a Central, nesta ordem: o grupo de competição
+// do prédio desta máquina (os prédios do grupo, ou os andares do prédio no grupo por andar) e
+// o ranking geral dos prédios (os 10 primeiros e o desta máquina). O ranking dos andares só vai
+// para a Central pelo grupo por andar, que só existe nos prédios com mais de 3 andares: num
+// prédio pequeno, o andar tem poucas pessoas e o nome dele as identifica (LGPD). O ranking por
+// sala não vai para a Central (o nome de uma sala pequena, como um gabinete, identifica as
+// pessoas). Os dois continuam calculados para o painel do admin.
 func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.Policy, me shield.Place) ([]protocol.ShieldPlaceView, error) {
 	var out []protocol.ShieldPlaceView
-	build := func(kind, title, building, mineKey string, top int) error {
-		list, err := db.ShieldRankings(ctx, kind, building, 500)
-		if err != nil || len(list) == 0 {
-			return err
+	view := func(kind, title, mineKey string, list []store.ShieldRank, top int) {
+		if len(list) < 2 { // disputa de um só não é disputa
+			return
 		}
-		pv := protocol.ShieldPlaceView{Kind: kind, Title: title}
+		pv := protocol.ShieldPlaceView{Kind: kind, Title: title, Of: len(list)}
 		for i, r := range list {
 			mine := mineKey != "" && r.Key == mineKey
 			if mine {
-				pv.Mine, pv.Pos = r.Label, r.Pos
+				pv.Mine, pv.Pos = r.Label, i+1
 			}
-			pv.Of = r.Of
 			if i < top || mine {
-				pv.Rows = append(pv.Rows, protocol.ShieldGroupView{Pos: r.Pos, Name: r.Label, Machines: r.Machines, Percent: r.Percent(), Mine: mine})
+				pv.Rows = append(pv.Rows, protocol.ShieldGroupView{Pos: i + 1, Name: r.Label, Machines: r.Machines, Percent: r.Percent(), Mine: mine})
 			}
 		}
 		out = append(out, pv)
-		return nil
 	}
+	var buildings []store.ShieldRank
 	if pol.Ranking.Buildings {
-		if err := build(shield.RankBuilding, "Prédios", "", shield.PlaceKey(me.Building, ""), 10); err != nil {
+		var err error
+		if buildings, err = db.ShieldRankings(ctx, shield.RankBuilding, "", 500); err != nil {
 			return nil, err
 		}
 	}
-	if me.Building == "" {
-		return out, nil
-	}
-	if pol.Ranking.Floors && me.Floor != "" {
-		if err := build(shield.RankFloor, "Andares do "+texto.PlaceName(me.Building), me.Building, shield.PlaceKey(me.Building, me.Floor), 30); err != nil {
+	myBuilding := shield.PlaceKey(me.Building, "")
+	if me.Building != "" {
+		g, ok, err := shieldCompetitionOf(ctx, db, me.Building)
+		if err != nil {
 			return nil, err
 		}
+		switch {
+		case !ok:
+		case g.Kind == store.CompetitionBuildings:
+			in := map[string]bool{}
+			for _, b := range g.Buildings {
+				in[b.Name] = true
+			}
+			var list []store.ShieldRank
+			for _, r := range buildings { // já na ordem do ranking geral
+				if in[r.Building] {
+					list = append(list, r)
+				}
+			}
+			view(shield.RankBuilding, "Seu grupo — "+g.Name, myBuilding, list, 30)
+		case g.Kind == store.CompetitionFloors && pol.Ranking.Floors && me.Floor != "":
+			list, err := db.ShieldRankings(ctx, shield.RankFloor, me.Building, 500)
+			if err != nil {
+				return nil, err
+			}
+			view(shield.RankFloor, "Andares do "+texto.PlaceName(me.Building), shield.PlaceKey(me.Building, me.Floor), list, 30)
+		}
 	}
-	// O ranking por sala não vai para a Central (LGPD: numa sala pequena, o nome dela, como
-	// um gabinete, identifica as pessoas). Continua calculado para o painel do admin.
+	view(shield.RankBuilding, "Todos os prédios", myBuilding, buildings, 10)
 	return out, nil
+}
+
+// shieldCompetitionOf: o grupo de competição do prédio (pelo nome atual do patrimônio).
+func shieldCompetitionOf(ctx context.Context, db shieldStore, building string) (store.ShieldCompetition, bool, error) {
+	list, err := db.ShieldCompetitions(ctx)
+	if err != nil {
+		return store.ShieldCompetition{}, false, err
+	}
+	for _, g := range list {
+		for _, b := range g.Buildings {
+			if b.Name == building {
+				return g, true, nil
+			}
+		}
+	}
+	return store.ShieldCompetition{}, false, nil
 }

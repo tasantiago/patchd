@@ -471,6 +471,8 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("POST /painel/shield/andares", a.sameOrigin(a.adminAction(a.shieldFloorsAction)))                                           // Atende+ Shield: nomes das faixas como andares
 	mux.Handle("POST /painel/shield/pessoas/{id}/ajuste", a.sameOrigin(a.adminAction(a.shieldAdjustAction)))                               // Atende+ Shield: a compensação do admin, auditada
 	mux.Handle("POST /painel/shield/zerar", a.sameOrigin(a.adminAction(a.shieldResetAction)))                                              // Atende+ Shield: zera o XP de todos, auditado
+	mux.Handle("POST /painel/shield/competicoes", a.sameOrigin(a.adminAction(a.shieldCompetitionAction)))                                  // Atende+ Shield: grupos de competição
+	mux.Handle("POST /painel/shield/competicoes/{id}/excluir", a.sameOrigin(a.adminAction(a.shieldCompetitionDeleteAction)))               // Atende+ Shield
 	mux.Handle("GET /painel/alertas", a.panelPage(a.alertsPage))                                                                           // docs/monitoramento.md
 	mux.Handle("POST /painel/alertas/lote", a.sameOrigin(a.adminAction(a.staleAfter(a.alertBatchAction))))                                 // fechar ou reconhecer em lote
 	mux.Handle("POST /painel/alertas/{id}/reconhecer", a.sameOrigin(a.adminAction(a.staleAfter(a.ackAlertAction))))                        // docs/monitoramento.md

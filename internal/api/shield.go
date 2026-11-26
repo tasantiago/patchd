@@ -75,6 +75,10 @@ type shieldStore interface {
 	PruneShield(ctx context.Context, before time.Time) (int64, error)
 	ResetShieldPoints(ctx context.Context, day time.Time, reason, by string) (store.ShieldReset, error)
 	ShieldLastReset(ctx context.Context) (store.ShieldReset, bool, error)
+	ShieldCompetitions(ctx context.Context) ([]store.ShieldCompetition, error)
+	SaveShieldCompetition(ctx context.Context, c store.ShieldCompetition, ids []int64, by string) (int64, error)
+	DeleteShieldCompetition(ctx context.Context, id int64) (string, bool, error)
+	Buildings(ctx context.Context) ([]store.Building, error)
 }
 
 var _ shieldStore = (*store.Postgres)(nil)

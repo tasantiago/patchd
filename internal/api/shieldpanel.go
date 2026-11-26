@@ -23,6 +23,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/shield"
 	"github.com/tasantiago/patchd/internal/store"
+	"github.com/tasantiago/patchd/internal/texto"
 )
 
 // Atende+ Shield no painel (docs/shield.md): Shield › Visão geral, Equipamentos, Pessoas,
@@ -94,6 +95,29 @@ type shieldLeaderRow struct {
 type shieldPlaceRow struct {
 	Pos, Overall, Machines, Sealed, Pct int
 	Label, Spec, Avg, Custom            string
+}
+
+// shieldCompRow é um grupo de competição na aba Ranking.
+type shieldCompRow struct {
+	ID         int64
+	Name, Kind string
+	KindLabel  string
+	Members    []string
+	Ranking    []shieldPlaceRow // a disputa do grupo, como a Central mostra
+	Warn       string
+	Choices    []shieldCompBuilding // a edição do grupo de prédios
+	UpdatedBy  string
+	UpdatedAt  string
+}
+
+// shieldCompBuilding é um prédio para os formulários dos grupos.
+type shieldCompBuilding struct {
+	ID      int64
+	Name    string
+	Floors  int
+	Group   string // o grupo em que já está ("" nenhum)
+	Checked bool
+	Present bool
 }
 
 type shieldBuildingPlaces struct {
@@ -174,6 +198,12 @@ type shieldPanelView struct {
 	Groups  []shieldGroupRow
 	Hidden  int
 	Leaders []shieldLeaderRow
+	// Grupos de competição: os grupos, os prédios para escolher e os prédios que podem ter
+	// grupo por andar (mais de 3 andares, sem grupo).
+	Comps        []shieldCompRow
+	CompB        []shieldCompBuilding
+	CompEligible []shieldCompBuilding
+	CompMin      int
 	// Rankings por lugar: os prédios e, por prédio, os andares (faixas) e as salas.
 	PlaceB []shieldPlaceRow
 	PlaceP []shieldBuildingPlaces
@@ -287,6 +317,10 @@ func shieldFlash(q url.Values, b *pageBase) {
 		b.Flash = "Nomes dos andares gravados (" + numOnly(q.Get("andares")) + "). Aparecem na próxima avaliação (em até 5 minutos)."
 	case q.Has("ajuste"):
 		b.Flash = "Ajuste de XP registrado no livro do XP e na auditoria."
+	case q.Has("competicao"):
+		b.Flash = "Grupo de competição gravado. A Central mostra a disputa do grupo em primeiro lugar, acima de todos os prédios."
+	case q.Has("competicao_excluida"):
+		b.Flash = "Grupo de competição excluído: os prédios dele ficam só no ranking geral."
 	case q.Has("zerada"):
 		b.Flash = "Pontuação zerada: XP, sequência, nível e conquistas de todas as pessoas voltaram a zero. Hoje já conta; o que veio antes não volta."
 	case q.Has("repetido"):
@@ -670,7 +704,235 @@ func (a *api) shieldRankingTab(ctx context.Context, db shieldStore, v *shieldPan
 		}
 	}
 	v.PlaceP = kept
+	return a.shieldCompetitionsTab(ctx, db, v, buildings, row)
+}
+
+// competitionMinFloors: o grupo por andar só existe em prédio com mais de 3 andares (num
+// prédio pequeno, o andar tem poucas pessoas e o nome dele as identifica).
+const competitionMinFloors = 4
+
+// shieldFloorCounts: quantos andares cada prédio tem hoje (pelo ID), contando os andares com
+// alguma máquina do parque (as do conflito de regras ficam sem andar).
+func (a *api) shieldFloorCounts(ctx context.Context) (map[int64]int, error) {
+	all, _, err := a.fleetLocations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	floors := map[int64]map[string]bool{}
+	for _, e := range all {
+		if e.Loc.BuildingID == 0 || e.Loc.FloorKey == "" || e.Loc.Conflict {
+			continue
+		}
+		if floors[e.Loc.BuildingID] == nil {
+			floors[e.Loc.BuildingID] = map[string]bool{}
+		}
+		floors[e.Loc.BuildingID][e.Loc.FloorKey] = true
+	}
+	out := make(map[int64]int, len(floors))
+	for id, f := range floors {
+		out[id] = len(f)
+	}
+	return out, nil
+}
+
+// shieldCompetitionsTab: os grupos de competição, com a disputa de cada um como a Central a
+// monta (a ordem é a do ranking geral; a posição, dentro do grupo).
+func (a *api) shieldCompetitionsTab(ctx context.Context, db shieldStore, v *shieldPanelView, buildings []store.ShieldRank, row func(store.ShieldRank) shieldPlaceRow) error {
+	v.CompMin = competitionMinFloors
+	comps, err := db.ShieldCompetitions(ctx)
+	if err != nil {
+		return err
+	}
+	all, err := db.Buildings(ctx)
+	if err != nil {
+		return err
+	}
+	floors, err := a.shieldFloorCounts(ctx)
+	if err != nil {
+		return err
+	}
+	groupOf := map[int64]string{}
+	for _, g := range comps {
+		for _, b := range g.Buildings {
+			groupOf[b.ID] = g.Name
+		}
+	}
+	for _, b := range all {
+		if !b.Present && groupOf[b.ID] == "" {
+			continue // fora do patrimônio e sem grupo: não há o que escolher
+		}
+		cb := shieldCompBuilding{ID: b.ID, Name: b.Name, Floors: floors[b.ID], Group: groupOf[b.ID], Present: b.Present}
+		v.CompB = append(v.CompB, cb)
+		if cb.Group == "" && cb.Present && cb.Floors >= competitionMinFloors {
+			v.CompEligible = append(v.CompEligible, cb)
+		}
+	}
+	for _, g := range comps {
+		cr := shieldCompRow{ID: g.ID, Name: g.Name, Kind: g.Kind, UpdatedBy: g.UpdatedBy, UpdatedAt: a.stamp(g.UpdatedAt)}
+		in := map[string]bool{}
+		for _, b := range g.Buildings {
+			name := texto.PlaceName(b.Name)
+			if !b.Present {
+				name += " (fora do patrimônio)"
+			}
+			cr.Members = append(cr.Members, name)
+			in[b.Name] = true
+		}
+		switch g.Kind {
+		case store.CompetitionBuildings:
+			cr.KindLabel = "prédios disputam entre si"
+			for _, r := range buildings {
+				if in[r.Building] {
+					x := row(r)
+					x.Pos = len(cr.Ranking) + 1
+					cr.Ranking = append(cr.Ranking, x)
+				}
+			}
+			if !v.Pol.Ranking.Buildings {
+				cr.Warn = "o ranking dos prédios está desligado na Política: a Central não mostra este grupo"
+			} else if len(cr.Ranking) < 2 {
+				cr.Warn = fmt.Sprintf("menos de 2 prédios do grupo têm o mínimo de %d máquinas no Shield: a Central não mostra este grupo ainda", v.Pol.Ranking.MinGroup)
+			}
+			for _, b := range v.CompB {
+				c := b
+				c.Checked = in[b.Name]
+				if c.Checked {
+					c.Group = ""
+				}
+				cr.Choices = append(cr.Choices, c)
+			}
+		case store.CompetitionFloors:
+			cr.KindLabel = "andares do prédio disputam entre si"
+			if len(g.Buildings) == 1 {
+				b := g.Buildings[0]
+				list, err := db.ShieldRankings(ctx, shield.RankFloor, b.Name, 500)
+				if err != nil {
+					return err
+				}
+				for _, r := range list {
+					cr.Ranking = append(cr.Ranking, row(r))
+				}
+				if n := floors[b.ID]; n < competitionMinFloors {
+					cr.Warn = fmt.Sprintf("o prédio tem hoje %d andar(es) com máquinas, e o grupo por andar é para prédios com mais de 3", n)
+				}
+			}
+			if !v.Pol.Ranking.Floors {
+				cr.Warn = "o ranking dos andares está desligado na Política: a Central não mostra este grupo"
+			} else if cr.Warn == "" && len(cr.Ranking) < 2 {
+				cr.Warn = fmt.Sprintf("menos de 2 andares têm o mínimo de %d máquinas no Shield: a Central não mostra este grupo ainda", v.Pol.Ranking.MinGroup)
+			}
+		}
+		v.Comps = append(v.Comps, cr)
+	}
 	return nil
+}
+
+// shieldCompetitionAction: POST /painel/shield/competicoes — cria ou troca um grupo de
+// competição (id vazio: novo). Grupo de prédios: nome e de 2 prédios em diante. Grupo por
+// andar: um prédio com mais de 3 andares (sem nome, o do prédio).
+func (a *api) shieldCompetitionAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	db, ok := a.shieldDB()
+	if !ok {
+		shieldFail(w, r, "ranking", errShieldOff)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		shieldFail(w, r, "ranking", errShieldForm)
+		return
+	}
+	var id int64
+	if raw := strings.TrimSpace(r.PostFormValue("id")); raw != "" {
+		var err error
+		if id, err = strconv.ParseInt(raw, 10, 64); err != nil || id <= 0 {
+			shieldFail(w, r, "ranking", errShieldForm)
+			return
+		}
+	}
+	c := store.ShieldCompetition{ID: id, Name: r.PostFormValue("nome"), Kind: r.PostFormValue("tipo")}
+	picked := r.PostForm["predio"]
+	if len(picked) > store.CompetitionMaxBuildings {
+		shieldFail(w, r, "ranking", fmt.Errorf("no máximo %d prédios por grupo", store.CompetitionMaxBuildings))
+		return
+	}
+	ids := make([]int64, 0, len(picked))
+	for _, p := range picked {
+		n, err := strconv.ParseInt(p, 10, 64)
+		if err != nil || n <= 0 {
+			shieldFail(w, r, "ranking", errShieldForm)
+			return
+		}
+		ids = append(ids, n)
+	}
+	if c.Kind == store.CompetitionFloors {
+		if len(ids) != 1 {
+			shieldFail(w, r, "ranking", errors.New("escolha o prédio do grupo por andar"))
+			return
+		}
+		floors, err := a.shieldFloorCounts(r.Context())
+		if err != nil {
+			a.internalError(w, r, "contar os andares", err)
+			return
+		}
+		if floors[ids[0]] < competitionMinFloors {
+			shieldFail(w, r, "ranking", fmt.Errorf("o grupo por andar é para prédios com mais de 3 andares (este tem %d com máquinas)", floors[ids[0]]))
+			return
+		}
+		if strings.TrimSpace(c.Name) == "" {
+			list, err := db.Buildings(r.Context())
+			if err != nil {
+				a.internalError(w, r, "ler os prédios", err)
+				return
+			}
+			for _, b := range list {
+				if b.ID == ids[0] {
+					c.Name = texto.PlaceName(b.Name)
+				}
+			}
+		}
+	}
+	saved, err := db.SaveShieldCompetition(r.Context(), c, ids, s.Username)
+	switch {
+	case store.IsShieldCompetitionError(err):
+		shieldFail(w, r, "ranking", err)
+		return
+	case errors.Is(err, store.ErrShieldNotFound):
+		shieldFail(w, r, "ranking", errors.New("grupo não encontrado"))
+		return
+	case err != nil:
+		a.internalError(w, r, "gravar o grupo de competição", err)
+		return
+	}
+	what := "novo"
+	if id != 0 {
+		what = "alterado"
+	}
+	a.audit(r, s, "shield.competicao", strings.Join(strings.Fields(c.Name), " "), fmt.Sprintf("grupo %d %s (%s), %d prédio(s)", saved, what, c.Kind, len(ids)))
+	shieldBack(w, r, "ranking", "competicao=1")
+}
+
+// shieldCompetitionDeleteAction: POST /painel/shield/competicoes/{id}/excluir.
+func (a *api) shieldCompetitionDeleteAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
+	db, ok := a.shieldDB()
+	if !ok {
+		shieldFail(w, r, "ranking", errShieldOff)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		shieldFail(w, r, "ranking", errShieldForm)
+		return
+	}
+	name, found, err := db.DeleteShieldCompetition(r.Context(), id)
+	if err != nil {
+		a.internalError(w, r, "excluir o grupo de competição", err)
+		return
+	}
+	if !found {
+		shieldFail(w, r, "ranking", errors.New("grupo não encontrado"))
+		return
+	}
+	a.audit(r, s, "shield.competicao_excluir", name, fmt.Sprintf("grupo %d excluído", id))
+	shieldBack(w, r, "ranking", "competicao_excluida=1")
 }
 
 var errFloorName = errors.New("nome de andar: de 1 a 40 caracteres, sem caracteres de controle")
@@ -1416,14 +1678,38 @@ var _ = template.Must(pages.New("shield-missoes").Parse(`<div class="card"><h2>M
 <div><label class="check"><input type="checkbox" name="publicar" value="1"> publicar já (senão, fica como rascunho)</label></div>
 <button type="submit">Gravar a missão</button></form></div>{{end}}`))
 
-var _ = template.Must(pages.New("shield-ranking").Parse(`<div class="card"><h2>Ranking coletivo por grupo de implantação</h2>
+var _ = template.Must(pages.New("shield-ranking").Parse(`<div class="card"><h2>Grupos de competição</h2>
+<p>A Central mostra primeiro a disputa do grupo do prédio da pessoa e, abaixo, o ranking de todos os prédios. Um <b>grupo de prédios</b> põe prédios parecidos para disputar entre si. Um <b>grupo por andar</b> é um prédio com mais de 3 andares em que os andares disputam. Fora do grupo por andar, a Central não mostra andares: num prédio pequeno, o andar tem poucas pessoas e o nome dele as identifica. Cada prédio fica em um grupo só.</p>
+{{range .Comps}}<details class="lugar"><summary><b>{{.Name}}</b> — {{.KindLabel}} · {{len .Members}} prédio(s){{if .Warn}} · <span class="muted">não aparece na Central</span>{{end}}</summary>
+<p class="muted">Prédios: {{range $i, $m := .Members}}{{if $i}}, {{end}}{{$m}}{{end}}. Alterado por {{.UpdatedBy}} em {{.UpdatedAt}}.</p>
+{{if .Warn}}<p class="aviso">{{.Warn}}.</p>{{end}}
+{{if .Ranking}}<table><thead><tr><th>#</th><th>{{if eq .Kind "andares"}}Andar{{else}}Prédio{{end}}</th><th>Máquinas</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
+{{range .Ranking}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Label}}</td><td>{{.Machines}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>{{end}}
+{{if $.Admin}}{{if eq .Kind "predios"}}<form method="post" action="/painel/shield/competicoes"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="tipo" value="predios">
+<div class="campo"><label for="cn{{.ID}}">Nome do grupo</label><input id="cn{{.ID}}" name="nome" value="{{.Name}}" maxlength="80" required></div>
+<div class="deploy-checks">{{range .Choices}}<label class="deploy-check"><input type="checkbox" name="predio" value="{{.ID}}"{{if .Checked}} checked{{end}}{{if .Group}} disabled{{end}}><span><b>{{localNome .Name}}</b><small>{{if .Group}}no grupo {{.Group}}{{else}}{{.Floors}} andar(es){{end}}</small></span></label>{{end}}</div>
+<button type="submit">Gravar o grupo</button></form>{{end}}
+<form method="post" action="/painel/shield/competicoes/{{.ID}}/excluir"><button class="perigo" type="submit">Excluir o grupo</button></form>{{end}}
+</details>{{else}}<p class="vazio">Nenhum grupo ainda: sem grupo, a Central mostra só o ranking de todos os prédios.</p>{{end}}
+{{if .Admin}}<details class="lugar"><summary><b>Novo grupo de prédios</b></summary><form method="post" action="/painel/shield/competicoes"><input type="hidden" name="tipo" value="predios">
+<div class="campo"><label for="cn-novo">Nome do grupo</label><input id="cn-novo" name="nome" maxlength="80" required placeholder="ex.: Fóruns do interior"></div>
+{{if .CompB}}<div class="deploy-checks">{{range .CompB}}<label class="deploy-check"><input type="checkbox" name="predio" value="{{.ID}}"{{if .Group}} disabled{{end}}><span><b>{{localNome .Name}}</b><small>{{if .Group}}no grupo {{.Group}}{{else}}{{.Floors}} andar(es){{end}}</small></span></label>{{end}}</div>
+<button type="submit">Criar o grupo</button>{{else}}<p class="vazio">Nenhum prédio: os prédios vêm do patrimônio (Configuração › Patrimônio).</p>{{end}}</form></details>
+<details class="lugar"><summary><b>Novo grupo por andar</b> — prédios com mais de 3 andares</summary>
+{{if .CompEligible}}<form method="post" action="/painel/shield/competicoes"><input type="hidden" name="tipo" value="andares">
+<div class="campo"><label for="ca-predio">Prédio</label><select id="ca-predio" name="predio" required>{{range .CompEligible}}<option value="{{.ID}}">{{localNome .Name}} ({{.Floors}} andares)</option>{{end}}</select></div>
+<div class="campo"><label for="ca-nome">Nome do grupo <small class="muted">(vazio: o nome do prédio)</small></label><input id="ca-nome" name="nome" maxlength="80"></div>
+<button type="submit">Criar o grupo por andar</button></form>
+{{else}}<p class="vazio">Nenhum prédio sem grupo com {{.CompMin}} andares ou mais com máquinas. Os andares são definidos em <a href="/painel/configuracao?aba=localizacoes">Configuração › Localizações</a>.</p>{{end}}</details>{{end}}
+</div>
+<div class="card"><h2>Ranking coletivo por grupo de implantação</h2>
 {{if not .Pol.Ranking.Collective}}<p class="vazio">O ranking coletivo está desligado na Política.</p>
 {{else if .Groups}}<table><thead><tr><th>#</th><th>Grupo</th><th>Máquinas</th><th>No selo</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
 {{range .Groups}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Name}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Nenhum grupo com o mínimo de máquinas.</p>{{end}}
 {{if .Hidden}}<p class="muted">{{.Hidden}} grupo(s) com menos de {{.Pol.Ranking.MinGroup}} máquinas ficam de fora (privacidade).</p>{{end}}
 <p class="muted">O denominador inclui as máquinas sem dado. O ranking nunca mostra máquina, vulnerabilidade ou programa.</p></div>
-<div class="card"><h2>Ranking dos prédios</h2>{{if not .Pol.Ranking.Buildings}}<p class="vazio">Desligado na Política.</p>
+<div class="card"><h2>Ranking de todos os prédios</h2>{{if not .Pol.Ranking.Buildings}}<p class="vazio">Desligado na Política.</p>
 {{else if .PlaceB}}<table><thead><tr><th>#</th><th>Prédio</th><th>Máquinas</th><th>No selo</th><th>% no selo</th><th>Média</th></tr></thead><tbody>
 {{range .PlaceB}}<tr><td><span class="shield-rank{{if eq .Pos 1}} first{{else if eq .Pos 2}} second{{else if eq .Pos 3}} third{{end}}">{{.Pos}}º</span></td><td class="shield-rank-name">{{.Label}}</td><td>{{.Machines}}</td><td>{{.Sealed}}</td><td class="shield-percent"><meter min="0" max="100" value="{{.Pct}}">{{.Pct}}%</meter> {{.Pct}}%</td><td>{{.Avg}}</td></tr>{{end}}</tbody></table>
 {{else}}<p class="vazio">Nenhum prédio ainda: o prédio vem do patrimônio (Configuração › Patrimônio), ligado pelo tombo no nome da máquina, e precisa do mínimo de {{.Pol.Ranking.MinGroup}} máquinas no Shield.</p>{{end}}</div>
@@ -1494,7 +1780,7 @@ var _ = template.Must(pages.New("shield-politica").Parse(`{{if not .Admin}}<p cl
 <div><label class="check"><input type="checkbox" name="rank_coletivo" value="1"{{if .Pol.Ranking.Collective}} checked{{end}}> Ranking coletivo por grupo <small class="muted">(só neste painel; não aparece na Central)</small></label></div>
 <div><label class="check"><input type="checkbox" name="rank_individual" value="1"{{if .Pol.Ranking.Individual}} checked{{end}}> Ranking individual (nome, XP e sequência)</label></div>
 <div><label class="check"><input type="checkbox" name="rank_predios" value="1"{{if .Pol.Ranking.Buildings}} checked{{end}}> Ranking dos prédios (do patrimônio)</label></div>
-<div><label class="check"><input type="checkbox" name="rank_andares" value="1"{{if .Pol.Ranking.Floors}} checked{{end}}> Ranking dos andares (as faixas de IP, nos prédios com mais de uma)</label></div>
+<div><label class="check"><input type="checkbox" name="rank_andares" value="1"{{if .Pol.Ranking.Floors}} checked{{end}}> Ranking dos andares (as faixas de IP, nos prédios com mais de uma) <small class="muted">(na Central, só nos grupos por andar)</small></label></div>
 <div><label class="check"><input type="checkbox" name="rank_salas" value="1"{{if .Pol.Ranking.Rooms}} checked{{end}}> Ranking das salas (do patrimônio) <small class="muted">(só neste painel; não aparece na Central, por privacidade)</small></label></div>
 <div class="campo"><label for="r2">Tamanho mínimo da sala no ranking</label><input id="r2" name="rank_min_sala" type="number" value="{{.Pol.Ranking.MinRoom}}"></div>
 <div class="campo"><label for="r1">Tamanho mínimo do grupo, do prédio e do andar no ranking</label><input id="r1" name="rank_min" type="number" value="{{.Pol.Ranking.MinGroup}}"></div>

@@ -180,7 +180,7 @@ CASCADE` nas máquinas; chaves únicas para a idempotência; nenhuma migração 
 |---|---|---|
 | `POST /api/v1/agent/shield` | agente (credencial da máquina) | a "Minha Proteção": a máquina pela credencial, a pessoa pelo token lido pelo agente |
 | `GET /painel/shield…` | painel (leitura) | visão geral, equipamentos, pessoas, missões, exceções, ranking, CSV |
-| `POST /painel/shield/…` | admin, com CSRF (mesma origem) | política, missões, exceções, ajuste de XP, zerar a pontuação — tudo auditado |
+| `POST /painel/shield/…` | admin, com CSRF (mesma origem) | política, missões, exceções, ajuste de XP, zerar a pontuação, grupos de competição — tudo auditado |
 
 A máquina nunca vem de parâmetro (IDOR): vem da credencial. A pessoa nunca vem do app: vem do
 token do Windows, como no autoatendimento.
@@ -285,11 +285,38 @@ contam, porque o instalador público ainda entrega a anterior.
 
 ### O que a Central mostra dos rankings
 
-A Central da pessoa mostra os rankings por **prédio** e por **andar**. O ranking por **grupo de
-implantação** e o por **sala** ficam só no painel do admin: os grupos numéricos são da implantação
-legada (quase todo o parque está no grupo 1) e não dizem nada à pessoa; e o nome de uma sala
-pequena (um gabinete, por exemplo) identifica quem trabalha nela, o que pede cuidado com a LGPD.
-Os dois continuam calculados e podem ser ligados ou desligados na política.
+A Central mostra, nesta ordem:
+
+1. **O grupo de competição** do prédio da máquina, se ele estiver em um (veja abaixo): os prédios
+   do grupo, com a posição dentro do grupo ("Seu grupo — nome"), ou os andares do prédio, no
+   grupo por andar ("Andares do prédio").
+2. **Todos os prédios**: o ranking geral (os 10 primeiros e o da máquina).
+
+Fora do grupo por andar, a Central **não mostra andares**: num prédio pequeno, o andar tem poucas
+pessoas e o nome dele as identifica (LGPD). O ranking por **grupo de implantação** e o por
+**sala** ficam só no painel do admin: os grupos numéricos são da implantação legada (quase todo o
+parque está no grupo 1) e não dizem nada à pessoa, e o nome de uma sala pequena (um gabinete, por
+exemplo) identifica quem trabalha nela. Os rankings de andar e sala continuam calculados e podem
+ser ligados ou desligados na política. Um ranking com menos de 2 participantes (prédios ou
+andares com o mínimo de máquinas da política) não aparece: disputa de um só não é disputa.
+
+### Grupos de competição
+
+Em **Shield › Ranking › Grupos de competição** (o admin cria, altera e exclui; tudo auditado,
+`shield.competicao` e `shield.competicao_excluir`):
+
+- **Grupo de prédios:** um nome e de 2 a 200 prédios, que disputam entre si (prédios parecidos,
+  como os fóruns do interior). A ordem é a do ranking geral; a posição, dentro do grupo.
+- **Grupo por andar:** um prédio com **mais de 3 andares** (contados pelas máquinas do parque em
+  cada andar de Configuração › Localizações), em que os andares disputam entre si. Sem nome, fica
+  o do prédio. Se o prédio depois ficar com 3 andares ou menos, o painel avisa.
+
+Cada prédio fica em um grupo só (o banco recusa e diz em qual grupo ele já está). O grupo é ligado
+ao ID estável do prédio (migração 0085): a renomeação do patrimônio não tira o prédio do grupo.
+O prédio sem grupo vê só o ranking geral. A aba mostra a disputa de cada grupo como a Central a
+monta e avisa quando a Central ainda não o mostra (ranking desligado na política, ou menos de 2
+participantes com o mínimo de máquinas). Tudo é do servidor: vale sem atualizar o agente
+(migração 0087).
 
 ### Zerar a pontuação
 
