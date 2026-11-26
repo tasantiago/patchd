@@ -43,7 +43,7 @@ com o peso da especificação (5), mas **nasce desligado**: um critério sem evi
 | `internal/api/shieldagent.go` | rota do agente `POST /api/v1/agent/shield` (a "Minha Proteção" da pessoa) |
 | `internal/api/shieldpanel.go` | Configuração › Shield (visão geral, equipamentos, pessoas, missões, exceções, ranking, política, auditoria, CSV) |
 | `internal/localapi` | operação `shield` do canal local (identidade pelo token) |
-| `internal/userapp` | aba "Minha Proteção" na Central (anel SVG, critérios, pendências, sequência, nível, conquistas, missões) e o estado no ícone da bandeja |
+| `internal/userapp` | aba "Minha Proteção" na Central — a página inicial dela quando o Shield está ligado (sem ele, Atualizações) — com anel SVG, critérios, pendências, sequência, nível, conquistas, missões, e o estado no ícone da bandeja |
 
 Nada de Redis, fila ou serviço externo: o PostgreSQL já é a fonte de verdade, e a trava consultiva
 resolve a concorrência entre servidores.

@@ -149,3 +149,24 @@ func TestAvisosDoShield(t *testing.T) {
 		t.Fatal(ti, tx)
 	}
 }
+
+// A Central abre em Minha Proteção (sem aba pedida); as outras abas continuam no link delas, e
+// sem o Shield a página inicial é Atualizações.
+func TestPaginaInicialEOShield(t *testing.T) {
+	a := appComShield(vistaShield(false, 93))
+	b := get(a, a.base()).Body.String()
+	if !strings.Contains(b, `aria-label="proteção 93%"`) || !strings.Contains(b, `href="`+a.base()+`?aba=protecao" title="Minha Proteção" class="ativo" aria-current="page"`) ||
+		strings.Contains(b, "Atualizações para você") {
+		t.Fatalf("página inicial:\n%s", b)
+	}
+	if b := get(a, a.base()+"?aba=atualizacoes").Body.String(); !strings.Contains(b, "Atualizações para você") {
+		t.Error("a aba Atualizações pelo link")
+	}
+	if b := get(a, a.base()+"?aba=xyz").Body.String(); !strings.Contains(b, "Atualizações para você") {
+		t.Error("aba desconhecida cai em Atualizações")
+	}
+	sem := appComShield(nil)
+	if b := get(sem, sem.base()).Body.String(); !strings.Contains(b, "Atualizações para você") {
+		t.Error("sem Shield, a inicial é Atualizações")
+	}
+}

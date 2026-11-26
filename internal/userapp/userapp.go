@@ -440,7 +440,12 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	d := pageData{Title: Title, Base: a.base(), Checked: a.now().Format("02/01 15:04"), Tab: r.URL.Query().Get("aba")}
-	if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot && d.Tab != tabShield {
+	// Sem aba pedida (o atalho, o ícone da bandeja), a Central abre em Minha Proteção; sem o
+	// Shield (agente, servidor ou política), em Atualizações (mais abaixo).
+	home := d.Tab == ""
+	if home {
+		d.Tab = tabShield
+	} else if d.Tab != tabStore && d.Tab != tabRequests && d.Tab != tabReboot && d.Tab != tabShield {
 		d.Tab = tabUpdates
 	}
 	a.mu.Lock()
@@ -548,6 +553,8 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		} else if d.Tab == tabShield {
 			d.Tab = tabUpdates // sem Shield (agente, servidor ou política): a aba não existe
 		}
+	} else if home {
+		d.Tab = tabUpdates // sem falar com o patchd, a página de sempre mostra o erro
 	}
 	d.Tabs = []tab{
 		{ID: tabUpdates, Label: "Atualizações", Count: len(d.Updates) + windowsCount(d.Windows)},
