@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -60,6 +61,7 @@ func TestMigracaoDosPrediosComCampanhasAntigas(t *testing.T) {
 		}
 		got = append(got, s)
 	}
+	slices.Sort(got) // a ordem do banco depende da collation
 	if strings.Join(got, "; ") != "PREDIO A; PREDIO VELHO (ausente); Predio a" {
 		t.Fatalf("prédios: %v", got)
 	}
