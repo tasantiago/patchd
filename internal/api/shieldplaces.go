@@ -23,33 +23,16 @@ import (
 // shieldPlaces acha o lugar de cada máquina (uma leitura do parque, do patrimônio e das faixas).
 func (a *api) shieldPlaces(ctx context.Context, in *shieldInputs) error {
 	in.places, in.floorStart = map[string]shield.Place{}, map[string]uint32{}
-	names, err := a.floorNames(ctx)
+	all, l, err := a.fleetLocations(ctx)
 	if err != nil {
 		return err
 	}
-	all, err := a.fleetEquip(ctx)
-	if err != nil {
-		return err
-	}
-	rr, err := a.loadRingRules(ctx)
-	if err != nil {
-		return err
-	}
-	for _, r := range rr.ips {
+	for _, r := range l.ranges {
 		in.floorStart[r.Spec] = addr4(r.rng.lo)
 	}
-	compiled := compileFloorRegex(names)
+	// O mesmo resolvedor das campanhas e de Prédios e implantação (locate.go).
 	for _, e := range all {
-		p := shield.Place{Building: e.Asset.Building, Room: e.Asset.Room}
-		matches := matchingFloorRegex(e, compiled[p.Building])
-		if len(matches) > 0 {
-			if name, conflict := regexFloorName(matches); !conflict { p.Floor = namedFloorPrefix + name }
-		} else if best := floorIP(e, rr.ips); best != nil {
-			p.Floor = best.Spec
-			if name := names[store.FloorKey{Building: p.Building, Spec: best.Spec}]; name != "" {
-				p.Floor = namedFloorPrefix + name
-			}
-		}
+		p := shield.Place{Building: e.Loc.Building, Room: e.Loc.Room, Floor: e.Loc.FloorKey}
 		if p != (shield.Place{}) {
 			in.places[e.ID] = p
 		}

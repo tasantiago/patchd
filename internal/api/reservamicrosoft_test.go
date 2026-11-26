@@ -54,11 +54,10 @@ func TestReservaMicrosoft(t *testing.T) {
 			strings.Contains(b, "A fonte reserva está desligada em Configuração › Parâmetros") == ligada {
 			t.Fatalf("ligada %v: conferência:\n%s", ligada, b)
 		}
-		f.Set("confirmar", "1")
-		pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
+		pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, confirmado(t, h, f))
 		// Em outro tipo, a opção é ignorada.
-		f = formCampanha("tipo", "rescan", "microsoft", "1", "confirmar", "1", "nome", "busca")
-		pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
+		f = formCampanha("tipo", "rescan", "microsoft", "1", "nome", "busca")
+		pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, confirmado(t, h, f))
 		l, _ := st.Campaigns(t.Context(), 5)
 		if len(l) != 2 || !l[1].MicrosoftFallback || l[0].MicrosoftFallback {
 			t.Fatalf("campanhas: %+v", l)

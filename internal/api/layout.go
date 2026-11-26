@@ -331,7 +331,7 @@ var navHome = map[string]struct {
 	"patch":           {crumb{"Patch", "/painel/patch?aba=geral"}, []string{"Patch · Terceiros"}},
 	"campanhas":       {crumb{"Campanhas", "/painel/campanhas"}, []string{"Perguntas ao parque"}},
 	"jobs":            {crumb{"Jobs", "/painel/jobs"}, nil},
-	"aneis":           {crumb{"Grupos de implantação", "/painel/grupos-implantacao"}, []string{"Grupos de implantação e janelas", "Prédios e implantação"}},
+	"aneis":           {crumb{"Prédios e implantação", "/painel/grupos-implantacao"}, []string{"Prédios e implantação"}},
 	"autoatendimento": {crumb{"Autoatendimento", "/painel/autoatendimento"}, nil},
 	"padronizacao":    {crumb{"Padronização", "/painel/padronizacao"}, nil},
 	"scripts":         {crumb{"Scripts", "/painel/scripts"}, nil},

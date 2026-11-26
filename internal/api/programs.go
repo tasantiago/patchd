@@ -533,10 +533,12 @@ func (a *api) programPage(w http.ResponseWriter, r *http.Request) {
 	if v.CanRemove {
 		f := campaignForm{Type: jobs.TypeUninstall, Name: "Remover " + p.Name, When: "horario", ObserveH: 24, TTLH: 24, Resends: resendChoices,
 			Resend: 1, DailyStart: "02:00", DailyDur: 180, TZ: a.panelLocation().String()}
-		if f.Rings, err = a.ringChoices(r, []int{store.PilotRing}); err != nil {
-			a.internalError(w, r, "listar grupos de implantação", err)
+		o, err := a.deployOverview(r.Context())
+		if err != nil {
+			a.internalError(w, r, "listar os prédios", err)
 			return
 		}
+		f.Scope = scopeFormFrom(o, scopeInput{All: true}, "")
 		f.Observe, f.TTL = hourOptions(observeHours, f.ObserveH), hourOptions(ttlHours, f.TTLH)
 		for _, m := range windowDurations {
 			f.Durations = append(f.Durations, durationOption{Minutes: m, Label: durationLabel(m)})
@@ -618,20 +620,18 @@ func (a *api) removeTargetFromForm(r *http.Request, f *campaignForm) (*campaign.
 	return &campaign.RemoveTarget{Program: p.Name, Publisher: p.Publisher, Names: slices.Clone(p.Names), Versions: versions}, ""
 }
 
-// removePreview: em cada grupo marcado, quantas máquinas têm o programa e quantas o patchd
-// consegue remover agora (instalação de máquina com desinstalação silenciosa).
-func (a *api) removePreview(r *http.Request, f campaignForm, c campaign.Campaign) (map[int]string, error) {
+// removePreview: em cada etapa, quantas máquinas têm o programa e quantas o patchd consegue
+// remover agora (instalação de máquina com desinstalação silenciosa).
+func (a *api) removePreview(r *http.Request, f campaignForm, c campaign.Campaign, groups map[int][]string) (map[int]string, error) {
 	installs, err := a.store.SoftwareInstalls(r.Context(), f.RemoveOS, c.Remove.Names, c.Remove.Publisher)
 	if err != nil {
 		return nil, err
 	}
-	machines, err := a.store.Machines(r.Context())
-	if err != nil {
-		return nil, err
-	}
-	ring := map[string]int{}
-	for _, m := range machines {
-		ring[m.ID] = m.Ring
+	stage := map[string]int{}
+	for idx, ids := range groups {
+		for _, id := range ids {
+			stage[id] = idx
+		}
 	}
 	type pair struct{ has, can map[string]bool }
 	by := map[int]*pair{}
@@ -641,26 +641,26 @@ func (a *api) removePreview(r *http.Request, f campaignForm, c campaign.Campaign
 		if !c.Remove.Matches(sw) {
 			continue
 		}
-		rg, ok := ring[in.MachineID]
+		idx, ok := stage[in.MachineID]
 		if !ok {
 			continue
 		}
-		if by[rg] == nil {
-			by[rg] = &pair{map[string]bool{}, map[string]bool{}}
+		if by[idx] == nil {
+			by[idx] = &pair{map[string]bool{}, map[string]bool{}}
 		}
-		by[rg].has[in.MachineID] = true
+		by[idx].has[in.MachineID] = true
 		if removableEntry(sw) == nil {
-			by[rg].can[in.MachineID] = true
+			by[idx].can[in.MachineID] = true
 		}
 	}
 	out := map[int]string{}
-	for _, rg := range f.Chosen {
-		p := by[rg]
+	for idx := range groups {
+		p := by[idx]
 		if p == nil {
-			out[rg] = "nenhuma máquina com o programa"
+			out[idx] = "nenhuma máquina com o programa"
 			continue
 		}
-		out[rg] = fmt.Sprintf("%d com o programa · %d removível(is) pelo patchd", len(p.has), len(p.can))
+		out[idx] = fmt.Sprintf("%d com o programa · %d removível(is) pelo patchd", len(p.has), len(p.can))
 	}
 	return out, nil
 }

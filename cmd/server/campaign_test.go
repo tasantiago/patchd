@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,15 +18,36 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
+	"github.com/tasantiago/patchd/internal/window"
 )
+
+// prediosCLI põe as máquinas (ID → tombo no nome) nos prédios do patrimônio e devolve os IDs
+// dos prédios pelo nome.
+func prediosCLI(t *testing.T, mem *store.Memory, maq map[string]string, bens []store.AssetLocation) map[string]int64 {
+	t.Helper()
+	ctx := context.Background()
+	for id, nome := range maq {
+		if _, err := mem.SaveInventory(ctx, id, protocol.InventoryReport{SchemaVersion: 1, Hash: id + nome, OS: protocol.OSInfo{ID: "windows", Arch: "amd64", Hostname: nome}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mem.ReplaceAssetLocations(ctx, bens, store.AssetImport{By: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]int64{}
+	bs, _ := mem.Buildings(ctx)
+	for _, b := range bs {
+		out[b.Name] = b.ID
+	}
+	return out
+}
 
 func TestComandosDeCampanha(t *testing.T) {
 	ctx := context.Background()
 	mem := store.NewMemory()
-	for maq, anel := range map[string]int{"60ef97e4-0001": 0, "92fc3b93-0002": 1} {
-		_, _ = mem.SaveInventory(ctx, maq, protocol.InventoryReport{SchemaVersion: 1, Hash: maq})
-		_, _ = mem.SetMachineRing(ctx, maq, anel)
-	}
+	ids := prediosCLI(t, mem, map[string]string{"60ef97e4-0001": "EQ1001", "92fc3b93-0002": "EQ1002"},
+		[]store.AssetLocation{{Tombo: "1001", Building: "PREDIO A"}, {Tombo: "1002", Building: "PREDIO B"}})
+	a, b := fmt.Sprint(ids["PREDIO A"]), fmt.Sprint(ids["PREDIO B"])
 	agora := time.Now().UTC()
 	roda := func(args ...string) (int, string, string) {
 		var o, e bytes.Buffer
@@ -36,30 +58,39 @@ func TestComandosDeCampanha(t *testing.T) {
 		args []string
 		msg  string
 	}{
-		{[]string{"create", "-name", "x", "-type", "rescan", "-rings", "1,0"}, "ordem"},
-		{[]string{"create", "-name", "x", "-type", "update", "-rings", "0,1"}, "fontes"},
-		{[]string{"create", "-type", "rescan", "-rings", "0"}, "nome"},
-		{[]string{"create", "-name", "x", "-type", "shell", "-rings", "0"}, "desconhecido"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-rings", "0,1"}, "as campanhas novas são por prédio e andar"},
+		{[]string{"create", "-name", "x", "-type", "rescan"}, "informe o escopo"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-buildings", "999"}, "Prédio desconhecido"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-floor", "1"}, "ID do prédio=nome do andar"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-buildings", a, "-pilot-building", b}, "O piloto precisa ser"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-buildings", a, "-window"}, "sem janela de manutenção ativa: Predio A"},
+		{[]string{"create", "-name", "x", "-type", "update", "-all-buildings"}, "fontes"},
+		{[]string{"create", "-type", "rescan", "-all-buildings"}, "nome"},
+		{[]string{"create", "-name", "x", "-type", "shell", "-all-buildings"}, "desconhecido"},
 	} {
 		if code, _, e := roda(c.args...); code != exitConfig || !strings.Contains(e, c.msg) {
 			t.Errorf("%v: %d %s", c.args, code, e)
 		}
 	}
-	code, o, e := roda("create", "-name", "busca geral", "-type", "rescan", "-rings", "0,1", "-observe", "10m", "-ttl", "15m")
-	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, "libera o grupo de implantação 0 no próximo minuto") {
+	code, o, e := roda("create", "-name", "busca geral", "-type", "rescan", "-all-buildings", "-pilot-building", a, "-observe", "10m", "-ttl", "15m")
+	if code != exitOK || strings.TrimSpace(o) != "1" || !strings.Contains(e, `libera "Piloto — Predio A" no próximo minuto`) || !strings.Contains(e, "2 equipamento(s)") {
 		t.Fatalf("create: %d %q %s", code, o, e)
 	}
-	// O laço do servidor libera o grupo de implantação 0.
+	if c, _, _ := mem.Campaign(ctx, 1); c.Scope == nil || len(c.Rings) != 0 || c.Scope.Pilot.BuildingID != ids["PREDIO A"] {
+		t.Fatalf("campanha: %+v", c)
+	}
+	// O laço do servidor libera o piloto.
 	_, key, _ := jobs.GenerateKey()
 	eng := &campaign.Engine{Store: mem, Key: key}
 	if err := eng.Step(ctx, agora); err != nil {
 		t.Fatal(err)
 	}
 	_, o, _ = roda("show", "-id", "1")
-	if !strings.Contains(o, "0 (atual)  1    60ef97e4  pendente") || !strings.Contains(o, "ainda não liberado") || !strings.Contains(o, "observação: 10m0s") {
+	if !strings.Contains(o, "Piloto — Predio A (atual)                    1    60ef97e4  pendente") || !strings.Contains(o, "ainda não liberado") || !strings.Contains(o, "observação: 10m0s") ||
+		!strings.Contains(o, "etapas: [Piloto — Predio A] → Demais equipamentos do escopo") {
 		t.Errorf("show:\n%s", o)
 	}
-	if _, o, _ := roda("list"); !strings.Contains(o, "[0]→1") || !strings.Contains(o, "em_andamento") {
+	if _, o, _ := roda("list"); !strings.Contains(o, "[Piloto — Predio A]") || !strings.Contains(o, "em_andamento") {
 		t.Errorf("list:\n%s", o)
 	}
 	if code, _, e := roda("resume", "-id", "1"); code != exitRuntime || !strings.Contains(e, "não pausada") {
@@ -103,7 +134,6 @@ func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
 		"aaaa0000-0003": {{Name: "Google Chrome", Version: "155.0", Publisher: "Google LLC", Scope: "machine"}},
 	} {
 		_, _ = mem.SaveInventory(ctx, maq, protocol.InventoryReport{SchemaVersion: 1, Hash: maq, OS: protocol.OSInfo{ID: "windows", Arch: "amd64"}, Software: sw})
-		_, _ = mem.SetMachineRing(ctx, maq, 0)
 	}
 	m, _ := thirdparty.Default()
 	tp := &tpinstall.Campaigner{Store: mem, Manifest: m, Dir: dir}
@@ -112,8 +142,8 @@ func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
 		code := campaignCommand(ctx, mem, tp, args, time.Now().UTC(), &o, &e)
 		return code, o.String(), e.String()
 	}
-	criar := []string{"create", "-type", "thirdparty", "-app", "libreoffice", "-version", "26.8.1.1", "-rings", "0,1", "-observe", "1h"}
-	if code, _, e := roda("create", "-type", "thirdparty", "-app", "libreoffice", "-rings", "0"); code != exitConfig || !strings.Contains(e, "-app e -version") {
+	criar := []string{"create", "-type", "thirdparty", "-app", "libreoffice", "-version", "26.8.1.1", "-unlocated", "-observe", "1h"}
+	if code, _, e := roda("create", "-type", "thirdparty", "-app", "libreoffice", "-unlocated"); code != exitConfig || !strings.Contains(e, "-app e -version") {
 		t.Errorf("sem versão: %d %s", code, e)
 	}
 	if code, _, e := roda(criar...); code != exitRuntime || !strings.Contains(e, "a campanha não foi criada: libreoffice 26.8.1.1 não está aprovado") {
@@ -131,7 +161,7 @@ func TestCampanhaDeTerceirosPelaLinhaDeComando(t *testing.T) {
 	}
 	_, o, _ = roda("show", "-id", "1")
 	for _, tr := range []string{"campanha 1: libreoffice 26.8.1.1", "tipo: thirdparty (programa: libreoffice 26.8.1.1)",
-		"liberação: grupo de implantação 0: 1 job(s); fora: 1 sem o programa", "92fc3b93  pendente"} {
+		"liberação: Equipamentos sem localização identificada: 1 job(s); fora: 1 sem o programa", "92fc3b93  pendente"} {
 		if !strings.Contains(o, tr) {
 			t.Errorf("show: faltou %q\n%s", tr, o)
 		}
@@ -154,16 +184,19 @@ func TestCampanhaDoWindowsPelaLinhaDeComando(t *testing.T) {
 		args []string
 		msg  string
 	}{
-		{[]string{"create", "-type", "windows_update", "-rings", "0"}, "-kb vai com -type windows_update"},
-		{[]string{"create", "-name", "x", "-type", "rescan", "-kb", "5127648", "-rings", "0"}, "-kb vai com"},
-		{[]string{"create", "-type", "windows_update", "-kb", "5127648", "-sources", "curl", "-rings", "0"}, "sem -sources"},
-		{[]string{"create", "-type", "windows_update", "-kb", "KB51x", "-rings", "0"}, "fora do formato"},
+		{[]string{"create", "-type", "windows_update", "-unlocated"}, "-kb vai com -type windows_update"},
+		{[]string{"create", "-name", "x", "-type", "rescan", "-kb", "5127648", "-unlocated"}, "-kb vai com"},
+		{[]string{"create", "-type", "windows_update", "-kb", "5127648", "-sources", "curl", "-unlocated"}, "sem -sources"},
+		{[]string{"create", "-type", "windows_update", "-kb", "KB51x", "-unlocated"}, "fora do formato"},
 	} {
 		if code, _, e := roda(c.args...); code != exitConfig || !strings.Contains(e, c.msg) {
 			t.Errorf("%v: %d %s", c.args, code, e)
 		}
 	}
-	code, o, e := roda("create", "-type", "windows_update", "-kb", "kb5127648, 5127648,KB5130001", "-rings", "0,1", "-window")
+	ids := prediosCLI(t, mem, map[string]string{"m1": "EQ5001"}, []store.AssetLocation{{Tombo: "5001", Building: "FORUM X"}})
+	loc, _ := time.LoadLocation("America/Porto_Velho")
+	_ = mem.SetBuildingWindows(ctx, []int64{ids["FORUM X"]}, window.Window{Days: window.AllDays, Start: 22 * time.Hour, Duration: 6 * time.Hour, Location: loc}, "t")
+	code, o, e := roda("create", "-type", "windows_update", "-kb", "kb5127648, 5127648,KB5130001", "-all-buildings", "-window")
 	if code != exitOK || strings.TrimSpace(o) != "1" {
 		t.Fatalf("create: %d %q %s", code, o, e)
 	}
@@ -185,13 +218,15 @@ func TestCampanhaDeReinicioPelaLinhaDeComando(t *testing.T) {
 		code := campaignCommand(ctx, mem, nil, args, time.Now().UTC(), &o, &e)
 		return code, o.String(), e.String()
 	}
-	if code, _, e := roda("create", "-name", "x", "-type", "rescan", "-delay", "15m", "-rings", "0"); code != exitConfig || !strings.Contains(e, "-delay vai só com -type reboot") {
+	if code, _, e := roda("create", "-name", "x", "-type", "rescan", "-delay", "15m", "-unlocated"); code != exitConfig || !strings.Contains(e, "-delay vai só com -type reboot") {
 		t.Errorf("delay em rescan: %d %s", code, e)
 	}
-	if code, _, e := roda("create", "-type", "reboot", "-delay", "90m", "-rings", "0"); code != exitConfig || !strings.Contains(e, "aviso do reinício") {
+	if code, _, e := roda("create", "-type", "reboot", "-delay", "90m", "-unlocated"); code != exitConfig || !strings.Contains(e, "aviso do reinício") {
 		t.Errorf("delay fora: %d %s", code, e)
 	}
-	if code, _, e := roda("create", "-type", "reboot", "-rings", "0,1", "-window"); code != exitOK {
+	ids := prediosCLI(t, mem, map[string]string{"m1": "EQ5001"}, []store.AssetLocation{{Tombo: "5001", Building: "FORUM X"}})
+	_ = mem.SetBuildingWindows(ctx, []int64{ids["FORUM X"]}, window.Window{Days: window.AllDays, Start: 2 * time.Hour, Duration: 2 * time.Hour, Location: time.UTC}, "t")
+	if code, _, e := roda("create", "-type", "reboot", "-buildings", fmt.Sprint(ids["FORUM X"]), "-window"); code != exitOK {
 		t.Fatalf("create: %d %s", code, e)
 	}
 	c, _, _ := mem.Campaign(ctx, 1)

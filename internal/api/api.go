@@ -213,6 +213,14 @@ type Store interface {
 	SetMachineRing(ctx context.Context, id string, ring int) (bool, error)
 	// Grupo de implantação pelo prédio do patrimônio.
 	BuildingRings(ctx context.Context) ([]store.BuildingRing, error)
+	// Prédios com ID estável, janelas por prédio e campanhas por localização (deployment.go).
+	Buildings(ctx context.Context) ([]store.Building, error)
+	BuildingWindows(ctx context.Context) (map[int64]store.BuildingWindow, error)
+	SetBuildingWindows(ctx context.Context, ids []int64, w window.Window, by string) error
+	SetBuildingWindowsEnabled(ctx context.Context, ids []int64, enabled bool, by string) (int, error)
+	DeleteBuildingWindows(ctx context.Context, ids []int64) (int, error)
+	CreateLocatedCampaign(ctx context.Context, c campaign.Campaign, targets []campaign.Target) (int64, error)
+	CampaignTargets(ctx context.Context, id int64, idx int) ([]campaign.Target, error)
 	SetBuildingRing(ctx context.Context, b store.BuildingRing) error
 	DeleteBuildingRing(ctx context.Context, building string) (bool, error)
 	RingPins(ctx context.Context) (map[string]bool, error)
@@ -474,7 +482,12 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.Handle("GET /painel/campanhas/{id}", a.panelPage(a.campaignPage))
 	mux.Handle("GET /painel/campanhas/{id}/resultado.csv", a.panelPage(a.campaignCSV))
 	mux.Handle("POST /painel/campanhas/{id}/{op}", a.sameOrigin(a.adminAction(a.staleAfter(a.campaignChangeAction))))
-	mux.Handle("GET /painel/grupos-implantacao", a.panelPage(a.ringsPage))
+	mux.Handle("GET /painel/grupos-implantacao", a.panelPage(a.deploymentPage))
+	mux.Handle("POST /painel/grupos-implantacao/predios/janela", a.sameOrigin(a.adminAction(a.buildingWindowAction)))
+	mux.Handle("GET /painel/grupos-implantacao/janelas", a.panelPage(a.windowBatchPage))
+	mux.Handle("POST /painel/grupos-implantacao/janelas", a.sameOrigin(a.adminAction(a.windowBatchAction)))
+	mux.Handle("GET /painel/grupos-implantacao/janelas-legadas", a.panelPage(a.legacyWindowsPage))
+	mux.Handle("POST /painel/grupos-implantacao/janelas-legadas", a.sameOrigin(a.adminAction(a.legacyWindowsAction)))
 	mux.Handle("GET /painel/aneis", a.panelPage(movedTo("/painel/grupos-implantacao"))) // o endereço antigo (era "Anéis")
 	mux.Handle("POST /painel/grupos-implantacao/janela", a.sameOrigin(a.adminAction(a.setWindowAction)))
 	mux.Handle("POST /painel/grupos-implantacao/{ring}/remover-janela", a.sameOrigin(a.adminAction(a.deleteWindowAction)))

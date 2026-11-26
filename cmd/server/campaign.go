@@ -11,9 +11,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
+	"github.com/tasantiago/patchd/internal/api"
 	"github.com/tasantiago/patchd/internal/campaign"
 	"github.com/tasantiago/patchd/internal/config"
 	"github.com/tasantiago/patchd/internal/installomator"
@@ -22,20 +24,27 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpinstall"
+	"github.com/tasantiago/patchd/internal/window"
 )
 
 const campaignUsage = `uso: patchd-server campaign <comando> [opções]
 
 comandos:
-  create  cria a campanha: -name "nome" -type rescan|update|thirdparty|windows_update|reboot|sistema_todas|terceiros_todos
+  create  cria a campanha por prédios e andares: -name "nome"
+          -type rescan|update|thirdparty|windows_update|reboot|sistema_todas|terceiros_todos
           [-sources fonte,fonte] [-app programa -version versão] [-kb KB5127648,...] [-delay 15m]
-          -rings 0,1 [-observe 24h] [-ttl 24h | -window].
-          O servidor libera o primeiro grupo de implantação no próximo minuto e cada grupo de implantação seguinte sozinho,
-          quando o anterior termina sem falha e a observação passa
+          escopo: -all-buildings | -buildings ID,ID | -floor "ID=nome do andar" (repetível)
+          [-unlocated] (inclui os sem localização identificada)
+          piloto: [-pilot-building ID | -pilot-floor "ID=nome do andar"]
+          [-observe 24h] [-ttl 24h | -window] [-resend N].
+          Os IDs e os andares saem de "patchd-server building list". Com piloto, o servidor
+          libera o piloto no próximo minuto e o resto do escopo, de uma vez, quando o piloto
+          termina sem falha e a observação passa; com -window, cada máquina na janela do seu
+          prédio. As campanhas novas não usam os grupos de implantação numéricos (-rings).
   list    lista as campanhas, da mais nova para a mais antiga [-n 20]
-  show    mostra a campanha e os jobs de cada grupo de implantação: -id N
-  pause   pausa: -id N (os jobs já criados seguem; nenhum grupo de implantação novo é liberado)
-  resume  retoma uma pausada: -id N (as falhas do grupo de implantação atual ficam aceitas)
+  show    mostra a campanha e os jobs de cada etapa (ou grupo, na legada): -id N
+  pause   pausa: -id N (os jobs já criados seguem; nenhuma etapa nova é liberada)
+  resume  retoma uma pausada: -id N (as falhas da etapa atual ficam aceitas)
   cancel  cancela: -id N (os jobs ainda pendentes da campanha são cancelados)
 
 sistema_todas: cada máquina recebe tudo o que está pendente nela e aprovado em Patch (Linux: um
@@ -73,6 +82,7 @@ esgotadas, conta como falha e pausa.
 // campaignStore é o que os comandos de campanha usam do banco.
 type campaignStore interface {
 	campaign.Store
+	api.Store
 	CreateCampaign(ctx context.Context, c campaign.Campaign) (int64, error)
 	Campaign(ctx context.Context, id int64) (campaign.Campaign, bool, error)
 	Campaigns(ctx context.Context, limit int) ([]campaign.Campaign, error)
@@ -84,6 +94,7 @@ type campaignStore interface {
 // terceiros (nil: elas pausam, dizendo por quê).
 func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, tp campaign.ThirdPartyPlanner, logger *slog.Logger) *campaign.Engine {
 	cs := newComplianceService(pg, logger)
+	loc := &fleetLocator{pg: pg, logger: logger}
 	return &campaign.Engine{Store: pg, Key: key, Logger: logger, ThirdParty: tp,
 		// Só o que está aprovado em Patch (Aula 13.2), conferido na hora em que cada grupo de implantação é
 		// liberado: uma aprovação revogada no meio da campanha já não entra no grupo de implantação seguinte.
@@ -113,7 +124,42 @@ func newCampaignEngine(pg *store.Postgres, key ed25519.PrivateKey, tp campaign.T
 			}
 			s, e := rw.Window.Next(now, jobs.MinTTL)
 			return s, e, true, nil
-		}}
+		},
+		// Campanha por localização: a janela ativa de cada prédio e onde as máquinas estão agora
+		// (o mesmo resolvedor do painel), para não executar na que mudou de prédio ou de andar.
+		BuildingWindows: func(ctx context.Context) (map[int64]window.Window, error) {
+			return api.ActiveBuildingWindows(ctx, pg)
+		},
+		Locate: loc.locate}
+}
+
+// fleetLocator guarda por um minuto a localização do parque inteiro: o motor confere a cada
+// lançamento e a cada rodada de novas tentativas, e o parque não muda de lugar nesse tempo.
+type fleetLocator struct {
+	pg     *store.Postgres
+	logger *slog.Logger
+	mu     sync.Mutex
+	at     time.Time
+	all    map[string]campaign.Location
+}
+
+func (f *fleetLocator) locate(ctx context.Context, ids []string) (map[string]campaign.Location, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.all == nil || time.Since(f.at) > time.Minute {
+		all, err := api.LocateFleet(ctx, f.pg, f.logger, nil)
+		if err != nil {
+			return nil, err
+		}
+		f.all, f.at = all, time.Now()
+	}
+	out := make(map[string]campaign.Location, len(ids))
+	for _, id := range ids {
+		if l, ok := f.all[id]; ok {
+			out[id] = l
+		}
+	}
+	return out, nil
 }
 
 // campaignEvery: de quanto em quanto tempo o servidor avança as campanhas.
@@ -222,20 +268,54 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 		kbList := fs.String("kb", "", "windows_update: KBs, separados por vírgula (KB5127648)")
 		app := fs.String("app", "", "thirdparty: a regra do programa (libreoffice)")
 		ver := fs.String("version", "", "thirdparty: a versão aprovada e guardada")
-		rings := fs.String("rings", "", "grupos de implantação em ordem, separados por vírgula (ex.: 0,1)")
-		observe := fs.Duration("observe", 24*time.Hour, "tempo de observação depois de cada grupo de implantação concluído")
+		rings := fs.String("rings", "", "não vale mais para campanhas novas (use -buildings, -floor ou -all-buildings)")
+		all := fs.Bool("all-buildings", false, "todos os prédios identificados com equipamentos")
+		buildings := fs.String("buildings", "", "prédios inteiros, pelos IDs de building list, separados por vírgula")
+		var floors floorFlags
+		fs.Var(&floors, "floor", "um andar: \"ID=nome do andar\" (repetível)")
+		unlocated := fs.Bool("unlocated", false, "incluir os equipamentos sem localização identificada (sem janela de prédio)")
+		pilotB := fs.Int64("pilot-building", 0, "prédio piloto (ID)")
+		pilotF := fs.String("pilot-floor", "", "andar piloto: \"ID=nome do andar\"")
+		observe := fs.Duration("observe", 24*time.Hour, "tempo de observação depois de o piloto terminar sem falha")
 		ttl := fs.Duration("ttl", 24*time.Hour, "prazo dos jobs sem janela")
-		win := fs.Bool("window", false, "jobs na próxima janela de cada grupo de implantação")
+		win := fs.Bool("window", false, "jobs na próxima janela do prédio de cada máquina")
 		resend := fs.Int("resend", 0, "reenvios automáticos, por máquina, do job que falhou ou expirou (0 a 5)")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 			return exitConfig
 		}
-		r, err := campaign.ParseRings(*rings)
-		if err != nil {
-			fmt.Fprintf(stderr, "patchd-server: -rings: %v\n", err)
+		if *rings != "" {
+			fmt.Fprintln(stderr, "patchd-server: as campanhas novas são por prédio e andar: use -all-buildings, -buildings ou -floor (os grupos de implantação numéricos valem só para as campanhas antigas)")
 			return exitConfig
 		}
-		c := campaign.Campaign{Name: strings.TrimSpace(*name), Type: *typ, Rings: r, Observe: *observe, TTL: *ttl,
+		spec := api.ScopeSpec{AllBuildings: *all, Floors: floors, Unlocated: *unlocated, PilotBuilding: *pilotB}
+		for _, x := range strings.Split(*buildings, ",") {
+			if x = strings.TrimSpace(x); x == "" {
+				continue
+			}
+			id, err := strconv.ParseInt(x, 10, 64)
+			if err != nil || id <= 0 {
+				fmt.Fprintf(stderr, "patchd-server: -buildings: %q não é um ID de prédio\n", x)
+				return exitConfig
+			}
+			spec.Buildings = append(spec.Buildings, id)
+		}
+		if *pilotF != "" {
+			ref, err := parseFloorRef(*pilotF)
+			if err != nil {
+				fmt.Fprintf(stderr, "patchd-server: -pilot-floor: %v\n", err)
+				return exitConfig
+			}
+			if *pilotB != 0 {
+				fmt.Fprintln(stderr, "patchd-server: escolha um piloto: -pilot-building ou -pilot-floor")
+				return exitConfig
+			}
+			spec.PilotFloor = &ref
+		}
+		if !spec.AllBuildings && len(spec.Buildings) == 0 && len(spec.Floors) == 0 && !spec.Unlocated {
+			fmt.Fprintln(stderr, "patchd-server: informe o escopo: -all-buildings, -buildings ID,ID ou -floor \"ID=nome do andar\"")
+			return exitConfig
+		}
+		c := campaign.Campaign{Name: strings.TrimSpace(*name), Type: *typ, Observe: *observe, TTL: *ttl,
 			UseWindow: *win, CreatedBy: "linha de comando", App: strings.TrimSpace(*app), Version: strings.TrimSpace(*ver), AutoResend: *resend}
 		if c.Type == jobs.TypeThirdParty && c.Name == "" && c.App != "" {
 			c.Name = c.App + " " + c.Version
@@ -278,6 +358,23 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 		if c.Type == jobs.TypeWinUpdate && c.Name == "" {
 			c.Name = "Windows " + strings.Join(c.Sources, ", ")
 		}
+		// Os campos primeiro (o escopo ainda provisório), para o erro de digitação vir antes.
+		c.Scope = &campaign.Scope{Unlocated: true, Stages: []campaign.Stage{{Label: "escopo"}}}
+		if err := c.Validate(); err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitConfig
+		}
+		// O escopo pelo mesmo resolvedor e plano do painel (os prédios, andares e janelas de agora).
+		sc, targets, err := api.PlanCampaign(ctx, st, nil, spec, c.UseWindow)
+		if errors.Is(err, api.ErrScope) {
+			fmt.Fprintf(stderr, "patchd-server: %s\n", strings.TrimPrefix(err.Error(), api.ErrScope.Error()+": "))
+			return exitConfig
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
+			return exitRuntime
+		}
+		c.Scope = &sc
 		if err := c.Validate(); err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitConfig
@@ -297,13 +394,13 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 				return exitRuntime
 			}
 		}
-		id, err := st.CreateCampaign(ctx, c)
+		id, err := st.CreateLocatedCampaign(ctx, c, targets)
 		if err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
 			return exitRuntime
 		}
-		fmt.Fprintf(stderr, "campanha %d criada (%s, grupos de implantação %s, observação de %v). O servidor libera o grupo de implantação %d no próximo minuto;\n"+
-			"acompanhe com: patchd-server campaign show -id %d\n", id, c.Type, ringsText(c.Rings), c.Observe, c.Rings[0], id)
+		fmt.Fprintf(stderr, "campanha %d criada (%s, %d equipamento(s), etapas: %s; observação de %v). O servidor libera \"%s\" no próximo minuto;\n"+
+			"acompanhe com: patchd-server campaign show -id %d\n", id, c.Type, len(targets), c.StagesText(false), c.Observe, c.StageLabel(0), id)
 		fmt.Fprintln(stdout, id)
 		return exitOK
 	case "list":
@@ -317,7 +414,7 @@ func campaignCommand(ctx context.Context, st campaignStore, tp campaign.ThirdPar
 			return exitRuntime
 		}
 		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tNOME\tTIPO\tANÉIS\tESTADO\tDETALHE")
+		fmt.Fprintln(tw, "ID\tNOME\tTIPO\tETAPAS\tESTADO\tDETALHE")
 		for _, c := range list {
 			typ := c.Type
 			if c.Type == jobs.TypeThirdParty {
@@ -391,6 +488,9 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 	when := fmt.Sprintf("prazo de %v", c.TTL)
 	if c.UseWindow {
 		when = "na janela de cada grupo de implantação"
+		if c.Located() {
+			when = "na janela do prédio de cada máquina"
+		}
 	}
 	if c.Daily != nil {
 		when = "em horário fixo, " + c.Daily.String()
@@ -399,9 +499,18 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 	for _, n := range c.Notes {
 		fmt.Fprintf(stdout, "liberação: %s\n", n)
 	}
+	if c.Located() {
+		fmt.Fprintf(stdout, "etapas: %s\n", c.StagesText(true))
+	} else {
+		fmt.Fprintln(stdout, "campanha legada: pelos grupos de implantação numéricos")
+	}
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "GRUPO\tJOB\tMÁQUINA\tESTADO\tDETALHE")
-	for idx, ring := range c.Rings {
+	fmt.Fprintln(tw, "ETAPA\tJOB\tMÁQUINA\tESTADO\tDETALHE")
+	for idx := range c.StageCount() {
+		ring := c.StageLabel(idx)
+		if !c.Located() {
+			ring = strconv.Itoa(c.Rings[idx])
+		}
 		list, err := st.CampaignJobs(ctx, c.ID, idx)
 		if err != nil {
 			fmt.Fprintf(stderr, "patchd-server: %v\n", err)
@@ -413,28 +522,47 @@ func campaignShow(ctx context.Context, st campaignStore, c campaign.Campaign, st
 		}
 		switch {
 		case idx > c.LaunchedIdx:
-			fmt.Fprintf(tw, "%d%s\t-\t-\tainda não liberado\t-\n", ring, mark)
+			fmt.Fprintf(tw, "%s%s\t-\t-\tainda não liberado\t-\n", ring, mark)
 		case len(list) == 0:
-			fmt.Fprintf(tw, "%d%s\t-\t-\tnenhuma máquina com o que fazer\t-\n", ring, mark)
+			fmt.Fprintf(tw, "%s%s\t-\t-\tnenhuma máquina com o que fazer\t-\n", ring, mark)
 		}
 		for _, j := range list {
-			fmt.Fprintf(tw, "%d%s\t%d\t%s\t%s\t%s\n", ring, mark, j.ID, short(j.MachineID), j.State, orDash(j.Detail))
+			fmt.Fprintf(tw, "%s%s\t%d\t%s\t%s\t%s\n", ring, mark, j.ID, short(j.MachineID), j.State, orDash(j.Detail))
 		}
 	}
 	_ = tw.Flush()
 	return exitOK
 }
 
-func ringsText(r []int) string {
-	s := make([]string, len(r))
-	for i, v := range r {
-		s[i] = strconv.Itoa(v)
+// floorFlags: -floor repetível ("ID=nome do andar").
+type floorFlags []api.FloorRef
+
+func (f *floorFlags) String() string { return fmt.Sprint(len(*f)) }
+
+func (f *floorFlags) Set(v string) error {
+	ref, err := parseFloorRef(v)
+	if err != nil {
+		return err
 	}
-	return strings.Join(s, "→")
+	*f = append(*f, ref)
+	return nil
 }
 
-// ringsProgress marca o grupo de implantação atual: "0→[1]→2".
+func parseFloorRef(v string) (api.FloorRef, error) {
+	a, name, ok := strings.Cut(v, "=")
+	id, err := strconv.ParseInt(strings.TrimSpace(a), 10, 64)
+	name = strings.TrimSpace(name)
+	if !ok || err != nil || id <= 0 || name == "" || len(name) > 300 {
+		return api.FloorRef{}, fmt.Errorf("andar %q: use \"ID do prédio=nome do andar\" (ex.: 12=1º andar)", v)
+	}
+	return api.FloorRef{BuildingID: id, Floor: name}, nil
+}
+
+// ringsProgress marca a etapa atual: "0→[1]→2" na legada, os nomes das etapas na por localização.
 func ringsProgress(c campaign.Campaign) string {
+	if c.Located() {
+		return c.StagesText(true)
+	}
 	s := make([]string, len(c.Rings))
 	for i, v := range c.Rings {
 		s[i] = strconv.Itoa(v)

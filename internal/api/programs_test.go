@@ -206,9 +206,9 @@ func TestCampanhaDeRemocaoPeloPainel(t *testing.T) {
 	}
 
 	form := formCampanha("nome", "remover programa msi", "tipo", "desinstalar", "remover_so", "windows", "remover_nome", "programa msi",
-		"remover_fab", "X", "versao", "2.0", "anel", "0")
+		"remover_fab", "X", "versao", "2.0")
 	// Nenhuma versão marcada, ou programa forjado: volta à página do programa com o motivo.
-	sem := formCampanha("tipo", "desinstalar", "remover_so", "windows", "remover_nome", "programa msi", "remover_fab", "X", "anel", "0")
+	sem := formCampanha("tipo", "desinstalar", "remover_so", "windows", "remover_nome", "programa msi", "remover_fab", "X")
 	l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, sem))
 	if !strings.HasPrefix(l, "/painel/inventario/programa?") || !strings.Contains(l, "erro=campanha") || !strings.HasSuffix(l, "#campanha") {
 		t.Fatalf("sem versão: %s", l)
@@ -216,12 +216,12 @@ func TestCampanhaDeRemocaoPeloPainel(t *testing.T) {
 	if b := pagina(h, "GET", strings.TrimSuffix(l, "#campanha"), sessaoAdmin, nil).Body.String(); !strings.Contains(b, "A campanha de remoção não foi criada: Marque ao menos uma versão a remover.") {
 		t.Error("o motivo na página do programa")
 	}
-	forjado := formCampanha("tipo", "desinstalar", "remover_so", "windows", "remover_nome", "outro", "remover_fab", "X", "versao", "2.0", "anel", "0")
+	forjado := formCampanha("tipo", "desinstalar", "remover_so", "windows", "remover_nome", "outro", "remover_fab", "X", "versao", "2.0")
 	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, forjado)); !strings.Contains(l, "erro=campanha") {
 		t.Errorf("forjado: %s", l)
 	}
 	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "desinstalar", "remover_so", "linux",
-		"remover_nome", "programa msi", "remover_fab", "X", "versao", "2.0", "anel", "0"))); !strings.Contains(l, "erro=campanha") {
+		"remover_nome", "programa msi", "remover_fab", "X", "versao", "2.0"))); !strings.Contains(l, "erro=campanha") {
 		t.Errorf("linux: %s", l)
 	}
 
@@ -236,7 +236,7 @@ func TestCampanhaDeRemocaoPeloPainel(t *testing.T) {
 	if l, _ := st.Campaigns(ctx, 5); len(l) != 0 {
 		t.Fatal("a conferência criou campanha")
 	}
-	form.Set("confirmar", "1")
+	form = confirmado(t, h, form)
 	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form)); l != "/painel/campanhas/1?criada=1" {
 		t.Fatalf("criar: %s", l)
 	}
@@ -250,6 +250,7 @@ func TestCampanhaDeRemocaoPeloPainel(t *testing.T) {
 	}
 	// Corrigir volta à página do programa.
 	form.Del("confirmar")
+	form.Del("escopo_hash")
 	form.Set("corrigir", "1")
 	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form)); !strings.HasPrefix(l, "/painel/inventario/programa?") || strings.Contains(l, "erro=") {
 		t.Errorf("corrigir: %s", l)

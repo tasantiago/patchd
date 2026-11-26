@@ -113,9 +113,10 @@ func TestShieldRankingsPorLugar(t *testing.T) {
 	if r, _ := st.ShieldRankings(ctx, shield.RankRoom, "", 10); len(r) != 0 {
 		t.Fatalf("salas desligadas continuam: %+v", r)
 	}
-	// O cadastro físico não depende da política de ranking e preserva nomes legados.
+	// O cadastro físico não depende da política de ranking, lista todos os prédios do
+	// patrimônio e preserva nomes legados.
 	view, err := a.floorLocationsView(ctx)
-	if err != nil || len(view) != 1 || view[0].Building != "Edifício Sede" || len(view[0].Rows) != 2 || view[0].Rows[1].Legacy != "2º andar" {
+	if err != nil || len(view) != 2 || view[1].Building != "Edifício Sede" || len(view[1].Rows) != 2 || view[1].Rows[1].Legacy != "2º andar" {
 		t.Fatalf("localizações detectadas: %+v, %v", view, err)
 	}
 	if err := st.SaveFloorLocations(ctx, []store.FloorLocation{
