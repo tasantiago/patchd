@@ -1441,11 +1441,11 @@ var _ = template.Must(pages.New("shield-politica").Parse(`{{if not .Admin}}<p cl
 <div class="campo"><label for="b1">Nome do módulo</label><input id="b1" name="marca" value="{{.Pol.Brand.Name}}" maxlength="40"></div>
 <div class="campo"><label for="b2">Nome da missão</label><input id="b2" name="missao" value="{{.Pol.Brand.Mission}}" maxlength="40"></div>
 <div class="campo"><label for="b3">Slogan</label><input id="b3" name="slogan" value="{{.Pol.Brand.Slogan}}" maxlength="120"></div>
-<div><label class="check"><input type="checkbox" name="rank_coletivo" value="1"{{if .Pol.Ranking.Collective}} checked{{end}}> Ranking coletivo por grupo</label></div>
+<div><label class="check"><input type="checkbox" name="rank_coletivo" value="1"{{if .Pol.Ranking.Collective}} checked{{end}}> Ranking coletivo por grupo <small class="muted">(só neste painel; não aparece na Central)</small></label></div>
 <div><label class="check"><input type="checkbox" name="rank_individual" value="1"{{if .Pol.Ranking.Individual}} checked{{end}}> Ranking individual (nome, XP e sequência)</label></div>
 <div><label class="check"><input type="checkbox" name="rank_predios" value="1"{{if .Pol.Ranking.Buildings}} checked{{end}}> Ranking dos prédios (do patrimônio)</label></div>
 <div><label class="check"><input type="checkbox" name="rank_andares" value="1"{{if .Pol.Ranking.Floors}} checked{{end}}> Ranking dos andares (as faixas de IP, nos prédios com mais de uma)</label></div>
-<div><label class="check"><input type="checkbox" name="rank_salas" value="1"{{if .Pol.Ranking.Rooms}} checked{{end}}> Ranking das salas (do patrimônio)</label></div>
+<div><label class="check"><input type="checkbox" name="rank_salas" value="1"{{if .Pol.Ranking.Rooms}} checked{{end}}> Ranking das salas (do patrimônio) <small class="muted">(só neste painel; não aparece na Central, por privacidade)</small></label></div>
 <div class="campo"><label for="r2">Tamanho mínimo da sala no ranking</label><input id="r2" name="rank_min_sala" type="number" value="{{.Pol.Ranking.MinRoom}}"></div>
 <div class="campo"><label for="r1">Tamanho mínimo do grupo, do prédio e do andar no ranking</label><input id="r1" name="rank_min" type="number" value="{{.Pol.Ranking.MinGroup}}"></div>
 <div><label class="check"><input type="checkbox" name="avisos" value="1"{{if .Pol.Notify.Enabled}} checked{{end}}> Avisos do Shield perto do relógio</label></div>

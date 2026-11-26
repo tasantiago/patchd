@@ -169,26 +169,9 @@ func (a *api) shieldView(ctx context.Context, db shieldStore, id string, u proto
 				Text: "Este computador está com o selo 100%. " + pol.Brand.Slogan})
 		}
 	}
-	if pol.Ranking.Collective {
-		stats, err := db.ShieldRingStats(ctx)
-		if err != nil {
-			return v, err
-		}
-		names, err := a.ringNames(ctx)
-		if err != nil {
-			return v, err
-		}
-		groups, _ := shieldGroups(&pol, stats, names)
-		mine := groupLabel(ring, names)
-		for _, g := range groups {
-			if len(v.Groups) < 20 || g.Name == mine {
-				v.Groups = append(v.Groups, protocol.ShieldGroupView{Pos: g.Pos, Name: g.Name, Machines: g.Machines, Percent: g.Pct, Mine: g.Name == mine})
-			}
-		}
-		if len(v.Groups) > 20 {
-			v.Groups = v.Groups[len(v.Groups)-20:]
-		}
-	}
+	// O ranking dos grupos de implantação não vai para a Central: os grupos numéricos são da
+	// implantação legada (quase todo o parque fica no grupo 1) e não dizem nada à pessoa; a
+	// disputa coletiva é por prédio e andar. O painel do admin continua com ele.
 	if have {
 		places, err := a.shieldPlaceViews(ctx, db, &pol, sc.Place)
 		if err != nil {
@@ -264,10 +247,7 @@ func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.
 			return nil, err
 		}
 	}
-	if pol.Ranking.Rooms && me.Room != "" {
-		if err := build(shield.RankRoom, "Salas do "+texto.PlaceName(me.Building), me.Building, shield.PlaceKey(me.Building, me.Room), 10); err != nil {
-			return nil, err
-		}
-	}
+	// O ranking por sala não vai para a Central (LGPD: numa sala pequena, o nome dela, como
+	// um gabinete, identifica as pessoas). Continua calculado para o painel do admin.
 	return out, nil
 }

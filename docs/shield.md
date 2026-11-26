@@ -282,3 +282,11 @@ do fabricante ainda não aprovada, aparece em "Versão nova a caminho" (agente n
 A referência do Google Chrome é a versão que o Google serve a ao menos metade do canal estável
 (ou a marcada como fixável); as da liberação antecipada (0,5%) e as listadas sem distribuição não
 contam, porque o instalador público ainda entrega a anterior.
+
+### O que a Central mostra dos rankings
+
+A Central da pessoa mostra os rankings por **prédio** e por **andar**. O ranking por **grupo de
+implantação** e o por **sala** ficam só no painel do admin: os grupos numéricos são da implantação
+legada (quase todo o parque está no grupo 1) e não dizem nada à pessoa; e o nome de uma sala
+pequena (um gabinete, por exemplo) identifica quem trabalha nela, o que pede cuidado com a LGPD.
+Os dois continuam calculados e podem ser ligados ou desligados na política.

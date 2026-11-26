@@ -85,14 +85,15 @@ func TestShieldRankingsPorLugar(t *testing.T) {
 	if len(r) != 2 || r[0].Label != "101" || r[1].Label != "201" || r[1].Pos != 2 {
 		t.Fatalf("salas da Sede: %+v", r)
 	}
-	// A Central da pessoa em m3: o prédio, o andar e a sala dela, sem IP nenhum.
+	// A Central da pessoa em m3: o prédio e o andar dela, sem IP nenhum; sem a sala (LGPD) e
+	// sem o ranking dos grupos de implantação.
 	v, err := a.shieldView(ctx, st, "m3", protocol.SelfServiceUser{Account: `EXEMPLO\ana.souza`, Groups: []string{}}, agora)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Places) != 3 || v.Places[0].Mine != "Edifício Sede" || v.Places[0].Pos != 2 || v.Places[1].Mine != "2º andar" || v.Places[1].Pos != 2 ||
-		v.Places[2].Mine != "201" || v.Places[2].Of != 2 {
-		t.Fatalf("lugares na Central: %+v", v.Places)
+	if len(v.Places) != 2 || v.Places[0].Mine != "Edifício Sede" || v.Places[0].Pos != 2 || v.Places[1].Mine != "2º andar" || v.Places[1].Pos != 2 ||
+		len(v.Groups) != 0 {
+		t.Fatalf("lugares na Central: %+v / grupos %+v", v.Places, v.Groups)
 	}
 	j, _ := json.Marshal(v)
 	if strings.Contains(string(j), "10.1.") || strings.Contains(string(j), "/24") {
