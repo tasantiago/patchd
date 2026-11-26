@@ -17,9 +17,19 @@ func TestLatest(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/v1/chrome/platforms/win64/channels/stable/versions":
-			// A ordem da resposta não é confiável: vale a maior.
-			w.Write([]byte(`{"versions": [{"version": "155.0.8059.39"}, {"version": "155.0.8059.40"}, {"version": "155.0.8059.26"}]}`))
+		case "/v1/chrome/platforms/win64/channels/stable/versions/all/releases":
+			if r.URL.Query().Get("filter") != "endtime=none" {
+				http.Error(w, "sem o filtro das servidas", http.StatusBadRequest)
+				return
+			}
+			// Servidas agora: a estável de todos (fixável, 100%), uma de metade do parque, e as
+			// da liberação antecipada (0,5%) e a que ainda não saiu (0%), que não valem. A ordem
+			// da resposta não é confiável: vale a maior das que contam.
+			w.Write([]byte(`{"releases": [{"version": "155.0.8059.26", "fraction": 0.495},
+				{"version": "155.0.8059.40", "fraction": 1, "pinnable": true}, {"version": "155.0.8059.39", "fraction": 0.5},
+				{"version": "156.0.8100.10", "fraction": 0.005}, {"version": "156.0.8100.11", "fraction": 0}]}`))
+		case "/v1/chrome/platforms/mac/channels/stable/versions/all/releases":
+			w.Write([]byte(`{"releases": [{"version": "156.0.8100.10", "fraction": 0.005}]}`))
 		case "/firefox.json":
 			w.Write([]byte(`{"LATEST_FIREFOX_VERSION": "157.0.1", "FIREFOX_ESR": "140.17.0esr"}`))
 		case "/repos/microsoft/winget-pkgs/contents/manifests/7/7zip/7zip":
@@ -67,6 +77,7 @@ func TestLatest(t *testing.T) {
 		trecho string
 	}{
 		{Source{Type: SourceFirefox, ID: "FIREFOX_NIGHTLY"}, "não está no JSON"},
+		{Source{Type: SourceChrome, ID: "mac"}, "nenhuma liberação servida"},
 		{Source{Type: SourceWinget, ID: "Vazio.Pacote"}, "nenhuma versão comparável"},
 		{Source{Type: SourceWinget, ID: "Nao.Existe"}, "HTTP 404"},
 		{Source{Type: SourceWinget, ID: ".x"}, "inválido"},

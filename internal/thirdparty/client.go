@@ -45,6 +45,10 @@ func NewClient(userAgent string) *Client {
 	}
 }
 
+// chromeMinFraction: a fração mínima do canal estável para a versão do Chrome valer como
+// referência (abaixo disso, é liberação antecipada ou gradual).
+const chromeMinFraction = 0.5
+
 // maxBody limita o tamanho das respostas (a maior, a lista de versões do Firefox no
 // winget, tem poucas centenas de KB).
 const maxBody = 8 << 20
@@ -54,18 +58,29 @@ func (c *Client) Latest(ctx context.Context, s Source) (string, error) {
 	var versions []string
 	switch s.Type {
 	case SourceChrome:
-		// Versões do canal estável da plataforma, da mais nova para a mais antiga.
+		// As liberações do canal estável que o Google serve agora (sem fim), com a fração do
+		// parque que recebe cada uma. A lista de versões do canal (/versions) inclui as da
+		// liberação antecipada (0,5%) e as que nunca saíram (0%): não servem de referência,
+		// porque o instalador público ainda entrega a anterior. Vale a mais nova servida a ao
+		// menos metade do parque, ou a que o Google marca como fixável (a estável de todos).
 		var v struct {
-			Versions []struct {
-				Version string `json:"version"`
-			} `json:"versions"`
+			Releases []struct {
+				Version  string  `json:"version"`
+				Fraction float64 `json:"fraction"`
+				Pinnable bool    `json:"pinnable"`
+			} `json:"releases"`
 		}
-		u := fmt.Sprintf("%s/v1/chrome/platforms/%s/channels/stable/versions", c.ChromeURL, url.PathEscape(s.ID))
+		u := fmt.Sprintf("%s/v1/chrome/platforms/%s/channels/stable/versions/all/releases?filter=endtime=none", c.ChromeURL, url.PathEscape(s.ID))
 		if err := c.getJSON(ctx, u, &v); err != nil {
 			return "", err
 		}
-		for _, x := range v.Versions {
-			versions = append(versions, x.Version)
+		for _, x := range v.Releases {
+			if x.Fraction >= chromeMinFraction || x.Pinnable {
+				versions = append(versions, x.Version)
+			}
+		}
+		if len(versions) == 0 {
+			return "", fmt.Errorf("%s: nenhuma liberação servida à maior parte do canal estável", s)
 		}
 	case SourceFirefox:
 		var v map[string]string

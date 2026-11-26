@@ -262,17 +262,12 @@ func judge(p *Policy, c Criterion, cp CriterionPolicy, e Evidence, now time.Time
 		}
 		return cr
 	case CritThirdParty:
+		// Os programas fora de suporte não entram na conta: a troca deles é decisão da TI (e
+		// muitos são dependências que o usuário não controla, como os Visual C++ antigos). O
+		// painel continua mostrando-os em Patch › Terceiros.
 		switch {
 		case !e.TPKnown:
 			return CriterionResult{Status: Desconhecido, Blame: BlameAuto, Detail: "sem inventário dos programas"}
-		case e.TPUnsupported > 0:
-			cr.Status, cr.Blame = NaoConforme, BlameIT
-			cr.Detail = fmt.Sprintf("%d programa(s) fora de suporte", e.TPUnsupported) + appList(e.TPUnsupportedApps)
-			if e.TPOutdated > 0 {
-				cr.Detail += fmt.Sprintf("; %d desatualizado(s)", e.TPOutdated) + appList(e.TPOutdatedApps)
-			}
-			grace(cp.GraceDays)
-			return cr
 		case e.TPOutdated == 0:
 			return CriterionResult{Status: Conforme, Detail: "programas em dia"}
 		}

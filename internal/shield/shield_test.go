@@ -193,9 +193,10 @@ func TestTerceirosNaCentral(t *testing.T) {
 	if got := status(r, CritThirdParty); got.Status != AguardandoTI {
 		t.Fatalf("sem Central: %+v", got)
 	}
-	e.TPUnsupported = 1
+	// Fora de suporte não conta: só ele, o critério fica conforme.
+	e.TPOutdated, e.TPUnsupported, e.TPUnsupportedApps = 0, 3, []string{"Visual C++ 2008 Redistributable 9.0"}
 	r = Evaluate(&p, e, agora)
-	if got := status(r, CritThirdParty); got.Status != NaoConforme || got.Blame != BlameIT {
+	if got := status(r, CritThirdParty); got.Status != Conforme || got.Obtained != got.Weight || strings.Contains(got.Detail, "suporte") {
 		t.Fatalf("fora de suporte: %+v", got)
 	}
 }
@@ -203,7 +204,7 @@ func TestTerceirosNaCentral(t *testing.T) {
 func TestExcecaoSaiDoDenominadorMasNaoDaSelo(t *testing.T) {
 	p := Default()
 	e := limpa()
-	e.TPUnsupported = 1
+	e.TPOutdated = 1
 	e.Exceptions = map[Criterion]bool{CritThirdParty: true}
 	r := Evaluate(&p, e, agora)
 	if got := status(r, CritThirdParty); got.Status != Excecao || got.Obtained != 0 {
@@ -456,8 +457,8 @@ func TestTerceirosComNomes(t *testing.T) {
 		t.Fatalf("detalhe: %q", got.Detail)
 	}
 	e.TPUnsupported, e.TPUnsupportedApps = 1, []string{"Java 7"}
-	if got := status(Evaluate(&p, e, agora), CritThirdParty); got.Detail != "1 programa(s) fora de suporte: Java 7; 2 desatualizado(s): Google Chrome 158.0 → 159.0, 7-Zip 24.08 → 26.00" {
-		t.Fatalf("fora de suporte: %q", got.Detail)
+	if got := status(Evaluate(&p, e, agora), CritThirdParty); got.Detail != "2 programa(s) desatualizado(s): Google Chrome 158.0 → 159.0, 7-Zip 24.08 → 26.00" {
+		t.Fatalf("fora de suporte não entra no detalhe: %q", got.Detail)
 	}
 	many := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 	if got := appList(many); got != ": a, b, c, d, e, f e mais 2" {

@@ -18,7 +18,7 @@ coisa: o quanto da proteção está comprovada.
 | Necessidade do Shield | De onde vem (sem coleta nova) |
 |---|---|
 | Atualizações do SO pendentes, críticas/exploradas | avaliação de compliance em cache (`complianceService`, `ComplianceStatus.Pending/Exploited`, `PendingItem.Severity`) |
-| Programas de terceiros desatualizados / fora de suporte | `MachineItems.ThirdParty` (manifesto, Aula 13.3) |
+| Programas de terceiros desatualizados (os fora de suporte não contam) | `MachineItems.ThirdParty` (manifesto, Aula 13.3) |
 | Reinício pendente | última busca (`MachineSummary.RebootPending`) |
 | Padronização | `standardization_states` (plano por conta e resultado dos atalhos) |
 | Inventário atualizado | `ComplianceStatus.InventoryCollectedAt` |
@@ -90,8 +90,7 @@ O prazo conta de quando o critério saiu de conforme (guardado na avaliação an
 avaliação depois de ligar o Shield, todo critério fora começa o prazo nesse momento.
 
 **Responsabilidade** (de quem é a ação que falta): reinício e programas que a Central oferece
-para a própria pessoa atualizar → usuário; correções do SO, fora de suporte e falhas da
-padronização → TI; fila da padronização, agente e inventário → automação; sem contato → externa.
+para a própria pessoa atualizar → usuário; correções do SO e falhas da padronização → TI; fila da padronização, agente e inventário → automação; sem contato → externa.
 A responsabilidade principal da máquina é a do maior peso perdido.
 
 ## 4. Sequência, XP, níveis e conquistas
@@ -270,3 +269,16 @@ Limitações (honestas):
   tem teste, mas a exibição real no Windows não foi executada neste ambiente (Linux).
 - **Sem PostgreSQL** (servidor em memória), o Shield não existe: a aba avisa e a Central não o
   mostra.
+
+### Programas de terceiros no detalhe
+
+O critério "Programas atualizados" lista os desatualizados pelo nome, com a versão instalada e a
+nova ("Google Chrome 158.0 → 159.0"; até 6, depois "e mais N"). Os **fora de suporte não entram
+na pontuação** nem no detalhe: a troca deles é decisão da TI (e muitos são dependências que a
+pessoa não controla, como os Visual C++ antigos); o painel continua mostrando-os em Patch ›
+Terceiros. Na Central, o programa em dia com a versão aprovada pela TI, mas com versão mais nova
+do fabricante ainda não aprovada, aparece em "Versão nova a caminho" (agente novo), não em "Em dia".
+
+A referência do Google Chrome é a versão que o Google serve a ao menos metade do canal estável
+(ou a marcada como fixável); as da liberação antecipada (0,5%) e as listadas sem distribuição não
+contam, porque o instalador público ainda entrega a anterior.
