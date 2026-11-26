@@ -290,7 +290,8 @@ A Central mostra, nesta ordem:
 1. **O grupo de competição** do prédio da máquina, se ele estiver em um (veja abaixo): os prédios
    do grupo, com a posição dentro do grupo ("Seu grupo — nome"), ou os andares do prédio, no
    grupo por andar ("Andares do prédio").
-2. **Todos os prédios**: o ranking geral (os 10 primeiros e o da máquina).
+2. **Todos os prédios**: o ranking geral (os 10 primeiros e o da máquina), sem os prédios dos
+   grupos com ranking geral à parte. Quem está num grupo à parte vê só o ranking do grupo.
 
 Fora do grupo por andar, a Central **não mostra andares**: num prédio pequeno, o andar tem poucas
 pessoas e o nome dele as identifica (LGPD). O ranking por **grupo de implantação** e o por
@@ -311,12 +312,19 @@ Em **Shield › Ranking › Grupos de competição** (o admin cria, altera e exc
   cada andar de Configuração › Localizações), em que os andares disputam entre si. Sem nome, fica
   o do prédio. Se o prédio depois ficar com 3 andares ou menos, o painel avisa.
 
+- **Ranking geral à parte** (opção do grupo de prédios): os prédios do grupo **saem do ranking de
+  todos os prédios** (as posições dos outros são refeitas sem eles) e a Central deles mostra só o
+  ranking do grupo, com o nome do grupo como título (ex.: "Fóruns digitais"). É para prédios
+  pequenos das cidades, que não disputam em pé de igualdade com as sedes: viram um "ranking geral
+  dos fóruns digitais" ao lado do ranking geral. A aba Ranking lista quem ficou de fora do geral
+  (migração 0088).
+
 Cada prédio fica em um grupo só (o banco recusa e diz em qual grupo ele já está). O grupo é ligado
 ao ID estável do prédio (migração 0085): a renomeação do patrimônio não tira o prédio do grupo.
 O prédio sem grupo vê só o ranking geral. A aba mostra a disputa de cada grupo como a Central a
 monta e avisa quando a Central ainda não o mostra (ranking desligado na política, ou menos de 2
 participantes com o mínimo de máquinas). Tudo é do servidor: vale sem atualizar o agente
-(migração 0087).
+(migrações 0087 e 0088).
 
 ### Zerar a pontuação
 

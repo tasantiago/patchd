@@ -217,10 +217,23 @@ func TestPainelDoShield(t *testing.T) {
 		t.Error("leitura vê os formulários dos grupos de competição")
 	}
 	comps, _ := st.ShieldCompetitions(ctx)
-	if len(comps) != 1 || len(comps[0].Buildings) != 2 {
+	if len(comps) != 1 || len(comps[0].Buildings) != 2 || comps[0].Separate {
 		t.Fatalf("grupos: %+v", comps)
 	}
 	cid := strconv.FormatInt(comps[0].ID, 10)
+	// Ranking geral à parte: marcado na edição, aparece na aba.
+	cg.Set("id", cid)
+	cg.Set("nome", "Fóruns digitais")
+	cg.Set("a_parte", "1")
+	if loc := pagina(h, "POST", "/painel/shield/competicoes", sessaoAdmin, cg).Header().Get("Location"); !strings.Contains(loc, "competicao=1") {
+		t.Fatalf("grupo à parte: %s", loc)
+	}
+	if comps, _ := st.ShieldCompetitions(ctx); len(comps) != 1 || !comps[0].Separate || comps[0].Name != "Fóruns digitais" {
+		t.Fatalf("à parte: %+v", comps)
+	}
+	if b := pagina(h, "GET", "/painel/shield?aba=ranking", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "com ranking geral à parte") {
+		t.Fatal("aba Ranking sem o grupo à parte")
+	}
 	if loc := pagina(h, "POST", "/painel/shield/competicoes/"+cid+"/excluir", sessaoAdmin, url.Values{}).Header().Get("Location"); !strings.Contains(loc, "competicao_excluida=1") {
 		t.Fatalf("excluir: %s", loc)
 	}

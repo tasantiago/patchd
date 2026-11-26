@@ -131,6 +131,33 @@ func TestShieldRankingsPorLugar(t *testing.T) {
 	if len(v.Places) != 2 || v.Places[0].Kind != shield.RankFloor || v.Places[0].Mine != "2º andar" || v.Places[0].Pos != 2 || v.Places[1].Mine != "Edifício Sede" {
 		t.Fatalf("grupo por andar na Central: %+v", v.Places)
 	}
+	// Grupo à parte com os dois prédios: a Central mostra só o ranking do grupo, com o nome
+	// dele, e nenhum "Todos os prédios" (os dois saíram do geral).
+	if err := func() error {
+		comps, err := st.ShieldCompetitions(ctx)
+		if err != nil {
+			return err
+		}
+		_, _, err = st.DeleteShieldCompetition(ctx, comps[0].ID)
+		return err
+	}(); err != nil {
+		t.Fatal(err)
+	}
+	apart, err := st.SaveShieldCompetition(ctx, store.ShieldCompetition{Name: "Fóruns digitais", Kind: store.CompetitionBuildings, Separate: true},
+		[]int64{ids["Edifício Sede"], ids["Anexo"]}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := a.shieldView(ctx, st, "m3", protocol.SelfServiceUser{Account: `EXEMPLO\ana.souza`}, agora); len(v.Places) != 1 || v.Places[0].Title != "Fóruns digitais" ||
+		v.Places[0].Pos != 2 || v.Places[0].Of != 2 {
+		t.Fatalf("grupo à parte na Central: %+v", v.Places)
+	}
+	if _, _, err := st.DeleteShieldCompetition(ctx, apart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, store.ShieldCompetition{Name: "Sede", Kind: store.CompetitionFloors}, []int64{ids["Edifício Sede"]}, "admin"); err != nil {
+		t.Fatal(err)
+	}
 	// O Anexo, fora do grupo: só todos os prédios.
 	if v, _ := a.shieldView(ctx, st, "m5", protocol.SelfServiceUser{Account: `EXEMPLO\rui`}, agora); len(v.Places) != 1 || v.Places[0].Mine != "Anexo" || v.Places[0].Pos != 1 {
 		t.Fatalf("prédio sem grupo: %+v", v.Places)
@@ -184,5 +211,22 @@ func TestShieldRankingsPorLugar(t *testing.T) {
 	// Duas faixas representam agora um único andar, sem disputa consigo mesmo.
 	if f, err := st.ShieldRankings(ctx, shield.RankFloor, "Edifício Sede", 10); err != nil || len(f) != 0 {
 		t.Fatalf("prédio de um único andar físico: %+v, %v", f, err)
+	}
+}
+
+// O ranking geral sem os prédios dos grupos à parte: a ordem continua; os de fora saem.
+func TestShieldRankingGeralSemOsAParte(t *testing.T) {
+	b := []store.ShieldRank{{Rank: shield.Rank{Building: "SEDE"}}, {Rank: shield.Rank{Building: "FORUM DIGITAL A"}}, {Rank: shield.Rank{Building: "ANEXO"}},
+		{Rank: shield.Rank{Building: "FORUM DIGITAL B"}}}
+	comps := []store.ShieldCompetition{
+		{Name: "Fóruns digitais", Kind: store.CompetitionBuildings, Separate: true, Buildings: []store.CompetitionBuilding{{Name: "FORUM DIGITAL A"}, {Name: "FORUM DIGITAL B"}}},
+		{Name: "Sedes", Kind: store.CompetitionBuildings, Buildings: []store.CompetitionBuilding{{Name: "SEDE"}, {Name: "ANEXO"}}},
+	}
+	got, apart := shieldGeneralRanking(b, comps)
+	if len(got) != 2 || got[0].Building != "SEDE" || got[1].Building != "ANEXO" || len(apart) != 2 || !apart["FORUM DIGITAL B"] {
+		t.Fatalf("geral: %+v / à parte: %v", got, apart)
+	}
+	if got, apart := shieldGeneralRanking(b, comps[1:]); len(got) != 4 || len(apart) != 0 {
+		t.Fatalf("sem grupo à parte, o geral é o mesmo: %+v %v", got, apart)
 	}
 }

@@ -422,4 +422,14 @@ func TestShieldGruposDeCompeticao(t *testing.T) {
 	if _, ok, _ := st.DeleteShieldCompetition(ctx, aid); ok {
 		t.Fatal("excluído duas vezes")
 	}
+	// Ranking geral à parte: só no grupo de prédios; gravado e lido.
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{Name: "Sede", Kind: CompetitionFloors, Separate: true}, []int64{ids["PREDIO SEDE"]}, "ana"); !IsShieldCompetitionError(err) {
+		t.Fatalf("grupo por andar à parte: %v", err)
+	}
+	if _, err := st.SaveShieldCompetition(ctx, ShieldCompetition{ID: gid, Name: "Fóruns digitais", Kind: CompetitionBuildings, Separate: true}, []int64{ids["FORUM GERAL"], ids["ANEXO NORTE"]}, "ana"); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := st.ShieldCompetitions(ctx); len(list) != 1 || !list[0].Separate || list[0].Name != "Fóruns digitais" {
+		t.Fatalf("à parte: %+v", list)
+	}
 }

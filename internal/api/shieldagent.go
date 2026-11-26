@@ -243,12 +243,15 @@ func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.
 			return nil, err
 		}
 	}
+	comps, err := db.ShieldCompetitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Os prédios dos grupos com ranking geral à parte saem do ranking de todos os prédios.
+	general, _ := shieldGeneralRanking(buildings, comps)
 	myBuilding := shield.PlaceKey(me.Building, "")
 	if me.Building != "" {
-		g, ok, err := shieldCompetitionOf(ctx, db, me.Building)
-		if err != nil {
-			return nil, err
-		}
+		g, ok := shieldCompetitionOf(comps, me.Building)
 		switch {
 		case !ok:
 		case g.Kind == store.CompetitionBuildings:
@@ -262,6 +265,10 @@ func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.
 					list = append(list, r)
 				}
 			}
+			if g.Separate { // o ranking do grupo é o geral destes prédios
+				view(shield.RankBuilding, g.Name, myBuilding, list, 30)
+				return out, nil
+			}
 			view(shield.RankBuilding, "Seu grupo — "+g.Name, myBuilding, list, 30)
 		case g.Kind == store.CompetitionFloors && pol.Ranking.Floors && me.Floor != "":
 			list, err := db.ShieldRankings(ctx, shield.RankFloor, me.Building, 500)
@@ -271,22 +278,41 @@ func (a *api) shieldPlaceViews(ctx context.Context, db shieldStore, pol *shield.
 			view(shield.RankFloor, "Andares do "+texto.PlaceName(me.Building), shield.PlaceKey(me.Building, me.Floor), list, 30)
 		}
 	}
-	view(shield.RankBuilding, "Todos os prédios", myBuilding, buildings, 10)
+	view(shield.RankBuilding, "Todos os prédios", myBuilding, general, 10)
 	return out, nil
 }
 
-// shieldCompetitionOf: o grupo de competição do prédio (pelo nome atual do patrimônio).
-func shieldCompetitionOf(ctx context.Context, db shieldStore, building string) (store.ShieldCompetition, bool, error) {
-	list, err := db.ShieldCompetitions(ctx)
-	if err != nil {
-		return store.ShieldCompetition{}, false, err
-	}
-	for _, g := range list {
-		for _, b := range g.Buildings {
-			if b.Name == building {
-				return g, true, nil
+// shieldGeneralRanking: o ranking de todos os prédios sem os dos grupos com ranking geral à
+// parte (a ordem continua; a posição é a nova), e o conjunto dos que saíram.
+func shieldGeneralRanking(buildings []store.ShieldRank, comps []store.ShieldCompetition) ([]store.ShieldRank, map[string]bool) {
+	apart := map[string]bool{}
+	for _, g := range comps {
+		if g.Separate {
+			for _, b := range g.Buildings {
+				apart[b.Name] = true
 			}
 		}
 	}
-	return store.ShieldCompetition{}, false, nil
+	if len(apart) == 0 {
+		return buildings, apart
+	}
+	out := make([]store.ShieldRank, 0, len(buildings))
+	for _, r := range buildings {
+		if !apart[r.Building] {
+			out = append(out, r)
+		}
+	}
+	return out, apart
+}
+
+// shieldCompetitionOf: o grupo de competição do prédio (pelo nome atual do patrimônio).
+func shieldCompetitionOf(comps []store.ShieldCompetition, building string) (store.ShieldCompetition, bool) {
+	for _, g := range comps {
+		for _, b := range g.Buildings {
+			if b.Name == building {
+				return g, true
+			}
+		}
+	}
+	return store.ShieldCompetition{}, false
 }

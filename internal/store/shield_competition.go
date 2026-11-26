@@ -27,9 +27,12 @@ const (
 
 // ShieldCompetition é um grupo de competição: a disputa que a Central mostra primeiro.
 type ShieldCompetition struct {
-	ID        int64
-	Name      string
-	Kind      string
+	ID   int64
+	Name string
+	Kind string
+	// Separate: ranking geral à parte — os prédios do grupo saem do ranking de todos os
+	// prédios, e o do grupo é o geral deles. Só no grupo de prédios.
+	Separate  bool
 	Buildings []CompetitionBuilding // em ordem de nome
 	UpdatedBy string
 	UpdatedAt time.Time
@@ -75,6 +78,9 @@ func checkCompetition(c *ShieldCompetition, ids []int64) error {
 		if len(ids) != 1 {
 			return competitionErr("um grupo por andar tem um prédio só")
 		}
+		if c.Separate {
+			return competitionErr("o ranking geral à parte é só do grupo de prédios")
+		}
 	default:
 		return competitionErr("tipo desconhecido")
 	}
@@ -83,7 +89,7 @@ func checkCompetition(c *ShieldCompetition, ids []int64) error {
 
 // ShieldCompetitions: todos os grupos, com os prédios, em ordem de nome.
 func (p *Postgres) ShieldCompetitions(ctx context.Context) ([]ShieldCompetition, error) {
-	rows, err := p.pool.Query(ctx, `SELECT c.id, c.name, c.kind, c.updated_by, c.updated_at, b.id, b.name, b.present
+	rows, err := p.pool.Query(ctx, `SELECT c.id, c.name, c.kind, c.separate, c.updated_by, c.updated_at, b.id, b.name, b.present
 		FROM shield_competitions c
 		LEFT JOIN shield_competition_buildings cb ON cb.competition_id = c.id
 		LEFT JOIN buildings b ON b.id = cb.building_id
@@ -98,7 +104,7 @@ func (p *Postgres) ShieldCompetitions(ctx context.Context) ([]ShieldCompetition,
 		var bid *int64
 		var bname *string
 		var present *bool
-		if err := rows.Scan(&c.ID, &c.Name, &c.Kind, &c.UpdatedBy, &c.UpdatedAt, &bid, &bname, &present); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Kind, &c.Separate, &c.UpdatedBy, &c.UpdatedAt, &bid, &bname, &present); err != nil {
 			return nil, err
 		}
 		if n := len(out); n == 0 || out[n-1].ID != c.ID {
@@ -139,12 +145,12 @@ func (p *Postgres) SaveShieldCompetition(ctx context.Context, c ShieldCompetitio
 			return competitionErr("prédio desconhecido")
 		}
 		if id == 0 {
-			err = tx.QueryRow(ctx, `INSERT INTO shield_competitions (name, kind, created_by, updated_by) VALUES ($1, $2, $3, $3) RETURNING id`,
-				c.Name, c.Kind, by).Scan(&id)
+			err = tx.QueryRow(ctx, `INSERT INTO shield_competitions (name, kind, separate, created_by, updated_by) VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+				c.Name, c.Kind, c.Separate, by).Scan(&id)
 		} else {
 			var tag pgconn.CommandTag
-			tag, err = tx.Exec(ctx, `UPDATE shield_competitions SET name = $2, kind = $3, updated_by = $4, updated_at = now() WHERE id = $1`,
-				id, c.Name, c.Kind, by)
+			tag, err = tx.Exec(ctx, `UPDATE shield_competitions SET name = $2, kind = $3, separate = $4, updated_by = $5, updated_at = now() WHERE id = $1`,
+				id, c.Name, c.Kind, c.Separate, by)
 			if err == nil && tag.RowsAffected() == 0 {
 				return ErrShieldNotFound
 			}
