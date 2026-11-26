@@ -113,6 +113,9 @@ func run(args []string, look config.Lookup, stdout, stderr io.Writer) (code int)
 	if len(args) > 0 && args[0] == "ring" {
 		return runRing(args[1:], look, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "building" {
+		return runBuilding(args[1:], look, stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "campaign" {
 		return runCampaign(args[1:], look, stdout, stderr)
 	}

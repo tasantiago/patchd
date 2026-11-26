@@ -25,6 +25,7 @@ var cliAudited = map[string][]string{
 	"job":      {"keygen", "create", "cancel"},
 	"campaign": {"create", "pause", "resume", "cancel"},
 	"ring":     {"set", "window"},
+	"building": {"window"}, // janelas por prédio (docs/implantacao-por-predio.md)
 	"machine":  {"retire", "restore"},
 	"token":    {"create", "revoke"},
 	"user":     {"create", "password", "delete"},

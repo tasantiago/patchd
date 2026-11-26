@@ -67,7 +67,7 @@ func Change(ctx context.Context, st ChangeStore, c Campaign, op, by string) (can
 	if op != OpCancel {
 		return 0, nil
 	}
-	for idx := range c.Rings {
+	for idx := range c.StageCount() {
 		list, err := st.CampaignJobs(ctx, c.ID, idx)
 		if err != nil {
 			return canceledJobs, err

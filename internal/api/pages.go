@@ -701,7 +701,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <p class="grupo"><span class="rot">Automação</span></p>
 <a href="/painel/campanhas" title="Campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
 <a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Jobs</span></a>
-<a href="/painel/grupos-implantacao" title="Grupos de implantação e janelas" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Grupos de implantação</span></a>
+<a href="/painel/grupos-implantacao" title="Prédios e implantação" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Prédios e implantação</span></a>
 <a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
 {{if .Admin}}<a href="/painel/padronizacao" title="Padronização" {{if eq .Nav "padronizacao"}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Padronização</span></a>{{end}}
 {{if .Admin}}<a href="/painel/scripts" title="Scripts" {{if eq .Nav "scripts"}}class="ativo" aria-current="page"{{end}}>` + ui.IcScripts + `<span class="rot">Scripts</span></a>{{end}}
@@ -767,7 +767,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{end}}</tbody></table></div>
 {{if .Range}}<nav class="paginas" aria-label="páginas"><span class="muted">{{.Range}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>{{end}}
 {{if .Admin}}<div class="lote"><label>Pôr as marcadas no grupo de implantação <select name="anel">{{range .Rings}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
-<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. As janelas ficam em <a href="/painel/grupos-implantacao">Grupos de implantação</a>.</span></div></form>{{end}}
+<button type="submit">Mover</button><span class="muted">0 = piloto, 1 = padrão. Os grupos numéricos valem só para as campanhas antigas; as janelas novas são por prédio, em <a href="/painel/grupos-implantacao">Prédios e implantação</a>.</span></div></form>{{end}}
 {{else if .Q}}<p class="vazio"><strong>Nenhuma máquina com "{{.Q}}"{{if .Filter}} no estado {{.FilterLabel}}{{end}}.</strong> A busca olha o nome, o começo do ID e o sistema. <a href="{{.Clear}}">Limpar a busca</a> ou procurar por IP, usuário e série no <a href="/painel/inventario">Inventário</a>.</p>
 {{else if .Filter}}<p class="vazio"><strong>Nenhuma máquina neste estado.</strong> <a href="/painel/parque">Ver todas as máquinas</a></p>
 {{else}}<p class="vazio"><strong>Nenhuma máquina no parque ainda.</strong> A primeira aparece aqui quando um agente se registrar.{{if .Admin}} O token de registro e o comando de instalação ficam em <a href="/painel/configuracao?aba=agente">Configuração › Agente</a>.{{end}}</p>{{end}}
@@ -855,22 +855,21 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <tbody>{{range .Machines}}<tr><td><a href="{{.Href}}">{{if .Hostname}}{{.Hostname}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td><td><code>{{.Version}}</code></td><td>{{.Scope}}</td>{{if eq $.OS "windows"}}<td class="muted">{{.Removal}}</td>{{end}}{{if $.CanRemove}}<td>{{if .Removable}}<details class="excluir"><summary>Remover</summary><form method="post" action="/painel/maquinas/{{.MachineID}}/software/remover"><input type="hidden" name="nome" value="{{.Name}}"><input type="hidden" name="chave" value="{{.Source}}"><input type="hidden" name="voltar" value="{{$.Self}}"><button class="perigo" type="submit">Remover desta máquina</button></form></details>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas">{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}</nav>
 {{else}}<p class="muted">Nenhuma máquina com ele agora.</p>{{end}}</div>
-{{with .Campaign}}<div class="card" id="campanha"><div class="card-cab"><h2>Campanha de remoção</h2><span class="muted">pelos grupos de implantação, em ordem</span></div>
-<p class="muted">Tira o programa de todas as máquinas, um grupo de cada vez: o piloto primeiro; o grupo seguinte só recebe quando o atual termina sem falha e a observação passa. Cada máquina recebe o job na hora em que o grupo dela é liberado, se o inventário mostrar o programa instalado para a máquina toda e com desinstalação silenciosa. Nada é criado antes da conferência.</p>
+{{with .Campaign}}<div class="card" id="campanha"><div class="card-cab"><h2>Campanha de remoção</h2><span class="muted">por prédios e andares</span></div>
+<p class="muted">Tira o programa das máquinas do escopo: com piloto, ele primeiro; o resto só recebe quando o piloto termina sem falha e a observação passa. Cada máquina recebe o job na hora em que a etapa dela é liberada, se o inventário mostrar o programa instalado para a máquina toda e com desinstalação silenciosa. Nada é criado antes da conferência.</p>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="tipo" value="desinstalar"><input type="hidden" name="remover_so" value="{{$.OS}}"><input type="hidden" name="remover_nome" value="{{$.Key}}"><input type="hidden" name="remover_fab" value="{{$.Publisher}}">
 <div class="campo"><label for="rc-nome">Nome</label><input id="rc-nome" name="nome" value="{{.Name}}" maxlength="100" required></div>
 <fieldset class="campo"><legend>Versões a remover</legend><div class="chips">{{range $.Versions}}<label class="anel"><input type="checkbox" name="versao" value="{{.Version}}" checked> <code>{{.Version}}</code> <span class="muted">· {{.Installs}}</span></label>{{end}}</div>
 <small class="muted">todas marcadas: todas as versões, também as que aparecerem depois</small></fieldset>
-<fieldset class="campo"><legend>Grupos de implantação, em ordem</legend><div class="chips">{{range .Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
-<small class="muted">o piloto vem marcado; os outros marcados seguem depois dele, um de cada vez</small></fieldset>
+{{template "campanha-escopo" .Scope}}
 <div class="campo"><label for="rc-reenvios">Reenvios automáticos das falhas</label><select id="rc-reenvios" name="reenvios">{{range $n := .Resends}}<option value="{{$n}}" {{if eq $n $.Campaign.Resend}}selected{{end}}>{{if eq $n 0}}nenhum: a primeira falha pausa a campanha{{else}}até {{$n}} vez(es) por máquina{{end}}</option>{{end}}</select></div>
 <div class="campo"><label for="rc-observacao">Observação</label><select id="rc-observacao" name="observacao">{{range .Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></div>
 <fieldset class="campo quando"><legend>Quando</legend>
 <label class="opcao"><input type="radio" name="quando" value="horario" checked><span><b>Em horário fixo, todo dia</b>
 <small class="linha">às <input type="time" name="hora" value="{{.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Campaign.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
 <small>de madrugada, com o programa fechado (fuso {{.TZ}})</small></span></label>
-<label class="opcao"><input type="radio" name="quando" value="janela"><span><b>Na janela de cada grupo de implantação</b></span></label>
+<label class="opcao"><input type="radio" name="quando" value="janela"><span><b>Na janela de cada prédio</b></span></label>
 <label class="opcao"><input type="radio" name="quando" value="prazo"><span><b>Já, com prazo de</b>
 <select name="prazo" aria-label="prazo">{{range .TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
 </fieldset>
@@ -881,7 +880,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
 
 {{/* Automação (Aula 15.11): campanhas, jobs e grupos de implantação numa entrada só do menu, em abas. */}}
-{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Grupos de implantação e janelas</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a><a href="/painel/perguntas"{{if eq . "perguntas"}} class="ativa" aria-current="page"{{end}}>Perguntas ao parque</a></nav>{{end}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Prédios e implantação</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a><a href="/painel/perguntas"{{if eq . "perguntas"}} class="ativa" aria-current="page"{{end}}>Perguntas ao parque</a></nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
@@ -1137,7 +1136,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Attention}}<ul class="atencao-lista">{{range .Attention}}<li class="{{.Level}}"><a href="{{.Href}}">{{.Text}}</a></li>{{end}}</ul>
 {{else}}<p class="muted">Nada pede atenção agora.</p>{{end}}</div>
 <div class="duas-col">
-<div class="card"><div class="card-cab"><h2>Por grupo de implantação</h2><a class="muted" href="/painel/grupos-implantacao">Grupos de implantação e janelas</a></div>
+<div class="card"><div class="card-cab"><h2>Por grupo de implantação</h2><a class="muted" href="/painel/grupos-implantacao">Prédios e implantação</a></div>
 {{if .Rings}}<ul class="seg-linhas empilhada">{{range .Rings}}<li><span class="seg-nome">Grupo de implantação {{.Ring}}<small>{{.Machines}} máquina(s)</small></span>{{template "segbar" .Bar}}<span class="seg-fim">{{.Pct}}% em dia</span></li>{{end}}</ul>
 {{template "estados-legenda"}}<details class="tabela-grafico"><summary>Ver em tabela</summary><div class="tabela"><table><thead><tr><th>Grupo de implantação</th><th>Máquinas</th><th>Em dia</th><th>Faltando</th><th>Reinício</th><th>Sem contato</th><th>Outros</th><th>% em dia</th></tr></thead>
 <tbody>{{range .Rings}}<tr><td>{{.Ring}}</td><td class="num">{{.Machines}}</td><td class="num">{{.OK}}</td><td class="num">{{.Missing}}</td><td class="num">{{.Reboot}}</td><td class="num">{{.Stale}}</td><td class="num">{{.NA}}</td>
@@ -1304,7 +1303,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <thead><tr><th>Versão</th><th>Instaladores</th><th>Aprovação</th></tr></thead>
 <tbody>{{range .Versions}}<tr><td><code>{{.Version}}</code></td>
 <td>{{range .Packages}}<div>{{.Type}} · {{.Arch}} · {{.Size}} · <code>{{.SHA}}</code> <span class="muted">{{if .File}}enviado {{.Fetched}} · {{.File}} · argumentos <code>{{.Args}}</code>{{else}}{{.Fetched}}{{end}}{{if .Signer}} · {{.Signer}}{{end}}</span></div>{{end}}</td>
-<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CampaignHref}} <a class="btn" href="{{.CampaignHref}}">Campanha por grupo de implantação</a>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
+<td>{{if .Approved}}<span class="estado em_dia">aprovado</span> <span class="muted">{{.ApprovedBy}} · {{.ApprovedAt}}</span>{{if .Note}}<div class="muted nota">{{.Note}}</div>{{end}}{{if .CampaignHref}} <a class="btn" href="{{.CampaignHref}}">Campanha por prédio</a>{{end}}{{if .CanRevoke}}<form class="inline" method="post" action="/painel/patch/terceiros/revogar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Revogar</button></form>{{end}}
 {{else}}<span class="estado reboot_pendente">aguardando</span>{{if .CanApprove}}<form class="acao" method="post" action="/painel/patch/terceiros/aprovar"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><input name="nota" maxlength="{{$.MaxNote}}" placeholder="Observação (opcional), ex.: testado no grupo de implantação piloto"><button type="submit">Aprovar</button></form>{{end}}{{end}}
 {{if .CanDelete}}<details class="excluir"><summary>Excluir esta versão</summary><form method="post" action="/painel/patch/terceiros/excluir"><input type="hidden" name="app" value="{{$.P.AppID}}"><input type="hidden" name="version" value="{{.Version}}"><button class="perigo" type="submit">Excluir os instaladores da {{.Version}}</button> <span class="muted">dá para baixar de novo depois</span></form></details>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{with .Signer}}<div class="aviso erro"><strong>O agente vai recusar o instalador da {{.Version}} ({{.Type}}).</strong> O programa exige a assinatura de <b>{{.Required}}</b>, e o arquivo {{if .Found}}é assinado por <b>{{.Found}}</b>{{else}}não é assinado{{end}}.
@@ -1799,13 +1798,15 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p class="muted">O mesmo pedido passando pelos grupos de implantação em ordem: o servidor libera o grupo seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
 <div class="card"><div class="card-cab"><h2>{{if .Archived}}Campanhas arquivadas{{else}}Campanhas recentes{{end}}</h2>
 <span class="acoes">{{if .Archived}}<a href="/painel/campanhas">← Campanhas</a>{{else}}{{if and .Admin .NFinished}}<form class="inline" method="post" action="/painel/campanhas/arquivar-encerradas"><button class="sec" type="submit" title="tiram da lista as concluídas e as canceladas; nada se perde">Arquivar as encerradas ({{.NFinished}})</button></form>{{end}}{{if .NArchived}} <a href="/painel/campanhas?arquivadas=1">Arquivadas ({{.NArchived}})</a>{{end}}{{end}}</span></div>{{if .Rows}}<div class="tabela"><table>
-<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Grupos de implantação</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td><code>{{.Rings}}</code></td>
+<thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Etapas</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td class="num"><a href="/painel/campanhas/{{.ID}}">{{.ID}}</a></td><td><a href="/painel/campanhas/{{.ID}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Sources}}</td><td>{{if .Legacy}}<span class="muted">legada · grupos</span> <code>{{.Rings}}</code>{{else}}{{.Rings}}{{end}}</td>
 <td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td><td class="nowrap">{{.Created}} · {{.By}}</td></tr>{{end}}</tbody></table></div>
 {{else if .Archived}}<p class="vazio"><strong>Nenhuma campanha arquivada.</strong> <a href="/painel/campanhas">Voltar às campanhas</a></p>
-{{else}}<p class="vazio"><strong>Nenhuma campanha ainda.</strong> Uma campanha leva a mesma atualização a todo o parque, um grupo de implantação por vez.{{if .CanNew}} <a href="#nova">Criar a primeira</a>{{end}}</p>{{end}}</div>
+{{else}}<p class="vazio"><strong>Nenhuma campanha ainda.</strong> Uma campanha leva a mesma atualização aos prédios e andares escolhidos, com piloto opcional.{{if .CanNew}} <a href="#nova">Criar a primeira</a>{{end}}</p>{{end}}</div>
 {{if .NoKey}}<p class="muted">Criar campanhas pelo painel exige a chave de jobs no servidor (PATCHD_JOB_SIGNING_KEY_FILE).</p>{{end}}
 {{if .CanNew}}<section id="nova"><h2>Nova campanha</h2>
+<form class="busca escopo-busca" method="get" action="/painel/campanhas#nova">{{if .Form.Type}}<input type="hidden" name="tipo" value="{{.Form.Type}}">{{end}}{{if .Form.Program}}<input type="hidden" name="programa" value="{{.Form.Program}}">{{end}}<input type="search" name="predios" value="{{.Form.Scope.Q}}" maxlength="100" placeholder="Pesquisar prédio no escopo" aria-label="pesquisar prédio"><button class="sec" type="submit">Pesquisar</button>
+<a href="/painel/campanhas?todos=1#nova">Selecionar todos</a> <a href="/painel/campanhas#nova">Limpar seleção</a></form>
 <form class="campanha" method="post" action="/painel/campanhas/nova">
 <div class="campo"><label for="nome">Nome</label><input id="nome" name="nome" type="text" required maxlength="100" value="{{.Form.Name}}" placeholder="ex.: curl e bluez, outubro"></div>
 <fieldset class="campo tipos"><legend>Tipo</legend>
@@ -1824,28 +1825,24 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="campo so-reinicio"><label for="aviso">Aviso do reinício</label><select id="aviso" name="aviso">{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Delay}}selected{{end}}>{{.}} min</option>{{end}}</select>
 <small class="muted">quanto tempo quem estiver conectado tem para salvar o trabalho</small></div>
 <div class="campo so-fechar"><label for="fechar">Programa aberto na hora</label><select id="fechar" name="fechar"><option value="0" {{if eq .Form.Close 0}}selected{{end}}>adiar e tentar de novo quando fechar</option>{{range .Form.Delays}}<option value="{{.}}" {{if eq . $.Form.Close}}selected{{end}}>fechar com aviso de {{.}} min</option>{{end}}</select>
-<small class="muted">fechar só em horário fixo (de madrugada) ou na janela do grupo; quem estiver na sessão vê o aviso, e o programa fecha à força se não fechar sozinho</small></div>
+<small class="muted">fechar só em horário fixo (de madrugada) ou na janela do prédio; quem estiver na sessão vê o aviso, e o programa fecha à força se não fechar sozinho</small></div>
 <fieldset class="campo so-windows"><legend>Fonte do Windows</legend><label class="opcao"><input type="checkbox" name="microsoft" value="1" {{if .Form.Microsoft}}checked{{end}}><span><b>Se a fonte da política falhar ou não oferecer o KB, instalar direto da Microsoft</b>
 <small>só o que está aprovado em Patch; muda de onde o arquivo vem{{if not .Form.MicrosoftOn}} · hoje sem efeito: a fonte reserva está desligada em Configuração › Parâmetros{{end}}</small></span></label></fieldset>
-<fieldset class="campo aneis"><legend>Grupos de implantação <small class="muted">em ordem, do menor para o maior</small></legend>
-<div class="chips">{{range .Form.Rings}}{{if or .Machines .Checked}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}" {{if .Checked}}checked{{end}}> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div>
-{{$vazios := 0}}{{range .Form.Rings}}{{if not (or .Machines .Checked)}}{{$vazios = 1}}{{end}}{{end}}
-{{if $vazios}}<details class="vazios"><summary>Grupos de implantação sem máquinas</summary><div class="chips">{{range .Form.Rings}}{{if not (or .Machines .Checked)}}<label class="anel"><input type="checkbox" name="anel" value="{{.Ring}}"> {{.Label}} <span class="muted">· {{.Machines}} máq.{{if .Window}} · janela {{.Window}}{{end}}</span></label>{{end}}{{end}}</div></details>{{end}}
-</fieldset>
+{{template "campanha-escopo" .Form.Scope}}
 <div class="campo"><label for="reenvios">Reenvios automáticos das falhas</label><select id="reenvios" name="reenvios">{{range $n := .Form.Resends}}<option value="{{$n}}" {{if eq $n $.Form.Resend}}selected{{end}}>{{if eq $n 0}}nenhum: a primeira falha pausa a campanha{{else}}até {{$n}} vez(es) por máquina{{end}}</option>{{end}}</select>
 <small class="muted">o job que expirou (máquina desligada, fora da rede) vai de novo na hora; o que falhou, depois de 1 h. Recusado não volta sozinho. Só depois disso a falha conta e pausa</small></div>
 <div class="campo"><label for="observacao">Observação</label><select id="observacao" name="observacao">{{range .Form.Observe}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
-<small class="muted">depois de um grupo de implantação terminar sem falha, quanto esperar antes do próximo</small></div>
+<small class="muted">depois de o piloto terminar sem falha, quanto esperar antes de liberar o resto do escopo</small></div>
 <fieldset class="campo quando"><legend>Quando</legend>
 <label class="opcao"><input type="radio" name="quando" value="prazo" {{if ne .Form.When "janela"}}checked{{end}}><span><b>Já, com prazo de</b>
 <select name="prazo" aria-label="prazo">{{range .Form.TTL}}<option value="{{.Hours}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select></span></label>
-<label class="opcao"><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}><span><b>Na janela de cada grupo de implantação</b><small>o job de cada máquina espera a janela do grupo dela</small></span></label>
+<label class="opcao"><input type="radio" name="quando" value="janela" {{if eq .Form.When "janela"}}checked{{end}}><span><b>Na janela de cada prédio</b><small>o job de cada máquina espera a janela do prédio dela; todos os prédios do escopo precisam de janela ativa</small></span></label>
 <label class="opcao"><input type="radio" name="quando" value="horario" {{if eq .Form.When "horario"}}checked{{end}}><span><b>Em horário fixo, todo dia</b>
 <small class="linha">às <input type="time" name="hora" value="{{.Form.DailyStart}}" aria-label="hora"> por <select name="duracao" aria-label="duração">{{range .Form.Durations}}<option value="{{.Minutes}}" {{if eq .Minutes $.Form.DailyDur}}selected{{end}}>{{.Label}}</option>{{end}}</select></small>
-<small>ex.: de madrugada; vale para todos os grupos, sem mexer na janela deles (fuso {{.Form.TZ}})</small></span></label>
+<small>ex.: de madrugada; o horário da campanha vale para todos os prédios, no lugar da janela de cada um (fuso {{.Form.TZ}})</small></span></label>
 </fieldset>
 <fieldset class="campo"><legend>Ligar pela rede</legend><label class="opcao"><input type="checkbox" name="ligar" value="1" {{if .Form.Wake}}checked{{end}}><span><b>Ligar as desligadas no início da janela e desligar depois as que o patchd ligou</b>
-<small>só com a janela do grupo ou o horário fixo; o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto e de um agente ligado em cada sub-rede</small></span></label></fieldset>
+<small>só com a janela do prédio ou o horário fixo, e só na etapa liberada; o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto e de um agente ligado em cada sub-rede</small></span></label></fieldset>
 <div class="acoes"><button type="submit">Conferir</button> <span class="muted">Nada é criado antes da conferência.</span></div>
 </form></section>{{end}}
 {{template "fim"}}{{end}}
@@ -1856,20 +1853,22 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Nome</dt><dd>{{.Form.Name}}</dd>
 <dt>Tipo</dt><dd>{{.TypeLabel}}{{if .SourcesList}} · {{if eq .Form.Type "windows_update"}}KBs{{else}}fontes{{end}}: {{.SourcesList}}{{end}}{{if .ProgramL}} · {{.ProgramL}}{{end}}{{if .Extra}} · {{.Extra}}{{end}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>
-<dt>Observação</dt><dd>{{.ObserveL}} depois de cada grupo de implantação concluído</dd>
-{{if .Form.Wake}}<dt>Ligar pela rede</dt><dd>as desligadas, no início da janela; desligar depois as que o patchd ligou</dd>{{end}}
+<dt>Equipamentos</dt><dd>{{.Scope.Total}}{{if .Scope.PilotL}} · {{.Scope.PilotN}} no piloto, {{.Scope.RestN}} depois{{end}}</dd>
+<dt>Piloto</dt><dd>{{if .Scope.PilotL}}{{.Scope.PilotL}} ({{.Scope.PilotN}} equipamento(s)){{else}}sem piloto{{end}}</dd>
+<dt>Observação</dt><dd>{{if .Scope.PilotL}}{{.ObserveL}} depois de o piloto terminar sem falha{{else}}— (sem piloto, uma etapa só){{end}}</dd>
+{{if .Form.Wake}}<dt>Ligar pela rede</dt><dd>{{.WakeL}}; desligar depois as que o patchd ligou</dd>{{end}}
 <dt>Reenvios automáticos</dt><dd>{{if .Form.Resend}}até {{.Form.Resend}} vez(es) por máquina, nas falhas e nos expirados{{else}}nenhum: a primeira falha pausa a campanha{{end}}</dd>
 </dl></div>
-<div class="card"><div class="card-cab"><h2>Grupos de implantação, na ordem</h2></div><div class="tabela"><table><thead><tr><th>Ordem</th><th>Grupo de implantação</th><th>Máquinas agora</th><th>Janela</th>{{if .ProgramL}}<th>Hoje</th>{{end}}<th></th></tr></thead>
-<tbody>{{range $i, $r := .Rings}}<tr><td class="num">{{$i}}</td><td>{{$r.Label}}</td><td class="num">{{$r.Machines}}</td><td>{{$r.Window}}</td>{{if $.ProgramL}}<td>{{$r.Preview}}</td>{{end}}<td class="muted">{{$r.Note}}</td></tr>{{end}}</tbody></table></div></div>
+{{if .Changed}}<p class="aviso atencao">O escopo mudou desde a conferência (equipamentos entraram, saíram ou mudaram de lugar, ou uma janela mudou). Confira de novo antes de criar.</p>{{end}}
+{{template "campanha-escopo-conferir" .Scope}}
 {{range .Warnings}}<p class="aviso atencao">{{.}}</p>{{end}}
-<p>Ao criar, o servidor libera o primeiro grupo de implantação no próximo minuto: os jobs vão para máquinas de verdade.</p>
+<p>Ao criar, o servidor libera a primeira etapa no próximo minuto: os jobs vão para máquinas de verdade.</p>
 <form class="lote" method="post" action="/painel/campanhas/nova">
 <input type="hidden" name="nome" value="{{.Form.Name}}"><input type="hidden" name="tipo" value="{{.Form.Type}}">
 <input type="hidden" name="fontes" value="{{.Form.Sources}}"><input type="hidden" name="quando" value="{{.Form.When}}"><input type="hidden" name="hora" value="{{.Form.DailyStart}}"><input type="hidden" name="duracao" value="{{.Form.DailyDur}}">
 <input type="hidden" name="programa" value="{{.Form.Program}}"><input type="hidden" name="aviso" value="{{.Form.Delay}}">{{if .Form.Microsoft}}<input type="hidden" name="microsoft" value="1">{{end}}{{if .Form.Close}}<input type="hidden" name="fechar" value="{{.Form.Close}}">{{end}}<input type="hidden" name="reenvios" value="{{.Form.Resend}}">{{if .Form.Wake}}<input type="hidden" name="ligar" value="1">{{end}}
 <input type="hidden" name="observacao" value="{{.Form.ObserveH}}"><input type="hidden" name="prazo" value="{{.Form.TTLH}}">
-{{range .Form.Chosen}}<input type="hidden" name="anel" value="{{.}}">{{end}}
+{{range .Scope.Hidden}}<input type="hidden" name="{{.Value}}" value="{{.Label}}">{{end}}<input type="hidden" name="escopo_hash" value="{{.Scope.Digest}}">
 {{if .Form.RemoveKey}}<input type="hidden" name="remover_so" value="{{.Form.RemoveOS}}"><input type="hidden" name="remover_nome" value="{{.Form.RemoveKey}}"><input type="hidden" name="remover_fab" value="{{.Form.RemovePub}}">{{range .Form.RemoveVersions}}<input type="hidden" name="versao" value="{{.}}">{{end}}{{end}}
 <button type="submit" name="confirmar" value="1">Criar campanha</button>
 <button class="sec" type="submit" name="corrigir" value="1">Corrigir</button>
@@ -1878,9 +1877,13 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 
 {{define "campanha"}}{{template "topo" .}}
 <p><a href="/painel/campanhas">← Campanhas</a></p>
-<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span>{{if .C.ArchivedAt}} <span class="muted">· arquivada</span>{{end}}</h1>
+<h1>{{.Title}}: {{.C.Name}} <span class="job {{.State}}">{{.StateLabel}}</span>{{if .C.ArchivedAt}} <span class="muted">· arquivada</span>{{end}}{{if not .Located}} <span class="muted">· legada (grupos de implantação)</span>{{end}}</h1>
 <div class="card"><dl class="dados">
-<dt>Tipo</dt><dd>{{.TypeLabel}}</dd>
+<dt>Tipo</dt><dd>{{.TypeLabel}}</dd>{{if .Located}}
+<dt>Etapas</dt><dd>{{.StagesL}}</dd>
+<dt>Piloto</dt><dd>{{if .PilotL}}{{.PilotL}} · {{.PilotOK}} de {{.PilotTotal}} concluído(s){{else}}sem piloto{{end}}</dd>
+<dt>Progresso geral</dt><dd>{{.DoneN}} de {{.TotalTargets}} equipamento(s) concluído(s){{if .WaitWindowN}} · {{.WaitWindowN}} aguardando a janela{{end}}{{if .WaitPN}} · {{.WaitPN}} aguardando a liberação do piloto{{end}}</dd>
+<dt>Escopo</dt><dd>{{template "leia-mais" (leia .ScopeL)}}</dd>{{end}}
 <dt>{{if eq .C.Type "thirdparty"}}Programa{{else if eq .C.Type "windows_update"}}KBs{{else if eq .C.Type "reboot"}}Reinício{{else}}Fontes{{end}}</dt><dd>{{.Sources}}</dd>
 <dt>Quando</dt><dd>{{.When}}</dd>{{if .CloseL}}
 <dt>Programa aberto</dt><dd>{{.CloseL}}</dd>{{end}}{{if .Fallback}}
@@ -1891,11 +1894,11 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <dt>Detalhe</dt><dd>{{if .C.Detail}}{{template "leia-mais" (leia .C.Detail)}}{{else}}—{{end}}</dd>
 {{if .C.Notes}}<dt>Liberações</dt><dd>{{range .C.Notes}}<div>{{.}}</div>{{end}}</dd>{{end}}
 <dt>Criada</dt><dd>{{.Created}} por {{.C.CreatedBy}}</dd>
-<dt>Resultado</dt><dd><a href="/painel/campanhas/{{.C.ID}}/resultado.csv">Baixar CSV</a> <span class="muted">(todos os grupos de implantação, uma linha por job)</span></dd>
+<dt>Resultado</dt><dd><a href="/painel/campanhas/{{.C.ID}}/resultado.csv">Baixar CSV</a> <span class="muted">({{if .Located}}todas as etapas, com prédio e andar{{else}}todos os grupos de implantação{{end}}, uma linha por job)</span></dd>
 </dl>
 {{if or .CanPause .CanResume .CanCancel}}<div class="lote">
 {{if .CanPause}}<form method="post" action="/painel/campanhas/{{.C.ID}}/pausar"><button class="sec" type="submit">Pausar</button></form>{{end}}
-{{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas do grupo de implantação atual)</button></form>{{end}}
+{{if .CanResume}}<form method="post" action="/painel/campanhas/{{.C.ID}}/retomar"><button type="submit">Retomar (aceita as falhas {{if .Located}}da etapa atual{{else}}do grupo de implantação atual{{end}})</button></form>{{end}}
 {{if .CanCancel}}<form method="post" action="/painel/campanhas/{{.C.ID}}/cancelar"><button class="perigo" type="submit">Cancelar a campanha</button></form>{{end}}
 <span class="muted">Pausar e cancelar não desfazem jobs já entregues; cancelar cancela os pendentes.</span></div>{{end}}
 {{if or .CanArchive .CanUnarchive}}<div class="lote">
@@ -1905,7 +1908,11 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <label><input type="checkbox" name="confirmo" value="1" required> Entendo que a campanha some de vez; os jobs dela continuam em Automação › Jobs, sem a ligação com ela.</label>
 <button class="perigo" type="submit">Excluir de vez</button></form></details>{{end}}
 </div>{{end}}</div>
-{{if .Resend}}<div class="card"><div class="card-cab"><h2>Reenviar o que não deu certo</h2><span class="muted">grupo de implantação atual</span></div>
+{{if .Progress}}<div class="card" id="progresso"><div class="card-cab"><h2>Progresso por prédio</h2><span class="muted">{{len .Progress}} linha(s)</span></div><div class="tabela"><table>
+<thead><tr><th>Etapa</th><th>Prédio</th><th>Equip.</th><th>Concluídos</th><th>Em execução</th><th>Aguardando janela</th><th>Aguardando piloto</th><th>Adiados</th><th>Falhas</th><th>Dispensados</th><th>Sem job</th><th>Próxima janela</th></tr></thead>
+<tbody>{{range .Progress}}<tr><td>{{.Stage}}</td><td>{{.Name}}</td><td class="num">{{.Total}}</td><td class="num">{{.Done}}</td><td class="num">{{.Running}}</td><td class="num">{{.WaitWindow}}</td><td class="num">{{.WaitPilot}}</td><td class="num">{{.Postponed}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Dismissed}}</td><td class="num">{{.NoJob}}</td><td>{{.Next}}</td></tr>{{end}}</tbody></table></div>
+<p class="muted">"Sem job": a etapa foi liberada e a máquina ficou fora (o motivo está nas liberações: em dia, mudou de prédio, aposentada...).</p></div>{{end}}
+{{if .Resend}}<div class="card"><div class="card-cab"><h2>Reenviar o que não deu certo</h2><span class="muted">{{if .Located}}etapa atual{{else}}grupo de implantação atual{{end}}</span></div>
 <form class="limpeza" method="post" action="/painel/campanhas/{{.C.ID}}/reenviar">
 <fieldset class="escolhas"><legend>O que reenviar</legend>
 {{range .Resend}}<label class="opcao"><input type="checkbox" name="motivo" value="{{.Value}}" checked><span><b>{{.N}} job(s) {{.Label}}</b></span></label>{{end}}
@@ -1914,9 +1921,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="acoes"><button type="submit">Reenviar</button></div>
 </form></div>{{end}}
 {{if .Wakes}}<div class="card" id="ligar"><div class="card-cab"><h2>Ligar pela rede</h2><span class="muted">{{len .Wakes}} máquina(s)</span></div>
-<div class="tabela"><table><thead><tr><th>Máquina</th><th>Grupo</th><th>Pedido</th><th>Acordou</th><th>Desligar</th></tr></thead>
-<tbody>{{range .Wakes}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=hardware#ligar">{{.Name}}</a></td><td class="num">{{.Ring}}</td><td>{{.Wake}}</td><td>{{.Woke}}</td><td class="detalhe">{{template "leia-mais" (leia .Shutdown)}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
-{{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>Grupo de implantação {{.Ring}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
+<div class="tabela"><table><thead><tr><th>Máquina</th><th>{{if .Located}}Etapa{{else}}Grupo{{end}}</th><th>Pedido</th><th>Acordou</th><th>Desligar</th></tr></thead>
+<tbody>{{range .Wakes}}<tr><td><a href="/painel/maquinas/{{.MachineID}}?aba=hardware#ligar">{{.Name}}</a></td><td>{{.Ring}}</td><td>{{.Wake}}</td><td>{{.Woke}}</td><td class="detalhe">{{template "leia-mais" (leia .Shutdown)}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
+{{range .Rings}}{{$rv := .}}<div class="card" id="grupo-{{.Idx}}"><div class="card-cab"><h2>{{.Title}}{{if .Current}} (atual){{end}}</h2><span class="muted">{{.Total}} job(s){{if and .Total (not .Selected)}} · <a href="{{.Href}}">ver os jobs</a>{{end}}</span></div>
 {{if .Status}}<p class="muted">{{.Status}}</p>{{end}}
 {{if .Counts}}<ul class="chips camp-estados" aria-label="jobs por estado">{{range .Counts}}<li><a class="chip{{if .Active}} ativo{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}}><span class="job {{.State}}">{{.Label}}</span> <b>{{.N}}</b></a></li>{{end}}</ul>{{end}}
 {{if .Selected}}{{if .Total}}<form class="busca" method="get" action="/painel/campanhas/{{.CampaignID}}#grupo-{{.Idx}}"><input type="hidden" name="grupo" value="{{.Idx}}">{{if .Filter}}<input type="hidden" name="estado" value="{{.Filter}}">{{end}}
@@ -1935,21 +1942,6 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <p><a href="/painel/campanhas">Voltar às campanhas</a>.</p>
 {{template "fim"}}{{end}}
 
-{{define "aneis"}}{{template "topo" .}}
-<h1>Automação <span class="muted">› Prédios e implantação</span></h1>
-{{template "automacao-abas" "aneis"}}
-<header class="ux-hero"><div><span class="ux-eyebrow">Organização física</span><h2>Implantação por prédio</h2><p>Veja os equipamentos por localização do patrimônio, sem alterar a execução das campanhas existentes.</p></div><div class="ux-hero-side"><span class="ux-status">{{len .Buildings}} prédio(s) identificado(s)</span><a class="btn" href="/painel/configuracao?aba=localizacoes">Configurar andares</a></div></header>
-<div class="deployment-summary"><span><b>{{.Total}}</b> equipamentos no parque</span><span><b>{{.Unlocated}}</b> sem prédio identificado</span></div>
-{{if .Buildings}}<div class="deployment-buildings">{{range .Buildings}}<article class="card deployment-building"><div class="card-cab"><h2>{{localNome .Name}}</h2><a href="{{.Href}}">Ver inventário →</a></div><span class="kpi-val">{{.Machines}}</span><p class="muted">equipamento(s){{if .Pinned}} · {{.Pinned}} com grupo definido à mão{{end}}</p>{{if .RulesHref}}<p><a href="{{.RulesHref}}">Regra e janela do grupo vinculado →</a><small class="deployment-note">{{.Window}} · próxima {{.Next}}</small></p>{{else}}<p class="muted">Sem grupo vinculado ao prédio.</p>{{end}}{{if .Groups}}<details><summary>Distribuição atual nos grupos técnicos</summary><ul class="deployment-groups">{{range .Groups}}<li><a href="{{.Href}}">{{.Label}}</a><b>{{.Machines}}</b></li>{{end}}</ul></details>{{end}}</article>{{end}}</div>{{else}}<p class="vazio">Nenhum prédio identificado. Importe o <a href="/painel/configuracao?aba=patrimonio">patrimônio</a> para organizar os equipamentos por localização.</p>{{end}}
-<details class="card deployment-legacy"><summary>Grupos técnicos legados e janelas de manutenção</summary>
-<p class="muted">Campanhas passam pelos grupos em ordem: 0 é o piloto e 1 é o padrão (máquina nova entra no 1). Abra um grupo para ver as máquinas dele, adicionar outras (por filtro ou colando uma lista de nomes, IPs ou tombos), ligar prédios e faixas de IP e definir a janela de manutenção.</p>
-<p class="muted">{{.Total}} máquina(s) no parque.</p>
-<ul class="kpis">{{range .Cards}}<li><a class="kpi" href="{{.Href}}"><span class="kpi-rot">Grupo {{.Label}}</span><span class="kpi-val">{{.Machines}}</span><span class="kpi-sub">máquina(s){{if .Pinned}} · {{.Pinned}} à mão{{end}}{{if .Conflicts}} · <span class="v-laranja">{{.Conflicts}} em conflito</span>{{end}}</span>
-<span class="kpi-sub">{{if .HasWindow}}Janela {{.Window}} · próxima {{.Next}}{{else}}Sem janela{{end}}</span>
-<span class="kpi-sub">{{if or .Buildings .Ranges}}Regras: {{if .Buildings}}{{.Buildings}} prédio(s){{end}}{{if and .Buildings .Ranges}}, {{end}}{{if .Ranges}}{{.Ranges}} faixa(s) de IP{{end}}{{else}}Sem regras{{end}}</span></a></li>{{end}}</ul>
-{{if .Empty}}<p class="muted">Grupos vazios: {{range $i, $c := .Empty}}{{if $i}}, {{end}}<a href="{{$c.Href}}">{{$c.Ring}}</a>{{end}}.</p>{{end}}
-</details>{{template "fim"}}{{end}}
-
 {{define "grupo-abas"}}<nav class="abas" aria-label="abas do grupo"><a href="{{index .TabHrefs "maquinas"}}"{{if eq .Tab "maquinas"}} class="ativa" aria-current="page"{{end}}>Máquinas ({{.Machines}})</a>{{if .Admin}}<a href="{{index .TabHrefs "adicionar"}}"{{if eq .Tab "adicionar"}} class="ativa" aria-current="page"{{end}}>Adicionar</a><a href="{{index .TabHrefs "colar"}}"{{if eq .Tab "colar"}} class="ativa" aria-current="page"{{end}}>Colar lista</a>{{end}}<a href="{{index .TabHrefs "regras"}}"{{if eq .Tab "regras"}} class="ativa" aria-current="page"{{end}}>Regras e janela</a></nav>{{end}}
 
 {{define "grupo-filtro"}}<form class="busca" method="get" action="/painel/grupos-implantacao/{{.Ring}}">{{if ne .Tab "maquinas"}}<input type="hidden" name="aba" value="{{.Tab}}">{{end}}
@@ -1959,7 +1951,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <button type="submit">Buscar</button>{{if .HasFilter}} <a href="{{.ClearHref}}">Limpar</a>{{end}}</form>{{end}}
 
 {{define "grupo"}}{{template "topo" .}}
-<p><a href="/painel/grupos-implantacao">← Grupos de implantação</a></p>
+<p><a href="/painel/grupos-implantacao">← Prédios e implantação</a> <span class="muted">· grupo de implantação legado (campanhas antigas)</span></p>
 <h1>Grupo de implantação <span class="muted">› {{.Label}}</span></h1>
 <p class="muted">{{.Machines}} máquina(s){{if .Pinned}} · {{.Pinned}} movida(s) à mão{{end}}{{if .Conflicts}} · <span class="v-laranja">{{.Conflicts}} com regras em conflito</span>{{end}} · {{if .HasWindow}}janela {{.Window}}, próxima {{.Next}}{{else}}sem janela{{end}}</p>
 {{template "grupo-abas" .}}

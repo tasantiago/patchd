@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,11 +16,12 @@ import (
 	"github.com/tasantiago/patchd/internal/jobs"
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/store"
-	"github.com/tasantiago/patchd/internal/window"
 )
 
+// formCampanha: o formulário de campanha com o escopo dos equipamentos sem localização (o
+// ambiente das páginas não tem patrimônio); implantacao_test.go cobre prédios e andares.
 func formCampanha(kv ...string) url.Values {
-	f := url.Values{"nome": {"busca de outubro"}, "tipo": {"rescan"}, "anel": {"1", "0"}, "observacao": {"24"}, "quando": {"prazo"}, "prazo": {"24"}}
+	f := url.Values{"nome": {"busca de outubro"}, "tipo": {"rescan"}, "sem_local": {"1"}, "sem_local_ok": {"1"}, "observacao": {"24"}, "quando": {"prazo"}, "prazo": {"24"}}
 	for i := 0; i+1 < len(kv); i += 2 {
 		if kv[i+1] == "" {
 			delete(f, kv[i])
@@ -27,6 +30,27 @@ func formCampanha(kv ...string) url.Values {
 		f[kv[i]] = strings.Split(kv[i+1], "|")
 	}
 	return f
+}
+
+var escopoHash = regexp.MustCompile(`name="escopo_hash" value="([0-9a-f]+)"`)
+
+// confirmado passa pela conferência e devolve o formulário com a confirmação e a impressão do
+// escopo que o servidor calculou (a criação recalcula e compara).
+func confirmado(t *testing.T, h http.Handler, f url.Values) url.Values {
+	t.Helper()
+	g := url.Values{}
+	for k, v := range f {
+		g[k] = slices.Clone(v)
+	}
+	g.Del("confirmar")
+	b := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, g).Body.String()
+	m := escopoHash.FindStringSubmatch(b)
+	if m == nil {
+		t.Fatalf("conferência sem a impressão do escopo:\n%s", b)
+	}
+	g.Set("escopo_hash", m[1])
+	g.Set("confirmar", "1")
+	return g
 }
 
 func TestCriarCampanhaPeloPainel(t *testing.T) {
@@ -38,7 +62,8 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		t.Error("leitura não vê o formulário")
 	}
 	b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, `action="/painel/campanhas/nova"`) || !strings.Contains(b, "1 (padrão) <span class=\"muted\">· 2 máq.") {
+	if !strings.Contains(b, `action="/painel/campanhas/nova"`) || !strings.Contains(b, "Incluir os 2 equipamento(s) sem localização identificada") ||
+		!strings.Contains(b, "Implantação piloto") || strings.Contains(b, `name="anel"`) {
 		t.Errorf("admin:\n%s", b)
 	}
 
@@ -47,54 +72,65 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		f   url.Values
 		msg string
 	}{
-		"sem grupo de implantação":      {formCampanha("anel", ""), "Marque ao menos um grupo de implantação"},
-		"grupo de implantação repetido": {formCampanha("anel", "0|0"), "cada um uma vez"},
-		"grupo de implantação 10":       {formCampanha("anel", "10"), "Grupos de implantação de 0 a 9"},
-		"tipo server_url":               {formCampanha("tipo", "server_url"), "Escolha o tipo"},
-		"update sem fontes":             {formCampanha("tipo", "update"), "de 1 a 50 fontes"},
-		"fonte estranha":                {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
-		"observação fora":               {formCampanha("observacao", "5"), "observação da lista"},
-		"prazo fora":                    {formCampanha("prazo", "2"), "prazo da lista"},
-		"reenvios fora":                 {formCampanha("reenvios", "9"), "reenvios automáticos da lista"},
-		"ligar com prazo":               {formCampanha("ligar", "1"), "Ligar pela rede vai com a janela"},
-		"sem nome":                      {formCampanha("nome", "   "), "dê um nome"},
-		"janela sem janela":             {formCampanha("quando", "janela"), "Grupo de implantação sem janela de manutenção: 0, 1"},
+		"sem escopo":          {formCampanha("sem_local", "", "sem_local_ok", ""), "Escolha o escopo"},
+		"sem a confirmação":   {formCampanha("sem_local_ok", ""), "marque também a confirmação"},
+		"prédio desconhecido": {formCampanha("predio", "999"), "Prédio desconhecido no escopo"},
+		"andar desconhecido":  {formCampanha("andar", "1|andar:x"), "Andar desconhecido no escopo"},
+		"piloto inválido":     {formCampanha("piloto", "grupo0"), "Escolha a implantação piloto da lista"},
+		"piloto sem prédio":   {formCampanha("piloto", "predio"), "Escolha o prédio piloto"},
+		"tipo server_url":     {formCampanha("tipo", "server_url"), "Escolha o tipo"},
+		"update sem fontes":   {formCampanha("tipo", "update"), "de 1 a 50 fontes"},
+		"fonte estranha":      {formCampanha("tipo", "update", "fontes", "curl; rm -rf"), "Fontes: nomes de pacote fonte"},
+		"observação fora":     {formCampanha("observacao", "5"), "observação da lista"},
+		"prazo fora":          {formCampanha("prazo", "2"), "prazo da lista"},
+		"reenvios fora":       {formCampanha("reenvios", "9"), "reenvios automáticos da lista"},
+		"ligar com prazo":     {formCampanha("ligar", "1"), "Ligar pela rede vai com a janela"},
+		"sem nome":            {formCampanha("nome", "   "), "dê um nome"},
+		"janela sem janela":   {formCampanha("quando", "janela"), "não têm janela de prédio"},
 	} {
 		r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, c.f)
 		if r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), c.msg) {
 			t.Errorf("%s: %d\n%s", nome, r.Code, r.Body.String())
 		}
 	}
-	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("anel", "")); !strings.Contains(r.Body.String(), `value="busca de outubro"`) ||
-		!strings.Contains(r.Body.String(), "thyago · AD · admin") {
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("sem_local_ok", "")); !strings.Contains(r.Body.String(), `value="busca de outubro"`) ||
+		!strings.Contains(r.Body.String(), `name="sem_local" value="1" checked`) || !strings.Contains(r.Body.String(), "thyago · AD · admin") {
 		t.Error("o formulário volta preenchido")
 	}
 
-	// Conferência: nada criado ainda; os grupos de implantação em ordem crescente, com o aviso do grupo de implantação vazio.
-	r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("anel", "3|0"))
+	// Conferência: nada criado ainda; o escopo resolvido pelo servidor.
+	r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha())
 	b = r.Body.String()
-	if r.Code != http.StatusOK || !strings.Contains(b, "Conferir a campanha") || !strings.Contains(b, "O grupo de implantação 3 não tem máquinas") ||
-		!strings.Contains(b, `<input type="hidden" name="anel" value="0"><input type="hidden" name="anel" value="3">`) ||
-		!strings.Contains(b, `name="confirmar" value="1"`) || !strings.Contains(b, "thyago · AD · admin") {
+	if r.Code != http.StatusOK || !strings.Contains(b, "Conferir a campanha") || !strings.Contains(b, "2 equipamento(s) sem localização identificada incluídos") ||
+		!strings.Contains(b, `<input type="hidden" name="sem_local" value="1">`) || !strings.Contains(b, `name="escopo_hash"`) ||
+		!strings.Contains(b, `name="confirmar" value="1"`) || !strings.Contains(b, "thyago · AD · admin") || !strings.Contains(b, "sem piloto") {
 		t.Errorf("conferência:\n%s", b)
 	}
 	if l, _ := st.Campaigns(ctx, 10); len(l) != 0 {
 		t.Fatal("a conferência não cria")
 	}
 	// Corrigir volta ao formulário preenchido.
-	f := formCampanha("anel", "3|0")
+	f := formCampanha()
 	f.Set("corrigir", "1")
-	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `name="anel" value="3" checked`) {
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `name="sem_local_ok" value="1" checked`) {
 		t.Errorf("corrigir: %d", r.Code)
 	}
 	// Leitura e outra origem não criam.
-	f = formCampanha()
-	f.Set("confirmar", "1")
+	f = confirmado(t, h, formCampanha())
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoTeste, f); r.Code != http.StatusForbidden {
 		t.Errorf("leitura: %d", r.Code)
 	}
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f, "Sec-Fetch-Site", "cross-site"); r.Code != http.StatusForbidden {
 		t.Errorf("outra origem: %d", r.Code)
+	}
+	// A impressão do escopo de outra conferência: mostra a conferência de novo, sem criar.
+	ruim := url.Values{}
+	for k, v := range f {
+		ruim[k] = v
+	}
+	ruim.Set("escopo_hash", "0000")
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, ruim); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "O escopo mudou desde a conferência") {
+		t.Errorf("escopo mudou: %d", r.Code)
 	}
 	// Criar.
 	r = pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
@@ -102,21 +138,19 @@ func TestCriarCampanhaPeloPainel(t *testing.T) {
 		t.Fatalf("criar: %d %s", r.Code, local(r))
 	}
 	c, _, _ := st.Campaign(ctx, 1)
-	if c.CreatedBy != "thyago" || len(c.Rings) != 2 || c.Rings[0] != 0 || c.Observe != 24*time.Hour || c.TTL != 24*time.Hour || c.UseWindow {
+	if c.CreatedBy != "thyago" || len(c.Rings) != 0 || c.Scope == nil || !c.Scope.Unlocated || len(c.Scope.Stages) != 1 || c.Observe != 24*time.Hour ||
+		c.TTL != 24*time.Hour || c.UseWindow {
 		t.Errorf("campanha: %+v", c)
+	}
+	if ts, _ := st.CampaignTargets(ctx, 1, -1); len(ts) != 2 || ts[0].Via != campaign.ViaUnlocated {
+		t.Errorf("alvos: %+v", ts)
 	}
 	if !strings.Contains(log.String(), "campanha criada pelo painel") {
 		t.Error("log")
 	}
-
-	// Na janela, com os grupos de implantação com janela: passa.
-	w := window.Window{Days: window.AllDays, Start: 12 * time.Hour, Duration: time.Hour, Location: time.UTC}
-	_ = st.SetWindow(ctx, 0, w, "x")
-	_ = st.SetWindow(ctx, 1, w, "x")
-	f = formCampanha("quando", "janela")
-	f.Set("confirmar", "1")
-	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); local(r) != "/painel/campanhas/2?criada=1" {
-		t.Errorf("na janela: %d %s", r.Code, local(r))
+	if ev, _ := st.AuditEvents(ctx, store.AuditFilter{Action: "campanha.criar"}); len(ev) != 1 || !strings.Contains(ev[0].Detail, "com os sem localização") ||
+		!strings.Contains(ev[0].Detail, "sem piloto") {
+		t.Errorf("auditoria: %+v", ev)
 	}
 }
 
@@ -228,7 +262,7 @@ func TestCampanhaDoWindowsPeloPainel(t *testing.T) {
 		strings.Contains(b, "O KB5127648 não tem") || !strings.Contains(b, "O job não reinicia") {
 		t.Errorf("conferência:\n%s", b)
 	}
-	f.Set("confirmar", "1")
+	f = confirmado(t, h, f)
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); local(r) != "/painel/campanhas/1?criada=1" {
 		t.Fatalf("criar: %d %s", r.Code, local(r))
 	}
@@ -262,7 +296,7 @@ func TestCampanhaDeReinicioPeloPainel(t *testing.T) {
 		strings.Contains(b, "<th>Hoje</th>") {
 		t.Errorf("conferência:\n%s", b)
 	}
-	f.Set("confirmar", "1")
+	f = confirmado(t, h, f)
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); local(r) != "/painel/campanhas/1?criada=1" {
 		t.Fatalf("criar: %d %s", r.Code, local(r))
 	}
@@ -286,8 +320,7 @@ func TestCampanhasDeTudoPeloPainel(t *testing.T) {
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "terceiros_todos")); r.Code != http.StatusUnprocessableEntity {
 		t.Errorf("terceiros sem regras: %d", r.Code)
 	}
-	f := formCampanha("tipo", "sistema_todas", "nome", "tudo de novembro", "fontes", "curl")
-	f.Set("confirmar", "1")
+	f := confirmado(t, h, formCampanha("tipo", "sistema_todas", "nome", "tudo de novembro", "fontes", "curl"))
 	r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
 	if r.Code != http.StatusSeeOther {
 		t.Fatalf("criar: %d\n%s", r.Code, r.Body.String())
@@ -365,7 +398,7 @@ func TestCampanhaFiltroEPaginas(t *testing.T) {
 	r := pagina(h, "GET", base+"/resultado.csv", sessaoTeste, nil)
 	linhas := strings.Split(strings.TrimSpace(r.Body.String()), "\n")
 	if r.Code != http.StatusOK || len(linhas) != 181 || !strings.Contains(r.Header().Get("Content-Disposition"), fmt.Sprintf("patchd-campanha-%d.csv", id)) ||
-		!strings.Contains(linhas[0], "grupo_de_implantacao;job;maquina;nome;programa;estado;detalhe") {
+		!strings.Contains(linhas[0], "etapa;grupo_de_implantacao;predio;andar;job;maquina;nome;programa;estado;detalhe") {
 		t.Fatalf("CSV da campanha: %d, %d linhas, %q", r.Code, len(linhas), linhas[0])
 	}
 	if !strings.Contains(r.Body.String(), ";1;") || !strings.Contains(r.Body.String(), ";concluído;ok;") {

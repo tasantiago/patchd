@@ -45,15 +45,15 @@ func floorIP(e equip, rules []ipRule) *ipRule {
 }
 
 type floorLocationRow struct {
-	Regex bool
+	Regex              bool
 	Spec, Name, Legacy string
 	Machines           int
 }
 
 type floorBuildingView struct {
-	Building        string
-	Rows            []floorLocationRow
-	Machines, Named int
+	Building             string
+	Rows                 []floorLocationRow
+	Machines, Named      int
 	Unmatched, Conflicts int
 }
 
@@ -72,9 +72,13 @@ func (a *api) floorLocationsView(ctx context.Context) ([]floorBuildingView, erro
 	}
 	counts := map[string]map[string]int{}
 	assets, err := a.assetMap(ctx)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	for _, asset := range assets {
-		if asset.Building != "" { counts[asset.Building] = map[string]int{} }
+		if asset.Building != "" {
+			counts[asset.Building] = map[string]int{}
+		}
 	}
 	compiled := compileFloorRegex(names)
 	totals, conflicts, unmatched := map[string]int{}, map[string]int{}, map[string]int{}
@@ -83,17 +87,25 @@ func (a *api) floorLocationsView(ctx context.Context) ([]floorBuildingView, erro
 		if b == "" {
 			continue
 		}
-		if counts[b] == nil { counts[b] = map[string]int{} }
+		if counts[b] == nil {
+			counts[b] = map[string]int{}
+		}
 		totals[b]++
 		matches := matchingFloorRegex(e, compiled[b])
 		if len(matches) > 0 {
-			for _, match := range matches { counts[b][match.Spec]++ }
-			if _, conflict := regexFloorName(matches); conflict { conflicts[b]++ }
+			for _, match := range matches {
+				counts[b][match.Spec]++
+			}
+			if _, conflict := regexFloorName(matches); conflict {
+				conflicts[b]++
+			}
 			continue
 		}
 		if r := floorIP(e, rules.ips); r != nil {
 			counts[b][r.Spec]++
-		} else { unmatched[b]++ }
+		} else {
+			unmatched[b]++
+		}
 	}
 
 	// Mantenha editáveis os vínculos cadastrados mesmo sem máquinas atuais.
@@ -183,7 +195,10 @@ func (a *api) floorLocationsAction(w http.ResponseWriter, r *http.Request, s pan
 			}
 		}
 	}
-	if !buildingFound { fail("prédio não identificado"); return }
+	if !buildingFound {
+		fail("prédio não identificado")
+		return
+	}
 	var list []store.FloorLocation
 	var detail []string
 	for i, spec := range specs {
@@ -200,15 +215,25 @@ func (a *api) floorLocationsAction(w http.ResponseWriter, r *http.Request, s pan
 	if pattern != "" || newName != "" {
 		spec := floorRegexPrefix + pattern
 		if pattern == "" || newName == "" || len(spec) > 256 || !utf8.ValidString(newName) || utf8.RuneCountInString(newName) > 40 || strings.IndexFunc(newName, unicode.IsControl) >= 0 {
-			fail("informe uma expressão regular e um nome de andar válidos"); return
+			fail("informe uma expressão regular e um nome de andar válidos")
+			return
 		}
 		re, err := regexp.Compile(pattern)
-		if err != nil || re.MatchString("") { fail("expressão regular inválida ou aceita texto vazio"); return }
-		if slices.ContainsFunc(list, func(l store.FloorLocation) bool { return l.Spec == spec }) { fail("expressão já cadastrada; edite o nome na lista"); return }
-		list = append(list, store.FloorLocation{FloorKey: store.FloorKey{Building:b, Spec:spec}, Name:newName})
+		if err != nil || re.MatchString("") {
+			fail("expressão regular inválida ou aceita texto vazio")
+			return
+		}
+		if slices.ContainsFunc(list, func(l store.FloorLocation) bool { return l.Spec == spec }) {
+			fail("expressão já cadastrada; edite o nome na lista")
+			return
+		}
+		list = append(list, store.FloorLocation{FloorKey: store.FloorKey{Building: b, Spec: spec}, Name: newName})
 		detail = append(detail, fmt.Sprintf("%s=%q", spec, newName))
 	}
-	if len(list) == 0 { fail("nenhuma regra informada"); return }
+	if len(list) == 0 {
+		fail("nenhuma regra informada")
+		return
+	}
 	if err := db.SaveFloorLocations(r.Context(), list, s.Username); err != nil {
 		a.internalError(w, r, "gravar localizações", err)
 		return

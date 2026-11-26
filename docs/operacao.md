@@ -337,8 +337,10 @@ com o reinício escolhido.
   instalado** em versão antiga; um job por programa. Programa aprovado sem instalador pronto
   fica fora, nas notas da campanha ("vscode 1.141.0 não pronto"). Um adiado tenta de novo só
   aquele programa.
-- As duas seguem os grupos de implantação em ordem, com observação, prazo ou janela, como as
-  outras. Linha de comando: `campaign create -type sistema_todas` ou `-type terceiros_todos`.
+- As duas seguem o escopo por prédio e andar, com piloto opcional, observação, prazo ou janela
+  de cada prédio, como as outras. Linha de comando: `campaign create -type sistema_todas
+  -all-buildings` ou `-type terceiros_todos -buildings ID,ID` (veja
+  [implantacao-por-predio.md](implantacao-por-predio.md)).
 
 ### Reinício (e qualquer campanha) de madrugada
 
@@ -682,7 +684,7 @@ expediente; "não deram certo" repetidos num programa pedem olhar o instalador a
   na mesma transação: não existe trilha apagada sem o registro de que foi apagada. O prazo é
   decisão da instituição: confira com a norma interna de guarda de registros antes de mudar.
 - **Linha de comando**: os subcomandos que mudam alguma coisa (job create/cancel/keygen,
-  campaign create/pause/resume/cancel, ring set/window, machine retire/restore, token
+  campaign create/pause/resume/cancel, ring set/window, building window, machine retire/restore, token
   create/revoke, user create/password/delete, package fetch/install/approve/revoke, release
   publish/withdraw, retention -apply, repo-cache prune) viram `cli.COMANDO.SUBCOMANDO`, com
   origem "linha de comando", as opções (valores de opções com senha, token ou chave no nome
@@ -2130,11 +2132,16 @@ Excel no Windows). Até 20 MB.
   se a contagem for a mesma que a página mostrou; sem filtro, não move nada. Vai para a
   auditoria como `maquina.anel_lote`, com o filtro em palavras.
 
-### A página do grupo de implantação
+### Prédios e implantação (campanhas novas)
 
-Em **Automação › Grupos de implantação e janelas**, cada grupo em uso tem um cartão: o nome,
-quantas máquinas, quantas foram movidas à mão, quantas têm regras em conflito, a janela e as
-regras. Os grupos vazios ficam numa linha de links. O cartão abre a página do grupo, com as abas:
+As campanhas novas são por prédio e andar, com piloto opcional e a janela de manutenção de cada
+prédio: veja [implantacao-por-predio.md](implantacao-por-predio.md). A página **Automação ›
+Prédios e implantação** lista os prédios (recolhidos), com as janelas individuais e em lote.
+
+### A página do grupo de implantação (legado)
+
+Os grupos numéricos valem só para as campanhas antigas. A página de cada grupo
+(`/painel/grupos-implantacao/N`) continua acessível pelas campanhas antigas, com as abas:
 
 - **Máquinas**: quem está no grupo, com busca (nome, IP, tombo, local, ou uma faixa como
   `10.1.2.0/24`), o prédio e "como entrou": **à mão**, **pelo prédio**, **pela faixa** ou **sem

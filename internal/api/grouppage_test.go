@@ -53,9 +53,9 @@ func TestPaginaDoGrupo(t *testing.T) {
 	if _, l, _ := post("/painel/grupos-implantacao/nome", url.Values{"anel": {"3"}, "nome": {strings.Repeat("x", 41)}}); !strings.Contains(l, "erro=nome") {
 		t.Errorf("nome longo: %s", l)
 	}
-	b := get("/painel/grupos-implantacao")
-	if !strings.Contains(b, "Grupo 3 · Fórum Cível") || !strings.Contains(b, `href="/painel/grupos-implantacao/3"`) || !strings.Contains(b, "Grupo 1 (padrão)") {
-		t.Errorf("resumo:\n%s", b)
+	b := get("/painel/grupos-implantacao/3")
+	if !strings.Contains(b, "3 · Fórum Cível") || !strings.Contains(b, "← Prédios e implantação") {
+		t.Errorf("página do grupo:\n%s", b)
 	}
 
 	// Máquinas do grupo 1 e o adicionar do grupo 3, com a faixa de IP como filtro.
@@ -166,8 +166,8 @@ func TestPaginaDoGrupo(t *testing.T) {
 	if !strings.Contains(b, ">pc-1004</a>") || !strings.Contains(b, "discordam: a máquina fica onde está") {
 		t.Errorf("conflito na página:\n%s", b)
 	}
-	if b := get("/painel/grupos-implantacao"); !strings.Contains(b, "1 em conflito") {
-		t.Error("conflito no cartão")
+	if b := get("/painel/grupos-implantacao/6"); !strings.Contains(b, "1 com regras em conflito") {
+		t.Error("conflito no cabeçalho do grupo")
 	}
 
 	// O prédio vence a faixa, com o aviso.

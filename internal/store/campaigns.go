@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,7 +20,7 @@ import (
 
 const campaignCols = `id, name, type, sources, rings, use_window, observe_sec, ttl_sec, state, current_idx, launched_idx,
 	accepted_idx, ring_done_at, detail, created_by, created_at, updated_at, app, version, notes, reboot_delay_sec,
-	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, archived_at, wake, remove_target`
+	daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, archived_at, wake, remove_target, scope`
 
 func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var c campaign.Campaign
@@ -28,12 +29,19 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	var cur, launched, accepted, autoResend int16
 	var dStart, dDur *int
 	var dTZ *string
-	var remove []byte
+	var remove, scope []byte
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Sources, &rings, &c.UseWindow, &observe, &ttl, &c.State, &cur, &launched,
 		&accepted, &c.RingDoneAt, &c.Detail, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.App, &c.Version, &c.Notes, &delay,
-		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend, &c.ArchivedAt, &c.Wake, &remove)
+		&dStart, &dDur, &dTZ, &c.MicrosoftFallback, &closeDelay, &autoResend, &c.ArchivedAt, &c.Wake, &remove, &scope)
 	if err != nil {
 		return c, err
+	}
+	if len(scope) > 0 {
+		var sc campaign.Scope
+		if err := json.Unmarshal(scope, &sc); err != nil {
+			return c, fmt.Errorf("campanha %d: escopo ilegível: %w", c.ID, err)
+		}
+		c.Scope = &sc
 	}
 	if len(remove) > 0 {
 		var t campaign.RemoveTarget
@@ -68,8 +76,72 @@ func scanCampaign(row pgx.Row) (campaign.Campaign, error) {
 	return c, nil
 }
 
-// CreateCampaign grava a campanha nova (em andamento, nenhum grupo de implantação lançado) e devolve o ID.
+// CreateCampaign grava a campanha nova legada (em andamento, nenhum grupo de implantação
+// lançado) e devolve o ID. A por localização vai por CreateLocatedCampaign, com os alvos.
 func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int64, error) {
+	if c.Scope != nil {
+		return 0, errors.New("campanha por localização sem os alvos: use CreateLocatedCampaign")
+	}
+	return p.createCampaign(ctx, p.pool, c)
+}
+
+// CreateLocatedCampaign grava a campanha por localização e os alvos dela numa transação:
+// todos os alvos ou nenhum, sem máquina repetida.
+func (p *Postgres) CreateLocatedCampaign(ctx context.Context, c campaign.Campaign, targets []campaign.Target) (int64, error) {
+	if err := validTargets(c, targets); err != nil {
+		return 0, err
+	}
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	id, err := p.createCampaign(ctx, tx, c)
+	if err != nil {
+		return 0, err
+	}
+	rows := make([][]any, len(targets))
+	for i, t := range targets {
+		var b *int64
+		if t.BuildingID != 0 {
+			v := t.BuildingID
+			b = &v
+		}
+		rows[i] = []any{id, t.MachineID, int16(t.Stage), b, t.Building, t.FloorKey, t.Floor, t.Via} // #nosec G115 -- validTargets limita a etapa
+	}
+	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"campaign_targets"},
+		[]string{"campaign_id", "machine_id", "stage_idx", "building_id", "building_name", "floor_key", "floor_name", "via"}, pgx.CopyFromRows(rows)); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit(ctx)
+}
+
+// validTargets: um alvo por máquina, etapas da campanha, via conhecida.
+func validTargets(c campaign.Campaign, targets []campaign.Target) error {
+	if c.Scope == nil || len(targets) == 0 {
+		return errors.New("campanha por localização sem escopo ou sem alvos")
+	}
+	seen := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		switch {
+		case t.MachineID == "" || seen[t.MachineID]:
+			return fmt.Errorf("alvo vazio ou repetido: %q", t.MachineID)
+		case t.Stage < 0 || t.Stage >= len(c.Scope.Stages):
+			return fmt.Errorf("alvo %s fora das etapas", t.MachineID)
+		case t.Via != campaign.ViaBuilding && t.Via != campaign.ViaFloor && t.Via != campaign.ViaUnlocated:
+			return fmt.Errorf("alvo %s sem a origem", t.MachineID)
+		}
+		seen[t.MachineID] = true
+	}
+	return nil
+}
+
+// execQuerier: o pool ou a transação.
+type execQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func (p *Postgres) createCampaign(ctx context.Context, q execQuerier, c campaign.Campaign) (int64, error) {
 	if c.Sources == nil {
 		c.Sources = []string{}
 	}
@@ -86,14 +158,25 @@ func (p *Postgres) CreateCampaign(ctx context.Context, c campaign.Campaign) (int
 			return 0, err
 		}
 	}
+	var scope []byte
+	if c.Scope != nil {
+		var err error
+		if scope, err = json.Marshal(c.Scope); err != nil {
+			return 0, err
+		}
+	}
+	rings := c.Rings
+	if rings == nil {
+		rings = []int{}
+	}
 	var id int64
-	err := p.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		INSERT INTO campaigns (name, type, sources, rings, use_window, observe_sec, ttl_sec, state, created_by, app, version, reboot_delay_sec,
-			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, wake, remove_target)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
-		c.Name, c.Type, c.Sources, c.Rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
+			daily_start_min, daily_duration_min, daily_tz, microsoft_fallback, close_delay_sec, auto_resend, wake, remove_target, scope)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'em_andamento', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id`,
+		c.Name, c.Type, c.Sources, rings, c.UseWindow, int(c.Observe/time.Second), int(c.TTL/time.Second), c.CreatedBy,
 		c.App, c.Version, int(c.RebootDelay/time.Second), dStart, dDur, dTZ, c.MicrosoftFallback, int(c.CloseDelay/time.Second), c.AutoResend, c.Wake,
-		remove).Scan(&id)
+		remove, scope).Scan(&id)
 	return id, err
 }
 
@@ -228,6 +311,23 @@ func (p *Postgres) CampaignJobs(ctx context.Context, id int64, idx int) ([]campa
 	})
 }
 
+// CampaignTargets lista os alvos da campanha por localização na etapa idx (idx < 0: todas), pela máquina.
+func (p *Postgres) CampaignTargets(ctx context.Context, id int64, idx int) ([]campaign.Target, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT machine_id, stage_idx, coalesce(building_id, 0), building_name, floor_key, floor_name, via
+		FROM campaign_targets WHERE campaign_id = $1 AND ($2 < 0 OR stage_idx = $2) ORDER BY machine_id`, id, idx)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (campaign.Target, error) {
+		var t campaign.Target
+		var st int16
+		err := r.Scan(&t.MachineID, &st, &t.BuildingID, &t.Building, &t.FloorKey, &t.Floor, &t.Via)
+		t.Stage = int(st)
+		return t, err
+	})
+}
+
 // DismissJob encerra um job adiado (ou falho, expirado, recusado, no reenvio) cuja nova
 // tentativa não faz mais sentido (Aula 14.9): a máquina já não precisa. Vira "dispensado",
 // com o motivo acrescentado ao detalhe.
@@ -267,10 +367,46 @@ func (p *Postgres) MachineCapabilities(ctx context.Context, id string) ([]string
 
 // --- Memória -------------------------------------------------------------------------
 
-// CreateCampaign grava a campanha nova.
+// CreateCampaign grava a campanha nova (legada).
 func (m *Memory) CreateCampaign(ctx context.Context, c campaign.Campaign) (int64, error) {
+	if c.Scope != nil {
+		return 0, errors.New("campanha por localização sem os alvos: use CreateLocatedCampaign")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.createCampaignLocked(c), nil
+}
+
+// CreateLocatedCampaign (memória).
+func (m *Memory) CreateLocatedCampaign(ctx context.Context, c campaign.Campaign, targets []campaign.Target) (int64, error) {
+	if err := validTargets(c, targets); err != nil {
+		return 0, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := m.createCampaignLocked(c)
+	if m.campaignTargets == nil {
+		m.campaignTargets = map[int64][]campaign.Target{}
+	}
+	m.campaignTargets[id] = slices.Clone(targets)
+	return id, nil
+}
+
+// CampaignTargets (memória).
+func (m *Memory) CampaignTargets(ctx context.Context, id int64, idx int) ([]campaign.Target, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []campaign.Target
+	for _, t := range m.campaignTargets[id] {
+		if idx < 0 || t.Stage == idx {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b campaign.Target) int { return strings.Compare(a.MachineID, b.MachineID) })
+	return out, nil
+}
+
+func (m *Memory) createCampaignLocked(c campaign.Campaign) int64 {
 	m.campaignSeq++
 	c.ID, c.State, c.CurrentIdx, c.LaunchedIdx, c.AcceptedIdx = m.campaignSeq, campaign.StateRunning, 0, -1, -1
 	c.CreatedAt, c.UpdatedAt = m.now(), m.now()
@@ -278,8 +414,12 @@ func (m *Memory) CreateCampaign(ctx context.Context, c campaign.Campaign) (int64
 		c.Sources = []string{}
 	}
 	c.Notes = []string{}
+	if c.Scope != nil {
+		sc := *c.Scope
+		c.Scope = &sc
+	}
 	m.campaigns = append(m.campaigns, c)
-	return c.ID, nil
+	return c.ID
 }
 
 // Campaign devolve a campanha.
@@ -396,6 +536,7 @@ func (m *Memory) DeleteCampaign(ctx context.Context, id int64) (bool, error) {
 		}
 	}
 	m.campaigns = slices.Delete(m.campaigns, i, i+1)
+	delete(m.campaignTargets, id)
 	return true, nil
 }
 

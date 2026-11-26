@@ -84,7 +84,7 @@ func (e *Engine) wakeStep(ctx context.Context, c *Campaign, list []JobState, now
 			}
 		}
 		if woke+skipped > 0 {
-			e.log(c, "ligar pela rede na janela", "anel", c.Ring(), "pedidos", woke, "sem_pedido", skipped)
+			e.log(c, "ligar pela rede na janela", "etapa", c.stage(), "pedidos", woke, "sem_pedido", skipped)
 		}
 	}
 
@@ -114,7 +114,7 @@ func (e *Engine) wakeStep(ctx context.Context, c *Campaign, list []JobState, now
 				return err
 			default:
 				r.ShutdownJobID = rec.ID
-				e.log(c, "desligar a máquina que o patchd ligou", "anel", c.Ring(), "machine_id", r.MachineID, "job", rec.ID)
+				e.log(c, "desligar a máquina que o patchd ligou", "etapa", c.stage(), "machine_id", r.MachineID, "job", rec.ID)
 			}
 		}
 		if err := e.Store.SaveCampaignWake(ctx, r); err != nil {

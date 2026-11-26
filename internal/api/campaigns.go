@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +45,7 @@ type campaignRow struct {
 	ID                                                   int64
 	Name, Type, Sources, Rings, State, Label, Detail, By string
 	Created                                              string
+	Legacy                                               bool // pelos grupos de implantação numéricos
 }
 
 // ringChoice é um grupo de implantação no formulário, com o que o admin precisa saber antes de marcar.
@@ -75,12 +75,14 @@ type campaignForm struct {
 	Program                   string          // thirdparty: "programa versão"
 	Programs                  []programOption // as versões que podem virar campanha
 	TPOn                      bool            // o servidor tem as regras de terceiros
-	Rings                     []ringChoice
-	Observe, TTL              []hourOption
-	ObserveH, TTLH            int
-	Chosen                    []int // grupos de implantação marcados, em ordem
-	Delay                     int   // reboot (Aula 16.5): aviso em minutos
-	Delays                    []int
+	// Scope: os prédios, os andares e o piloto (campaignscope.go). As campanhas novas não
+	// escolhem grupos de implantação numéricos.
+	Scope          scopeForm
+	scopeIn        scopeInput
+	Observe, TTL   []hourOption
+	ObserveH, TTLH int
+	Delay          int // reboot (Aula 16.5): aviso em minutos
+	Delays         []int
 	// Em horário fixo todo dia: a hora (HH:MM), a duração (minutos) e o fuso do painel.
 	DailyStart string
 	DailyDur   int
@@ -191,7 +193,7 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 	if v.CanNew {
 		f := campaignForm{Type: jobs.TypeRescan, When: "prazo", ObserveH: 24, TTLH: 24, Delay: 15, Delays: rebootDelays, Resends: resendChoices,
 			DailyStart: "02:00", DailyDur: 180}
-		// Vindo de "Campanha por grupo de implantação" na página do programa (Aula 14.8): já preenchido.
+		// Vindo de "Campanha por prédio" na página do programa (Aula 14.8): já preenchido.
 		if q := r.URL.Query(); q.Get("tipo") == jobs.TypeThirdParty {
 			f.Type, f.Program = jobs.TypeThirdParty, q.Get("programa")
 			f.Name = f.Program
@@ -206,11 +208,13 @@ func (a *api) campaignsPage(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("tipo") == jobs.TypeReboot {
 			f.Type, f.Name = jobs.TypeReboot, "Reinício pendente"
 		}
-		var err error
-		if f.Rings, err = a.ringChoices(r, nil); err != nil {
-			a.internalError(w, r, "listar grupos de implantação", err)
+		o, err := a.deployOverview(r.Context())
+		if err != nil {
+			a.internalError(w, r, "listar os prédios", err)
 			return
 		}
+		q := r.URL.Query()
+		f.Scope = scopeFormFrom(o, scopeInput{All: q.Get("todos") == "1"}, texto.Clip(q.Get("predios"), 100))
 		if err := a.programChoices(r, &f); err != nil {
 			a.internalError(w, r, "listar versões aprovadas", err)
 			return
@@ -253,10 +257,18 @@ func (a *api) renderCampaigns(w http.ResponseWriter, r *http.Request, status int
 			typ += ", às " + fmt.Sprintf("%02d:%02d", int(c.Daily.Start.Hours()), int(c.Daily.Start.Minutes())%60)
 		}
 		v.Rows = append(v.Rows, campaignRow{ID: c.ID, Name: c.Name, Type: typ, Sources: dash(c.Target()),
-			Rings: ringsProgress(c), State: c.State, Label: campaignLabel(c.State), Detail: dash(c.Detail),
+			Rings: stagesProgress(c), Legacy: !c.Located(), State: c.State, Label: campaignLabel(c.State), Detail: dash(c.Detail),
 			By: c.CreatedBy, Created: ago(a.now().Sub(c.CreatedAt))})
 	}
 	a.render(w, r, status, "campanhas", v)
+}
+
+// stagesProgress: as etapas, com a atual entre colchetes; na legada, os grupos ("[0] → 1").
+func stagesProgress(c campaign.Campaign) string {
+	if c.Located() {
+		return c.StagesText(true)
+	}
+	return ringsProgress(c)
 }
 
 // ringsProgress: "[0] → 1", com o grupo de implantação atual entre colchetes.
@@ -271,8 +283,31 @@ func ringsProgress(c campaign.Campaign) string {
 	return strings.Join(rings, " → ")
 }
 
-// parseCampaignForm lê e confere o formulário. A mensagem de erro é para a tela.
-func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignForm, string) {
+// parseCampaignForm lê e confere o formulário e resolve o escopo (o plano por prédio e andar,
+// calculado no servidor a partir de o). A mensagem de erro é para a tela.
+func (a *api) parseCampaignForm(r *http.Request, o *deployOverview) (campaign.Campaign, []campaign.Target, campaignForm, string) {
+	c, f, problem := a.parseCampaignFields(r, o)
+	if problem != "" {
+		return c, nil, f, problem
+	}
+	_, sc, ts, problem := a.scopeFromRequest(r, o)
+	if problem != "" {
+		return c, nil, f, problem
+	}
+	c.Scope = &sc
+	if err := c.Validate(); err != nil {
+		return c, nil, f, "Campanha inválida: " + err.Error() + "."
+	}
+	if c.UseWindow {
+		if problem := windowProblem(o, ts); problem != "" {
+			return c, nil, f, problem
+		}
+	}
+	return c, ts, f, ""
+}
+
+// parseCampaignFields lê os campos da campanha (sem o escopo).
+func (a *api) parseCampaignFields(r *http.Request, o *deployOverview) (campaign.Campaign, campaignForm, string) {
 	_ = r.ParseForm()
 	f := campaignForm{Name: strings.TrimSpace(r.PostFormValue("nome")), Type: r.PostFormValue("tipo"),
 		Sources: strings.TrimSpace(r.PostFormValue("fontes")), When: r.PostFormValue("quando"), Program: r.PostFormValue("programa")}
@@ -289,17 +324,9 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	f.MicrosoftOn = a.microsoftAllowed()
 	f.Resend, _ = strconv.Atoi(r.PostFormValue("reenvios"))
 	f.Wake = r.PostFormValue("ligar") == "1"
-	seen := map[int]bool{}
-	for _, s := range r.PostForm["anel"] {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 || n > store.MaxRing || seen[n] {
-			return campaign.Campaign{}, f, fmt.Sprintf("Grupos de implantação de 0 a %d, cada um uma vez.", store.MaxRing)
-		}
-		seen[n] = true
-		f.Chosen = append(f.Chosen, n)
-	}
-	sort.Ints(f.Chosen) // a ordem é sempre crescente: o piloto primeiro
-	c := campaign.Campaign{Name: f.Name, Type: f.Type, Rings: f.Chosen, Observe: time.Duration(f.ObserveH) * time.Hour,
+	f.scopeIn = readScopeInput(r.PostForm)
+	f.Scope = scopeFormFrom(o, f.scopeIn, "")
+	c := campaign.Campaign{Name: f.Name, Type: f.Type, Observe: time.Duration(f.ObserveH) * time.Hour,
 		TTL: time.Duration(f.TTLH) * time.Hour, UseWindow: f.When == "janela", MicrosoftFallback: f.Microsoft, Wake: f.Wake,
 		CloseDelay: time.Duration(f.Close) * time.Minute, AutoResend: f.Resend}
 	if f.Type == jobs.TypeReboot {
@@ -329,17 +356,15 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 	case f.Close != 0 && !containsInt(rebootDelays, f.Close):
 		return c, f, "Escolha o aviso antes de fechar o programa da lista."
 	case f.Close != 0 && f.When == "prazo":
-		return c, f, "Fechar o programa aberto só em horário fixo (de madrugada) ou na janela de cada grupo: com prazo, o programa seria fechado em pleno expediente."
+		return c, f, "Fechar o programa aberto só em horário fixo (de madrugada) ou na janela de cada prédio: com prazo, o programa seria fechado em pleno expediente."
 	case f.Wake && f.When == "prazo":
-		return c, f, "Ligar pela rede vai com a janela do grupo ou o horário fixo (de madrugada), não com o prazo."
+		return c, f, "Ligar pela rede vai com a janela de cada prédio ou o horário fixo (de madrugada), não com o prazo."
 	case f.Resend < 0 || f.Resend > campaign.MaxAutoResend:
 		return c, f, "Escolha os reenvios automáticos da lista."
-	case len(f.Chosen) == 0:
-		return c, f, "Marque ao menos um grupo de implantação."
 	case !containsInt(observeHours, f.ObserveH):
 		return c, f, "Escolha a observação da lista."
 	case f.When != "prazo" && f.When != "janela" && f.When != "horario":
-		return c, f, "Escolha quando: com prazo, na janela de cada grupo de implantação ou em horário fixo."
+		return c, f, "Escolha quando: com prazo, na janela de cada prédio ou em horário fixo."
 	case f.When == "prazo" && !containsInt(ttlHours, f.TTLH):
 		return c, f, "Escolha o prazo da lista."
 	}
@@ -375,10 +400,8 @@ func (a *api) parseCampaignForm(r *http.Request) (campaign.Campaign, campaignFor
 		}
 	}
 	// Nos outros tipos, o campo de fontes está escondido (Aula 16.6): o que ficou nele de
-	// antes de trocar o tipo é ignorado, como o programa e o aviso.
-	if err := c.Validate(); err != nil {
-		return c, f, "Campanha inválida: " + err.Error() + "."
-	}
+	// antes de trocar o tipo é ignorado, como o programa e o aviso. A validação completa vem
+	// com o escopo (parseCampaignForm).
 	return c, f, ""
 }
 
@@ -400,39 +423,35 @@ func containsStr(list []string, x string) bool {
 	return false
 }
 
-// confirmRing é uma linha da conferência.
-type confirmRing struct {
-	Label, Window, Note string
-	Preview             string // thirdparty: o que o grupo de implantação receberia agora (Aula 14.8)
-	Machines            int
-}
-
 type campaignConfirmView struct {
 	pageBase
 	Form            campaignForm
 	TypeLabel, When string
-	Rings           []confirmRing
+	Scope           scopeConfirm
 	SourcesList     string
 	ProgramL        string
 	Extra           string // reboot (Aula 16.5): o alvo, sem a coluna de previsão
 	ObserveL        string
 	Warnings        []string
-	ChosenCSV       string
+	WakeL           string
+	Changed         bool // o escopo mudou entre a conferência e a confirmação
 }
 
-// newCampaignAction: sem "confirmar", mostra a conferência; com ele, cria.
+// newCampaignAction: sem "confirmar", mostra a conferência; com ele, recalcula o escopo e
+// cria (se o escopo mudou desde a conferência, mostra a conferência de novo).
 func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.Session) {
 	if a.jobKey == nil {
 		http.Error(w, "o servidor está sem a chave de jobs (PATCHD_JOB_SIGNING_KEY_FILE)", http.StatusConflict)
 		return
 	}
-	c, f, problem := a.parseCampaignForm(r)
-	choices, err := a.ringChoices(r, f.Chosen)
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	o, err := a.deployOverview(r.Context())
 	if err != nil {
-		a.internalError(w, r, "listar grupos de implantação", err)
+		a.internalError(w, r, "listar os prédios", err)
 		return
 	}
-	// Terceiros (Aula 14.8): a mesma conferência da linha de comando e de cada grupo de implantação.
+	c, targets, f, problem := a.parseCampaignForm(r, o)
+	// Terceiros (Aula 14.8): a mesma conferência da linha de comando e de cada etapa.
 	if problem == "" && c.Type == jobs.TypeThirdParty {
 		reason, err := a.campaigner().Ready(r.Context(), c.App, c.Version)
 		if err != nil {
@@ -441,17 +460,6 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		}
 		if reason != "" {
 			problem = "A versão não está pronta para campanha: " + reason + "."
-		}
-	}
-	if problem == "" && c.UseWindow {
-		var missing []string
-		for _, rc := range choices {
-			if rc.Checked && rc.Window == "" {
-				missing = append(missing, strconv.Itoa(rc.Ring))
-			}
-		}
-		if len(missing) > 0 {
-			problem = "Grupo de implantação sem janela de manutenção: " + strings.Join(missing, ", ") + ". Defina a janela em Grupos de implantação ou escolha \"com prazo\"."
 		}
 	}
 	if c.Type == jobs.TypeUninstall && (problem != "" || r.PostFormValue("corrigir") == "1") {
@@ -470,7 +478,6 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		if problem == "" {
 			status = http.StatusOK // voltou da conferência para corrigir
 		}
-		f.Rings = choices
 		f.Observe, f.TTL = hourOptions(observeHours, f.ObserveH), hourOptions(ttlHours, f.TTLH)
 		if err := a.programChoices(r, &f); err != nil {
 			a.internalError(w, r, "listar versões aprovadas", err)
@@ -480,118 +487,128 @@ func (a *api) newCampaignAction(w http.ResponseWriter, r *http.Request, s panel.
 		a.renderCampaigns(w, r, status, v)
 		return
 	}
-	if r.PostFormValue("confirmar") != "1" {
-		v := campaignConfirmView{pageBase: a.baseFor(r.Context(), s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
-			SourcesList: strings.Join(c.Sources, ", "), ObserveL: hoursLabel(f.ObserveH)}
-		var preview map[int]string
-		if c.Type == jobs.TypeUninstall {
-			v.ProgramL = c.Target()
-			if preview, err = a.removePreview(r, f, c); err != nil {
-				a.internalError(w, r, "prever a campanha", err)
-				return
-			}
-			v.Warnings = append(v.Warnings, "Na remoção, cada máquina do grupo recebe o job na hora em que o grupo for liberado, se o inventário dela mostrar o programa instalado para a máquina toda e com desinstalação silenciosa: o agente roda o desinstalador do próprio programa, sem nada na tela, e confere antes que a entrada ainda é dele. Instalações por usuário, sem desinstalação silenciosa e agentes antigos ficam de fora, com o motivo nas liberações. A coluna \"Hoje\" é a previsão de agora. Programa aberto: o desinstalador pode fechá-lo ou falhar; prefira a janela ou o horário fixo.")
+	digest := scopeDigest(*c.Scope, targets)
+	changed := r.PostFormValue("confirmar") == "1" && r.PostFormValue("escopo_hash") != digest
+	if r.PostFormValue("confirmar") != "1" || changed {
+		v, err := a.campaignConfirm(r, s, o, c, targets, f)
+		if err != nil {
+			a.internalError(w, r, "prever a campanha", err)
+			return
 		}
-		if c.Type == jobs.TypeThirdParty {
-			v.ProgramL = "programa: " + c.Target()
-			if preview, err = a.thirdPartyPreview(r, c); err != nil {
-				a.internalError(w, r, "prever a campanha", err)
-				return
-			}
-			v.Warnings = append(v.Warnings, "No programa de terceiros, cada grupo de implantação recebe o plano da hora em que for liberado: a coluna \"Hoje\" é a previsão de agora. A aprovação e o arquivo no cache são conferidos de novo a cada grupo de implantação; revogada a aprovação, a campanha pausa.")
-		}
-		v.When = "com prazo de " + hoursLabel(f.TTLH) + " para cada job"
-		if c.UseWindow {
-			v.When = "na próxima janela de manutenção de cada grupo de implantação"
-		}
-		if c.Daily != nil {
-			v.When = "em horário fixo, " + c.Daily.String() + ": os jobs de cada grupo, quando ele for liberado, esperam o próximo horário"
-		}
-		chosen := make([]string, len(f.Chosen))
-		for i, x := range f.Chosen {
-			chosen[i] = strconv.Itoa(x)
-		}
-		v.ChosenCSV = strings.Join(chosen, ",")
-		for _, rc := range choices {
-			if !rc.Checked {
-				continue
-			}
-			cr := confirmRing{Label: rc.Label, Machines: rc.Machines, Window: dash(rc.Window), Preview: preview[rc.Ring]}
-			if rc.Machines == 0 {
-				cr.Note = "nenhuma máquina: o grupo de implantação passa sem jobs"
-				v.Warnings = append(v.Warnings, fmt.Sprintf("O grupo de implantação %d não tem máquinas.", rc.Ring))
-			}
-			v.Rings = append(v.Rings, cr)
-		}
-		if c.Wake {
-			v.Warnings = append(v.Warnings, fmt.Sprintf("Ligar pela rede: %d min antes da janela (ou do horário), o servidor pede a um agente ligado da mesma sub-rede o pacote mágico para cada máquina do grupo com job da campanha e sem check-in há mais de %d min. Quando os jobs dela terminam, manda desligar só as que acordaram assim, e o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto (aba Hardware › Ligar pela rede) e de um agente ligado em cada sub-rede.", int(campaign.WakeLead/time.Minute), int(campaign.WakeOffline/time.Minute)))
-		}
-		if f.Chosen[0] != store.PilotRing {
-			v.Warnings = append(v.Warnings, "A campanha não começa pelo piloto (grupo de implantação 0).")
-		}
-		if c.Type == jobs.TypeUpdate {
-			v.Warnings = append(v.Warnings, "No update, só recebe job quem tiver alguma dessas fontes pendente, com a correção aprovada em Patch, na hora em que o grupo de implantação for liberado.")
-			approvals, err := a.store.PatchApprovals(r.Context())
-			if err != nil {
-				a.internalError(w, r, "listar aprovações", err)
-				return
-			}
-			for _, src := range c.Sources {
-				if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return ap.Item == src }) {
-					v.Warnings = append(v.Warnings, fmt.Sprintf("A fonte %s não tem nenhuma correção aprovada em Patch: hoje, nenhuma máquina receberia essa fonte.", src))
-				}
-			}
-		}
-		if c.Type == jobs.TypeReboot {
-			v.Extra = c.Target()
-			v.Warnings = append(v.Warnings, "No reinício, só recebe job quem a busca atual mostra com reinício pendente; o agente confere de novo na hora (sem pendência, o job vira dispensado). Quem estiver conectado vê o aviso na tela pelo prazo escolhido e pode salvar o trabalho; um administrador na máquina pode cancelar.")
-			if !c.UseWindow && c.Daily == nil {
-				v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada grupo de implantação\" ou \"em horário fixo\".")
-			}
-			if c.Daily != nil {
-				v.Warnings = append(v.Warnings, "Em horário fixo, a máquina precisa estar ligada e fazer check-in dentro do horário; o job vence no fim dele, como na janela do grupo de implantação.")
-			}
-		}
-		if c.CloseDelay > 0 {
-			v.Extra = fmt.Sprintf("programa aberto: fecha com aviso de %d min", int(c.CloseDelay/time.Minute))
-			v.Warnings = append(v.Warnings, fmt.Sprintf("Programa aberto: no horário da campanha, quem estiver na sessão vê o aviso \"o programa será fechado em %d minutos para atualizar; salve seu trabalho\". Depois o agente pede para o programa fechar e, se ele não fechar em 2 minutos (uma pergunta de salvar sem resposta, por exemplo), fecha à força: o que não foi salvo se perde. Em sessão desconectada (ninguém vê o aviso), fecha sem esperar. Agentes antigos (sem a capacidade) e programas sem a lista de processos na regra continuam adiando, como hoje.", int(c.CloseDelay/time.Minute)))
-		}
-		if c.Type == jobs.TypeThirdParty || c.Type == campaign.TypeThirdPartyAll {
-			v.Warnings = append(v.Warnings, "Programa aberto e o job adiado: assim que o programa fechar, o agente avisa e a nova tentativa sai em minutos (agentes novos); senão, de hora em hora, até 24.")
-		}
-		if c.MicrosoftFallback {
-			v.Extra = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft"
-			v.Warnings = append(v.Warnings, "Fonte reserva: quando a fonte da política (WSUS) falhar, ou não oferecer o KB, o job da máquina vai com a fonte Microsoft Update. Continua saindo só o que está aprovado em Patch; muda só de onde o arquivo vem (e o tráfego vai para a internet). Ficam de fora os agentes antigos (sem a fonte) e as máquinas com a GPO que bloqueia a internet do Windows Update.")
-			if !a.microsoftAllowed() {
-				v.Warnings = append(v.Warnings, "A fonte reserva está desligada em Configuração › Parâmetros: enquanto estiver, a opção não tem efeito e essas máquinas ficam sem job, como hoje.")
-			}
-		}
-		if c.Type == jobs.TypeWinUpdate {
-			v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que o grupo de implantação for liberado, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações (ou, com a fonte reserva, vai pela Microsoft). O job não reinicia: o reinício é pedido à parte.")
-			approvals, err := a.store.PatchApprovals(r.Context())
-			if err != nil {
-				a.internalError(w, r, "listar aprovações", err)
-				return
-			}
-			for _, kb := range c.Sources {
-				if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return strings.Contains(ap.FixedIn, "("+kb+")") }) {
-					v.Warnings = append(v.Warnings, fmt.Sprintf("O %s não tem nenhuma CVE aprovada em Patch: hoje, nenhuma máquina o receberia.", kb))
-				}
-			}
-		}
+		v.Changed = changed
 		a.render(w, r, http.StatusOK, "campanha-conferir", v)
 		return
 	}
 	c.CreatedBy = s.Username
-	id, err := a.store.CreateCampaign(r.Context(), c)
+	id, err := a.store.CreateLocatedCampaign(r.Context(), c, targets)
 	if err != nil {
 		a.internalError(w, r, "criar campanha", err)
 		return
 	}
-	a.logger.Info("campanha criada pelo painel", "campaign_id", id, "tipo", c.Type, "aneis", ringsProgress(c),
+	a.logger.Info("campanha criada pelo painel", "campaign_id", id, "tipo", c.Type, "etapas", c.StagesText(false), "alvos", len(targets),
 		"fontes", len(c.Sources), "programa", c.Target(), "janela", c.UseWindow, "username", s.Username, "request_id", RequestID(r.Context()))
-	a.audit(r, s, "campanha.criar", fmt.Sprintf("campanha %d", id), c.Name+" · "+typeLabel(c.Type))
+	a.audit(r, s, "campanha.criar", fmt.Sprintf("campanha %d", id), texto.Clip(fmt.Sprintf("%s · %s · %d equipamento(s) · %s", c.Name, typeLabel(c.Type), len(targets), scopeAuditText(*c.Scope)), 2000))
 	http.Redirect(w, r, fmt.Sprintf("/painel/campanhas/%d?criada=1", id), http.StatusSeeOther)
+}
+
+// campaignConfirm monta a conferência com o plano do servidor.
+func (a *api) campaignConfirm(r *http.Request, s panel.Session, o *deployOverview, c campaign.Campaign, targets []campaign.Target, f campaignForm) (campaignConfirmView, error) {
+	v := campaignConfirmView{pageBase: a.baseFor(r.Context(), s, "Conferir a campanha", "campanhas"), Form: f, TypeLabel: typeLabel(c.Type),
+		SourcesList: strings.Join(c.Sources, ", "), ObserveL: hoursLabel(f.ObserveH)}
+	v.Scope = buildScopeConfirm(o, *c.Scope, targets, f.scopeIn)
+	groups := stageGroups(targets)
+	var preview map[int]string
+	var err error
+	if c.Type == jobs.TypeUninstall {
+		v.ProgramL = c.Target()
+		if preview, err = a.removePreview(r, f, c, groups); err != nil {
+			return v, err
+		}
+		v.Warnings = append(v.Warnings, "Na remoção, cada máquina da etapa recebe o job na hora em que a etapa for liberada, se o inventário dela mostrar o programa instalado para a máquina toda e com desinstalação silenciosa: o agente roda o desinstalador do próprio programa, sem nada na tela, e confere antes que a entrada ainda é dele. Instalações por usuário, sem desinstalação silenciosa e agentes antigos ficam de fora, com o motivo nas liberações. A coluna \"Hoje\" é a previsão de agora. Programa aberto: o desinstalador pode fechá-lo ou falhar; prefira a janela ou o horário fixo.")
+	}
+	if c.Type == jobs.TypeThirdParty {
+		v.ProgramL = "programa: " + c.Target()
+		if preview, err = a.thirdPartyPreview(r, c, groups); err != nil {
+			return v, err
+		}
+		v.Warnings = append(v.Warnings, "No programa de terceiros, cada etapa recebe o plano da hora em que for liberada: a coluna \"Hoje\" é a previsão de agora. A aprovação e o arquivo no cache são conferidos de novo a cada etapa; revogada a aprovação, a campanha pausa.")
+	}
+	for i := range v.Scope.Stages {
+		v.Scope.Stages[i].Preview = preview[i]
+	}
+	v.When = "com prazo de " + hoursLabel(f.TTLH) + " para cada job"
+	if c.UseWindow {
+		v.When = "na próxima janela de manutenção do prédio de cada equipamento"
+	}
+	if c.Daily != nil {
+		v.When = "em horário fixo, " + c.Daily.String() + ": o horário da campanha vale para todos os prédios (não a janela de cada um); os jobs de cada etapa, quando ela for liberada, esperam o próximo horário"
+	}
+	if c.Scope.Pilot == nil {
+		v.Warnings = append(v.Warnings, "Sem piloto: todos os equipamentos do escopo recebem na primeira liberação, cada um no horário que vale para ele.")
+	}
+	if len(v.Scope.MissingWindow) > 0 && !c.UseWindow {
+		v.Warnings = append(v.Warnings, fmt.Sprintf("%d prédio(s) do escopo sem janela de manutenção ativa: com prazo ou horário fixo isso não impede a campanha.", len(v.Scope.MissingWindow)))
+	}
+	if v.Scope.UnlocatedN > 0 {
+		v.Warnings = append(v.Warnings, fmt.Sprintf("%d equipamento(s) sem localização identificada incluídos explicitamente: não pertencem a nenhum prédio nem ao piloto.", v.Scope.UnlocatedN))
+	}
+	if len(v.Scope.Excluded) > 0 {
+		v.Warnings = append(v.Warnings, "Equipamentos dos andares escolhidos com conflito de localização ficaram fora (entram só com o prédio inteiro).")
+	}
+	v.Warnings = append(v.Warnings, "O escopo fica gravado na criação: equipamentos novos nos prédios não entram depois; o que mudar de prédio (ou de andar, nos escolhidos por andar e no piloto por andar) não recebe job, com o motivo nas liberações. As pendências, aprovações e versões continuam conferidas na hora de cada liberação.")
+	if c.Wake {
+		v.WakeL = fmt.Sprintf("%d min antes da janela (ou do horário), só para as máquinas da etapa liberada", int(campaign.WakeLead/time.Minute))
+		v.Warnings = append(v.Warnings, fmt.Sprintf("Ligar pela rede: %d min antes da janela do prédio (ou do horário fixo), o servidor pede a um agente ligado da mesma sub-rede o pacote mágico para cada máquina da etapa liberada com job da campanha e sem check-in há mais de %d min; as das etapas seguintes não são ligadas antes da liberação. Quando os jobs dela terminam, manda desligar só as que acordaram assim, e o agente só desliga sem ninguém conectado. Precisa do Wake on LAN pronto (aba Hardware › Ligar pela rede) e de um agente ligado em cada sub-rede.", int(campaign.WakeLead/time.Minute), int(campaign.WakeOffline/time.Minute)))
+	}
+	if c.Type == jobs.TypeUpdate {
+		v.Warnings = append(v.Warnings, "No update, só recebe job quem tiver alguma dessas fontes pendente, com a correção aprovada em Patch, na hora em que a etapa for liberada.")
+		approvals, err := a.store.PatchApprovals(r.Context())
+		if err != nil {
+			return v, err
+		}
+		for _, src := range c.Sources {
+			if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return ap.Item == src }) {
+				v.Warnings = append(v.Warnings, fmt.Sprintf("A fonte %s não tem nenhuma correção aprovada em Patch: hoje, nenhuma máquina receberia essa fonte.", src))
+			}
+		}
+	}
+	if c.Type == jobs.TypeReboot {
+		v.Extra = c.Target()
+		v.Warnings = append(v.Warnings, "No reinício, só recebe job quem a busca atual mostra com reinício pendente; o agente confere de novo na hora (sem pendência, o job vira dispensado). Quem estiver conectado vê o aviso na tela pelo prazo escolhido e pode salvar o trabalho; um administrador na máquina pode cancelar.")
+		if !c.UseWindow && c.Daily == nil {
+			v.Warnings = append(v.Warnings, "Sem janela, cada máquina reinicia assim que receber o job, em qualquer horário: prefira \"na janela de cada prédio\" ou \"em horário fixo\".")
+		}
+		if c.Daily != nil {
+			v.Warnings = append(v.Warnings, "Em horário fixo, a máquina precisa estar ligada e fazer check-in dentro do horário; o job vence no fim dele, como na janela.")
+		}
+	}
+	if c.CloseDelay > 0 {
+		v.Extra = fmt.Sprintf("programa aberto: fecha com aviso de %d min", int(c.CloseDelay/time.Minute))
+		v.Warnings = append(v.Warnings, fmt.Sprintf("Programa aberto: no horário da campanha, quem estiver na sessão vê o aviso \"o programa será fechado em %d minutos para atualizar; salve seu trabalho\". Depois o agente pede para o programa fechar e, se ele não fechar em 2 minutos (uma pergunta de salvar sem resposta, por exemplo), fecha à força: o que não foi salvo se perde. Em sessão desconectada (ninguém vê o aviso), fecha sem esperar. Agentes antigos (sem a capacidade) e programas sem a lista de processos na regra continuam adiando, como hoje.", int(c.CloseDelay/time.Minute)))
+	}
+	if c.Type == jobs.TypeThirdParty || c.Type == campaign.TypeThirdPartyAll {
+		v.Warnings = append(v.Warnings, "Programa aberto e o job adiado: assim que o programa fechar, o agente avisa e a nova tentativa sai em minutos (agentes novos); senão, de hora em hora, até 24.")
+	}
+	if c.MicrosoftFallback {
+		v.Extra = "se a fonte da política falhar ou não oferecer o KB, direto da Microsoft"
+		v.Warnings = append(v.Warnings, "Fonte reserva: quando a fonte da política (WSUS) falhar, ou não oferecer o KB, o job da máquina vai com a fonte Microsoft Update. Continua saindo só o que está aprovado em Patch; muda só de onde o arquivo vem (e o tráfego vai para a internet). Ficam de fora os agentes antigos (sem a fonte) e as máquinas com a GPO que bloqueia a internet do Windows Update.")
+		if !a.microsoftAllowed() {
+			v.Warnings = append(v.Warnings, "A fonte reserva está desligada em Configuração › Parâmetros: enquanto estiver, a opção não tem efeito e essas máquinas ficam sem job, como hoje.")
+		}
+	}
+	if c.Type == jobs.TypeWinUpdate {
+		v.Warnings = append(v.Warnings, "No Windows, cada máquina recebe, na hora em que a etapa for liberada, os KBs que corrigem alguma CVE dela aprovada em Patch e que a busca dela mostra pendentes na fonte da política (WSUS). Fonte falhando, KB só no catálogo offline ou fora da busca: fica sem job, com o motivo nas liberações (ou, com a fonte reserva, vai pela Microsoft). O job não reinicia: o reinício é pedido à parte.")
+		approvals, err := a.store.PatchApprovals(r.Context())
+		if err != nil {
+			return v, err
+		}
+		for _, kb := range c.Sources {
+			if !slices.ContainsFunc(approvals, func(ap store.PatchApproval) bool { return strings.Contains(ap.FixedIn, "("+kb+")") }) {
+				v.Warnings = append(v.Warnings, fmt.Sprintf("O %s não tem nenhuma CVE aprovada em Patch: hoje, nenhuma máquina o receberia.", kb))
+			}
+		}
+	}
+	return v, nil
 }
 
 // --- Detalhe da campanha ------------------------------------------------------------
@@ -604,6 +621,7 @@ type campaignJobRow struct {
 
 type campaignRingView struct {
 	Ring    string
+	Title   string // "Grupo de implantação 0 (piloto)" na legada; o nome da etapa na por localização
 	Current bool
 	Status  string // "ainda não liberado", "nenhuma máquina com o que fazer", ""
 	Jobs    []campaignJobRow
@@ -649,6 +667,21 @@ type campaignView struct {
 	CanArchive, CanUnarchive, CanDelete bool
 	ResendL                             string         // os reenvios automáticos
 	Resend                              []resendOption // o que dá para reenviar no grupo atual (admin)
+	// A campanha por localização: as etapas, o piloto e o progresso por prédio (e andar).
+	Located             bool
+	StagesL, PilotL     string
+	Progress            []campaignProgressRow
+	TotalTargets, DoneN int
+	PilotTotal, PilotOK int
+	WaitWindowN, WaitPN int
+	ScopeL              string
+}
+
+// campaignProgressRow: o andamento de um prédio (ou do andar piloto) numa campanha por localização.
+type campaignProgressRow struct {
+	Stage, Name, Next                                      string
+	Total, Done, Running, WaitWindow, WaitPilot, Postponed int
+	Failed, Dismissed, NoJob                               int
 }
 
 func campaignID(r *http.Request) (int64, bool) {
@@ -677,6 +710,9 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	v.When = "prazo de " + hoursLabel(int(c.TTL.Hours())) + " por job"
 	if c.UseWindow {
 		v.When = "na janela de cada grupo de implantação"
+		if c.Located() {
+			v.When = "na janela de manutenção do prédio de cada equipamento"
+		}
 	}
 	if c.Daily != nil {
 		v.When = "em horário fixo, " + c.Daily.String()
@@ -731,9 +767,22 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 	// O grupo cuja tabela aparece (?grupo=, a posição na campanha; padrão: o atual) e o
 	// filtro dela: estado, máquina (nome ou ID) e programa, com páginas de 100.
 	q := r.URL.Query()
-	sel := min(max(c.CurrentIdx, 0), len(c.Rings)-1)
-	if n, err := strconv.Atoi(q.Get("grupo")); err == nil && n >= 0 && n < len(c.Rings) {
+	sel := min(max(c.CurrentIdx, 0), c.StageCount()-1)
+	if n, err := strconv.Atoi(q.Get("grupo")); err == nil && n >= 0 && n < c.StageCount() {
 		sel = n
+	}
+	stageJobs := make([][]campaign.JobState, c.StageCount())
+	for idx := range stageJobs {
+		if stageJobs[idx], err = a.store.CampaignJobs(r.Context(), c.ID, idx); err != nil {
+			a.internalError(w, r, "listar jobs da campanha", err)
+			return
+		}
+	}
+	if c.Located() {
+		if err := a.campaignProgress(r, c, stageJobs, &v); err != nil {
+			a.internalError(w, r, "ler o andamento por prédio", err)
+			return
+		}
 	}
 	filter, needle, slot := q.Get("estado"), strings.ToLower(strings.TrimSpace(texto.Clip(q.Get("q"), 100))), texto.Clip(q.Get("programa"), 64)
 	page, _ := strconv.Atoi(q.Get("pagina"))
@@ -751,15 +800,19 @@ func (a *api) campaignPage(w http.ResponseWriter, r *http.Request) {
 		}
 		return base + "?" + u.Encode() + "#grupo-" + strconv.Itoa(idx)
 	}
-	for idx, ring := range c.Rings {
-		rv := campaignRingView{Ring: ringLabel(ring), Current: idx == c.CurrentIdx && c.State != campaign.StateDone,
+	for idx := range c.StageCount() {
+		rv := campaignRingView{Current: idx == c.CurrentIdx && c.State != campaign.StateDone,
 			Idx: idx, CampaignID: c.ID, Selected: idx == sel, Href: href(idx, "", "", "", 1)}
-		list, err := a.store.CampaignJobs(r.Context(), c.ID, idx)
-		if err != nil {
-			a.internalError(w, r, "listar jobs da campanha", err)
-			return
+		if c.Located() {
+			rv.Ring, rv.Title = c.StageLabel(idx), "Etapa "+strconv.Itoa(idx+1)+": "+c.StageLabel(idx)
+		} else {
+			rv.Ring = ringLabel(c.Rings[idx])
+			rv.Title = "Grupo de implantação " + rv.Ring
 		}
+		list := stageJobs[idx]
 		switch {
+		case idx > c.LaunchedIdx && c.PilotStage(c.CurrentIdx):
+			rv.Status = "aguardando a liberação do piloto"
 		case idx > c.LaunchedIdx:
 			rv.Status = "ainda não liberado"
 		case len(list) == 0:
@@ -868,18 +921,34 @@ func (a *api) campaignCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	idxs := make([]int, 0, len(c.Rings))
-	for i := range c.Rings {
+	idxs := make([]int, 0, c.StageCount())
+	for i := range c.StageCount() {
 		idxs = append(idxs, i)
 	}
 	name := fmt.Sprintf("patchd-campanha-%d.csv", c.ID)
 	if q.Has("grupo") {
 		n, err := strconv.Atoi(q.Get("grupo"))
-		if err != nil || n < 0 || n >= len(c.Rings) {
+		if err != nil || n < 0 || n >= c.StageCount() {
 			http.NotFound(w, r)
 			return
 		}
-		idxs, name = []int{n}, fmt.Sprintf("patchd-campanha-%d-grupo-%d.csv", c.ID, c.Rings[n])
+		idxs = []int{n}
+		if c.Located() {
+			name = fmt.Sprintf("patchd-campanha-%d-etapa-%d.csv", c.ID, n+1)
+		} else {
+			name = fmt.Sprintf("patchd-campanha-%d-grupo-%d.csv", c.ID, c.Rings[n])
+		}
+	}
+	where := map[string]campaign.Target{}
+	if c.Located() {
+		ts, err := a.store.CampaignTargets(r.Context(), c.ID, -1)
+		if err != nil {
+			a.internalError(w, r, "listar os alvos da campanha", err)
+			return
+		}
+		for _, t := range ts {
+			where[t.MachineID] = t
+		}
 	}
 	filter, needle, slot := q.Get("estado"), strings.ToLower(strings.TrimSpace(texto.Clip(q.Get("q"), 100))), texto.Clip(q.Get("programa"), 64)
 	names := map[string]string{}
@@ -891,7 +960,7 @@ func (a *api) campaignCSV(w http.ResponseWriter, r *http.Request) {
 	for _, m := range ms {
 		names[m.ID] = m.Hostname
 	}
-	header := []string{"campanha", "grupo_de_implantacao", "job", "maquina", "nome", "programa", "estado", "detalhe",
+	header := []string{"campanha", "etapa", "grupo_de_implantacao", "predio", "andar", "job", "maquina", "nome", "programa", "estado", "detalhe",
 		"janela_utc", "encerrado_utc"}
 	var rows [][]string
 	for _, idx := range idxs {
@@ -911,7 +980,17 @@ func (a *api) campaignCSV(w http.ResponseWriter, r *http.Request) {
 			if j.FinishedAt != nil {
 				finished = export.When(*j.FinishedAt)
 			}
-			rows = append(rows, []string{strconv.FormatInt(c.ID, 10), ringLabel(c.Rings[idx]), strconv.FormatInt(j.ID, 10),
+			ring, building, floor := "", "", ""
+			if c.Located() {
+				t := where[j.MachineID]
+				building, floor = texto.PlaceName(t.Building), t.Floor
+				if t.Via == campaign.ViaUnlocated {
+					building = "sem localização"
+				}
+			} else {
+				ring = ringLabel(c.Rings[idx])
+			}
+			rows = append(rows, []string{strconv.FormatInt(c.ID, 10), c.StageLabel(idx), ring, building, floor, strconv.FormatInt(j.ID, 10),
 				j.MachineID, names[j.MachineID], j.Slot, stateLabel(j.State), wuerr.Annotate(j.Detail), window, finished})
 		}
 	}
@@ -922,11 +1001,11 @@ func campaignFlash(r *http.Request, b *pageBase) {
 	q := r.URL.Query()
 	switch {
 	case q.Has("criada"):
-		b.Flash = "Campanha criada: o servidor libera o primeiro grupo de implantação no próximo minuto."
+		b.Flash = "Campanha criada: o servidor libera a primeira etapa no próximo minuto."
 	case q.Get("feito") == "pausar":
-		b.Flash = "Campanha pausada: nenhum grupo de implantação novo é liberado; os jobs já criados seguem."
+		b.Flash = "Campanha pausada: nenhuma etapa nova é liberada; os jobs já criados seguem."
 	case q.Get("feito") == "retomar":
-		b.Flash = "Campanha retomada: as falhas do grupo de implantação atual ficam aceitas, e ela segue."
+		b.Flash = "Campanha retomada: as falhas (ou a falta de evidência do piloto) da etapa atual ficam aceitas, e ela segue."
 	case q.Get("feito") == "reenviar":
 		b.Flash = "Reenvio pedido: no próximo minuto o servidor refaz o plano de cada máquina e manda os jobs de novo (a que já não precisa sai como dispensada). O que falhar de novo pausa a campanha de novo."
 	case q.Get("feito") == "desarquivar":
@@ -1125,7 +1204,10 @@ func (a *api) campaignWakeView(r *http.Request, c campaign.Campaign, v *campaign
 	}
 	var asked, notAsked, woke, off, stayed int
 	for _, w := range recs {
-		row := wakeRow{MachineID: w.MachineID, Name: dash(names[w.MachineID]), Ring: strconv.Itoa(c.Rings[min(w.Idx, len(c.Rings)-1)])}
+		row := wakeRow{MachineID: w.MachineID, Name: dash(names[w.MachineID]), Ring: c.StageLabel(w.Idx)}
+		if !c.Located() {
+			row.Ring = strconv.Itoa(c.Rings[min(w.Idx, len(c.Rings)-1)])
+		}
 		switch {
 		case w.WakeRequestID == 0:
 			notAsked++

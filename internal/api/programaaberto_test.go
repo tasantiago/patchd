@@ -74,8 +74,7 @@ func TestProgramaAbertoPeloPainel(t *testing.T) {
 		!strings.Contains(b, "fecha à força: o que não foi salvo se perde") || !strings.Contains(b, "assim que o programa fechar, o agente avisa") {
 		t.Fatalf("conferência:\n%s", b)
 	}
-	f.Set("confirmar", "1")
-	pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
+	pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, confirmado(t, h, f))
 	l, _ := st.Campaigns(ctx, 5)
 	if len(l) != 1 || l[0].CloseDelay != 15*time.Minute {
 		t.Fatalf("campanha: %+v", l)
@@ -84,8 +83,8 @@ func TestProgramaAbertoPeloPainel(t *testing.T) {
 		t.Errorf("detalhe:\n%s", b)
 	}
 	// Em outro tipo, o campo é ignorado.
-	f = formCampanha("tipo", "rescan", "nome", "busca", "fechar", "15", "confirmar", "1")
-	pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f)
+	f = formCampanha("tipo", "rescan", "nome", "busca", "fechar", "15")
+	pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, confirmado(t, h, f))
 	if l, _ = st.Campaigns(ctx, 5); len(l) != 2 || l[0].CloseDelay != 0 {
 		t.Errorf("rescan: %+v", l)
 	}

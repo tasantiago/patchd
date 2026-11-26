@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/tasantiago/patchd/internal/campaign"
@@ -67,22 +66,15 @@ func (a *api) programChoices(r *http.Request, f *campaignForm) error {
 	return nil
 }
 
-// thirdPartyPreview: por grupo de implantação escolhido, o que a campanha faria agora ("grupo de implantação 0: 1 job(s);
-// fora: 1 sem inventário do Windows"). As máquinas aposentadas não estão na lista.
-func (a *api) thirdPartyPreview(r *http.Request, c campaign.Campaign) (map[int]string, error) {
-	machines, err := a.store.Machines(r.Context())
-	if err != nil {
-		return nil, err
-	}
+// thirdPartyPreview: por etapa, o que a campanha faria agora ("1 job(s); fora: 1 sem
+// inventário do Windows"). groups: as máquinas de cada etapa.
+func (a *api) thirdPartyPreview(r *http.Request, c campaign.Campaign, groups map[int][]string) (map[int]string, error) {
 	tp := a.campaigner()
 	out := map[int]string{}
-	for _, ring := range c.Rings {
+	for idx, ids := range groups {
 		created, skipped := 0, map[string]int{}
-		for _, m := range machines {
-			if m.Ring != ring {
-				continue
-			}
-			p, skip, err := tp.Job(r.Context(), m.ID, c.App, c.Version)
+		for _, id := range ids {
+			p, skip, err := tp.Job(r.Context(), id, c.App, c.Version)
 			if err != nil {
 				return nil, err
 			}
@@ -92,7 +84,7 @@ func (a *api) thirdPartyPreview(r *http.Request, c campaign.Campaign) (map[int]s
 			}
 			created++
 		}
-		out[ring] = strings.TrimPrefix(campaign.RingNote(ring, created, skipped), "grupo de implantação "+strconv.Itoa(ring)+": ")
+		out[idx] = strings.TrimPrefix(campaign.StageNote("", created, skipped), ": ")
 	}
 	return out, nil
 }

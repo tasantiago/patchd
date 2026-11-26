@@ -14,11 +14,12 @@ func TestJanelasPeloPainel(t *testing.T) {
 	h, st, log := ambientePaginas(t, api.WithTimezone("America/Porto_Velho"))
 	ctx := context.Background()
 
-	// O resumo tem um cartão por grupo; a janela fica nas regras do grupo. Leitura vê, sem
+	// A página principal é a dos prédios: os grupos numéricos não aparecem nela. A janela do
+	// grupo legado continua nas regras do grupo (para as campanhas antigas). Leitura vê, sem
 	// formulário; o admin vê o formulário com o fuso sugerido.
 	b := pagina(h, "GET", "/painel/grupos-implantacao", sessaoTeste, nil).Body.String()
-	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Prédios e implantação</span></h1>") || !strings.Contains(b, "Grupo 1 (padrão)") ||
-		!strings.Contains(b, `href="/painel/grupos-implantacao/0"`) {
+	if !strings.Contains(b, "<h1>Automação <span class=\"muted\">› Prédios e implantação</span></h1>") || strings.Contains(b, "Grupo 1 (padrão)") ||
+		strings.Contains(b, `href="/painel/grupos-implantacao/0"`) || strings.Contains(b, "Grupos técnicos legados") {
 		t.Errorf("resumo:\n%s", b)
 	}
 	regras := "/painel/grupos-implantacao/0?aba=regras"
@@ -177,7 +178,7 @@ func TestMenuAutomacao(t *testing.T) {
 	for path, c := range map[string]struct{ menu, aba string }{
 		"/painel/campanhas":          {`<a href="/painel/campanhas" title="Campanhas" class="ativo" aria-current="page">`, `<a href="/painel/campanhas" class="ativa" aria-current="page">Campanhas</a>`},
 		"/painel/jobs":               {`<a href="/painel/jobs" title="Jobs" class="ativo" aria-current="page">`, `<a href="/painel/jobs" class="ativa" aria-current="page">Jobs</a>`},
-		"/painel/grupos-implantacao": {`<a href="/painel/grupos-implantacao" title="Grupos de implantação e janelas" class="ativo" aria-current="page">`, `<a href="/painel/grupos-implantacao" class="ativa" aria-current="page">Grupos de implantação e janelas</a>`},
+		"/painel/grupos-implantacao": {`<a href="/painel/grupos-implantacao" title="Prédios e implantação" class="ativo" aria-current="page">`, `<a href="/painel/grupos-implantacao" class="ativa" aria-current="page">Prédios e implantação</a>`},
 	} {
 		b := pagina(h, "GET", path, sessaoAdmin, nil).Body.String()
 		if !strings.Contains(b, c.menu) || !strings.Contains(b, c.aba) || strings.Count(b, `class="ativa"`) != 1 || strings.Count(b, `class="ativo"`) != 1 {

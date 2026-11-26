@@ -39,7 +39,7 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "pacotes", sha+".msi"), inst, 0o640)
 	st.SaveThirdPartyPackage(ctx, store.ThirdPartyPackage{AppID: "libreoffice", WingetID: "TheDocumentFoundation.LibreOffice", Version: "26.8.1.1",
 		Architecture: "x64", Type: "msi", URL: "https://x", SHA256: sha, Size: int64(len(inst)), Arguments: "/quiet /norestart"})
-	form := formCampanha("nome", "libreoffice 26.8.1.1", "tipo", "thirdparty", "programa", "libreoffice 26.8.1.1", "anel", "0|1", "observacao", "1")
+	form := formCampanha("nome", "libreoffice 26.8.1.1", "tipo", "thirdparty", "programa", "libreoffice 26.8.1.1", "observacao", "1")
 
 	// Sem aprovação: nada no select, e o pedido volta com o motivo.
 	b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String()
@@ -59,10 +59,10 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 			State: "DESATUALIZADO", Installed: "25.2.1.1", Reference: "26.8.1.1"}}}}
 	hp := api.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithCompliance(src), api.WithJobKey(priv), api.WithThirdPartyManifest(thirdparty.NewLive(m)))
 	prog := pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoAdmin, nil).Body.String()
-	if !strings.Contains(prog, `<a class="btn" href="/painel/campanhas?programa=libreoffice&#43;26.8.1.1&amp;tipo=thirdparty#nova">Campanha por grupo de implantação</a>`) {
+	if !strings.Contains(prog, `<a class="btn" href="/painel/campanhas?programa=libreoffice&#43;26.8.1.1&amp;tipo=thirdparty#nova">Campanha por prédio</a>`) {
 		t.Errorf("programa (admin) sem o link:\n%s", prog)
 	}
-	if strings.Contains(pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoTeste, nil).Body.String(), "Campanha por grupo de implantação") {
+	if strings.Contains(pagina(hp, "GET", "/painel/patch/programa?app=libreoffice", sessaoTeste, nil).Body.String(), "Campanha por prédio") {
 		t.Error("leitura vê o link")
 	}
 	b = pagina(h, "GET", "/painel/campanhas?tipo=thirdparty&programa=libreoffice+26.8.1.1", sessaoAdmin, nil).Body.String()
@@ -73,30 +73,30 @@ func TestCampanhaDeTerceirosPeloPainel(t *testing.T) {
 		}
 	}
 
-	// Conferência: a previsão por grupo de implantação; nada criado ainda.
+	// Conferência: a previsão por etapa; nada criado ainda.
 	b = pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form).Body.String()
 	for _, tr := range []string{"instalar programa de terceiros · programa: libreoffice 26.8.1.1", "<th>Hoje</th>",
-		"<td>1 job(s); fora: 1 sem inventário do Windows ou do macOS</td>", `name="programa" value="libreoffice 26.8.1.1"`, "a campanha pausa"} {
+		"<td>1 job(s); fora: 2 sem inventário do Windows ou do macOS</td>", `name="programa" value="libreoffice 26.8.1.1"`, "a campanha pausa"} {
 		if !strings.Contains(b, tr) {
-			t.Errorf("conferência: faltou %q\n", tr)
+			t.Errorf("conferência: faltou %q\n%s", tr, b)
 		}
 	}
 	if l, _ := st.Campaigns(ctx, 5); len(l) != 0 {
 		t.Fatal("a conferência criou campanha")
 	}
-	form.Set("confirmar", "1")
+	form = confirmado(t, h, form)
 	if l := local(pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, form)); l != "/painel/campanhas/1?criada=1" {
 		t.Fatalf("criar: %s", l)
 	}
 	c, _, _ := st.Campaign(ctx, 1)
-	if c.Type != jobs.TypeThirdParty || c.App != "libreoffice" || c.Version != "26.8.1.1" || c.CreatedBy != "thyago" || len(c.Rings) != 2 {
+	if c.Type != jobs.TypeThirdParty || c.App != "libreoffice" || c.Version != "26.8.1.1" || c.CreatedBy != "thyago" || c.Scope == nil || len(c.Rings) != 0 {
 		t.Errorf("criada: %+v", c)
 	}
 	if !strings.Contains(log.String(), "programa=\"libreoffice 26.8.1.1\"") {
 		t.Errorf("log:\n%s", log)
 	}
 	// Programa forjado (sem versão): volta ao formulário.
-	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "thirdparty", "programa", "libreoffice", "anel", "0")); r.Code != http.StatusUnprocessableEntity ||
+	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, formCampanha("tipo", "thirdparty", "programa", "libreoffice")); r.Code != http.StatusUnprocessableEntity ||
 		!strings.Contains(r.Body.String(), "Escolha o programa e a versão aprovada") {
 		t.Errorf("forjado: %d", r.Code)
 	}
@@ -110,8 +110,7 @@ func TestCampanhaTodosOsProgramasPeloPainel(t *testing.T) {
 	if b := pagina(h, "GET", "/painel/campanhas", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="terceiros_todos"`) {
 		t.Fatal("sem a opção de todos os programas")
 	}
-	f := formCampanha("tipo", "terceiros_todos", "nome", "programas")
-	f.Set("confirmar", "1")
+	f := confirmado(t, h, formCampanha("tipo", "terceiros_todos", "nome", "programas"))
 	if r := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f); r.Code != http.StatusSeeOther {
 		t.Fatalf("criar: %d\n%s", r.Code, r.Body.String())
 	}

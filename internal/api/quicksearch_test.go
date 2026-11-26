@@ -56,7 +56,7 @@ func TestTrilhaDaBarraSuperior(t *testing.T) {
 		"/painel/patch?aba=terceiros":    `<span class="secao">Patch</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Programas de terceiros</span>`,
 		"/painel/campanhas":              `<span class="secao">Automação</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Campanhas</span>`,
 		"/painel/maquinas/60ef97e4-0001": `<a class="secao" href="/painel/inventario">Inventário</a><span class="sep" aria-hidden="true">›</span><span class="titulo">vm-ubuntu</span>`,
-		"/painel/grupos-implantacao/1":   `<span class="secao">Automação</span><span class="sep" aria-hidden="true">›</span><a class="secao" href="/painel/grupos-implantacao">Grupos de implantação</a>`,
+		"/painel/grupos-implantacao/1":   `<span class="secao">Automação</span><span class="sep" aria-hidden="true">›</span><a class="secao" href="/painel/grupos-implantacao">Prédios e implantação</a>`,
 	} {
 		b := pagina(h, "GET", path, sessaoTeste, nil).Body.String()
 		if !strings.Contains(b, trilha) {

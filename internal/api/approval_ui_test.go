@@ -16,7 +16,7 @@ func TestCampanhaAvisaFonteSemAprovacao(t *testing.T) {
 	_, priv, _ := jobs.GenerateKey()
 	h, st, _ := ambientePaginas(t, api.WithJobKey(priv))
 	_, _ = st.ApprovePatch(t.Context(), store.PatchApproval{Item: "curl", FixedIn: "8.18.0-1ubuntu2.10", ApprovedBy: "ana"})
-	f := url.Values{"nome": {"update de outubro"}, "tipo": {"update"}, "fontes": {"curl, rsync"}, "anel": {"0"},
+	f := url.Values{"nome": {"update de outubro"}, "tipo": {"update"}, "fontes": {"curl, rsync"}, "sem_local": {"1"}, "sem_local_ok": {"1"},
 		"observacao": {"24"}, "quando": {"prazo"}, "prazo": {"24"}}
 	b := pagina(h, "POST", "/painel/campanhas/nova", sessaoAdmin, f).Body.String()
 	if !strings.Contains(b, "A fonte rsync não tem nenhuma correção aprovada em Patch") || strings.Contains(b, "A fonte curl não tem") ||
