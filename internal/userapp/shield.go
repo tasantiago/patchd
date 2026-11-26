@@ -68,8 +68,7 @@ type shieldPage struct {
 	Badges, Locked         []protocol.ShieldBadgeView
 	Recent                 []shieldXP
 	Missions               []shieldMission
-	Groups                 []protocol.ShieldGroupView
-	Places                 []protocol.ShieldPlaceView
+	Rankings               []shieldRanking
 }
 
 type shieldCrit struct {
@@ -124,7 +123,19 @@ func missionLabel(s string) string {
 
 // shieldPageOf monta a aba.
 func (a *App) shieldPageOf(v *protocol.ShieldView) *shieldPage {
-	p := &shieldPage{Brand: v.Brand, Mission: v.Mission, Slogan: v.Slogan, Player: v.Player, Groups: v.Groups, Places: v.Places}
+	p := &shieldPage{Brand: v.Brand, Mission: v.Mission, Slogan: v.Slogan, Player: v.Player}
+	for _, place := range v.Places {
+		p.Rankings = append(p.Rankings, shieldRankingOf(place, a.base()+"?aba="+tabUpdates))
+	}
+	if len(v.Groups) > 0 {
+		group := protocol.ShieldPlaceView{Kind: "grupo", Title: "grupos", Rows: v.Groups}
+		for _, row := range v.Groups {
+			if row.Mine {
+				group.Mine, group.Pos = row.Name, row.Pos
+			}
+		}
+		p.Rankings = append(p.Rankings, shieldRankingOf(group, a.base()+"?aba="+tabUpdates))
+	}
 	loc := a.loc()
 	if m := v.Machine; m != nil {
 		p.Display, p.Sealed, p.Pending, p.OverallLabel, p.Blockers = m.Display, m.Sealed, m.Pending, m.OverallLabel, m.Blockers
@@ -276,14 +287,11 @@ var _ = template.Must(pageTmpl.New("protecao").Parse(`{{with .Shield}}
 <progress max="100" value="{{.Percent}}">{{.Percent}}%</progress><span class="ver">{{.Progress}}</span></div></li>{{end}}</ul></section>{{end}}
 {{if or .Badges .Locked}}<section><span class="shield-eyebrow">COLEÇÃO DE MEDALHAS</span><h2>Conquistas</h2><ul class="medalhas">{{range .Badges}}<li class="ganha"><span class="shield-medal" aria-hidden="true"><svg viewBox="0 0 64 72" width="54" height="60"><path d="M12 3h16l9 26-15 8zM36 3h16L42 37l-15-8z" fill="#2563eb"/><circle cx="32" cy="46" r="23" fill="#f5c451" stroke="#a66c13" stroke-width="2"/><circle cx="32" cy="46" r="17" fill="#fff1b8" stroke="#d69e2e"/><path d="m23 46 6 6 12-13" fill="none" stroke="#81520d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><strong>{{.Name}}</strong><small>{{.Description}}</small></li>{{end}}
 {{range .Locked}}<li class="falta"><span class="shield-medal" aria-hidden="true"><svg viewBox="0 0 64 72" width="54" height="60"><path d="M12 3h16l9 26-15 8zM36 3h16L42 37l-15-8z" fill="#94a3b8"/><circle cx="32" cy="46" r="23" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/><rect x="24" y="43" width="16" height="13" rx="3" fill="#64748b"/><path d="M27 43v-5a5 5 0 0 1 10 0v5" fill="none" stroke="#64748b" stroke-width="3"/></svg></span><strong>{{.Name}}</strong><small>{{.Description}}</small></li>{{end}}</ul></section>{{end}}
-{{range .Places}}<section><h2>Ranking: {{.Title}}</h2>{{if .Pos}}<p class="destaque">{{if eq .Pos 1}}<span aria-hidden="true">★</span> {{end}}<b>{{.Mine}}</b> está em <b>{{.Pos}}º</b> de {{.Of}}.{{if gt .Pos 1}} Cada computador no selo 100% ajuda a subir.{{end}}</p>{{end}}
-<ul class="lista">{{range .Rows}}<li{{if .Mine}} class="meu"{{end}}><div><strong>{{.Pos}}º {{.Name}}{{if .Mine}} · o seu{{end}}</strong><span class="ver">{{.Machines}} computadores</span></div><span class="ver"><meter min="0" max="100" value="{{.Percent}}">{{.Percent}}%</meter> {{.Percent}}% no selo</span></li>{{end}}</ul></section>{{end}}
-{{if .Places}}<p class="nota">Os rankings por lugar contam só computadores: ninguém vê o seu nome nem o seu computador. Lugares com poucos computadores não aparecem.</p>{{end}}
-{{if .Groups}}<section><h2>Ranking dos grupos</h2><ul class="lista">{{range .Groups}}<li{{if .Mine}} class="meu"{{end}}><div><strong>{{.Pos}}º {{.Name}}{{if .Mine}} · seu grupo{{end}}</strong><span class="ver">{{.Machines}} computadores</span></div><span class="ver"><meter min="0" max="100" value="{{.Percent}}">{{.Percent}}%</meter> {{.Percent}}% no selo</span></li>{{end}}</ul>
-<p class="nota">O ranking é por grupo: ninguém vê o seu computador nem o seu nome aqui.</p></section>{{end}}
+{{range .Rankings}}{{template "shield-ranking" .}}{{end}}
+{{if .Rankings}}<p class="nota">Os rankings contam só computadores: ninguém vê o seu nome nem o seu computador. Locais com poucos computadores não aparecem.</p>{{end}}
 {{if .Recent}}<section><h2>De onde veio seu XP</h2><ul class="lista">{{range .Recent}}<li><div><strong>{{.Reason}}</strong><span class="ver">{{.Day}}</span></div><span class="selo {{if lt .Points 0}}atencao{{else}}sucesso{{end}}">{{if gt .Points 0}}+{{end}}{{.Points}} XP</span></li>{{end}}</ul></section>{{end}}
 {{if .Slogan}}<p class="slogan">{{.Slogan}}</p>{{end}}
-</div>{{end}}`))
+</div>{{end}}` + shieldRankingTemplate))
 
 // shieldCSS: o estilo da aba (no estilo.css, sem inline).
 const shieldCSS = `
@@ -336,4 +344,4 @@ ul.lista li.meu{background:#eef5fd;margin:0 -1.25rem;padding:.7rem 1.25rem}
 .shield-dashboard .lista li.meu{border-radius:8px;margin:0;padding:.7rem;color:#0b3f73}
 .shield-dashboard .slogan{letter-spacing:.02em;margin:.5rem 0 1rem}
 @media(max-width:560px){.shield-dashboard>section{padding:1rem}.shield-dashboard .shield-topo{justify-content:center;text-align:center;gap:.8rem}.shield-dashboard .shield-topo>div{min-width:0;flex-basis:100%}.shield-dashboard .shield{padding:1.1rem}}
-`
+` + shieldRankingCSS
