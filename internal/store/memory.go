@@ -86,8 +86,13 @@ type Memory struct {
 
 	floorLocations map[FloorKey]string
 	locations      []AssetLocation // localização do patrimônio (Aula 23.6)
-	assetImports   []AssetImport
-	assetSeq       int64
+	// Prédios com ID estável, janelas por prédio e alvos das campanhas por localização (buildings.go).
+	buildings       []Building
+	buildingSeq     int64
+	buildingWindows map[int64]BuildingWindow
+	campaignTargets map[int64][]campaign.Target
+	assetImports    []AssetImport
+	assetSeq        int64
 
 	bundles   []ScriptBundle // bundles de script (Aula 23.8)
 	bundleSeq int64

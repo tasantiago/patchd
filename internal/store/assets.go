@@ -41,6 +41,19 @@ func (p *Postgres) ReplaceAssetLocations(ctx context.Context, list []AssetLocati
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// O patrimônio de antes, para reconhecer os prédios renomeados (buildings.go).
+	oldRows, err := tx.Query(ctx, `SELECT tombo, building FROM asset_locations`)
+	if err != nil {
+		return err
+	}
+	old, err := pgx.CollectRows(oldRows, func(r pgx.CollectableRow) (AssetLocation, error) {
+		var a AssetLocation
+		err := r.Scan(&a.Tombo, &a.Building)
+		return a, err
+	})
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM asset_locations`); err != nil {
 		return err
 	}
@@ -55,6 +68,9 @@ func (p *Postgres) ReplaceAssetLocations(ctx context.Context, list []AssetLocati
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO asset_imports (imported_by, file_name, rows_kept, rows_skipped, duplicates) VALUES ($1, $2, $3, $4, $5)`,
 		imp.By, imp.File, len(list), imp.Skipped, imp.Duplicates); err != nil {
+		return err
+	}
+	if err := syncBuildings(ctx, tx, old, list); err != nil {
 		return err
 	}
 	// O histórico guarda as 50 últimas.
@@ -101,6 +117,7 @@ func (m *Memory) ReplaceAssetLocations(_ context.Context, list []AssetLocation, 
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.syncBuildingsLocked(m.locations, list)
 	m.locations = slices.Clone(list)
 	m.assetSeq++
 	imp.ID, imp.At, imp.Kept = m.assetSeq, m.now(), len(list)
