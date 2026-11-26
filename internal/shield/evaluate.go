@@ -3,6 +3,7 @@ package shield
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,8 @@ type Evidence struct {
 	TPOutdated    int  // desatualizados
 	TPUnsupported int  // fora de suporte
 	TPUserFixable int  // dos desatualizados, os que a Central oferece para o próprio usuário atualizar
+	// Os nomes, para a pessoa saber o que falta ("Google Chrome 158.0 → 159.0").
+	TPOutdatedApps, TPUnsupportedApps []string
 
 	Reboot *bool // da última busca; nil: não soube dizer
 
@@ -264,16 +267,16 @@ func judge(p *Policy, c Criterion, cp CriterionPolicy, e Evidence, now time.Time
 			return CriterionResult{Status: Desconhecido, Blame: BlameAuto, Detail: "sem inventário dos programas"}
 		case e.TPUnsupported > 0:
 			cr.Status, cr.Blame = NaoConforme, BlameIT
-			cr.Detail = fmt.Sprintf("%d programa(s) fora de suporte", e.TPUnsupported)
+			cr.Detail = fmt.Sprintf("%d programa(s) fora de suporte", e.TPUnsupported) + appList(e.TPUnsupportedApps)
 			if e.TPOutdated > 0 {
-				cr.Detail += fmt.Sprintf(" e %d desatualizado(s)", e.TPOutdated)
+				cr.Detail += fmt.Sprintf("; %d desatualizado(s)", e.TPOutdated) + appList(e.TPOutdatedApps)
 			}
 			grace(cp.GraceDays)
 			return cr
 		case e.TPOutdated == 0:
 			return CriterionResult{Status: Conforme, Detail: "programas em dia"}
 		}
-		cr.Detail = fmt.Sprintf("%d programa(s) desatualizado(s)", e.TPOutdated)
+		cr.Detail = fmt.Sprintf("%d programa(s) desatualizado(s)", e.TPOutdated) + appList(e.TPOutdatedApps)
 		switch {
 		case grace(cp.GraceDays):
 			cr.Status, cr.Blame = DentroPrazo, BlameAuto
@@ -372,4 +375,18 @@ func judge(p *Policy, c Criterion, cp CriterionPolicy, e Evidence, now time.Time
 		return CriterionResult{Status: NaoConforme, Blame: BlameIT, Detail: "antivírus desligado"}
 	}
 	return CriterionResult{Status: Desconhecido, Blame: BlameUnknown}
+}
+
+// maxAppNames: quantos nomes de programa o detalhe mostra; o resto vira "e mais N".
+const maxAppNames = 6
+
+// appList: ": Google Chrome 158.0 → 159.0, 7-Zip 24.08 → 26.00 e mais 2"; vazio sem nomes.
+func appList(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) <= maxAppNames {
+		return ": " + strings.Join(names, ", ")
+	}
+	return ": " + strings.Join(names[:maxAppNames], ", ") + fmt.Sprintf(" e mais %d", len(names)-maxAppNames)
 }

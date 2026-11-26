@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -284,13 +285,17 @@ func shieldEvidenceFor(in *shieldInputs, id string, prev map[shield.Criterion]ti
 			switch strings.ToUpper(tp.State) {
 			case "DESATUALIZADO":
 				e.TPOutdated++
+				e.TPOutdatedApps = append(e.TPOutdatedApps, tpLabel(tp, true))
 				if in.offers[tp.AppID] {
 					e.TPUserFixable++
 				}
 			case "FORA DE SUPORTE":
 				e.TPUnsupported++
+				e.TPUnsupportedApps = append(e.TPUnsupportedApps, tpLabel(tp, false))
 			}
 		}
+		slices.Sort(e.TPOutdatedApps)
+		slices.Sort(e.TPUnsupportedApps)
 	}
 	e.TPKnown = e.InventoryAt != nil
 	if s, ok := in.std[id]; ok {
@@ -823,4 +828,20 @@ feed:
 	default:
 		return ctx.Err()
 	}
+}
+
+// tpLabel: o programa como a pessoa reconhece, com a versão dela e, no desatualizado, a nova
+// ("Google Chrome 158.0 → 159.0").
+func tpLabel(tp protocol.ThirdPartyItem, withTarget bool) string {
+	name := tp.Program
+	if name == "" {
+		name = tp.Name
+	}
+	switch {
+	case tp.Installed == "":
+		return name
+	case withTarget && tp.Reference != "" && tp.Reference != tp.Installed:
+		return name + " " + tp.Installed + " → " + tp.Reference
+	}
+	return name + " " + tp.Installed
 }

@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/tasantiago/patchd/internal/protocol"
 	"github.com/tasantiago/patchd/internal/selfservice"
@@ -36,6 +38,9 @@ func (a *api) selfServiceCatalog(w http.ResponseWriter, r *http.Request, id stri
 	if err != nil {
 		a.internalError(w, r, "montar a loja", err)
 		return
+	}
+	if err := a.markNewer(r.Context(), id, &cat); err != nil {
+		a.logger.Warn("autoatendimento: versões novas não conferidas", "machine_id", id, "error", err)
 	}
 	cat.Brand = a.brandName() // Aula 19.1b: a Central com o nome e o logotipo do painel
 	cat.AppName = a.appName() // Aula 20.10
@@ -117,4 +122,30 @@ func selfServiceWhat(req protocol.SelfServiceRequest) string {
 		return "computador"
 	}
 	return req.App
+}
+
+// markNewer: o programa "em dia" com a versão aprovada que a avaliação de terceiros diz
+// desatualizado (o fabricante publicou versão mais nova, ainda sem aprovação da TI) leva a
+// versão nova (Newer), para a Central não dizer "em dia" quando o Shield diz desatualizado.
+func (a *api) markNewer(ctx context.Context, id string, cat *protocol.SelfServiceCatalog) error {
+	if a.compliance == nil {
+		return nil
+	}
+	d, found, err := a.compliance.Detail(ctx, id)
+	if err != nil || !found {
+		return err
+	}
+	newer := map[string]string{}
+	for _, tp := range d.ThirdParty {
+		if strings.EqualFold(tp.State, "DESATUALIZADO") && tp.Reference != "" && tp.Reference != tp.Installed {
+			newer[tp.AppID] = tp.Reference
+		}
+	}
+	for i := range cat.Items {
+		it := &cat.Items[i]
+		if v := newer[it.App]; v != "" && (it.Action == selfservice.ActionCurrent || it.Action == selfservice.ActionInstalled) {
+			it.Newer = v
+		}
+	}
+	return nil
 }

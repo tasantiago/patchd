@@ -684,3 +684,19 @@ func TestCentralComONomeDoUsuario(t *testing.T) {
 		t.Error("sem o nome")
 	}
 }
+
+// Em dia com a versão aprovada, mas com versão nova do fabricante ainda sem aprovação: a
+// Central não diz "em dia"; mostra a versão nova aguardando a TI.
+func TestVersaoNovaAguardandoATI(t *testing.T) {
+	loja := lojaDeTeste(0)
+	loja.Catalog.Items = append(loja.Catalog.Items, protocol.SelfServiceItem{App: "google-chrome", Name: "Google Chrome", Installed: "158.0", Action: "em_dia", Newer: "159.0"})
+	a := appDeTeste(&canal{loja: loja})
+	b := get(a, a.base()).Body.String()
+	i, j := strings.Index(b, "Versão nova a caminho"), strings.Index(b, "<h2>Em dia</h2>")
+	if i < 0 || j < 0 || !strings.Contains(b, "158.0 → 159.0") || !strings.Contains(b, "aguardando a TI") {
+		t.Fatalf("página:\n%s", b)
+	}
+	if k := strings.Index(b, "Google Chrome"); k > j {
+		t.Error("o Chrome aparece como em dia")
+	}
+}

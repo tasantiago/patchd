@@ -443,3 +443,24 @@ func FuzzEvaluate(f *testing.F) {
 		}
 	})
 }
+
+// O detalhe diz quais programas estão desatualizados ou fora de suporte (a pessoa precisa
+// saber o que falta), com no máximo maxAppNames nomes.
+func TestTerceirosComNomes(t *testing.T) {
+	p := Default()
+	e := limpa()
+	e.TPOutdated = 2
+	e.TPOutdatedApps = []string{"Google Chrome 158.0 → 159.0", "7-Zip 24.08 → 26.00"}
+	r := Evaluate(&p, e, agora)
+	if got := status(r, CritThirdParty); got.Detail != "2 programa(s) desatualizado(s): Google Chrome 158.0 → 159.0, 7-Zip 24.08 → 26.00" {
+		t.Fatalf("detalhe: %q", got.Detail)
+	}
+	e.TPUnsupported, e.TPUnsupportedApps = 1, []string{"Java 7"}
+	if got := status(Evaluate(&p, e, agora), CritThirdParty); got.Detail != "1 programa(s) fora de suporte: Java 7; 2 desatualizado(s): Google Chrome 158.0 → 159.0, 7-Zip 24.08 → 26.00" {
+		t.Fatalf("fora de suporte: %q", got.Detail)
+	}
+	many := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	if got := appList(many); got != ": a, b, c, d, e, f e mais 2" {
+		t.Fatalf("muitos: %q", got)
+	}
+}

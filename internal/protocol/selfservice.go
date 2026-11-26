@@ -92,6 +92,11 @@ type SelfServiceItem struct {
 	// PerUser: o programa instala só no perfil de quem pede (o patchd roda o instalador como
 	// ele). Servidores anteriores não mandam.
 	PerUser bool `json:"per_user,omitempty"`
+	// Newer: no programa em dia com a versão aprovada pela TI, a versão mais nova que o
+	// fabricante já publicou e a TI ainda não aprovou (a avaliação de terceiros diz
+	// DESATUALIZADO). A Central mostra "versão nova aguardando a TI" em vez de "em dia".
+	// Vazio: nenhuma. Servidores anteriores não mandam; agentes anteriores ignoram.
+	Newer string `json:"newer,omitempty"`
 }
 
 // SelfServiceCatalog é a loja do usuário na máquina.

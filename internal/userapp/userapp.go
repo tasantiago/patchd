@@ -294,6 +294,8 @@ type Item struct {
 	Category string
 	// PerUser: instala só para quem pede (no perfil dele), não para o computador.
 	PerUser bool
+	// Newer: a versão mais nova já publicada pelo fabricante, que a TI ainda não aprovou.
+	Newer string
 }
 
 // catLink é um link da loja: "Todos" ou uma categoria com programas.
@@ -323,10 +325,12 @@ type pageData struct {
 	DisplayName            string // o nome de exibição (o do AD); vazio: só a conta
 	TabLabel               string
 	// Aula 19.1b: o "Atualizar tudo" (com 2 ou mais atualizações que ainda dá para pedir) e a fila.
-	UpdateAll                       int
-	Queue                           queueState
-	Flash                           *flash
-	Updates, Current                []Item
+	UpdateAll        int
+	Queue            queueState
+	Flash            *flash
+	Updates, Current []Item
+	// Awaiting: em dia com a versão aprovada, mas o fabricante já publicou outra (a TI aprova).
+	Awaiting                        []Item
 	Install, Installed, Unavailable []Item
 	Confirm                         *Item
 	// A loja: "Todos" e as categorias com programas (vazio com servidor anterior, sem
@@ -469,12 +473,16 @@ func (a *App) page(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, it := range resp.Catalog.Items {
 			x := Item{App: it.App, Name: it.Name, Installed: it.Installed, Target: it.Target, Reason: it.Reason,
-				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category, PerUser: it.PerUser}
+				Approval: it.Approval, Pending: it.Pending, Replaces: it.Replaces, Category: it.Category, PerUser: it.PerUser, Newer: it.Newer}
 			switch it.Action {
 			case protocol.SelfServiceUpdate:
 				d.Updates = append(d.Updates, x)
 			case "em_dia":
-				d.Current = append(d.Current, x)
+				if x.Newer != "" {
+					d.Awaiting = append(d.Awaiting, x)
+				} else {
+					d.Current = append(d.Current, x)
+				}
 			case protocol.SelfServiceInstall:
 				d.Install = append(d.Install, x)
 				if r.URL.Query().Get("confirmar") == it.App {
@@ -1034,6 +1042,7 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!doctype html>
 {{else}}<p class="vazio">Nenhum programa com atualização para você neste computador.</p>{{end}}
 </section>
 {{template "windows" .}}
+{{if .Awaiting}}<section><h2>Versão nova a caminho</h2><p class="nota">O fabricante já publicou uma versão mais nova destes programas; a equipe de TI confere e aprova antes de liberar. Depois disso, a atualização chega sozinha ou aparece acima para você atualizar.</p><ul class="lista">{{range .Awaiting}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}} → {{.Newer}}</span></div><span class="selo atencao">aguardando a TI</span></li>{{end}}</ul></section>{{end}}
 {{if .Current}}<section><h2>Em dia</h2><ul class="lista">{{range .Current}}<li><div><strong>{{.Name}}</strong><span class="ver">{{.Installed}}</span></div><span class="selo sucesso">✓ em dia</span></li>{{end}}</ul></section>{{end}}
 {{end}}
 {{define "loja"}}{{with .Confirm}}<section class="confirma"><h1>Instalar {{.Name}}?</h1>
