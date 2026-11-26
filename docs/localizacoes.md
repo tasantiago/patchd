@@ -17,8 +17,9 @@ quando não houver um vínculo novo; o campo vazio remove apenas o novo vínculo
 O cadastro não modifica os grupos de implantação nem inicia jobs.
 
 A migração 0084 cria a tabela de vínculos físicos. A alteração é administrativa
-e auditada. O cadastro é uma base reutilizável; filtros de inventário e campanhas
-por andar não fazem parte desta implementação.
+e auditada. Os andares cadastrados aqui são os mesmos que as campanhas por prédio e
+andar, a página Automação › Prédios e implantação e o Shield usam, pelo mesmo resolvedor
+de localização (docs/implantacao-por-predio.md).
 
 ## Como os nomes aparecem
 
@@ -33,4 +34,4 @@ gravada no código.
 
 ## Regras independentes por andar
 
-Todos os prédios do patrimônio são apresentados, mesmo sem equipamentos ou faixas prévias. Em cada prédio, cadastre nome do andar e regex Go/RE2 para o IPv4 principal (ex.: `^10\.12\.1\.[0-9]+$`). Regras iguais em prédios diferentes são independentes. Regras com o mesmo nome agregam; nomes diferentes que correspondem ao mesmo IP deixam o andar sem atribuição. A tela mostra contagens por regra, sem correspondência e conflitos. As contagens por regra podem se sobrepor. Faixas antigas continuam como fallback quando nenhuma regex corresponde. Não altera grupos técnicos, campanhas ou janelas.
+Todos os prédios do patrimônio são apresentados, mesmo sem equipamentos ou faixas prévias. Em cada prédio, cadastre nome do andar e regex Go/RE2 para o IPv4 principal (ex.: `^10\.12\.1\.[0-9]+$`). Regras iguais em prédios diferentes são independentes. Regras com o mesmo nome agregam; nomes diferentes que correspondem ao mesmo IP deixam o andar sem atribuição. A tela mostra contagens por regra, sem correspondência e conflitos. As contagens por regra podem se sobrepor. Faixas antigas continuam como fallback quando nenhuma regex corresponde. Alterar uma regra não muda campanhas já criadas (os alvos e o andar de cada um ficam gravados na criação); nas próximas liberações, a máquina que saiu do andar escolhido não recebe job. As janelas de manutenção são por prédio, em Automação › Prédios e implantação.
