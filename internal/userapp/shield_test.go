@@ -66,9 +66,9 @@ func TestAbaMinhaProtecao(t *testing.T) {
 	for _, want := range []string{
 		"Minha Proteção", `aria-label="proteção 93%"`, "93%", "quase lá", "Escolher a hora do reinício", "?aba=reinicio",
 		"aguardando você", "responsável: usuário", "3,75 de 15 pontos", "Prata — Sentinela", "faltam 3 dia(s) para Ouro — Guardião",
-		"<meter", "<progress", "Semana do reinício", "Primeiro escudo", "Semana blindada", "+10 XP", "Sua máquina protegida.", "1º 3 · Prédio Sede · seu grupo", "75% no selo",
-		"Ranking: Prédios", "<b>Edifício Sede</b> está em <b>2º</b> de 7", "Ranking: Andares do Edifício Sede", "<b>2º andar</b> está em <b>1º</b> de 3",
-		"Ranking: Salas do Edifício Sede", "4º 201 · o seu", "ninguém vê o seu nome",
+		"<meter", "<progress", "Semana do reinício", "Primeiro escudo", "Semana blindada", "+10 XP", "Sua máquina protegida.", "3 · Prédio Sede", "Seu grupo", "75%</b> no selo",
+		"Ranking: Prédios", "Edifício Sede", "de 7", "Seu prédio", "Ranking: Andares do Edifício Sede", "2º andar", "de 3", "Seu andar",
+		"Ranking: Salas do Edifício Sede", "201", "Sua sala", "ninguém vê o seu nome",
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("faltou %q", want)
@@ -93,6 +93,47 @@ func TestAbaMinhaProtecaoSelada(t *testing.T) {
 	b := get(a, a.base()+"?aba=protecao").Body.String()
 	if !strings.Contains(b, "Selo 100%") || strings.Contains(b, "O que você pode fazer agora") {
 		t.Error("selado")
+	}
+}
+
+func TestRankingPreservaPosicaoForaDoTopEEscalaReal(t *testing.T) {
+	v := vistaShield(false, 93)
+	v.Groups = nil
+	v.Places = []protocol.ShieldPlaceView{{Kind: "predio", Title: "Prédios", Mine: "Edifício Sede", Pos: 23, Of: 38,
+		Rows: []protocol.ShieldGroupView{
+			{Pos: 1, Name: "Unidade Norte", Machines: 80, Percent: 6},
+			{Pos: 2, Name: "Unidade Sul", Machines: 40, Percent: 4},
+			{Pos: 3, Name: "Unidade Leste", Machines: 60, Percent: 3},
+			{Pos: 4, Name: `<script>alert(1)</script>`, Machines: 50, Percent: 2},
+			{Pos: 23, Name: "Edifício Sede", Machines: 120, Percent: 0, Mine: true},
+		}}}
+	a := appComShield(v)
+	b := get(a, a.base()+"?aba=protecao").Body.String()
+	for _, want := range []string{`aria-label="Três primeiros colocados"`, `value="23"`, "de 38", "Seu prédio",
+		`aria-label="Posições intermediárias não exibidas"`, `width="6" height="6"`, `width="0" height="6"`,
+		`&lt;script&gt;alert(1)&lt;/script&gt;`, `href="` + a.base() + `?aba=atualizacoes"`} {
+		if !strings.Contains(b, want) {
+			t.Errorf("ranking sem %q", want)
+		}
+	}
+	if strings.Count(b, "Unidade Norte") != 1 || strings.Contains(b, "<script") || strings.Contains(b, " style=") {
+		t.Error("pódio duplicado, nome sem escape ou estilo/script inline")
+	}
+}
+
+func TestRankingPequenoSemPodioVazioOuPosicaoInventada(t *testing.T) {
+	v := vistaShield(true, 100)
+	v.Groups = nil
+	v.Places = []protocol.ShieldPlaceView{{Kind: "andar", Title: "Andares", Of: 2, Rows: []protocol.ShieldGroupView{
+		{Pos: 1, Name: "Térreo", Machines: 10, Percent: 100},
+		{Pos: 2, Name: "1º andar", Machines: 1, Percent: 0},
+	}}}
+	a := appComShield(v)
+	b := get(a, a.base()+"?aba=protecao").Body.String()
+	if strings.Contains(b, `class="rank-podium"`) || strings.Contains(b, `class="rank-own"`) ||
+		!strings.Contains(b, "Classificação") || !strings.Contains(b, "1 computador</span>") ||
+		!strings.Contains(b, `width="100" height="6"`) {
+		t.Error("ranking pequeno deve mostrar só os locais existentes e não inventar a posição do usuário")
 	}
 }
 
