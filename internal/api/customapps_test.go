@@ -537,3 +537,60 @@ func TestIncluirDoSiteDoFabricante(t *testing.T) {
 		t.Errorf("trocar de origem: %d", r.Code)
 	}
 }
+
+// O programa do fabricante pelo link do Evergreen: sem o link, com o aplicativo do Evergreen,
+// a fonte é a do Evergreen (com o filtro); sem nenhum dos dois, recusa. Na página do
+// programa, a opção do Evergreen aparece e se grava.
+func TestIncluirDoFabricantePeloEvergreen(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	baixar := func(context.Context, thirdparty.App, string, []string, io.Writer) bool { return true }
+	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, nil, nil), api.WithCompliance(&complianceFalso{}),
+		api.WithPackageFetch(baixar))
+	const pagina_ = "/painel/patch/terceiros/incluir"
+	form := url.Values{"origem": {"fabricante"}, "nome": {"HandBrake"}, "inventario": {"HandBrake"}, "modo": {"comeca"}, "tipo": {"nullsoft"},
+		"assinatura": {"sim"}, "assinante": {"HandBrake Team"}, "auto": {"1"}}
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "aplicativo do Evergreen") {
+		t.Fatalf("sem link nem Evergreen: %d", r.Code)
+	}
+	form.Set("evergreen", "Handbrake")
+	form.Set("evergreen_filtro", "InstallerType=Default")
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("salvar: %d %s", r.Code, r.Body)
+	}
+	srcs, _ := st.InstallerSources(context.Background())
+	if len(srcs) != 1 || srcs[0].Kind != store.SourceEvergreen || srcs[0].PackageID != "Handbrake" || srcs[0].Filter != "InstallerType=Default" ||
+		srcs[0].Type != "nullsoft" || !srcs[0].AutoFetch || srcs[0].URLTemplate != "" {
+		t.Fatalf("fonte: %+v", srcs)
+	}
+	b := pagina(h, "GET", "/painel/patch/programa?app=handbrake", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"Evergreen <code>Handbrake</code> · nullsoft", `name="fonte" value="evergreen" checked`, `name="evergreen" value="Handbrake"`,
+		"Versão que o Evergreen lista"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("página do programa: falta %q", quer)
+		}
+	}
+	// A edição mostra o link vazio e o Evergreen; trocar para o link do fabricante pela fonte vale.
+	if b := pagina(h, "GET", pagina_+"?editar=handbrake", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `name="link" value=""`) || !strings.Contains(b, `name="evergreen" value="Handbrake"`) {
+		t.Error("edição")
+	}
+	r := pagina(h, "POST", "/painel/patch/terceiros/fonte", sessaoAdmin, url.Values{"app": {"handbrake"}, "fonte": {"evergreen"}, "evergreen": {"Handbrake"},
+		"evergreen_filtro": {"Architecture"}})
+	if !strings.Contains(local(r), "erro=fonte") {
+		t.Errorf("filtro ruim na fonte: %s", local(r))
+	}
+	r = pagina(h, "POST", "/painel/patch/terceiros/fonte", sessaoAdmin, url.Values{"app": {"handbrake"}, "fonte": {"url"},
+		"link": {"https://github.exemplo/releases/download/{versao}/HandBrake-{versao}-x86_64-Win_GUI.exe"}})
+	if !strings.Contains(local(r), "fonte=1") {
+		t.Fatalf("trocar para o link: %s", local(r))
+	}
+	if srcs, _ := st.InstallerSources(context.Background()); srcs[0].Kind != store.SourceURL || srcs[0].Type != "nullsoft" {
+		t.Errorf("fonte trocada: %+v", srcs)
+	}
+	// Um programa do manifesto (do winget) também pode baixar pelo link do Evergreen.
+	r = pagina(h, "POST", "/painel/patch/terceiros/fonte", sessaoAdmin, url.Values{"app": {"7zip"}, "fonte": {"evergreen"}, "evergreen": {"7zip"},
+		"evergreen_filtro": {"Architecture=x64"}, "fonte_tipo": {"msi"}})
+	if !strings.Contains(local(r), "fonte=1") {
+		t.Fatalf("7-Zip pelo Evergreen: %s", local(r))
+	}
+}

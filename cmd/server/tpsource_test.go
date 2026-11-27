@@ -210,3 +210,63 @@ func TestFabricanteComVersaoManual(t *testing.T) {
 		t.Fatalf("vazio com referência: %s", out.String())
 	}
 }
+
+// A fonte Evergreen: o servidor lê as linhas do aplicativo, escolhe a do filtro e do tipo e
+// baixa o link dela, conferindo o SHA-256 que ele informa (o arquivo diferente é recusado).
+func TestFonteEvergreen(t *testing.T) {
+	inst := authsigtest.Exe("Exemplo Ltda")
+	sum := sha256.Sum256(inst)
+	sha := hex.EncodeToString(sum[:])
+	var srvURL string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/ExemploApp":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{"Version":"3.1.0","Architecture":"x64","Type":"exe","Channel":"Stable","URI":"` + srvURL + `/dl/exemplo-3.1.0-x64.exe","Sha256":"` + sha + `"},
+				{"Version":"3.1.0","Architecture":"arm64","Type":"exe","Channel":"Stable","URI":"` + srvURL + `/dl/exemplo-3.1.0-arm64.exe","Sha256":"` + strings.Repeat("0", 64) + `"},
+				{"Version":"3.2.0","Architecture":"x64","Type":"exe","Channel":"Beta","URI":"` + srvURL + `/dl/beta.exe"}]`))
+		case "/dl/exemplo-3.1.0-x64.exe", "/dl/exemplo-3.1.0-arm64.exe":
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(inst))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+	rule, err := thirdparty.BuildCustom(thirdparty.CustomInput{Name: "Exemplo", Vendor: true, InventoryName: "Exemplo", InstallType: "nullsoft",
+		Evergreen: "ExemploApp", EvergreenFilter: map[string]string{"Channel": "Stable"}, UnsignedReason: "o Evergreen dá o SHA-256"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := store.NewMemory()
+	ctx := context.Background()
+	sf := newSourceFetcher(st, t.TempDir(), "teste")
+	sf.f.HTTP = srv.Client()
+	sf.f.HTTP.CheckRedirect = pkgcache.HTTPSOnly
+	sf.f.Wait = time.Millisecond
+	sf.eg.HTTP, sf.eg.EvergreenURL = srv.Client(), srv.URL
+	if err := st.SaveInstallerSource(ctx, store.InstallerSource{AppID: rule.ID, Kind: store.SourceEvergreen, PackageID: "ExemploApp", Filter: "Channel=Stable",
+		Type: "nullsoft", UpdatedBy: "ana"}); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if !sf.fetch(ctx, rule, "", nil, &out) || !strings.Contains(out.String(), "(do Evergreen)") {
+		t.Fatalf("baixar: %s", out.String())
+	}
+	pk, _ := st.ThirdPartyPackages(ctx)
+	if len(pk) != 1 || pk[0].Version != "3.1.0" || pk[0].SHA256 != sha || !strings.HasSuffix(pk[0].URL, "-x64.exe") || pk[0].WingetID != "evergreen" {
+		t.Fatalf("pacote: %+v", pk)
+	}
+	// O beta não passa no filtro; a versão que ele não lista é recusada com o que ele tem.
+	out.Reset()
+	if sf.fetch(ctx, rule, "3.2.0", nil, &out) || !strings.Contains(out.String(), "tem: 3.1.0") {
+		t.Fatalf("versão fora do filtro: %s", out.String())
+	}
+	// O SHA-256 que não confere: recusado (a linha arm64, escolhida pelo filtro).
+	st.SaveInstallerSource(ctx, store.InstallerSource{AppID: rule.ID, Kind: store.SourceEvergreen, PackageID: "ExemploApp", Filter: "Architecture=arm64",
+		Type: "nullsoft", UpdatedBy: "ana"})
+	out.Reset()
+	if sf.fetch(ctx, rule, "", nil, &out) || !strings.Contains(out.String(), "RECUSADO") {
+		t.Fatalf("SHA-256 diferente: %s", out.String())
+	}
+}

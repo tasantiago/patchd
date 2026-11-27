@@ -246,3 +246,65 @@ func TestProgramaDoSiteDoFabricante(t *testing.T) {
 		}
 	}
 }
+
+// A linha do Evergreen para o link do instalador: o filtro, o tipo (msi ou exe), a versão
+// (vazia: a mais nova), a de 64 bits; linha sem link https não conta; sobrando duas, recusa.
+func TestLinhaDoEvergreen(t *testing.T) {
+	row := func(ver, ch, arch, typ, uri, sha string) map[string]any {
+		r := map[string]any{"Version": ver, "Channel": ch, "Architecture": arch, "Type": typ, "URI": uri}
+		if sha != "" {
+			r["Sha256"] = sha
+		}
+		return r
+	}
+	chrome := []map[string]any{
+		row("156.0.8078.114", "Extended", "x64", "msi", "https://dl.exemplo/extended/chrome64.msi", ""),
+		row("158.0.8127.89", "Stable", "x86", "msi", "https://dl.exemplo/stable/chrome.msi", ""),
+		row("158.0.8127.89", "Stable", "x64", "msi", "https://dl.exemplo/stable/chrome64.msi", ""),
+		row("158.0.8127.89", "Stable", "x64", "zip", "https://dl.exemplo/stable/bundle64.zip", ""),
+		row("159.0.8154.33", "Beta", "x64", "msi", "https://dl.exemplo/beta/chrome64.msi", ""),
+		row("160.0.8187.0", "Canary", "x64", "exe", "http://dl.exemplo/canary/setup.exe", ""),
+	}
+	got, err := PickEvergreen(chrome, map[string]string{"channel": "stable"}, "msi", "")
+	if err != nil || got.URI != "https://dl.exemplo/stable/chrome64.msi" || got.Version != "158.0.8127.89" || got.SHA256 != "" {
+		t.Fatalf("Chrome estável x64: %+v %v", got, err)
+	}
+	if _, err := PickEvergreen(chrome, nil, "msi", "158.0.8127.89"); err != nil {
+		t.Errorf("sem filtro, pela versão: %v", err)
+	}
+	if got, _ := PickEvergreen(chrome, nil, "msi", ""); got.Version != "159.0.8154.33" {
+		t.Errorf("sem filtro, a mais nova é a beta (por isso o filtro): %+v", got)
+	}
+	if _, err := PickEvergreen(chrome, map[string]string{"Channel": "Stable"}, "msi", "157.0"); err == nil || !strings.Contains(err.Error(), "só lista as versões atuais") {
+		t.Errorf("versão que ele não lista: %v", err)
+	}
+	if _, err := PickEvergreen(chrome, map[string]string{"Channel": "Canary"}, "exe", ""); err == nil {
+		t.Error("link http aceito")
+	}
+	sha := strings.Repeat("AB", 32)
+	hb := []map[string]any{
+		row("1.11.2", "", "arm64", "exe", "https://github.exemplo/HandBrake-1.11.2-arm64-Win_GUI.exe", strings.Repeat("c", 64)),
+		row("1.11.2", "", "x64", "exe", "https://github.exemplo/HandBrake-1.11.2-x86_64-Win_GUI.exe", sha),
+		row("1.11.2", "", "x64", "zip", "https://github.exemplo/HandBrake-1.11.2-x86_64-Win_GUI.zip", strings.Repeat("d", 64)),
+	}
+	got, err = PickEvergreen(hb, nil, "nullsoft", "")
+	if err != nil || !strings.HasSuffix(got.URI, "x86_64-Win_GUI.exe") || got.SHA256 != strings.ToLower(sha) {
+		t.Fatalf("HandBrake x64 com SHA-256: %+v %v", got, err)
+	}
+	// Sem o campo Type: pela extensão do link. Duas linhas x64 com links diferentes: recusa.
+	semTipo := []map[string]any{{"Version": "2.0", "URI": "https://x.exemplo/a.msi"}, {"Version": "2.0", "URI": "https://x.exemplo/b.msi"}}
+	if _, err := PickEvergreen(semTipo, nil, "msi", ""); err == nil || !strings.Contains(err.Error(), "refine o filtro") {
+		t.Errorf("duas linhas: %v", err)
+	}
+	if got, err := PickEvergreen(semTipo[:1], nil, "msi", "2.0.0"); err != nil || got.URI != "https://x.exemplo/a.msi" {
+		t.Errorf("sem Type, pela extensão: %+v %v", got, err)
+	}
+	if f, err := ParseEvergreenFilter("Channel=Stable;\nArchitecture = x64"); err != nil || f["Architecture"] != "x64" || FormatEvergreenFilter(f) != "Architecture=x64; Channel=Stable" {
+		t.Errorf("filtro: %v %v", f, err)
+	}
+	for _, ruim := range []string{"Channel", "=x", "Canal 1=x", "A=1;B=2;C=3;D=4;E=5"} {
+		if _, err := ParseEvergreenFilter(ruim); err == nil {
+			t.Errorf("filtro %q aceito", ruim)
+		}
+	}
+}

@@ -43,6 +43,24 @@ func testarFontesInstalador(t *testing.T, st contratoFontesInstalador) {
 			t.Errorf("aceita: %+v", ruim)
 		}
 	}
+	// O Evergreen: o aplicativo e o filtro; sem aplicativo, ou filtro em outra fonte, recusa.
+	if err := st.SaveInstallerSource(ctx, InstallerSource{AppID: "google-chrome", Kind: SourceEvergreen, PackageID: "GoogleChrome",
+		Filter: "Architecture=x64; Channel=Stable", Type: "msi", AutoFetch: true, UpdatedBy: "ana"}); err != nil {
+		t.Fatal(err)
+	}
+	l, _ = st.InstallerSources(ctx)
+	if g := l[2]; g.AppID != "google-chrome" || g.Kind != SourceEvergreen || g.PackageID != "GoogleChrome" || g.Filter != "Architecture=x64; Channel=Stable" {
+		t.Fatalf("evergreen: %+v", g)
+	}
+	for _, ruim := range []InstallerSource{{AppID: "x", Kind: SourceEvergreen, Type: "msi", UpdatedBy: "a"},
+		{AppID: "x", Kind: SourceURL, URLTemplate: "https://x/{versao}", Type: "msi", Filter: "A=b", UpdatedBy: "a"}} {
+		if err := st.SaveInstallerSource(ctx, ruim); err == nil {
+			t.Errorf("aceita: %+v", ruim)
+		}
+	}
+	if ok, err := st.DeleteInstallerSource(ctx, "google-chrome"); !ok || err != nil {
+		t.Fatal(err)
+	}
 	if ok, err := st.DeleteInstallerSource(ctx, "7zip"); !ok || err != nil {
 		t.Errorf("tirar: %v %v", ok, err)
 	}

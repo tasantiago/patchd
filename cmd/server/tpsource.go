@@ -45,14 +45,18 @@ type sourceFetcher struct {
 	hc  *http.Client // o arquivo de SHA-256 do fabricante e o pacote do Chocolatey
 	// choco: o repositório do Chocolatey (choco.BaseURL; outro nos testes).
 	choco string
+	// eg: a API do Evergreen (o link de cada versão, na fonte evergreen).
+	eg *thirdparty.Client
 }
 
 func newSourceFetcher(st sourceStore, dir, version string) *sourceFetcher {
 	ua := "patchd-server/" + version
 	c := winget.NewClient(ua)
 	c.HTTP = retry.Wrap(c.HTTP, nil)
+	eg := thirdparty.NewClient(ua)
+	eg.HTTP = retry.Wrap(eg.HTTP, nil)
 	return &sourceFetcher{st: st, dir: dir, wg: c, f: pkgcache.NewFetcher(ua),
-		hc: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: pkgcache.HTTPSOnly}, choco: choco.BaseURL}
+		hc: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: pkgcache.HTTPSOnly}, choco: choco.BaseURL, eg: eg}
 }
 
 // source: a fonte gravada da regra. Sem linha, o winget; o programa incluído do Chocolatey
@@ -91,11 +95,13 @@ func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver stri
 		fmt.Fprintf(out, "%s (%s)\n  ERRO        ler a fonte do instalador: %v\n", rule.Name, rule.ID, err)
 		return false
 	}
-	if rule.FromVendor() && src.Kind != store.SourceURL {
+	if rule.FromVendor() && src.Kind != store.SourceURL && src.Kind != store.SourceEvergreen {
 		fmt.Fprintf(out, "%s (%s)\n  ERRO        o programa vem do site do fabricante e está sem o link do instalador: grave-o em Fonte do instalador, na página do programa\n", rule.Name, rule.ID)
 		return false
 	}
 	switch src.Kind {
+	case store.SourceEvergreen:
+		return s.manualReference(ctx, rule, tpfetch.Evergreen(ctx, s.eg.EvergreenInstaller, s.f, s.st, rule, src, ver, s.dir, out), out)
 	case store.SourceChocolatey:
 		ref, err := s.reference(ctx, rule.ID)
 		if err != nil {
@@ -117,9 +123,13 @@ func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver stri
 			return false
 		}
 	}
-	ok := tpfetch.Vendor(ctx, s.hc, s.f, s.st, rule, src, ver, s.dir, out)
+	return s.manualReference(ctx, rule, tpfetch.Vendor(ctx, s.hc, s.f, s.st, rule, src, ver, s.dir, out), out)
+}
+
+// manualReference: no programa sem fonte automática da versão, o download que deu certo
+// refaz a referência (a do instalador mais novo guardado). Devolve ok.
+func (s *sourceFetcher) manualReference(ctx context.Context, rule thirdparty.App, ok bool, out io.Writer) bool {
 	if ok && rule.ManualVersion() {
-		// Sem fonte automática: a referência é a do instalador mais novo guardado.
 		if err := tpupload.SaveReference(ctx, s.st, rule); err != nil {
 			fmt.Fprintf(out, "  AVISO       versão de referência não atualizada: %v\n", err)
 		}
@@ -205,14 +215,14 @@ func (a *autoFetch) pass(ctx context.Context) int {
 		tried++
 		src = tpfetch.RuleSource(*rule, src)
 		ver := ""
-		if src.Kind == store.SourceURL {
+		if src.Kind == store.SourceURL || src.Kind == store.SourceEvergreen {
 			ver = ref
 		}
 		var out strings.Builder
 		fctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		ok := a.s.fetch(fctx, *rule, ver, nil, &out)
 		cancel()
-		via := map[string]string{store.SourceURL: "site do fabricante", store.SourceChocolatey: "Chocolatey"}[src.Kind]
+		via := map[string]string{store.SourceURL: "site do fabricante", store.SourceChocolatey: "Chocolatey", store.SourceEvergreen: "Evergreen"}[src.Kind]
 		if via == "" {
 			via = "winget"
 		}

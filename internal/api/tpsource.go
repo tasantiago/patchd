@@ -21,6 +21,8 @@ import (
 type tpSourceView struct {
 	Vendor                    bool // o site do fabricante
 	Choco                     bool // o pacote do Chocolatey
+	Evergreen                 bool // o link que o Evergreen informa
+	EgApp, EgFilter           string
 	Package, URLVar           string
 	ChecksumVar               string
 	URL, Type, Args, Checksum string
@@ -70,10 +72,21 @@ func (a *api) fillSource(r *http.Request, v *tpProgramView, rule thirdparty.App)
 	if saved {
 		sv.UpdatedBy, sv.UpdatedAt = src.UpdatedBy, a.stamp(src.UpdatedAt)
 	}
+	// O Evergreen: o gravado; sem ele, o da regra (a fonte da versão ou a conferência), para
+	// a opção já vir preenchida.
+	sv.Evergreen = src.Kind == store.SourceEvergreen
+	switch {
+	case sv.Evergreen:
+		sv.EgApp, sv.EgFilter = src.PackageID, src.Filter
+	case rule.Source != nil && rule.Source.Type == thirdparty.SourceEvergreen:
+		sv.EgApp, sv.EgFilter = rule.Source.ID, thirdparty.FormatEvergreenFilter(rule.Source.Filter)
+	case rule.Check != nil && rule.Check.Type == thirdparty.SourceEvergreen:
+		sv.EgApp, sv.EgFilter = rule.Check.ID, thirdparty.FormatEvergreenFilter(rule.Check.Filter)
+	}
 	if sv.Vendor && v.P.Reference != "" {
 		sv.Next = tpfetch.ExpandVendor(src.URLTemplate, v.P.Reference)
 	}
-	if sv.Vendor || sv.Choco {
+	if sv.Vendor || sv.Choco || sv.Evergreen {
 		v.Kinds = nil // o tipo é o da fonte
 	}
 	v.Source = sv
@@ -91,8 +104,8 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 	}
 	back := tpProgramPath(app)
 	src := store.InstallerSource{AppID: app, Kind: store.SourceWinget, AutoFetch: r.PostFormValue("auto") == "1" && !rule.ManualVersion(), UpdatedBy: s.Username}
-	if rule.FromVendor() && r.PostFormValue("fonte") != store.SourceURL {
-		http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape("este programa foi incluído do site do fabricante: a fonte é o link do fabricante")+"#fonte", http.StatusSeeOther)
+	if f := r.PostFormValue("fonte"); rule.FromVendor() && f != store.SourceURL && f != store.SourceEvergreen {
+		http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape("este programa foi incluído do site do fabricante: a fonte é o link do fabricante ou o do Evergreen")+"#fonte", http.StatusSeeOther)
 		return
 	}
 	switch r.PostFormValue("fonte") {
@@ -112,6 +125,26 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 			src.Type = ""
 		}
 		if err := tpfetch.CheckChoco(src, *rule); err != nil {
+			http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape(err.Error())+"#fonte", http.StatusSeeOther)
+			return
+		}
+	case store.SourceEvergreen:
+		src.Kind = store.SourceEvergreen
+		src.PackageID = strings.TrimSpace(r.PostFormValue("evergreen"))
+		src.Type = r.PostFormValue("fonte_tipo")
+		src.Arguments = strings.TrimSpace(r.PostFormValue("argumentos"))
+		if !slices.Contains(vendorTypes, src.Type) {
+			src.Type = ""
+		}
+		if rule.FromVendor() || rule.FromChocolatey() { // o tipo e os argumentos são os da regra
+			src.Type, src.Arguments = rule.Install.Type, rule.Install.Arguments
+		}
+		filter, err := thirdparty.ParseEvergreenFilter(r.PostFormValue("evergreen_filtro"))
+		if err == nil {
+			src.Filter = thirdparty.FormatEvergreenFilter(filter)
+			err = tpfetch.CheckEvergreen(src, *rule)
+		}
+		if err != nil {
 			http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape(err.Error())+"#fonte", http.StatusSeeOther)
 			return
 		}
@@ -146,6 +179,11 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 			detail = fmt.Sprintf("site do fabricante %s (%s)", src.URLTemplate, src.Type)
 			if src.ChecksumURL != "" {
 				detail += ", SHA-256 de " + src.ChecksumURL
+			}
+		case store.SourceEvergreen:
+			detail = fmt.Sprintf("Evergreen %s (%s)", src.PackageID, src.Type)
+			if src.Filter != "" {
+				detail += ", filtro " + src.Filter
 			}
 		case store.SourceChocolatey:
 			detail = fmt.Sprintf("Chocolatey %s (%s)", src.PackageID, src.Type)

@@ -134,19 +134,30 @@ func evergreenRows(raw json.RawMessage) ([]map[string]any, error) {
 func evergreenVersions(rows []map[string]any, filter map[string]string) []string {
 	var out []string
 	for _, row := range rows {
-		ok := true
-		for k, want := range filter {
-			got, found := "", false
-			for rk, rv := range row {
-				if strings.EqualFold(rk, k) {
-					got, found = fmt.Sprint(rv), true
-				}
-			}
-			ok = ok && found && strings.EqualFold(got, want)
-		}
-		if v, isString := row["Version"].(string); ok && isString {
+		if v, isString := row["Version"].(string); isString && rowMatches(row, filter) {
 			out = append(out, v)
 		}
 	}
 	return out
+}
+
+// rowMatches: a linha tem cada campo do filtro com o valor pedido (sem diferença de
+// maiúsculas, nem nos nomes dos campos).
+func rowMatches(row map[string]any, filter map[string]string) bool {
+	for k, want := range filter {
+		if got, found := field(row, k); !found || !strings.EqualFold(got, want) {
+			return false
+		}
+	}
+	return true
+}
+
+// field: o valor de um campo da linha, como texto (o nome sem diferença de maiúsculas).
+func field(row map[string]any, name string) (string, bool) {
+	for k, v := range row {
+		if strings.EqualFold(k, name) && v != nil {
+			return fmt.Sprint(v), true
+		}
+	}
+	return "", false
 }

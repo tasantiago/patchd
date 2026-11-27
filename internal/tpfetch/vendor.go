@@ -343,3 +343,61 @@ func checkSigner(file, org string) error {
 	}
 	return nil
 }
+
+// OriginEvergreen: a origem do instalador baixado pelo link que o Evergreen informa.
+const OriginEvergreen = "evergreen"
+
+// EvergreenLookup acha no Evergreen o instalador do aplicativo (thirdparty.Client.EvergreenInstaller).
+type EvergreenLookup func(ctx context.Context, app string, filter map[string]string, installerType, version string) (thirdparty.EvergreenInstaller, error)
+
+// CheckEvergreen confere a fonte do Evergreen antes de gravar: o aplicativo, o filtro, o tipo e
+// os argumentos. O SHA-256 é de cada linha: sem ele, o download exige a assinatura da regra.
+func CheckEvergreen(s store.InstallerSource, rule thirdparty.App) error {
+	if rule.Install == nil || rule.Uploaded() || rule.OS != "windows" {
+		return errors.New("a fonte do Evergreen vale para os programas do Windows com instalação (não para o instalador próprio)")
+	}
+	if !thirdparty.ValidEvergreenApp(s.PackageID) {
+		return fmt.Errorf("o aplicativo do Evergreen %q: o nome da lista do Evergreen (ex.: AdobeAcrobatReaderDC, GoogleChrome)", s.PackageID)
+	}
+	if _, err := thirdparty.ParseEvergreenFilter(s.Filter); err != nil {
+		return err
+	}
+	if !winget.Supported(s.Type) {
+		return fmt.Errorf("tipo %q: use msi, wix, nullsoft, inno, burn ou exe", s.Type)
+	}
+	if s.Type == "exe" && strings.TrimSpace(s.Arguments) == "" {
+		return errors.New("o exe genérico exige os argumentos da instalação silenciosa do fabricante")
+	}
+	if _, err := jobs.SplitArgs(s.Type, cmp.Or(s.Arguments, winget.SilentDefault(s.Type))); err != nil {
+		return fmt.Errorf("argumentos: %w", err)
+	}
+	return nil
+}
+
+// Evergreen baixa, confere e registra o instalador pelo link que o Evergreen informa para a
+// versão (vazia: a mais nova que passa no filtro), com o SHA-256 dele quando há (sem ele, vale
+// a assinatura exigida pela regra), escrevendo o andamento em out, como o Vendor.
+func Evergreen(ctx context.Context, lookup EvergreenLookup, f *pkgcache.Fetcher, st Store, a thirdparty.App, src store.InstallerSource,
+	version, dir string, out io.Writer) bool {
+	fmt.Fprintf(out, "%s (%s) ← Evergreen %s · %s · %s\n", a.Name, a.ID, src.PackageID, cmp.Or(version, "a mais nova"), src.Type)
+	fail := func(format string, args ...any) bool {
+		fmt.Fprintf(out, "  ERRO        "+format+"\n", args...)
+		return false
+	}
+	if err := CheckEvergreen(src, a); err != nil {
+		return fail("%v", err)
+	}
+	filter, _ := thirdparty.ParseEvergreenFilter(src.Filter)
+	in, err := lookup(ctx, src.PackageID, filter, src.Type, version)
+	if err != nil {
+		return fail("%v", err)
+	}
+	if !vendorVersion.MatchString(in.Version) {
+		return fail("versão %q do Evergreen: precisa começar por um número", in.Version)
+	}
+	fmt.Fprintf(out, "  versão      %s\n  link        %s\n", in.Version, in.URI)
+	if in.SHA256 != "" {
+		fmt.Fprintf(out, "  SHA-256     %s… (do Evergreen)\n", in.SHA256[:12])
+	}
+	return keep(ctx, f, st, a, OriginEvergreen, in.URI, in.SHA256, src.Type, src.Arguments, in.Version, dir, out)
+}

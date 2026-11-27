@@ -1495,7 +1495,7 @@ admin fazer pela tela o que antes era só `patchd-server package fetch`:
   (o agente ainda vai baixá-lo; cancele em Jobs ou espere) e a de **campanha não encerrada**.
   Excluir não muda nada nas máquinas; dá para baixar a mesma versão de novo depois.
 
-### Fonte do instalador: o winget ou o site do fabricante
+### Fonte do instalador: o winget, o site do fabricante, o Evergreen ou o Chocolatey
 
 Na página do programa, **Fonte do instalador** diz de onde o servidor baixa (o padrão é o
 winget-pkgs, que às vezes leva dias para ter a versão nova):
@@ -1538,6 +1538,23 @@ winget-pkgs, que às vezes leva dias para ter a versão nova):
   referência está no link (`…/2600322110/…`), vale a de referência: o andamento diz "a de
   referência; o pacote escreve …". Sem como casar, fica a do pacote, com o aviso "confira
   antes de aprovar".
+- **Link do Evergreen**: o aplicativo do Evergreen (o nome do `Find-EvergreenApp`, ex.:
+  `GoogleChrome`, `Handbrake`) e, opcional, o filtro das linhas do `Get-EvergreenApp`
+  (`Channel=Stable`, `InstallerType=Default`; Campo=valor separados por ";"). Cada linha do
+  Evergreen traz a versão, o link (URI) e, em muitos programas, o SHA-256. O servidor escolhe a
+  linha que passa no filtro, é do tipo do instalador (o msi pede a linha `Type: msi`; nullsoft,
+  inno, burn e exe pedem `Type: exe`; sem o campo, a extensão do link), tem link https e a
+  versão pedida (vazia no Baixar: a mais nova do filtro; no automático, a de referência), e,
+  entre as que sobram, a de `Architecture: x64`. Sobrando duas linhas com links diferentes, o
+  download é recusado pedindo um filtro mais fino. Com o SHA-256 da linha, o arquivo tem de
+  conferir (o HandBrake publica); sem ele (o Chrome não publica), o programa **tem de exigir a
+  assinatura**, conferida aqui e no agente. Limites: o Evergreen só lista as versões atuais (a
+  versão antiga digitada no Baixar é recusada, com as que ele tem); e, nos links fixos (o do
+  Chrome, sem a versão no endereço), o arquivo é o que o fabricante serve na hora: a versão
+  registrada é a que o Evergreen diz, então baixe logo depois da versão nova aparecer (o
+  "baixar sozinho" faz isso de hora em hora). Vale para qualquer programa com instalação (do
+  winget, do Chocolatey ou do site do fabricante); o tipo e os argumentos dos incluídos do
+  Chocolatey e do site do fabricante são os da regra.
 - **O tipo confere com o arquivo**: o link `.exe` com o tipo msi (ou `.msi` com exe) é recusado
   antes de baixar; o arquivo baixado que não é do formato do tipo (MSI ou executável) não
   fica. Um Baixar anterior com o tipo errado deixou o arquivo com a extensão errada: o próximo
@@ -1547,7 +1564,7 @@ winget-pkgs, que às vezes leva dias para ter a versão nova):
   calcula o SHA-256 do que baixou e o programa **tem de exigir a assinatura**: o servidor confere
   o O= antes de guardar (e apaga o arquivo se for outro), e o agente confere de novo, com o
   Windows. Daí em diante a versão fica presa a esse SHA-256, como as do winget.
-- **Baixar sozinho cada versão nova** (vale para o winget e para o fabricante): de hora em
+- **Baixar sozinho cada versão nova** (vale para todas as fontes): de hora em
   hora, o servidor confere os programas marcados; quando a versão de referência ainda não tem
   instalador guardado, baixa pela fonte. A mesma versão que falhou (o fabricante ainda não
   publicou, o winget ainda não tem) é tentada de novo a cada 6 horas. **A aprovação continua
@@ -1676,7 +1693,7 @@ Um programa que não está no winget nem no Chocolatey (ou que lá demora a ter 
 que o fabricante publica num link com a versão no endereço, entra pela aba **Do site do
 fabricante** do Incluir programa:
 
-1. **O link do instalador**, https, com `{versao}` onde a versão aparece
+1. **O link do instalador** (ou, com o Evergreen, nenhum: veja o passo 2), https, com `{versao}` onde a versão aparece
    (`https://fabricante.exemplo/downloads/{versao}/sistema-{versao}-x64.msi`; espaço vira
    `%20`). Confira abrindo o link de uma versão conhecida no navegador. Opcional: o **arquivo de
    SHA-256 do fabricante** (as linhas "SHA-256 nome", como o `SHA256SUMS`): o servidor só guarda
@@ -1687,7 +1704,9 @@ fabricante** do Incluir programa:
      (`AdobeAcrobatReaderDC`, `Zoom`), que lê a versão no próprio fabricante, e, quando ele
      devolve várias linhas, o **filtro** (`Architecture=x64; Channel=Stable`). A versão de
      referência chega na sincronização do catálogo (e logo depois de salvar); com **Baixar
-     sozinho cada versão nova**, o instalador também.
+     sozinho cada versão nova**, o instalador também. Com o **link vazio**, o link de cada
+     versão é o que o Evergreen informa (a fonte "Link do Evergreen", acima): bom para os links
+     fixos, sem a versão no endereço (o do Chrome), e para os que o Evergreen dá com o SHA-256.
    - **Manual** (o Evergreen vazio): digite a versão no **Baixar** da página do programa; o
      servidor monta o link com ela, baixa, confere e guarda, e a versão do instalador mais
      novo guardado é a de referência (excluir uma versão refaz a conta). Sem versão digitada e

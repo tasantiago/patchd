@@ -406,7 +406,7 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		return
 	}
 	if in.Vendor {
-		filter, err := evergreenFilter(f.Filter)
+		filter, err := thirdparty.ParseEvergreenFilter(f.Filter)
 		if err != nil {
 			fail(err.Error())
 			return
@@ -424,11 +424,22 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	// O site do fabricante: o link vai para a fonte do instalador do programa, conferido antes
 	// de gravar qualquer coisa. Sem fonte automática da versão, não há o que baixar sozinho.
+	// Sem o link e com o Evergreen, o link de cada versão é o que o Evergreen informa.
 	var vendorSrc store.InstallerSource
 	if rule.FromVendor() {
 		vendorSrc = store.InstallerSource{AppID: rule.ID, Kind: store.SourceURL, URLTemplate: f.Link, Type: rule.Install.Type,
 			Arguments: rule.Install.Arguments, ChecksumURL: f.Checksum, AutoFetch: f.Auto && !rule.ManualVersion(), UpdatedBy: s.Username}
-		if err := tpfetch.CheckVendor(vendorSrc, rule); err != nil {
+		check := tpfetch.CheckVendor
+		switch {
+		case f.Link == "" && rule.ManualVersion():
+			fail("Informe o link do instalador (com {versao}) ou o aplicativo do Evergreen, que dá a versão e o link.")
+			return
+		case f.Link == "":
+			vendorSrc.Kind, vendorSrc.PackageID, vendorSrc.ChecksumURL = store.SourceEvergreen, in.Evergreen, ""
+			vendorSrc.Filter = thirdparty.FormatEvergreenFilter(in.EvergreenFilter)
+			check = tpfetch.CheckEvergreen
+		}
+		if err := check(vendorSrc, rule); err != nil {
 			fail("O link do fabricante não passou na conferência: " + err.Error())
 			return
 		}
@@ -489,6 +500,8 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		origin = "instalador próprio " + rule.Install.Type
 	case rule.FromChocolatey():
 		origin = "Chocolatey " + rule.Install.Chocolatey + " " + rule.Install.Type
+	case rule.FromVendor() && vendorSrc.Kind == store.SourceEvergreen:
+		origin = fmt.Sprintf("site do fabricante pelo link do Evergreen %s (%s)", rule.Source, rule.Install.Type)
 	case rule.FromVendor():
 		origin = fmt.Sprintf("site do fabricante %s (%s), versão %s", vendorSrc.URLTemplate, rule.Install.Type, rule.Source)
 	}
@@ -617,40 +630,12 @@ func (a *api) vendorFormOf(r *http.Request, rule thirdparty.App, f *customForm) 
 		f.Link, f.Checksum, f.Auto = src.URLTemplate, src.ChecksumURL, src.AutoFetch
 	}
 	if rule.Source != nil && rule.Source.Type == thirdparty.SourceEvergreen {
-		f.Evergreen = rule.Source.ID
-		keys := make([]string, 0, len(rule.Source.Filter))
-		for k := range rule.Source.Filter {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = k + "=" + rule.Source.Filter[k]
-		}
-		f.Filter = strings.Join(parts, "; ")
+		f.Evergreen, f.Filter = rule.Source.ID, thirdparty.FormatEvergreenFilter(rule.Source.Filter)
+	}
+	if src.Kind == store.SourceEvergreen {
+		f.Auto = src.AutoFetch
 	}
 	return nil
-}
-
-// evergreenFilter lê o filtro do Evergreen do formulário: "Campo=valor", separados por ";"
-// ou por linha ("Architecture=x64; Channel=Stable"). A conferência da regra vê o resto.
-func evergreenFilter(raw string) (map[string]string, error) {
-	out := map[string]string{}
-	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == '\n' || r == '\r' }) {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		k, v, ok := strings.Cut(part, "=")
-		if !ok || strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
-			return nil, fmt.Errorf("filtro do Evergreen %q: use Campo=valor (ex.: Architecture=x64; Channel=Stable)", part)
-		}
-		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	return out, nil
 }
 
 // chocoFill: a busca "Do Chocolatey" preenche o formulário com o pacote.
