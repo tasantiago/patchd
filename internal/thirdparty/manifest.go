@@ -57,6 +57,11 @@ const (
 	// SourceChocolatey: a versão do pacote no repositório da comunidade do Chocolatey (sem a
 	// data da correção do pacote); ID é o pacote (firefox, adobereader).
 	SourceChocolatey = "chocolatey"
+	// SourceManual: o programa do site do fabricante sem fonte automática da versão (fora do
+	// Evergreen). A referência é a versão do instalador mais novo baixado pelo painel (o
+	// administrador digita a versão no Baixar): nenhuma consulta externa. ID é o próprio
+	// programa.
+	SourceManual = "manual"
 )
 
 var (
@@ -155,6 +160,11 @@ type Install struct {
 	// SHA-256 que o script do pacote baixaria, internal/choco), sem winget. Exige o tipo; o
 	// exe genérico, os argumentos.
 	Chocolatey string `json:"chocolatey,omitempty"`
+	// Vendor (Windows): o instalador vem do site do fabricante, pelo link com {versao} da fonte
+	// do instalador do programa (store.InstallerSource, Kind url), sem winget nem Chocolatey.
+	// Exige o tipo (o exe genérico, os argumentos) e a fonte da versão evergreen (automática)
+	// ou manual (a do instalador mais novo baixado pelo painel).
+	Vendor bool `json:"vendor,omitempty"`
 	// TryOpen (Windows): com o programa aberto, o agente tenta instalar mesmo assim e só adia
 	// se não der certo (os que se atualizam abertos: o Chrome, o Firefox). Exige processes.
 	// O painel liga e desliga por programa (WithTryOpen).
@@ -198,6 +208,13 @@ func (a App) Uploaded() bool { return a.Install != nil && a.Install.Upload }
 // FromChocolatey: o instalador vem do pacote do Chocolatey (sem winget).
 func (a App) FromChocolatey() bool { return a.Install != nil && a.Install.Chocolatey != "" }
 
+// FromVendor: o instalador vem do site do fabricante (o link da fonte do instalador, sem
+// winget).
+func (a App) FromVendor() bool { return a.Install != nil && a.Install.Vendor }
+
+// ManualVersion: a versão de referência é a do instalador mais novo baixado pelo painel.
+func (a App) ManualVersion() bool { return a.Source != nil && a.Source.Type == SourceManual }
+
 // NoVersion: o programa não informa a versão (se atualiza sozinho): instalado é em dia.
 func (a App) NoVersion() bool { return a.Install != nil && a.Install.NoVersion }
 
@@ -235,7 +252,7 @@ func (s *Source) validate() error {
 		return fmt.Errorf("a fonte exige type e id")
 	}
 	switch s.Type {
-	case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew, SourceUpload:
+	case SourceChrome, SourceFirefox, SourceWinget, SourceHomebrew, SourceUpload, SourceManual:
 	case SourceChocolatey:
 		if !choco.ValidID(s.ID) {
 			return fmt.Errorf("chocolatey: o id %q é o pacote do Chocolatey (firefox, adobereader)", s.ID)
@@ -245,7 +262,7 @@ func (s *Source) validate() error {
 			return fmt.Errorf("evergreen: o id %q é o nome do aplicativo no Evergreen (AdobeAcrobatReaderDC)", s.ID)
 		}
 	default:
-		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew, evergreen, chocolatey ou upload)", s.Type)
+		return fmt.Errorf("fonte %q desconhecida (use chrome, firefox, winget, homebrew, evergreen, chocolatey, upload ou manual)", s.Type)
 	}
 	if len(s.Filter) > 0 && s.Type != SourceEvergreen {
 		return fmt.Errorf("filter só vale para a fonte evergreen")
@@ -369,8 +386,8 @@ func (a *App) compile() error {
 			return fmt.Errorf("installomator só vale para macos")
 		case a.Category != CategoryFeed && a.Category != CategoryMinimum && a.Category != CategoryLifecycle:
 			return fmt.Errorf("install exige categoria feed, minimum ou lifecycle (há versão a alcançar)")
-		case a.Install.Upload && a.Install.Winget != "", a.Install.Chocolatey != "" && (a.Install.Upload || a.Install.Winget != ""):
-			return fmt.Errorf("install com mais de uma origem (winget, chocolatey, upload): o instalador vem de um só lugar")
+		case origins(a.Install) > 1:
+			return fmt.Errorf("install com mais de uma origem (winget, chocolatey, upload, vendor): o instalador vem de um só lugar")
 		case a.Install.Chocolatey != "" && !choco.ValidID(a.Install.Chocolatey):
 			return fmt.Errorf("install.chocolatey %q: o id do pacote do Chocolatey (firefox, adobereader)", a.Install.Chocolatey)
 		case a.Install.Chocolatey != "" && a.Install.Type == "":
@@ -381,7 +398,14 @@ func (a *App) compile() error {
 			return fmt.Errorf("install.upload exige type: %s", strings.Join(UploadTypes, ", "))
 		case a.Install.Upload && (a.Category != CategoryFeed || a.Source == nil || a.Source.Type != SourceUpload || a.Source.ID != a.ID):
 			return fmt.Errorf("install.upload exige a categoria feed com a fonte upload do próprio programa (a referência é o último instalador enviado)")
-		case !a.Install.Upload && a.Install.Chocolatey == "" && !winget.ValidID(a.Install.Winget):
+		case a.Install.Vendor && !winget.Supported(a.Install.Type):
+			return fmt.Errorf("install.vendor exige type (msi, wix, nullsoft, inno, burn ou exe): o tipo do instalador do link")
+		case a.Install.Vendor && a.Install.Type == "exe" && strings.TrimSpace(a.Install.Arguments) == "":
+			return fmt.Errorf("install.vendor com o exe genérico exige arguments (a instalação silenciosa do fabricante)")
+		case a.Install.Vendor && (a.Category != CategoryFeed || a.Source == nil ||
+			(a.Source.Type != SourceEvergreen && (a.Source.Type != SourceManual || a.Source.ID != a.ID))):
+			return fmt.Errorf("install.vendor exige a categoria feed com a fonte evergreen ou a manual do próprio programa")
+		case !a.Install.Upload && a.Install.Chocolatey == "" && !a.Install.Vendor && !winget.ValidID(a.Install.Winget):
 			return fmt.Errorf("install.winget %q fora da forma Fabricante.Programa", a.Install.Winget)
 		case a.Install.Type != "" && !winget.Supported(a.Install.Type):
 			return fmt.Errorf("install.type %q: use msi, wix, nullsoft, inno, burn ou exe", a.Install.Type)
@@ -414,6 +438,12 @@ func (a *App) compile() error {
 	}
 	if a.Check != nil && a.Source != nil && a.Source.Type == SourceUpload {
 		return fmt.Errorf("check não vale com a fonte upload")
+	}
+	if a.ManualVersion() && !a.FromVendor() {
+		return fmt.Errorf("a fonte manual só vale com install.vendor (o instalador do site do fabricante)")
+	}
+	if a.Check != nil && a.ManualVersion() {
+		return fmt.Errorf("check não vale com a fonte manual")
 	}
 	if a.Shortcut != nil {
 		if a.OS != "windows" {
@@ -449,8 +479,8 @@ func (a *App) compile() error {
 		return fmt.Errorf("install.regularize %q: use \"over\" ou deixe vazio", in.Regularize)
 	}
 	if in := a.Install; in != nil && in.Arguments != "" {
-		if (in.Winget == "" && in.Chocolatey == "") || in.Type == "" {
-			return fmt.Errorf("install.arguments vale com install.winget (ou chocolatey) e install.type (os argumentos são de um tipo de instalador)")
+		if (in.Winget == "" && in.Chocolatey == "" && !in.Vendor) || in.Type == "" {
+			return fmt.Errorf("install.arguments vale com install.winget (ou chocolatey, ou vendor) e install.type (os argumentos são de um tipo de instalador)")
 		}
 		if _, err := jobs.SplitArgs(in.Type, in.Arguments); err != nil {
 			return fmt.Errorf("install.arguments: %w", err)
@@ -549,4 +579,15 @@ func (a App) InstalledVersion(name, version string) (string, bool) {
 		return Normalize(m[1])
 	}
 	return Normalize(version)
+}
+
+// origins: de quantos lugares a regra diz que o instalador vem (tem de ser um).
+func origins(in *Install) int {
+	n := 0
+	for _, on := range []bool{in.Winget != "", in.Chocolatey != "", in.Upload, in.Vendor} {
+		if on {
+			n++
+		}
+	}
+	return n
 }

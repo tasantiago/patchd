@@ -258,9 +258,9 @@ func (a *api) deleteThirdPartyAction(w http.ResponseWriter, r *http.Request, s p
 		return
 	}
 	freed := a.removePackageFiles(r, gone)
-	if rule := a.installRule(app); rule != nil && rule.Uploaded() {
+	if rule := a.installRule(app); rule != nil && (rule.Uploaded() || rule.ManualVersion()) {
 		if err := tpupload.SaveReference(r.Context(), a.store, *rule); err != nil {
-			a.logger.Warn("instalador próprio: versão de referência não atualizada", "app", app, "error", err)
+			a.logger.Warn("instalador guardado: versão de referência não atualizada", "app", app, "error", err)
 		}
 	}
 	a.logger.Info("versão de instalador de terceiros excluída", "app", app, "version", ver, "installers", len(gone),

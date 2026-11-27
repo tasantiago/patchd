@@ -51,7 +51,7 @@ func ExpandVendor(template, version string) string {
 // CheckVendor confere a fonte do fabricante antes de gravar.
 func CheckVendor(s store.InstallerSource, rule thirdparty.App) error {
 	if rule.Install == nil || rule.Uploaded() || rule.OS != "windows" {
-		return errors.New("a fonte do fabricante vale para os programas do Windows com instalação pelo winget")
+		return errors.New("a fonte do fabricante vale para os programas do Windows com instalação (não para o instalador próprio)")
 	}
 	check := func(what, raw string, needVersion bool) error {
 		if needVersion && !strings.Contains(raw, VersionPlaceholder) {

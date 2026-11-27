@@ -32,7 +32,10 @@ type tpSourceView struct {
 	// ChocoRule: o programa foi incluído do Chocolatey (sem winget): o padrão é o pacote da
 	// regra, e o winget não é opção.
 	ChocoRule bool
-	CanEdit   bool
+	// VendorRule: o programa foi incluído do site do fabricante: o link é a única fonte.
+	// Manual: sem fonte automática da versão (a do instalador mais novo baixado).
+	VendorRule, Manual bool
+	CanEdit            bool
 }
 
 // vendorTypes: os tipos que a fonte do fabricante aceita.
@@ -62,7 +65,8 @@ func (a *api) fillSource(r *http.Request, v *tpProgramView, rule thirdparty.App)
 	winget := rule.Install.Winget
 	sv := &tpSourceView{Vendor: src.Kind == store.SourceURL, Choco: src.Kind == store.SourceChocolatey, URL: src.URLTemplate, Type: src.Type,
 		Args: src.Arguments, Checksum: src.ChecksumURL, Package: src.PackageID, URLVar: src.URLVar, ChecksumVar: src.ChecksumVar,
-		Auto: src.AutoFetch, Types: vendorTypes, Winget: winget, ChocoRule: rule.FromChocolatey(), CanEdit: v.Admin}
+		Auto: src.AutoFetch, Types: vendorTypes, Winget: winget, ChocoRule: rule.FromChocolatey(), CanEdit: v.Admin,
+		VendorRule: rule.FromVendor(), Manual: rule.ManualVersion()}
 	if saved {
 		sv.UpdatedBy, sv.UpdatedAt = src.UpdatedBy, a.stamp(src.UpdatedAt)
 	}
@@ -86,7 +90,11 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		return
 	}
 	back := tpProgramPath(app)
-	src := store.InstallerSource{AppID: app, Kind: store.SourceWinget, AutoFetch: r.PostFormValue("auto") == "1", UpdatedBy: s.Username}
+	src := store.InstallerSource{AppID: app, Kind: store.SourceWinget, AutoFetch: r.PostFormValue("auto") == "1" && !rule.ManualVersion(), UpdatedBy: s.Username}
+	if rule.FromVendor() && r.PostFormValue("fonte") != store.SourceURL {
+		http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape("este programa foi incluído do site do fabricante: a fonte é o link do fabricante")+"#fonte", http.StatusSeeOther)
+		return
+	}
 	switch r.PostFormValue("fonte") {
 	case store.SourceWinget:
 		if rule.FromChocolatey() {
@@ -115,6 +123,9 @@ func (a *api) sourceAction(w http.ResponseWriter, r *http.Request, s panel.Sessi
 		src.ChecksumURL = strings.TrimSpace(r.PostFormValue("somas"))
 		if !slices.Contains(vendorTypes, src.Type) {
 			src.Type = ""
+		}
+		if rule.FromVendor() { // o tipo e os argumentos são os da regra (em Editar)
+			src.Type, src.Arguments = rule.Install.Type, rule.Install.Arguments
 		}
 		if err := tpfetch.CheckVendor(src, *rule); err != nil {
 			http.Redirect(w, r, back+"&erro=fonte&motivo="+url.QueryEscape(err.Error())+"#fonte", http.StatusSeeOther)

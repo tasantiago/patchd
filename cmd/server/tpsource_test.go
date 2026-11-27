@@ -150,3 +150,63 @@ func TestFonteDoProgramaDoChocolatey(t *testing.T) {
 		t.Errorf("automático: %d\n%s", n, log.String())
 	}
 }
+
+// O programa do site do fabricante com a versão manual: sem versão no Baixar e sem
+// referência, pede a versão; com a versão digitada, baixa e ela vira a de referência; sem o
+// link gravado, explica onde gravar.
+func TestFabricanteComVersaoManual(t *testing.T) {
+	inst := authsigtest.Exe("Exemplo Ltda")
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/sistema/5.2.1/sistema.exe" || r.URL.Path == "/sistema/5.1/sistema.exe" {
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(inst))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	rule, err := thirdparty.BuildCustom(thirdparty.CustomInput{Name: "Sistema Exemplo", Vendor: true, InventoryName: "Sistema Exemplo", InstallType: "exe",
+		Arguments: "/S", Signer: "Exemplo Ltda"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := store.NewMemory()
+	ctx := context.Background()
+	sf := newSourceFetcher(st, t.TempDir(), "teste")
+	sf.f.HTTP = srv.Client()
+	sf.f.HTTP.CheckRedirect = pkgcache.HTTPSOnly
+	sf.f.Wait = time.Millisecond
+	sf.hc = srv.Client()
+	var out strings.Builder
+	if sf.fetch(ctx, rule, "", nil, &out) || !strings.Contains(out.String(), "sem o link do instalador") {
+		t.Fatalf("sem o link: %s", out.String())
+	}
+	st.SaveInstallerSource(ctx, store.InstallerSource{AppID: rule.ID, Kind: store.SourceURL, Type: "exe", Arguments: "/S", UpdatedBy: "ana",
+		URLTemplate: srv.URL + "/sistema/{versao}/sistema.exe"})
+	out.Reset()
+	if sf.fetch(ctx, rule, "", nil, &out) || !strings.Contains(out.String(), "digite a versão no Baixar") {
+		t.Fatalf("sem versão: %s", out.String())
+	}
+	ref := func() string {
+		refs, _ := st.ThirdPartyVersions(ctx)
+		for _, r := range refs {
+			if r.App == rule.ID {
+				return r.Version
+			}
+		}
+		return ""
+	}
+	for _, ver := range []string{"5.2.1", "5.1"} { // a mais nova fica, mesmo baixando uma antiga depois
+		out.Reset()
+		if !sf.fetch(ctx, rule, ver, nil, &out) {
+			t.Fatalf("baixar %s: %s", ver, out.String())
+		}
+	}
+	if got := ref(); got != "5.2.1" {
+		t.Fatalf("referência: %q", got)
+	}
+	// Vazio agora: a de referência.
+	out.Reset()
+	if !sf.fetch(ctx, rule, "", nil, &out) || !strings.Contains(out.String(), "5.2.1") {
+		t.Fatalf("vazio com referência: %s", out.String())
+	}
+}

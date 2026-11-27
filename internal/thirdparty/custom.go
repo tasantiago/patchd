@@ -52,6 +52,13 @@ type CustomInput struct {
 	// Chocolatey: o pacote do Chocolatey de onde vem o instalador (e a versão de referência),
 	// sem winget. O id da regra vem do pacote.
 	Chocolatey string
+	// Vendor: o instalador vem do site do fabricante (o link fica na fonte do instalador), sem
+	// winget. O id vem do nome, ou é ID (a edição mantém o id). Evergreen: o aplicativo no
+	// Evergreen (a versão automática) e o filtro das linhas; vazio, a versão é a do instalador
+	// mais novo baixado pelo painel.
+	Vendor          bool
+	Evergreen       string
+	EvergreenFilter map[string]string
 	// O atalho na área de trabalho de todos os usuários (opcional): o nome, o executável e o
 	// ícone. Sem o executável, não há atalho.
 	ShortcutName, ShortcutTarget, ShortcutIcon string
@@ -98,7 +105,7 @@ func BuildCustom(in CustomInput) (App, error) {
 		field, v string
 		max      int
 		required bool
-	}{{"o nome", in.Name, 80, true}, {"o pacote do winget", in.WingetID, 128, !in.Upload && in.Chocolatey == ""}, {"o nome no inventário", in.InventoryName, 160, true},
+	}{{"o nome", in.Name, 80, true}, {"o pacote do winget", in.WingetID, 128, !in.Upload && !in.Vendor && in.Chocolatey == ""}, {"o nome no inventário", in.InventoryName, 160, true},
 		{"o fabricante", in.Publisher, 160, false}, {"o assinante", in.Signer, 128, false}, {"o motivo sem assinatura", in.UnsignedReason, 300, false}} {
 		if err := oneLine(c.field, c.v, c.max, c.required); err != nil {
 			return App{}, err
@@ -106,9 +113,9 @@ func BuildCustom(in CustomInput) (App, error) {
 	}
 	id := ""
 	switch {
-	case in.Upload:
-		if in.WingetID != "" {
-			return App{}, errors.New("o instalador próprio não tem pacote do winget")
+	case in.Upload || in.Vendor:
+		if in.WingetID != "" || in.Chocolatey != "" {
+			return App{}, errors.New("o instalador próprio e o do site do fabricante não têm pacote do winget nem do Chocolatey")
 		}
 		id = CustomID(in.Name)
 		if in.ID != "" {
@@ -155,6 +162,16 @@ func BuildCustom(in CustomInput) (App, error) {
 	if in.Chocolatey != "" {
 		a.Source = &Source{Type: SourceChocolatey, ID: in.Chocolatey}
 		a.Install.Chocolatey = in.Chocolatey
+	}
+	if in.Vendor {
+		if in.InstallType == "" {
+			return App{}, errors.New("escolha o tipo do instalador do link (msi, nullsoft, inno, exe...)")
+		}
+		a.Install.Vendor = true
+		a.Source = &Source{Type: SourceManual, ID: id}
+		if in.Evergreen != "" {
+			a.Source = &Source{Type: SourceEvergreen, ID: in.Evergreen, Filter: in.EvergreenFilter}
+		}
 	}
 	if !in.Upload && strings.TrimSpace(in.Arguments) != "" {
 		if in.InstallType == "" {

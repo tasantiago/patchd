@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -406,5 +407,133 @@ func TestIncluirProgramaPorUsuario(t *testing.T) {
 	form.Set("editar", "exemplo-ferramenta")
 	if r := pagina(h, "POST", "/painel/patch/terceiros/incluir", sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity {
 		t.Errorf("com remover antes: %d", r.Code)
+	}
+}
+
+// Incluir do site do fabricante: a 4ª aba grava a regra sem winget e o link na fonte do
+// instalador; a versão vem do Evergreen ou é manual (sem "baixar sozinho"); a página do
+// programa só oferece o link do fabricante; a edição mantém a aba e o link.
+func TestIncluirDoSiteDoFabricante(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	var synced []string
+	var mu sync.Mutex
+	sync_ := func(_ context.Context, a thirdparty.App) {
+		mu.Lock()
+		defer mu.Unlock()
+		synced = append(synced, a.ID+" "+a.Source.String())
+	}
+	baixar := func(context.Context, thirdparty.App, string, []string, io.Writer) bool { return true }
+	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, nil, sync_), api.WithCompliance(&complianceFalso{}),
+		api.WithPackageFetch(baixar))
+	const pagina_ = "/painel/patch/terceiros/incluir"
+	b := pagina(h, "GET", pagina_+"?fabricante=1", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{`Do site do fabricante</a>`, `name="origem" value="fabricante"`, `name="link"`, `name="evergreen"`, `name="somas"`} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("a aba do fabricante: falta %q", quer)
+		}
+	}
+	if strings.Contains(b, `name="winget"`) {
+		t.Error("a aba do fabricante pede o pacote do winget")
+	}
+	link := "https://fabricante.exemplo/downloads/{versao}/sistema-{versao}-x64.msi"
+	form := url.Values{"origem": {"fabricante"}, "nome": {"Sistema Exemplo"}, "inventario": {"Sistema Exemplo"}, "modo": {"comeca"}, "tipo": {"msi"},
+		"assinatura": {"sim"}, "assinante": {"Exemplo Ltda"}, "link": {link}, "auto": {"1"}, "winget": {"Ignorado.Aqui"}}
+	// Link sem {versao}, ou http: recusado antes de gravar.
+	ruim := url.Values{}
+	for k, v := range form {
+		ruim[k] = v
+	}
+	ruim.Set("link", "http://fabricante.exemplo/sistema.msi")
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, ruim); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "link do fabricante") {
+		t.Errorf("link ruim: %d", r.Code)
+	}
+	ruim.Set("link", link)
+	ruim.Set("evergreen_filtro", "Architecture")
+	ruim.Set("evergreen", "ExemploApp")
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, ruim); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "Campo=valor") {
+		t.Errorf("filtro ruim: %d", r.Code)
+	}
+	// Manual: salva; o "baixar sozinho" não fica (sem versão automática); não busca versão.
+	r := pagina(h, "POST", pagina_, sessaoAdmin, form)
+	if r.Code != http.StatusSeeOther || !strings.Contains(local(r), "salvo=sistema-exemplo") || !strings.Contains(local(r), "fabricante=1") {
+		t.Fatalf("salvar: %d %s %s", r.Code, local(r), r.Body)
+	}
+	var rule thirdparty.App
+	for _, a := range live.For("windows") {
+		if a.ID == "sistema-exemplo" {
+			rule = a
+		}
+	}
+	if !rule.FromVendor() || !rule.ManualVersion() || rule.Install.Winget != "" {
+		t.Fatalf("regra: %+v %+v", rule, rule.Install)
+	}
+	srcs, _ := st.InstallerSources(context.Background())
+	if len(srcs) != 1 || srcs[0].Kind != store.SourceURL || srcs[0].URLTemplate != link || srcs[0].Type != "msi" || srcs[0].AutoFetch {
+		t.Fatalf("fonte: %+v", srcs)
+	}
+	if b := pagina(h, "GET", pagina_+"?salvo=sistema-exemplo&fabricante=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "site do fabricante</td>") ||
+		!strings.Contains(b, "digite a versão no Baixar") {
+		t.Error("lista e aviso depois de salvar")
+	}
+	b = pagina(h, "GET", "/painel/patch/programa?app=sistema-exemplo", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"site do fabricante · tipo msi", `name="fonte" value="url" checked`, "a primeira vira a de referência", "Sem fonte automática da versão"} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("página do programa: falta %q", quer)
+		}
+	}
+	if strings.Contains(b, `name="fonte" value="winget"`) || strings.Contains(b, `name="fonte" value="chocolatey"`) {
+		t.Error("a página do programa oferece winget ou Chocolatey ao programa do fabricante")
+	}
+	// A fonte do programa do fabricante não vira winget.
+	if r := pagina(h, "POST", "/painel/patch/terceiros/fonte", sessaoAdmin, url.Values{"app": {"sistema-exemplo"}, "fonte": {"winget"}}); !strings.Contains(local(r), "erro=fonte") {
+		t.Errorf("fonte winget aceita: %s", local(r))
+	}
+	// Edição: a aba e o link voltam; com o Evergreen, a versão é automática e baixa sozinho.
+	b = pagina(h, "GET", pagina_+"?editar=sistema-exemplo", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `name="origem" value="fabricante"`) || !strings.Contains(b, `name="link" value="`+link+`"`) {
+		t.Error("edição sem a aba ou o link")
+	}
+	form.Set("editar", "sistema-exemplo")
+	form.Set("nome", "Sistema Exemplo (novo nome)")
+	form.Set("evergreen", "ExemploApp")
+	form.Set("evergreen_filtro", "Architecture=x64; Channel=Stable")
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusSeeOther || !strings.Contains(local(r), "salvo=sistema-exemplo") {
+		t.Fatalf("editar: %d %s %s", r.Code, local(r), r.Body)
+	}
+	for _, a := range live.For("windows") {
+		if a.ID == "sistema-exemplo" {
+			rule = a
+		}
+	}
+	if rule.ManualVersion() || rule.Source.Type != thirdparty.SourceEvergreen || rule.Source.Filter["Channel"] != "Stable" || rule.Name != "Sistema Exemplo (novo nome)" {
+		t.Fatalf("regra editada: %+v", rule.Source)
+	}
+	if srcs, _ := st.InstallerSources(context.Background()); len(srcs) != 1 || !srcs[0].AutoFetch {
+		t.Fatalf("fonte editada: %+v", srcs)
+	}
+	if b := pagina(h, "GET", pagina_+"?editar=sistema-exemplo", sessaoAdmin, nil).Body.String(); !strings.Contains(b, `value="Architecture=x64; Channel=Stable"`) {
+		t.Error("o filtro do Evergreen na edição")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(synced)
+		mu.Unlock()
+		if n >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(synced) < 2 || !strings.Contains(synced[len(synced)-1], "evergreen:ExemploApp") {
+		t.Errorf("busca da versão: %v", synced)
+	}
+	// Trocar de origem na edição: recusado.
+	form.Set("origem", "")
+	form.Set("winget", "Exemplo.Sistema")
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusUnprocessableEntity {
+		t.Errorf("trocar de origem: %d", r.Code)
 	}
 }

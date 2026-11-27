@@ -27,6 +27,7 @@ type tpInstallInfo struct {
 	PerUser                                   bool   // instala no perfil do usuário, só pela Central
 	NoVersion                                 bool   // o programa não informa a versão
 	Upload                                    bool   // instalador próprio (tpupload.go)
+	Vendor                                    bool   // do site do fabricante (sem winget)
 	UninstallFirst                            bool   // a atualização remove antes a versão instalada
 	Shortcut                                  string // o atalho da regra, para mostrar
 }
@@ -71,7 +72,8 @@ func (a *api) fillInstallers(r *http.Request, v *tpProgramView) error {
 	}
 	v.Install = &tpInstallInfo{Winget: rule.Install.Winget, Type: rule.Install.Type, Signer: rule.Install.Signer, Unsigned: rule.Install.UnsignedReason,
 		Processes: strings.Join(rule.Install.Processes, ", "), Upload: rule.Uploaded(), UninstallFirst: rule.Install.UninstallFirst,
-		Choco: rule.Install.Chocolatey, TryOpen: rule.Install.TryOpen, PerUser: rule.Install.PerUser, NoVersion: rule.Install.NoVersion}
+		Choco: rule.Install.Chocolatey, TryOpen: rule.Install.TryOpen, PerUser: rule.Install.PerUser, NoVersion: rule.Install.NoVersion,
+		Vendor: rule.FromVendor()}
 	if sc := rule.Shortcut; sc != nil {
 		v.Install.Shortcut = fmt.Sprintf("%s → %s", sc.Name, sc.Target)
 		if sc.Icon != "" {

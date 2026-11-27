@@ -16,6 +16,7 @@ import (
 	"github.com/tasantiago/patchd/internal/panel"
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
+	"github.com/tasantiago/patchd/internal/tpfetch"
 	"github.com/tasantiago/patchd/internal/winget"
 )
 
@@ -72,6 +73,7 @@ type customView struct {
 	Form    customForm
 	Upload  bool   // o formulário do instalador próprio (?proprio=1)
 	Choco   bool   // o formulário do Chocolatey (?chocolatey=1, ou a busca ?pacote=)
+	Vendor  bool   // o formulário do site do fabricante (?fabricante=1)
 	Editing string // o id do programa em edição ("" = novo)
 	Found   *winget.Description
 	Help    []winget.Help // os parâmetros do instalador no winget (na busca e em Editar com ?ajuda=1)
@@ -91,6 +93,7 @@ type customRow struct {
 	ID, Name, Winget, Match, Updated, Href string
 	Choco                                  string // o pacote do Chocolatey
 	Upload                                 bool
+	Vendor                                 bool // do site do fabricante
 }
 
 // customForm: os campos, como digitados.
@@ -104,6 +107,10 @@ type customForm struct {
 	Arguments                                                                   string // os argumentos no lugar dos do winget
 	// O atalho na área de trabalho de todos os usuários.
 	ShortName, ShortTarget, ShortIcon string
+	// O site do fabricante: o link com {versao}, o arquivo de SHA-256 (opcional), o aplicativo
+	// e o filtro no Evergreen (vazio: a versão manual) e o "baixar sozinho".
+	Link, Checksum, Evergreen, Filter string
+	Auto                              bool
 }
 
 // unquote desfaz o regexp.QuoteMeta (o painel monta a expressão; editar mostra o texto).
@@ -149,7 +156,10 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 		Processes: strings.TrimSpace(r.PostFormValue("processos")), NoSignature: r.PostFormValue("assinatura") == "nao",
 		UninstallFirst: r.PostFormValue("remover_antes") == "1", PerUser: r.PostFormValue("por_usuario") == "1", NoVersion: r.PostFormValue("sem_versao") == "1", Arguments: strings.TrimSpace(r.PostFormValue("argumentos")),
 		ShortName: strings.TrimSpace(r.PostFormValue("atalho_nome")), ShortTarget: strings.TrimSpace(r.PostFormValue("atalho_executavel")),
-		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone")), Chocolatey: strings.TrimSpace(r.PostFormValue("chocolatey"))}
+		ShortIcon: strings.TrimSpace(r.PostFormValue("atalho_icone")), Chocolatey: strings.TrimSpace(r.PostFormValue("chocolatey")),
+		Link: strings.TrimSpace(r.PostFormValue("link")), Checksum: strings.TrimSpace(r.PostFormValue("somas")),
+		Evergreen: strings.TrimSpace(r.PostFormValue("evergreen")), Filter: strings.TrimSpace(r.PostFormValue("evergreen_filtro")),
+		Auto: r.PostFormValue("auto") == "1"}
 	in := thirdparty.CustomInput{Name: f.Name, WingetID: f.Winget, InventoryName: f.Inventory, NameMode: f.Mode, Publisher: f.Publisher,
 		InstallType: f.Type, Upload: r.PostFormValue("origem") == "proprio", UninstallFirst: f.UninstallFirst, PerUser: f.PerUser, NoVersion: f.NoVersion, Arguments: f.Arguments,
 		ShortcutName: f.ShortName, ShortcutTarget: f.ShortTarget, ShortcutIcon: f.ShortIcon}
@@ -158,8 +168,13 @@ func customInput(r *http.Request) (customForm, thirdparty.CustomInput) {
 		in.WingetID, f.Winget, f.Chocolatey = "", "", ""
 	case "chocolatey":
 		in.Chocolatey, in.WingetID, f.Winget = f.Chocolatey, "", ""
+	case "fabricante":
+		in.Vendor, in.Evergreen, in.WingetID, f.Winget, f.Chocolatey = true, f.Evergreen, "", "", ""
 	default:
 		f.Chocolatey = ""
+	}
+	if !in.Vendor {
+		f.Link, f.Checksum, f.Evergreen, f.Filter, f.Auto = "", "", "", "", false
 	}
 	if f.NoSignature {
 		in.UnsignedReason = f.Unsigned
@@ -236,24 +251,31 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 	}
 	q := r.URL.Query()
 	v.Upload = q.Get("proprio") == "1"
-	v.Choco = !v.Upload && (q.Get("chocolatey") == "1" || q.Has("pacote"))
+	v.Vendor = !v.Upload && q.Get("fabricante") == "1"
+	v.Choco = !v.Upload && !v.Vendor && (q.Get("chocolatey") == "1" || q.Has("pacote"))
 	switch {
 	case v.Upload:
 		v.Types = thirdparty.UploadTypes
 		v.Form.Type = thirdparty.UploadTypes[0]
-	case v.Choco:
+	case v.Choco, v.Vendor:
 		v.Types = vendorTypes
 		v.Form.Type = vendorTypes[0]
 	}
 	switch {
 	case q.Get("editar") != "":
 		if rule, ok := rules[q.Get("editar")]; ok {
-			v.Editing, v.Form, v.Upload, v.Choco = q.Get("editar"), formOf(rule), rule.Uploaded(), rule.FromChocolatey()
+			v.Editing, v.Form, v.Upload, v.Choco, v.Vendor = q.Get("editar"), formOf(rule), rule.Uploaded(), rule.FromChocolatey(), rule.FromVendor()
 			switch {
 			case v.Upload:
 				v.Types = thirdparty.UploadTypes
-			case v.Choco:
+			case v.Choco, v.Vendor:
 				v.Types = vendorTypes
+			}
+			if v.Vendor {
+				if err := a.vendorFormOf(r, rule, &v.Form); err != nil {
+					a.internalError(w, r, "ler a fonte do instalador", err)
+					return
+				}
 			}
 			// ?ajuda=1: os parâmetros do instalador no winget, para escolher os argumentos.
 			if q.Get("ajuda") == "1" && !v.Upload && v.CanFind && rule.Install != nil && rule.Install.Winget != "" {
@@ -322,6 +344,9 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 	switch {
 	case q.Has("salvo") && q.Get("chocolatey") == "1":
 		v.Flash = "Programa salvo. Ele já vale no painel: abra-o (botão abaixo), baixe o instalador pelo Chocolatey em Instaladores guardados (ou ligue \"baixar sozinho\" na Fonte do instalador), aprove a versão e ofereça no autoatendimento (Configuração › Autoatendimento)."
+	case q.Has("salvo") && q.Get("fabricante") == "1":
+		v.Flash = "Programa salvo. Abra-o (botão abaixo) e baixe o instalador em Instaladores guardados: " +
+			"com o Evergreen, a versão de referência chega sozinha (e, com \"baixar sozinho\", o instalador também); sem ele, digite a versão no Baixar. Depois aprove e ofereça no autoatendimento."
 	case q.Has("salvo") && q.Get("proprio") == "1":
 		v.Flash = "Programa salvo. Abra-o (botão abaixo) e envie o instalador (.msi ou .exe) com a versão; depois ofereça no autoatendimento (Configuração › Autoatendimento)."
 	case q.Has("salvo"):
@@ -355,17 +380,17 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 	}
 	f, in := customInput(r)
 	editing := strings.TrimSpace(r.PostFormValue("editar"))
-	if in.Upload && editing != "" {
-		in.ID = editing // o id do instalador próprio vem do nome de quando foi incluído
+	if (in.Upload || in.Vendor) && editing != "" {
+		in.ID = editing // o id do instalador próprio e do fabricante vem do nome de quando foi incluído
 	}
 	fail := func(msg string) {
 		v := customView{pageBase: a.baseFor(r.Context(), s, "Incluir programa", "patch"), Form: f, Editing: editing, Upload: in.Upload,
-			Choco: in.Chocolatey != "" || r.PostFormValue("origem") == "chocolatey", Types: append([]string{""}, wingetTypes...), CanUse: true,
+			Choco: in.Chocolatey != "" || r.PostFormValue("origem") == "chocolatey", Vendor: in.Vendor, Types: append([]string{""}, wingetTypes...), CanUse: true,
 			CanFind: a.custom.describe != nil, CanFindChoco: a.chocoSearch != nil}
 		switch {
 		case in.Upload:
 			v.Types = thirdparty.UploadTypes
-		case v.Choco:
+		case v.Choco, v.Vendor:
 			v.Types = vendorTypes
 		}
 		v.Error = msg
@@ -380,17 +405,40 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		fail("Diga a organização que assina o instalador (O= do certificado, ex.: VideoLAN) ou, sem assinatura, por quê.")
 		return
 	}
+	if in.Vendor {
+		filter, err := evergreenFilter(f.Filter)
+		if err != nil {
+			fail(err.Error())
+			return
+		}
+		if in.Evergreen == "" && len(filter) > 0 {
+			fail("O filtro do Evergreen precisa do nome do aplicativo no Evergreen.")
+			return
+		}
+		in.EvergreenFilter = filter
+	}
 	rule, err := thirdparty.BuildCustom(in)
 	if err != nil {
 		fail("A regra não passou na conferência: " + err.Error())
 		return
+	}
+	// O site do fabricante: o link vai para a fonte do instalador do programa, conferido antes
+	// de gravar qualquer coisa. Sem fonte automática da versão, não há o que baixar sozinho.
+	var vendorSrc store.InstallerSource
+	if rule.FromVendor() {
+		vendorSrc = store.InstallerSource{AppID: rule.ID, Kind: store.SourceURL, URLTemplate: f.Link, Type: rule.Install.Type,
+			Arguments: rule.Install.Arguments, ChecksumURL: f.Checksum, AutoFetch: f.Auto && !rule.ManualVersion(), UpdatedBy: s.Username}
+		if err := tpfetch.CheckVendor(vendorSrc, rule); err != nil {
+			fail("O link do fabricante não passou na conferência: " + err.Error())
+			return
+		}
 	}
 	switch {
 	case editing != "" && editing != rule.ID:
 		fail("Para trocar o pacote (do winget ou do Chocolatey), exclua este programa e inclua o novo: o pacote define o programa.")
 		return
 	case editing != "" && a.customOrigin(r.Context(), editing) != customOriginOf(rule):
-		fail("Um programa não muda de origem (winget, Chocolatey, instalador próprio): exclua e inclua de novo.")
+		fail("Um programa não muda de origem (winget, Chocolatey, site do fabricante, instalador próprio): exclua e inclua de novo.")
 		return
 	case editing == "" && a.custom.base.Has(rule.Key()) && rule.FromChocolatey():
 		fail(fmt.Sprintf("O programa %s já está no manifesto do patchd: para baixar o instalador pelo Chocolatey, abra a página dele e escolha o pacote em Fonte do instalador.", rule.ID))
@@ -417,6 +465,12 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		a.internalError(w, r, "guardar o programa", err)
 		return
 	}
+	if rule.FromVendor() {
+		if err := a.store.SaveInstallerSource(r.Context(), vendorSrc); err != nil {
+			a.internalError(w, r, "guardar o link do fabricante", err)
+			return
+		}
+	}
 	if err := a.reloadRules(r.Context()); err != nil {
 		a.internalError(w, r, "recarregar as regras", err)
 		return
@@ -435,6 +489,8 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		origin = "instalador próprio " + rule.Install.Type
 	case rule.FromChocolatey():
 		origin = "Chocolatey " + rule.Install.Chocolatey + " " + rule.Install.Type
+	case rule.FromVendor():
+		origin = fmt.Sprintf("site do fabricante %s (%s), versão %s", vendorSrc.URLTemplate, rule.Install.Type, rule.Source)
 	}
 	detail := fmt.Sprintf("%s · %s · nome %q (%s) · %s", rule.Name, origin, f.Inventory, f.Mode, sig)
 	if sc := rule.Shortcut; sc != nil {
@@ -452,6 +508,8 @@ func (a *api) customSaveAction(w http.ResponseWriter, r *http.Request, s panel.S
 		q.Set("proprio", "1")
 	case rule.FromChocolatey():
 		q.Set("chocolatey", "1")
+	case rule.FromVendor():
+		q.Set("fabricante", "1")
 	}
 	http.Redirect(w, r, "/painel/patch/terceiros/incluir?"+q.Encode(), http.StatusSeeOther)
 }
@@ -519,7 +577,7 @@ func (a *api) customInUse(ctx context.Context, id string) (bool, error) {
 // customRowOf: a linha da lista dos incluídos.
 func (a *api) customRowOf(c store.CustomApp, rule thirdparty.App) customRow {
 	row := customRow{ID: c.ID, Name: rule.Name, Match: formOf(rule).Inventory, Href: tpProgramPath(c.ID),
-		Updated: a.stamp(c.UpdatedAt) + " · " + c.UpdatedBy, Upload: rule.Uploaded()}
+		Updated: a.stamp(c.UpdatedAt) + " · " + c.UpdatedBy, Upload: rule.Uploaded(), Vendor: rule.FromVendor()}
 	if rule.Install != nil {
 		row.Winget, row.Choco = rule.Install.Winget, rule.Install.Chocolatey
 	}
@@ -542,8 +600,57 @@ func customOriginOf(r thirdparty.App) string {
 		return "proprio"
 	case r.FromChocolatey():
 		return "chocolatey"
+	case r.FromVendor():
+		return "fabricante"
 	}
 	return "winget"
+}
+
+// vendorFormOf: na edição do programa do fabricante, o link e o resto da fonte do instalador
+// e o Evergreen da regra.
+func (a *api) vendorFormOf(r *http.Request, rule thirdparty.App, f *customForm) error {
+	src, _, err := a.installerSource(r, rule.ID)
+	if err != nil {
+		return err
+	}
+	if src.Kind == store.SourceURL {
+		f.Link, f.Checksum, f.Auto = src.URLTemplate, src.ChecksumURL, src.AutoFetch
+	}
+	if rule.Source != nil && rule.Source.Type == thirdparty.SourceEvergreen {
+		f.Evergreen = rule.Source.ID
+		keys := make([]string, 0, len(rule.Source.Filter))
+		for k := range rule.Source.Filter {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = k + "=" + rule.Source.Filter[k]
+		}
+		f.Filter = strings.Join(parts, "; ")
+	}
+	return nil
+}
+
+// evergreenFilter lê o filtro do Evergreen do formulário: "Campo=valor", separados por ";"
+// ou por linha ("Architecture=x64; Channel=Stable"). A conferência da regra vê o resto.
+func evergreenFilter(raw string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == '\n' || r == '\r' }) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(part, "=")
+		if !ok || strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+			return nil, fmt.Errorf("filtro do Evergreen %q: use Campo=valor (ex.: Architecture=x64; Channel=Stable)", part)
+		}
+		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // chocoFill: a busca "Do Chocolatey" preenche o formulário com o pacote.

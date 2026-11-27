@@ -143,8 +143,8 @@ const signerTimeout = 20 * time.Second
 func customAppSync(st thirdpartyStore, look config.Lookup, logger *slog.Logger) func(context.Context, thirdparty.App) {
 	src := newCatalogSources(look).Third
 	return func(ctx context.Context, app thirdparty.App) {
-		if app.Source == nil || app.Source.Type == thirdparty.SourceUpload {
-			return // o instalador próprio: a referência vem do envio
+		if app.Source == nil || app.Source.Type == thirdparty.SourceUpload || app.Source.Type == thirdparty.SourceManual {
+			return // o instalador próprio e o manual do fabricante: a referência vem do instalador guardado
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()

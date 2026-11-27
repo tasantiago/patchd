@@ -40,6 +40,9 @@ func Resolve(ctx context.Context, c *winget.Client, a thirdparty.App, ver string
 	if a.FromChocolatey() {
 		return winget.Manifest{}, fmt.Errorf("%s vem do Chocolatey (%s), não do winget: baixe pela página do programa no painel", a.ID, a.Install.Chocolatey)
 	}
+	if a.FromVendor() {
+		return winget.Manifest{}, fmt.Errorf("%s vem do site do fabricante, não do winget: baixe pela página do programa no painel", a.ID)
+	}
 	if ver == "" {
 		versions, err := c.Versions(ctx, a.Install.Winget)
 		if err != nil {

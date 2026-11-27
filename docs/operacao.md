@@ -1667,8 +1667,42 @@ repositório da comunidade do Chocolatey entra pela aba **Do Chocolatey** do Inc
    link, o tipo, ou o site do fabricante, e ligar **Baixar sozinho cada versão nova**.
 
 A `package fetch` da linha de comando não baixa os programas do Chocolatey (são do painel).
-Editar não troca o pacote nem a origem (winget, Chocolatey, instalador próprio): exclua e
+Editar não troca o pacote nem a origem (winget, Chocolatey, site do fabricante, instalador próprio): exclua e
 inclua de novo. Na auditoria, `terceiros.incluir` diz "Chocolatey <pacote> <tipo>".
+
+### Incluir do site do fabricante
+
+Um programa que não está no winget nem no Chocolatey (ou que lá demora a ter a versão nova), e
+que o fabricante publica num link com a versão no endereço, entra pela aba **Do site do
+fabricante** do Incluir programa:
+
+1. **O link do instalador**, https, com `{versao}` onde a versão aparece
+   (`https://fabricante.exemplo/downloads/{versao}/sistema-{versao}-x64.msi`; espaço vira
+   `%20`). Confira abrindo o link de uma versão conhecida no navegador. Opcional: o **arquivo de
+   SHA-256 do fabricante** (as linhas "SHA-256 nome", como o `SHA256SUMS`): o servidor só guarda
+   o instalador se ele conferir. Sem esse arquivo, a assinatura (O=) é obrigatória: é ela que
+   garante o arquivo, conferida no servidor e no agente.
+2. **A versão nova** vem de um destes dois jeitos:
+   - **Evergreen** (automática): o nome do aplicativo na lista do Evergreen
+     (`AdobeAcrobatReaderDC`, `Zoom`), que lê a versão no próprio fabricante, e, quando ele
+     devolve várias linhas, o **filtro** (`Architecture=x64; Channel=Stable`). A versão de
+     referência chega na sincronização do catálogo (e logo depois de salvar); com **Baixar
+     sozinho cada versão nova**, o instalador também.
+   - **Manual** (o Evergreen vazio): digite a versão no **Baixar** da página do programa; o
+     servidor monta o link com ela, baixa, confere e guarda, e a versão do instalador mais
+     novo guardado é a de referência (excluir uma versão refaz a conta). Sem versão digitada e
+     sem referência, o Baixar pede a versão. Não há "baixar sozinho" (nada avisa da versão nova).
+3. **Confira e salve**, como nas outras abas: o nome no inventário, o tipo (obrigatório: o mesmo
+   das instalações nas máquinas; o link `.msi` só com msi, o `.exe` só com exe, nullsoft,
+   inno ou burn), os argumentos (o exe genérico exige os do fabricante) e a assinatura. O link
+   é conferido antes de gravar qualquer coisa.
+4. **O id** vem do nome (como no instalador próprio) e fica o mesmo na edição.
+
+Na página do programa, a **Fonte do instalador** mostra só o site do fabricante (sem winget nem
+Chocolatey, que o programa não tem): o link e o arquivo de SHA-256 mudam ali; o tipo e os
+argumentos, em Editar. A `package fetch` da linha de comando não baixa esses programas (são do
+painel). Editar não troca a origem; na auditoria, `terceiros.incluir` diz "site do fabricante
+<link> (<tipo>), versão evergreen:<app> (ou manual:<id>)".
 
 ## Programas que não informam a versão (se atualizam sozinhos)
 

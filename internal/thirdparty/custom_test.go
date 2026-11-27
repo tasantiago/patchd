@@ -194,3 +194,55 @@ func TestProgramaDoChocolatey(t *testing.T) {
 		t.Errorf("duas origens: %v", err)
 	}
 }
+
+// Programa do site do fabricante: o id vem do nome, a versão do Evergreen (automática) ou
+// manual (a do instalador mais novo baixado); sem winget nem Chocolatey.
+func TestProgramaDoSiteDoFabricante(t *testing.T) {
+	in := CustomInput{Name: "Sistema Exemplo 5", Vendor: true, InventoryName: "Sistema Exemplo", NameMode: NamePrefix, InstallType: "msi", Signer: "Exemplo Ltda"}
+	a, err := BuildCustom(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != "sistema-exemplo-5" || !a.FromVendor() || !a.ManualVersion() || a.Source.ID != a.ID || a.Install.Winget != "" || a.FromChocolatey() || a.Uploaded() {
+		t.Errorf("regra manual: %+v %+v", a, a.Install)
+	}
+	data, _ := json.Marshal(a)
+	if m, errs := WithCustom(Manifest{Version: 1}, []json.RawMessage{data}); len(errs) != 0 || !m.Has("sistema-exemplo-5/windows") {
+		t.Errorf("do banco: %v", errs)
+	}
+	in.Evergreen, in.EvergreenFilter = "ExemploApp", map[string]string{"Architecture": "x64"}
+	if a, err := BuildCustom(in); err != nil || a.Source.Type != SourceEvergreen || a.Source.ID != "ExemploApp" || a.Source.Filter["Architecture"] != "x64" || a.ManualVersion() {
+		t.Errorf("regra do Evergreen: %+v %v", a.Source, err)
+	}
+	in.ID = "id-de-antes" // a edição mantém o id
+	if a, err := BuildCustom(in); err != nil || a.ID != "id-de-antes" {
+		t.Errorf("id na edição: %+v %v", a, err)
+	}
+	in.ID, in.Evergreen, in.EvergreenFilter = "", "", nil
+	for _, tc := range []struct {
+		mod    func(*CustomInput)
+		trecho string
+	}{
+		{func(c *CustomInput) { c.InstallType = "" }, "escolha o tipo"},
+		{func(c *CustomInput) { c.InstallType = "exe" }, "exige arguments"},
+		{func(c *CustomInput) { c.WingetID = "Exemplo.App" }, "não têm pacote do winget"},
+		{func(c *CustomInput) { c.Evergreen = "nome com espaço" }, "evergreen"},
+	} {
+		c := in
+		tc.mod(&c)
+		if _, err := BuildCustom(c); err == nil || !strings.Contains(err.Error(), tc.trecho) {
+			t.Errorf("%+v: %v (queria %q)", c, err, tc.trecho)
+		}
+	}
+	// Na mão, no manifesto: a fonte manual sem vendor, e vendor com winget, não valem.
+	for bad, trecho := range map[string]string{
+		`{"version":1,"apps":[{"id":"x","os":"windows","name":"X","category":"feed","match":"^X$","source":{"type":"manual","id":"x"},"install":{"winget":"A.B","signer":"X"}}]}`:                            "fonte manual só vale",
+		`{"version":1,"apps":[{"id":"x","os":"windows","name":"X","category":"feed","match":"^X$","source":{"type":"manual","id":"x"},"install":{"vendor":true,"winget":"A.B","type":"msi","signer":"X"}}]}`: "mais de uma origem",
+		`{"version":1,"apps":[{"id":"x","os":"windows","name":"X","category":"feed","match":"^X$","source":{"type":"winget","id":"A.B"},"install":{"vendor":true,"type":"msi","signer":"X"}}]}`:              "evergreen ou a manual",
+		`{"version":1,"apps":[{"id":"x","os":"windows","name":"X","category":"feed","match":"^X$","source":{"type":"manual","id":"outro"},"install":{"vendor":true,"type":"msi","signer":"X"}}]}`:            "evergreen ou a manual",
+	} {
+		if _, err := Parse([]byte(bad)); err == nil || !strings.Contains(err.Error(), trecho) {
+			t.Errorf("%s: %v (queria %q)", bad, err, trecho)
+		}
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/tasantiago/patchd/internal/store"
 	"github.com/tasantiago/patchd/internal/thirdparty"
 	"github.com/tasantiago/patchd/internal/tpfetch"
+	"github.com/tasantiago/patchd/internal/tpupload"
 	"github.com/tasantiago/patchd/internal/winget"
 )
 
@@ -31,6 +32,7 @@ type sourceStore interface {
 	InstallerSources(ctx context.Context) ([]store.InstallerSource, error)
 	ThirdPartyVersions(ctx context.Context) ([]thirdparty.Ref, error)
 	ThirdPartyPackages(ctx context.Context) ([]store.ThirdPartyPackage, error)
+	SaveThirdPartyVersion(ctx context.Context, app, osID, version, source string) error
 	RecordAudit(ctx context.Context, e store.AuditEvent) error
 }
 
@@ -89,6 +91,10 @@ func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver stri
 		fmt.Fprintf(out, "%s (%s)\n  ERRO        ler a fonte do instalador: %v\n", rule.Name, rule.ID, err)
 		return false
 	}
+	if rule.FromVendor() && src.Kind != store.SourceURL {
+		fmt.Fprintf(out, "%s (%s)\n  ERRO        o programa vem do site do fabricante e está sem o link do instalador: grave-o em Fonte do instalador, na página do programa\n", rule.Name, rule.ID)
+		return false
+	}
 	switch src.Kind {
 	case store.SourceChocolatey:
 		ref, err := s.reference(ctx, rule.ID)
@@ -106,8 +112,19 @@ func (s *sourceFetcher) fetch(ctx context.Context, rule thirdparty.App, ver stri
 			fmt.Fprintf(out, "%s (%s)\n  ERRO        ler a versão de referência: %v\n", rule.Name, rule.ID, err)
 			return false
 		}
+		if ver == "" && rule.ManualVersion() {
+			fmt.Fprintf(out, "%s (%s)\n  ERRO        digite a versão no Baixar: este programa não tem fonte automática da versão, e a do instalador baixado vira a de referência\n", rule.Name, rule.ID)
+			return false
+		}
 	}
-	return tpfetch.Vendor(ctx, s.hc, s.f, s.st, rule, src, ver, s.dir, out)
+	ok := tpfetch.Vendor(ctx, s.hc, s.f, s.st, rule, src, ver, s.dir, out)
+	if ok && rule.ManualVersion() {
+		// Sem fonte automática: a referência é a do instalador mais novo guardado.
+		if err := tpupload.SaveReference(ctx, s.st, rule); err != nil {
+			fmt.Fprintf(out, "  AVISO       versão de referência não atualizada: %v\n", err)
+		}
+	}
+	return ok
 }
 
 // autoFetch: a cada passada, os programas com "baixar sozinho" cuja versão de referência
