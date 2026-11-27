@@ -57,6 +57,30 @@ func WithChocoSearch(fn ChocoDescriber) Option {
 	return func(a *api) { a.chocoSearch = fn }
 }
 
+// EvergreenDescription: o aplicativo do Evergreen lido para o formulário: as linhas (as que
+// passam no filtro), a que o patchd baixaria (a MSI primeiro, senão a exe) e quem assina o
+// instalador dela.
+type EvergreenDescription struct {
+	App, Application, Link               string
+	Rows                                 []thirdparty.EvergreenRow
+	Total                                int // as linhas da resposta, antes do filtro
+	Picked                               *thirdparty.EvergreenInstaller
+	PickNote                             string // por que nenhuma linha serve
+	SignerOrg, SignerSubject, SignerNote string
+}
+
+// EvergreenFinder lê a lista de aplicativos do Evergreen; EvergreenDescriber, um aplicativo
+// (cmd/server).
+type (
+	EvergreenFinder    func(ctx context.Context) ([]thirdparty.EvergreenApp, error)
+	EvergreenDescriber func(ctx context.Context, app string, filter map[string]string) (EvergreenDescription, error)
+)
+
+// WithEvergreenSearch liga a aba "Do Evergreen" do Incluir programa (com WithCustomApps).
+func WithEvergreenSearch(find EvergreenFinder, describe EvergreenDescriber) Option {
+	return func(a *api) { a.egFind, a.egDescribe = find, describe }
+}
+
 type customApps struct {
 	base     thirdparty.Manifest
 	describe WingetDescriber
@@ -69,18 +93,25 @@ const customTimeout = 30 * time.Second
 // customView é a página.
 type customView struct {
 	pageBase
-	Rows    []customRow
-	Form    customForm
-	Upload  bool   // o formulário do instalador próprio (?proprio=1)
-	Choco   bool   // o formulário do Chocolatey (?chocolatey=1, ou a busca ?pacote=)
-	Vendor  bool   // o formulário do site do fabricante (?fabricante=1)
-	Editing string // o id do programa em edição ("" = novo)
-	Found   *winget.Description
-	Help    []winget.Help // os parâmetros do instalador no winget (na busca e em Editar com ?ajuda=1)
-	Tips    map[string][]string
-	Types   []string
-	CanUse  bool // o painel pode incluir (o servidor tem o manifesto vivo)
-	CanFind bool // a busca no winget está ligada
+	Rows   []customRow
+	Form   customForm
+	Upload bool // o formulário do instalador próprio (?proprio=1)
+	Choco  bool // o formulário do Chocolatey (?chocolatey=1, ou a busca ?pacote=)
+	Vendor bool // o formulário do site do fabricante (?fabricante=1, e a aba do Evergreen)
+	// EgTab: a aba "Do Evergreen" (?evergreen=1, a busca ?egbusca= e o aplicativo ?egapp=): o
+	// formulário do site do fabricante, preenchido pelo Evergreen.
+	EgTab            bool
+	CanFindEvergreen bool
+	EgQuery          string
+	EgMatches        []thirdparty.EvergreenApp
+	FoundEvergreen   *EvergreenDescription
+	Editing          string // o id do programa em edição ("" = novo)
+	Found            *winget.Description
+	Help             []winget.Help // os parâmetros do instalador no winget (na busca e em Editar com ?ajuda=1)
+	Tips             map[string][]string
+	Types            []string
+	CanUse           bool // o painel pode incluir (o servidor tem o manifesto vivo)
+	CanFind          bool // a busca no winget está ligada
 	// FoundChoco: o pacote do Chocolatey achado na busca; CanFindChoco: a busca está ligada.
 	FoundChoco   *ChocoDescription
 	CanFindChoco bool
@@ -251,7 +282,9 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 	}
 	q := r.URL.Query()
 	v.Upload = q.Get("proprio") == "1"
-	v.Vendor = !v.Upload && q.Get("fabricante") == "1"
+	v.EgTab = !v.Upload && (q.Get("evergreen") == "1" || q.Has("egbusca") || q.Has("egapp"))
+	v.CanFindEvergreen = a.egFind != nil && a.egDescribe != nil
+	v.Vendor = !v.Upload && (q.Get("fabricante") == "1" || v.EgTab)
 	v.Choco = !v.Upload && !v.Vendor && (q.Get("chocolatey") == "1" || q.Has("pacote"))
 	switch {
 	case v.Upload:
@@ -289,6 +322,10 @@ func (a *api) customPage(w http.ResponseWriter, r *http.Request, s panel.Session
 				}
 			}
 		}
+	case q.Get("egapp") != "" && v.CanFindEvergreen:
+		a.evergreenFill(r.Context(), &v, strings.TrimSpace(q.Get("egapp")), q.Get("egfiltro"))
+	case q.Get("egbusca") != "" && v.CanFindEvergreen:
+		a.evergreenSearch(r.Context(), &v, strings.TrimSpace(q.Get("egbusca")))
 	case q.Get("pacote") != "" && v.CanFindChoco:
 		a.chocoFill(r.Context(), &v, strings.TrimSpace(q.Get("pacote")))
 	case q.Get("winget") != "" && v.CanFind:
@@ -636,6 +673,70 @@ func (a *api) vendorFormOf(r *http.Request, rule thirdparty.App, f *customForm) 
 		f.Auto = src.AutoFetch
 	}
 	return nil
+}
+
+// egMaxMatches: quantos aplicativos a busca do Evergreen mostra.
+const egMaxMatches = 30
+
+// evergreenSearch: a busca "Do Evergreen" pelo nome: a lista de aplicativos que casam; o de
+// nome igual (ou o único) já preenche o formulário. Sem a lista (a API fora), tenta o nome
+// digitado como o do aplicativo.
+func (a *api) evergreenSearch(ctx context.Context, v *customView, q string) {
+	v.EgQuery = q
+	ctx, cancel := context.WithTimeout(ctx, customTimeout)
+	defer cancel()
+	apps, err := a.egFind(ctx)
+	if err != nil {
+		if thirdparty.ValidEvergreenApp(q) {
+			a.evergreenFill(ctx, v, q, "")
+			return
+		}
+		v.Error = "Não deu para ler a lista de aplicativos do Evergreen: " + err.Error()
+		return
+	}
+	v.EgMatches = thirdparty.FindEvergreenApps(apps, q, egMaxMatches)
+	switch {
+	case len(v.EgMatches) == 0:
+		v.Error = "Nenhum aplicativo do Evergreen com " + q + " no nome. No PowerShell: Find-EvergreenApp -Name \"" + q + "\"."
+	case len(v.EgMatches) == 1 || strings.EqualFold(v.EgMatches[0].Name, q):
+		a.evergreenFill(ctx, v, v.EgMatches[0].Name, "")
+	}
+}
+
+// evergreenFill: o aplicativo do Evergreen preenche o formulário do site do fabricante: o
+// nome, o aplicativo e o filtro, o tipo (pela linha escolhida), o "baixar sozinho" e quem
+// assina. O link fica vazio: o de cada versão é o que o Evergreen informa.
+func (a *api) evergreenFill(ctx context.Context, v *customView, app, rawFilter string) {
+	v.Form.Evergreen, v.Form.Filter = app, strings.TrimSpace(rawFilter)
+	filter, err := thirdparty.ParseEvergreenFilter(rawFilter)
+	if err != nil {
+		v.Error = err.Error()
+		return
+	}
+	v.Form.Filter = thirdparty.FormatEvergreenFilter(filter)
+	ctx, cancel := context.WithTimeout(ctx, customTimeout)
+	defer cancel()
+	d, err := a.egDescribe(ctx, app, filter)
+	if err != nil {
+		v.Error = "Não deu para ler o aplicativo no Evergreen: " + err.Error()
+		return
+	}
+	v.FoundEvergreen = &d
+	v.Form.Name = cmp.Or(d.Application, d.App)
+	v.Form.Inventory, v.Form.Mode = v.Form.Name, thirdparty.NamePrefix
+	v.Form.Auto = true
+	if p := d.Picked; p != nil {
+		v.Form.Type = "exe"
+		if p.Type == "msi" {
+			v.Form.Type = "msi"
+		}
+	}
+	switch {
+	case d.SignerOrg != "":
+		v.Form.Signer, v.Form.NoSignature = d.SignerOrg, false
+	case d.SignerNote == unsignedNote && d.Picked != nil && d.Picked.SHA256 != "":
+		v.Form.NoSignature, v.Form.Unsigned = true, "o fabricante publica o instalador sem assinatura; o Evergreen informa o SHA-256 de cada versão"
+	}
 }
 
 // chocoFill: a busca "Do Chocolatey" preenche o formulário com o pacote.

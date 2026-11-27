@@ -187,3 +187,103 @@ func FormatEvergreenFilter(f map[string]string) string {
 
 // ValidEvergreenApp: o nome do aplicativo na lista do Evergreen.
 func ValidEvergreenApp(app string) bool { return evergreenID.MatchString(app) }
+
+// EvergreenApp é um aplicativo da lista do Evergreen (o /apps da API): o nome que as consultas
+// usam, o nome do programa e a página do fabricante.
+type EvergreenApp struct {
+	Name, Application, Link string
+}
+
+// EvergreenApps lê a lista de aplicativos do Evergreen.
+func (c *Client) EvergreenApps(ctx context.Context) ([]EvergreenApp, error) {
+	var raw []map[string]any
+	if err := c.getJSON(ctx, c.EvergreenURL+"/apps", &raw); err != nil {
+		return nil, err
+	}
+	out := make([]EvergreenApp, 0, len(raw))
+	for _, row := range raw {
+		a := EvergreenApp{}
+		a.Name, _ = field(row, "Name")
+		a.Application, _ = field(row, "Application")
+		a.Link, _ = field(row, "Link")
+		if evergreenID.MatchString(a.Name) {
+			out = append(out, a)
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("a lista de aplicativos do Evergreen veio vazia")
+	}
+	return out, nil
+}
+
+// FindEvergreenApps: os aplicativos cujo nome ou nome do programa contém o texto (sem
+// diferença de maiúsculas), o de nome igual primeiro, no máximo max.
+func FindEvergreenApps(apps []EvergreenApp, q string, max int) []EvergreenApp {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return nil
+	}
+	var exact, rest []EvergreenApp
+	for _, a := range apps {
+		switch {
+		case strings.ToLower(a.Name) == q:
+			exact = append(exact, a)
+		case strings.Contains(strings.ToLower(a.Name), q) || strings.Contains(strings.ToLower(a.Application), q):
+			rest = append(rest, a)
+		}
+	}
+	out := append(exact, rest...)
+	if len(out) > max {
+		out = out[:max]
+	}
+	return out
+}
+
+// EvergreenRow é uma linha da resposta para mostrar: a versão, a arquitetura, o tipo, o link,
+// se traz o SHA-256 e os outros campos (canal, idioma...) como "Campo=valor".
+type EvergreenRow struct {
+	Version, Architecture, Type, URI string
+	HasSHA                           bool
+	Other                            []string
+}
+
+// EvergreenRowsOf lê as linhas do aplicativo, para a busca do painel.
+func (c *Client) EvergreenRowsOf(ctx context.Context, app string) ([]map[string]any, error) {
+	if !evergreenID.MatchString(app) {
+		return nil, fmt.Errorf("o aplicativo %q: o nome da lista do Evergreen (ex.: Handbrake)", app)
+	}
+	var raw json.RawMessage
+	if err := c.getJSON(ctx, fmt.Sprintf("%s/app/%s", c.EvergreenURL, url.PathEscape(app)), &raw); err != nil {
+		return nil, err
+	}
+	return evergreenRows(raw)
+}
+
+// EvergreenRowsView: as linhas que passam no filtro, para a tela (até max).
+func EvergreenRowsView(rows []map[string]any, filter map[string]string, max int) []EvergreenRow {
+	var out []EvergreenRow
+	known := map[string]bool{"version": true, "architecture": true, "type": true, "uri": true, "sha256": true, "size": true, "date": true, "startdate": true}
+	for _, row := range rows {
+		if !rowMatches(row, filter) {
+			continue
+		}
+		r := EvergreenRow{}
+		r.Version, _ = field(row, "Version")
+		r.Architecture, _ = field(row, "Architecture")
+		r.Type, _ = field(row, "Type")
+		r.URI, _ = field(row, "URI")
+		sha, _ := field(row, "Sha256")
+		r.HasSHA = sha256Hex.MatchString(sha)
+		for k, v := range row {
+			if !known[strings.ToLower(k)] && v != nil {
+				r.Other = append(r.Other, k+"="+fmt.Sprint(v))
+			}
+		}
+		slices.Sort(r.Other)
+		out = append(out, r)
+		if len(out) == max {
+			break
+		}
+	}
+	return out
+}

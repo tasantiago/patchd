@@ -211,3 +211,46 @@ func chocoPkg(t *testing.T, id, version string) []byte {
 	zw.Close()
 	return b.Bytes()
 }
+
+// A busca do Evergreen: a lista de aplicativos (/apps), a procura pelo nome (o igual primeiro)
+// e as linhas do aplicativo para a tela, com o filtro.
+func TestBuscaNoEvergreen(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apps":
+			w.Write([]byte(`[{"Name":"GoogleChromeDriver","Application":"Google Chrome Driver","Link":"https://x"},{"Name":"GoogleChrome","Application":"Google Chrome Enterprise","Link":"https://y"},{"Name":"nome com espaço"}]`))
+		case "/app/Handbrake":
+			w.Write([]byte(`[{"Version":"1.11.2","Architecture":"x64","Type":"exe","InstallerType":"Default","Sha256":"` + strings.Repeat("a", 64) + `","Size":1,"URI":"https://g/x.exe"},
+				{"Version":"1.11.2","Architecture":"arm64","Type":"zip","InstallerType":"Default","URI":"https://g/x.zip"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient("teste")
+	c.EvergreenURL = srv.URL
+	apps, err := c.EvergreenApps(context.Background())
+	if err != nil || len(apps) != 2 {
+		t.Fatalf("lista: %+v %v", apps, err)
+	}
+	if got := FindEvergreenApps(apps, "googlechrome", 10); len(got) != 2 || got[0].Name != "GoogleChrome" {
+		t.Errorf("o igual primeiro: %+v", got)
+	}
+	if got := FindEvergreenApps(apps, "driver", 10); len(got) != 1 || got[0].Name != "GoogleChromeDriver" {
+		t.Errorf("pelo nome do programa: %+v", got)
+	}
+	if got := FindEvergreenApps(apps, "chrome", 1); len(got) != 1 {
+		t.Errorf("o máximo: %+v", got)
+	}
+	rows, err := c.EvergreenRowsOf(context.Background(), "Handbrake")
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("linhas: %v %v", rows, err)
+	}
+	v := EvergreenRowsView(rows, map[string]string{"Type": "exe"}, 10)
+	if len(v) != 1 || !v[0].HasSHA || v[0].Architecture != "x64" || len(v[0].Other) != 1 || v[0].Other[0] != "InstallerType=Default" {
+		t.Errorf("tela: %+v", v)
+	}
+	if _, err := c.EvergreenRowsOf(context.Background(), "../x"); err == nil {
+		t.Error("nome inválido aceito")
+	}
+}

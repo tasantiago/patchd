@@ -1687,6 +1687,27 @@ A `package fetch` da linha de comando não baixa os programas do Chocolatey (sã
 Editar não troca o pacote nem a origem (winget, Chocolatey, site do fabricante, instalador próprio): exclua e
 inclua de novo. Na auditoria, `terceiros.incluir` diz "Chocolatey <pacote> <tipo>".
 
+### Incluir do Evergreen
+
+Um programa que está no Evergreen (o `Find-EvergreenApp` do PowerShell) entra pela aba **Do
+Evergreen** do Incluir programa:
+
+1. **Buscar no Evergreen**: digite parte do nome (`chrome`, `handbrake`). O servidor lê a lista
+   de aplicativos da API do Evergreen e mostra os que casam (pelo nome do aplicativo ou do
+   programa); o de nome igual já é escolhido. Sem a lista (a API fora do ar), o texto digitado
+   vale como o nome do aplicativo.
+2. **O aplicativo escolhido** mostra as linhas do `Get-EvergreenApp` (versão, arquitetura, tipo,
+   os outros campos, se traz o SHA-256 e o link) e a que o patchd baixaria (a MSI de 64 bits
+   primeiro, senão a exe), com quem assina o instalador dela. **Filtrar as linhas** escolhe o
+   canal, o idioma etc. (`Channel=Stable`): no Chrome, sem o filtro, a mais nova é a Beta.
+3. **O formulário** vem preenchido como o do site do fabricante, com o link vazio (o de cada
+   versão é o que o Evergreen informa), o aplicativo e o filtro, o tipo da linha (msi, ou exe:
+   troque para nullsoft ou inno se souber, ou informe os argumentos do fabricante), "baixar
+   sozinho" marcado e a assinatura lida do instalador. Confira o nome no inventário e salve.
+
+O programa fica como "site do fabricante" (a página dele mostra a fonte "Link do Evergreen", e
+Editar abre a aba do site do fabricante).
+
 ### Incluir do site do fabricante
 
 Um programa que não está no winget nem no Chocolatey (ou que lá demora a ter a versão nova), e

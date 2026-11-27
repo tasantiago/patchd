@@ -105,6 +105,42 @@ func chocoDescriber(version string) api.ChocoDescriber {
 	}
 }
 
+// evergreenSearch: a busca "Do Evergreen" do "Incluir programa": a lista de aplicativos e,
+// do escolhido, as linhas, a que o patchd baixaria (a MSI primeiro, senão a exe) e quem assina
+// o instalador dela.
+func evergreenSearch(version string) (api.EvergreenFinder, api.EvergreenDescriber) {
+	ua := "patchd-server/" + version
+	c := thirdparty.NewClient(ua)
+	c.HTTP = retry.Wrap(c.HTTP, nil)
+	find := func(ctx context.Context) ([]thirdparty.EvergreenApp, error) { return c.EvergreenApps(ctx) }
+	describe := func(ctx context.Context, app string, filter map[string]string) (api.EvergreenDescription, error) {
+		rows, err := c.EvergreenRowsOf(ctx, app)
+		if err != nil {
+			return api.EvergreenDescription{}, err
+		}
+		d := api.EvergreenDescription{App: app, Total: len(rows), Rows: thirdparty.EvergreenRowsView(rows, filter, 40)}
+		if apps, err := c.EvergreenApps(ctx); err == nil {
+			for _, a := range apps {
+				if strings.EqualFold(a.Name, app) {
+					d.App, d.Application, d.Link = a.Name, a.Application, a.Link
+				}
+			}
+		}
+		p, err := thirdparty.PickEvergreen(rows, filter, "msi", "")
+		if err != nil {
+			p, err = thirdparty.PickEvergreen(rows, filter, "exe", "")
+		}
+		if err != nil {
+			d.PickNote = err.Error()
+			return d, nil
+		}
+		d.Picked = &p
+		d.SignerOrg, d.SignerSubject, d.SignerNote = signerOf(ctx, p.URI, ua)
+		return d, nil
+	}
+	return find, describe
+}
+
 // sigHTTP: a leitura da assinatura segue redirecionamentos http e https (o http do espelho não
 // muda nada: é para preencher o formulário; quem confere é o agente).
 var sigHTTP = &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {

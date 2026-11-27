@@ -594,3 +594,69 @@ func TestIncluirDoFabricantePeloEvergreen(t *testing.T) {
 		t.Fatalf("7-Zip pelo Evergreen: %s", local(r))
 	}
 }
+
+// A aba "Do Evergreen": a busca lista os aplicativos; o escolhido mostra as linhas e preenche
+// o formulário do site do fabricante (sem link: o do Evergreen), com o tipo da linha escolhida
+// e quem assina; salvar grava a regra com a fonte evergreen.
+func TestIncluirDoEvergreen(t *testing.T) {
+	base, _ := thirdparty.Default()
+	live := thirdparty.NewLive(base)
+	apps := []thirdparty.EvergreenApp{{Name: "Handbrake", Application: "Handbrake", Link: "https://handbrake.exemplo/"},
+		{Name: "GoogleChrome", Application: "Google Chrome Enterprise"}, {Name: "GoogleChromeDriver", Application: "Google Chrome Driver"}}
+	find := func(context.Context) ([]thirdparty.EvergreenApp, error) { return apps, nil }
+	var gotFilter map[string]string
+	describe := func(_ context.Context, app string, filter map[string]string) (api.EvergreenDescription, error) {
+		if app != "Handbrake" {
+			return api.EvergreenDescription{}, errors.New("HTTP 404")
+		}
+		gotFilter = filter
+		return api.EvergreenDescription{App: app, Application: "Handbrake", Total: 8,
+			Rows:      []thirdparty.EvergreenRow{{Version: "1.11.2", Architecture: "x64", Type: "exe", URI: "https://github.exemplo/HandBrake-1.11.2-x86_64-Win_GUI.exe", HasSHA: true, Other: []string{"InstallerType=Default"}}},
+			Picked:    &thirdparty.EvergreenInstaller{Version: "1.11.2", Type: "exe", Architecture: "x64", URI: "https://github.exemplo/HandBrake-1.11.2-x86_64-Win_GUI.exe", SHA256: strings.Repeat("a", 64)},
+			SignerOrg: "HandBrake Team", SignerSubject: "CN=HandBrake Team, O=HandBrake Team"}, nil
+	}
+	h, st, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, nil, nil), api.WithCompliance(&complianceFalso{}),
+		api.WithEvergreenSearch(find, describe))
+	const pagina_ = "/painel/patch/terceiros/incluir"
+	b := pagina(h, "GET", pagina_+"?evergreen=1", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, `Do Evergreen</a>`) || !strings.Contains(b, `name="egbusca"`) || !strings.Contains(b, `name="origem" value="fabricante"`) {
+		t.Error("a aba do Evergreen")
+	}
+	b = pagina(h, "GET", pagina_+"?egbusca=chrome", sessaoAdmin, nil).Body.String()
+	if !strings.Contains(b, "<b>GoogleChrome</b></a> — Google Chrome Enterprise") || !strings.Contains(b, "<b>GoogleChromeDriver</b>") {
+		t.Errorf("busca: %s", b)
+	}
+	// O nome igual já preenche.
+	b = pagina(h, "GET", pagina_+"?egbusca=handbrake", sessaoAdmin, nil).Body.String()
+	for _, quer := range []string{"Achado no Evergreen: <b>Handbrake</b>", "O patchd baixaria a <b>1.11.2</b>", "com o SHA-256 do Evergreen",
+		`name="evergreen" value="Handbrake"`, `name="nome" value="Handbrake"`, `<option value="exe" selected>`, `name="assinante" value="HandBrake Team"`,
+		"InstallerType=Default", `name="link" value=""`} {
+		if !strings.Contains(b, quer) {
+			t.Errorf("preencher: falta %q", quer)
+		}
+	}
+	b = pagina(h, "GET", pagina_+"?egapp=Handbrake&egfiltro=InstallerType%3DDefault", sessaoAdmin, nil).Body.String()
+	if gotFilter["InstallerType"] != "Default" || !strings.Contains(b, `name="evergreen_filtro" value="InstallerType=Default"`) {
+		t.Errorf("filtro: %v", gotFilter)
+	}
+	if b := pagina(h, "GET", pagina_+"?egapp=Nada", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Não deu para ler o aplicativo no Evergreen") {
+		t.Error("aplicativo que não existe")
+	}
+	if b := pagina(h, "GET", pagina_+"?egbusca=zzz", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "Nenhum aplicativo do Evergreen") {
+		t.Error("busca sem resultado")
+	}
+	// Salvar (o formulário como a busca preencheu, com os argumentos do exe).
+	form := url.Values{"origem": {"fabricante"}, "nome": {"Handbrake"}, "inventario": {"HandBrake"}, "modo": {"comeca"}, "tipo": {"exe"}, "argumentos": {"/S"},
+		"assinatura": {"sim"}, "assinante": {"HandBrake Team"}, "evergreen": {"Handbrake"}, "evergreen_filtro": {"InstallerType=Default"}, "auto": {"1"}}
+	if r := pagina(h, "POST", pagina_, sessaoAdmin, form); r.Code != http.StatusSeeOther {
+		t.Fatalf("salvar: %d %s", r.Code, r.Body)
+	}
+	if srcs, _ := st.InstallerSources(context.Background()); len(srcs) != 1 || srcs[0].Kind != store.SourceEvergreen || srcs[0].PackageID != "Handbrake" || srcs[0].Arguments != "/S" {
+		t.Fatalf("fonte: %+v", srcs)
+	}
+	// Sem a busca ligada, a aba explica e o formulário continua.
+	h2, _, _ := ambientePaginas(t, api.WithThirdPartyManifest(live), api.WithCustomApps(base, nil, nil), api.WithCompliance(&complianceFalso{}))
+	if b := pagina(h2, "GET", pagina_+"?evergreen=1", sessaoAdmin, nil).Body.String(); !strings.Contains(b, "não está ligada neste servidor") || !strings.Contains(b, `name="evergreen"`) {
+		t.Error("sem a busca")
+	}
+}
