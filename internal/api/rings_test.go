@@ -177,14 +177,14 @@ func TestMenuAutomacao(t *testing.T) {
 	h, _, _ := ambientePaginas(t)
 	for path, c := range map[string]struct{ menu, aba string }{
 		"/painel/campanhas":          {`<a href="/painel/campanhas" title="Campanhas" class="ativo" aria-current="page">`, `<a href="/painel/campanhas" class="ativa" aria-current="page">Campanhas</a>`},
-		"/painel/jobs":               {`<a href="/painel/jobs" title="Jobs" class="ativo" aria-current="page">`, `<a href="/painel/jobs" class="ativa" aria-current="page">Jobs</a>`},
+		"/painel/jobs":               {`<a href="/painel/jobs" title="Execuções" class="ativo" aria-current="page">`, `<a href="/painel/jobs" class="ativa" aria-current="page">Execuções</a>`},
 		"/painel/grupos-implantacao": {`<a href="/painel/grupos-implantacao" title="Prédios e implantação" class="ativo" aria-current="page">`, `<a href="/painel/grupos-implantacao" class="ativa" aria-current="page">Prédios e implantação</a>`},
 	} {
 		b := pagina(h, "GET", path, sessaoAdmin, nil).Body.String()
 		if !strings.Contains(b, c.menu) || !strings.Contains(b, c.aba) || strings.Count(b, `class="ativa"`) != 1 || strings.Count(b, `class="ativo"`) != 1 {
 			t.Errorf("%s: menu ou aba", path)
 		}
-		if !strings.Contains(b, `<p class="grupo"><span class="rot">Automação</span></p>`) {
+		if !strings.Contains(b, `<details class="nav-tools"`) {
 			t.Errorf("%s: sem o grupo Automação", path)
 		}
 	}

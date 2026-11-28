@@ -70,7 +70,7 @@ func TestParametrosPelaTela(t *testing.T) {
 	_ = st // a sessão e a auditoria ficam no armazenamento do ambiente; os parâmetros, no st0
 
 	b := pagina(h, "GET", "/painel/configuracao?aba=parametros", sessaoAdmin, nil).Body.String()
-	for _, tr := range []string{`aria-current="page">Parâmetros</a>`, "<h2>Aparência</h2>", "<h2>Retenção</h2>",
+	for _, tr := range []string{`aria-current="page">Preferências</a>`, "<h2>Aparência</h2>", "<h2>Retenção</h2>",
 		`<input id="p-PATCHD_PANEL_TITLE" name="PATCHD_PANEL_TITLE" type="text" value="patchd · lab"`,
 		`<span class="fonte env">.env</span>vale <b>patchd · lab</b>`, `<span class="fonte padrao">padrão</span>vale <b>90</b>`,
 		`<option value="4h" selected>4h</option>`, `name="grupo" value="Retenção"`, "e, por e-mail, para a equipe"} {

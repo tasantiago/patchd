@@ -51,9 +51,9 @@ func TestTrilhaDaBarraSuperior(t *testing.T) {
 	semeiaEquipamentos(t, st, 2)
 	for path, trilha := range map[string]string{
 		"/painel/parque":                 `<nav class="trilha" aria-label="onde você está"><span class="titulo">Parque</span></nav>`,
-		"/painel/patch":                  `<span class="secao">Patch</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Sistema operacional</span>`,
-		"/painel/patch?aba=geral":        `<span class="secao">Patch</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Visão geral</span>`,
-		"/painel/patch?aba=terceiros":    `<span class="secao">Patch</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Programas de terceiros</span>`,
+		"/painel/patch":                  `<span class="secao">Atualizações</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Sistema operacional</span>`,
+		"/painel/patch?aba=geral":        `<span class="secao">Atualizações</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Visão geral</span>`,
+		"/painel/patch?aba=terceiros":    `<span class="secao">Atualizações</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Programas de terceiros</span>`,
 		"/painel/campanhas":              `<span class="secao">Automação</span><span class="sep" aria-hidden="true">›</span><span class="titulo">Campanhas</span>`,
 		"/painel/maquinas/60ef97e4-0001": `<a class="secao" href="/painel/inventario">Inventário</a><span class="sep" aria-hidden="true">›</span><span class="titulo">vm-ubuntu</span>`,
 		"/painel/grupos-implantacao/1":   `<span class="secao">Automação</span><span class="sep" aria-hidden="true">›</span><a class="secao" href="/painel/grupos-implantacao">Prédios e implantação</a>`,

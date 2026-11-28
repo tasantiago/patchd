@@ -249,7 +249,7 @@ type jobsView struct {
 
 // jobsPage lista os jobs mais recentes da frota.
 func (a *api) jobsPage(w http.ResponseWriter, r *http.Request) {
-	v := jobsView{pageBase: a.base(r, "Jobs", "jobs"), N: fleetJobsShown}
+	v := jobsView{pageBase: a.base(r, "Execuções", "jobs"), N: fleetJobsShown}
 	jobFlash(r.URL.Query(), &v.pageBase, a.panelLocation())
 	a.expireJobs(r)
 	list, err := a.store.Jobs(r.Context(), "", fleetJobsShown)

@@ -38,7 +38,7 @@ func TestAbaAutoatendimento(t *testing.T) {
 		t.Errorf("leitura: %d", r.Code)
 	}
 	b := pagina(h, "GET", aba, sessaoAdmin, nil).Body.String()
-	if !strings.Contains(b, `>Autoatendimento</a>`) || !strings.Contains(b, `7-Zip <span class="muted"><code>7zip</code></span></td><td><code>26.04</code></td>`) ||
+	if !strings.Contains(b, `>Catálogo da Central</a>`) || !strings.Contains(b, `7-Zip <span class="muted"><code>7zip</code></span></td><td><code>26.04</code></td>`) ||
 		!strings.Contains(b, "fora da loja") || strings.Contains(b, "vcredist-2008") {
 		t.Errorf("aba:\n%s", b)
 	}

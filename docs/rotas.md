@@ -53,12 +53,13 @@ Quem pode: máquina registrada (credencial). Sem sessão: 401.
 | GET | `/api/v1/agent/wucache/{key}` |
 | POST | `/api/v1/agent/wucache` |
 
-## Sessão (página) (32)
+## Sessão (página) (33)
 
 Quem pode: sessão do painel (leitura ou admin). Sem sessão: 303 → /painel/entrar.
 
 | Método | Caminho |
 |---|---|
+| GET | `/painel/ajuda` |
 | GET | `/painel/alertas` |
 | GET | `/painel/aneis` |
 | GET | `/painel/aposentadas` |

@@ -689,27 +689,21 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <nav aria-label="principal">
 <p class="grupo"><span class="rot">Navegação</span></p>
 <a href="/painel/" title="Início" {{if eq .Nav "inicio"}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Início</span></a>
-<a href="/painel/parque" title="Parque" {{if eq .Nav "frota"}}class="ativo" aria-current="page"{{end}}>` + ui.IcFrota + `<span class="rot">Parque</span></a>
-<a href="/painel/inventario" title="Inventário" {{if eq .Nav "inventario"}}class="ativo" aria-current="page"{{end}}>` + ui.IcInventario + `<span class="rot">Inventário</span></a>
-<a href="/painel/aposentadas" title="Aposentadas" {{if eq .Nav "aposentadas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAposentadas + `<span class="rot">Aposentadas</span></a>
+<a href="/painel/parque" title="Computadores" {{if or (eq .Nav "frota") (eq .Nav "inventario") (eq .Nav "aposentadas")}}class="ativo" aria-current="location"{{end}}>` + ui.IcFrota + `<span class="rot">Computadores</span></a>
+{{if or (eq .Nav "frota") (eq .Nav "inventario") (eq .Nav "aposentadas")}}<div class="nav-context" role="group" aria-label="Computadores"><a href="/painel/parque"{{if eq .Nav "frota"}} class="sub-ativo" aria-current="page"{{end}}>Situação do parque</a><a href="/painel/inventario"{{if eq .Nav "inventario"}} class="sub-ativo" aria-current="page"{{end}}>Inventário e programas</a><a href="/painel/aposentadas"{{if eq .Nav "aposentadas"}} class="sub-ativo" aria-current="page"{{end}}>Aposentadas</a></div>{{end}}
 <a href="/painel/alertas" title="Alertas de desempenho" {{if eq .Nav "alertas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAlertas + `<span class="rot">Alertas</span>{{with .Badges.Alerts}}<span class="cont" title="alertas de desempenho abertos e não reconhecidos">{{.}}</span>{{end}}</a>
-<a href="/painel/shield" title="Shield — proteção das máquinas" {{if eq .Nav "shield"}}class="ativo" aria-current="page"{{end}}>` + ui.IcEscudo + `<span class="rot">Shield</span></a>
-<p class="grupo"><span class="rot">Patch</span></p>
-<a href="/painel/patch?aba=geral" title="Patch › Visão geral" {{if and (eq .Nav "patch") (eq .Sub "geral")}}class="ativo" aria-current="page"{{end}}>` + ui.IcGeral + `<span class="rot">Visão geral</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}</a>
-<a href="/painel/patch" title="Patch › Sistema operacional" {{if and (eq .Nav "patch") (ne .Sub "geral") (ne .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + ui.IcSistema + `<span class="rot">Sistema</span></a>
-<a href="/painel/patch?aba=terceiros" title="Patch › Programas de terceiros" {{if and (eq .Nav "patch") (eq .Sub "terceiros")}}class="ativo" aria-current="page"{{end}}>` + ui.IcTerceiros + `<span class="rot">Terceiros</span>{{with .Badges.ThirdParty}}<span class="cont" title="programas com versão nova para baixar ou aguardando aprovação">{{.}}</span>{{end}}</a>
-<p class="grupo"><span class="rot">Automação</span></p>
-<a href="/painel/campanhas" title="Campanhas" {{if eq .Nav "campanhas"}}class="ativo" aria-current="page"{{end}}>` + ui.IcCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
-<a href="/painel/jobs" title="Jobs" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Jobs</span></a>
-<a href="/painel/grupos-implantacao" title="Prédios e implantação" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Prédios e implantação</span></a>
-<a href="/painel/autoatendimento" title="Autoatendimento" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Autoatendimento</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
-{{if .Admin}}<a href="/painel/padronizacao" title="Padronização" {{if eq .Nav "padronizacao"}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Padronização</span></a>{{end}}
-{{if .Admin}}<a href="/painel/scripts" title="Scripts" {{if eq .Nav "scripts"}}class="ativo" aria-current="page"{{end}}>` + ui.IcScripts + `<span class="rot">Scripts</span></a>{{end}}
-{{if .Admin}}<p class="grupo"><span class="rot">Administração</span></p>
-<a href="/painel/descoberta" title="Descoberta de rede" {{if eq .Nav "descoberta"}}class="ativo" aria-current="page"{{end}}>` + ui.IcDescoberta + `<span class="rot">Descoberta</span></a>
-<a href="/painel/configuracao" title="Configuração" {{if and (eq .Nav "configuracao") (ne .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Configuração</span></a>
-<a href="/painel/configuracao?aba=auditoria" title="Auditoria" {{if and (eq .Nav "configuracao") (eq .Sub "auditoria")}}class="ativo" aria-current="page"{{end}}>` + ui.IcAuditoria + `<span class="rot">Auditoria</span></a>
-{{end}}
+<a href="/painel/shield" title="Proteção — Shield" {{if eq .Nav "shield"}}class="ativo" aria-current="page"{{end}}>` + ui.IcEscudo + `<span class="rot">Proteção</span></a>
+<p class="grupo"><span class="rot">Gerenciar</span></p>
+<a href="/painel/patch?aba=geral" title="Atualizações" {{if eq .Nav "patch"}}class="ativo" aria-current="location"{{end}}>` + ui.IcSistema + `<span class="rot">Atualizações</span>{{with .Badges.Sources}}<span class="cont" title="máquinas com a fonte de busca falhando">{{.}}</span>{{end}}{{with .Badges.ThirdParty}}<span class="cont" title="programas com versão nova para baixar ou aguardando aprovação">{{.}}</span>{{end}}</a>
+<a href="/painel/campanhas" title="Campanhas" {{if and (eq .Nav "campanhas") (ne .Sub "perguntas")}}class="ativo" aria-current="page"{{end}}>` + ui.IcCampanhas + `<span class="rot">Campanhas</span>{{with .Badges.Paused}}<span class="cont" title="campanhas pausadas">{{.}}</span>{{end}}</a>
+<a href="/painel/jobs" title="Execuções" {{if eq .Nav "jobs"}}class="ativo" aria-current="page"{{end}}>` + ui.IcJobs + `<span class="rot">Execuções</span></a>
+<a href="/painel/grupos-implantacao" title="Prédios e implantação" {{if eq .Nav "aneis"}}class="ativo" aria-current="page"{{end}}>` + ui.IcAneis + `<span class="rot">Prédios e horários</span></a>
+<a href="/painel/autoatendimento" title="Pedidos de software" {{if eq .Nav "autoatendimento"}}class="ativo" aria-current="page"{{end}}>` + ui.IcLoja + `<span class="rot">Pedidos de software</span>{{with .Badges.Requests}}<span class="cont" title="pedidos aguardando a TI">{{.}}</span>{{end}}</a>
+{{if .Admin}}<a href="/painel/padronizacao" title="Padronização" {{if eq .Nav "padronizacao"}}class="ativo" aria-current="page"{{end}}>` + ui.IcConfig + `<span class="rot">Padronização</span></a>
+<details class="nav-tools"{{if or (eq .Nav "scripts") (and (eq .Nav "campanhas") (eq .Sub "perguntas"))}} open{{end}}><summary title="Ferramentas avançadas">` + ui.IcScripts + `<span class="rot">Ferramentas avançadas</span><span class="nav-chevron" aria-hidden="true">›</span></summary><div class="nav-context"><a href="/painel/scripts"{{if eq .Nav "scripts"}} class="ativo" aria-current="page"{{end}}>Pacotes de scripts</a><a href="/painel/perguntas"{{if and (eq .Nav "campanhas") (eq .Sub "perguntas")}} class="ativo" aria-current="page"{{end}}>Perguntas ao parque</a></div></details>
+<p class="grupo"><span class="rot">Administração</span></p>
+<a href="/painel/configuracao" title="Configuração" {{if or (eq .Nav "configuracao") (eq .Nav "descoberta")}}class="ativo" aria-current="location"{{end}}>` + ui.IcConfig + `<span class="rot">Configuração</span></a>{{end}}
+<a href="/painel/ajuda" title="Ajuda e primeiros passos" {{if eq .Nav "ajuda"}}class="ativo" aria-current="page"{{end}}>` + ui.IcBusca + `<span class="rot">Ajuda e primeiros passos</span></a>
 </nav></aside>
 <label for="menu" class="veu" aria-hidden="true"></label>
 <div class="area">
@@ -717,6 +711,7 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <label for="menu" class="hamb" title="Recolher ou abrir o menu">` + ui.IcMenu + `<span class="sr">menu</span></label>
 <nav class="trilha" aria-label="onde você está">{{with .Section}}<span class="secao">{{.}}</span><span class="sep" aria-hidden="true">›</span>{{end}}{{with .Parent}}<a class="secao" href="{{.Href}}">{{.Label}}</a><span class="sep" aria-hidden="true">›</span>{{end}}<span class="titulo">{{.Leaf}}</span></nav>
 <form class="busca-topo" method="get" action="/painel/buscar" role="search"><label for="busca-topo" class="sr">Buscar máquina por nome, IP, usuário, série, tombo ou ID</label>` + ui.IcBusca + `<input id="busca-topo" type="search" name="q" placeholder="Buscar máquina: nome, IP, usuário, série…" maxlength="100" autocomplete="off" accesskey="k" title="Nome, IP, usuário conectado, número de série, tombo ou começo do ID. Um resultado só abre a máquina direto."><button type="submit" class="sr">Buscar</button></form>
+<a class="header-help" href="/painel/ajuda{{with .PageGuide}}#{{.ID}}{{end}}">Ajuda</a>
 <span class="selos">{{if .ServerVersion}}<span class="selo" title="versão do servidor">Servidor <b>{{.ServerVersion}}</b></span>{{end}}{{if .AgentVersion}}<span class="selo" title="versão do agente publicada para as máquinas">Agente <b>{{.AgentVersion}}</b></span>{{end}}</span>
 <details class="conta"><summary title="{{.Session.Username}}"><span class="avatar" aria-hidden="true">{{.Initials}}</span><span class="nome">{{.Session.Greeting}}</span>` + ui.IcAbaixo + `</summary>
 <div class="conta-menu"><p><strong>{{.Session.Greeting}}</strong><span>{{.Session.Username}} · {{.Session.SourceLabel}} · {{.Session.Role}}</span></p>
@@ -725,11 +720,12 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 <main id="conteudo" tabindex="-1">
 {{if .Flash}}<p class="aviso ok" role="status">{{.Flash}}</p>{{end}}{{if .Evaluating}}<p class="aviso atencao" role="status">{{.Evaluating}}</p>{{end}}
 {{if .Error}}<p class="aviso erro" role="alert">{{.Error}}</p>{{end}}
+{{template "page-guide" .}}
 {{end}}
 
 {{define "fim"}}</main></div></body></html>{{end}}
 
-{{define "parametros"}}<p class="muted">A tela vence: o valor gravado aqui vale no lugar do .env, em todos os servidores do mesmo banco (os outros percebem em até 30 segundos). "Restaurar o padrão" apaga o valor da tela e o .env volta a valer. Cada mudança vai para a auditoria com o antes e o depois{{if .NotifyOn}} e, por e-mail, para a equipe{{end}}. Banco, portas, TLS, chaves e segredos continuam no ambiente.</p>
+{{define "parametros"}}<details class="settings-explanation"><summary>Como salvar e restaurar preferências</summary><p class="muted">A tela vence: o valor gravado aqui vale no lugar do .env, em todos os servidores do mesmo banco (os outros percebem em até 30 segundos). "Restaurar o padrão" apaga o valor da tela e o .env volta a valer. Cada mudança vai para a auditoria com o antes e o depois{{if .NotifyOn}} e, por e-mail, para a equipe{{end}}. Banco, portas, TLS, chaves e segredos continuam no ambiente.</p></details>
 {{range .Params}}<div class="card"><div class="card-cab"><h2>{{.Name}}</h2></div>
 <form method="post" action="/painel/configuracao/parametros"><input type="hidden" name="grupo" value="{{.Name}}">
 {{range .Fields}}<div class="param{{if .Problem}} problema{{end}}"><label for="p-{{.Key}}">{{.Label}}</label>
@@ -737,8 +733,8 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{else if eq .Kind "select"}}<select id="p-{{.Key}}" name="{{.Key}}"{{if .Locked}} disabled{{end}}>{{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 {{else}}<input id="p-{{.Key}}" name="{{.Key}}" type="{{.Kind}}" value="{{.Value}}" maxlength="500"{{if .Locked}} disabled{{end}}>{{end}}{{if .Unit}}<span class="muted">{{.Unit}}</span>{{end}}</div>
 <div class="info">{{if .Problem}}<span class="erro-campo" role="alert">{{.Problem}}</span>{{end}}{{if .Locked}}<span>{{.Locked}}</span>{{end}}
-<span class="origem"><span class="fonte {{if eq .Source "tela"}}tela{{else if eq .Source ".env"}}env{{else}}padrao{{end}}">{{.Source}}</span>vale <b>{{.Show}}</b>{{if .Who}} · gravado por {{.Who}}{{end}}</span>
-{{if .CanReset}}<span>Sem a tela: {{.EnvShow}} ({{.EnvSource}}) · <button class="link" type="submit" formaction="/painel/configuracao/parametros/restaurar" name="parametro" value="{{.Key}}">restaurar o padrão</button></span>{{end}}
+<details class="param-source"><summary>Origem e restauração</summary><span class="origem"><span class="fonte {{if eq .Source "tela"}}tela{{else if eq .Source ".env"}}env{{else}}padrao{{end}}">{{.Source}}</span>vale <b>{{.Show}}</b>{{if .Who}} · gravado por {{.Who}}{{end}}</span>
+{{if .CanReset}}<span>Sem a tela: {{.EnvShow}} ({{.EnvSource}}) · <button class="link" type="submit" formaction="/painel/configuracao/parametros/restaurar" name="parametro" value="{{.Key}}">restaurar o padrão</button></span>{{end}}</details>
 {{if or .Help .Effect}}<span>{{.Help}}{{if .Effect}} Vale {{.Effect}}.{{end}}</span>{{end}}</div></div>
 {{end}}<div class="param-salvar"><button type="submit">Salvar {{.Name}}</button>{{if and (eq .Name "Notificações") $.NotifyOn}}<button class="sec" type="submit" formaction="/painel/configuracao/notificacoes/teste" name="volta" value="parametros">Mandar e-mail de teste</button>{{end}}<span class="muted">grava só o que mudou neste cartão{{if eq .Name "Notificações"}}; o teste usa o que já está gravado{{end}}</span></div></form></div>
 {{end}}{{end}}
@@ -880,11 +876,11 @@ var pages = template.Must(template.New("").Funcs(template.FuncMap{"leia": leiaMa
 {{define "patch-abas"}}<nav class="abas" aria-label="abas de Patch"><a href="/painel/patch?aba=geral"{{if eq . "geral"}} class="ativa" aria-current="page"{{end}}>Visão geral</a><a href="/painel/patch"{{if eq . "so"}} class="ativa" aria-current="page"{{end}}>Sistema operacional</a><a href="/painel/patch?aba=terceiros"{{if eq . "terceiros"}} class="ativa" aria-current="page"{{end}}>Programas de terceiros</a></nav>{{end}}
 
 {{/* Automação (Aula 15.11): campanhas, jobs e grupos de implantação numa entrada só do menu, em abas. */}}
-{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Jobs</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Prédios e implantação</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a><a href="/painel/perguntas"{{if eq . "perguntas"}} class="ativa" aria-current="page"{{end}}>Perguntas ao parque</a></nav>{{end}}
+{{define "automacao-abas"}}<nav class="abas" aria-label="abas de Automação"><a href="/painel/campanhas"{{if eq . "campanhas"}} class="ativa" aria-current="page"{{end}}>Campanhas</a><a href="/painel/jobs"{{if eq . "jobs"}} class="ativa" aria-current="page"{{end}}>Execuções</a><a href="/painel/grupos-implantacao"{{if eq . "aneis"}} class="ativa" aria-current="page"{{end}}>Prédios e implantação</a><a href="/painel/autoatendimento"{{if eq . "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Pedidos de software</a>{{if or (eq . "scripts") (eq . "perguntas")}}<a href="/painel/scripts"{{if eq . "scripts"}} class="ativa" aria-current="page"{{end}}>Scripts</a><a href="/painel/perguntas"{{if eq . "perguntas"}} class="ativa" aria-current="page"{{end}}>Perguntas ao parque</a>{{end}}</nav>{{end}}
 
 {{define "configuracao"}}{{template "topo" .}}
 <h1>Configuração</h1>
-<nav class="abas" aria-label="abas da configuração"><a href="/painel/configuracao"{{if eq .Tab "sistema"}} class="ativa" aria-current="page"{{end}}>Sistema</a>{{if .HealthOn}}<a href="/painel/configuracao?aba=saude"{{if eq .Tab "saude"}} class="ativa" aria-current="page"{{end}}>Saúde</a>{{end}}{{if .ParamsOn}}<a href="/painel/configuracao?aba=parametros"{{if eq .Tab "parametros"}} class="ativa" aria-current="page"{{end}}>Parâmetros</a>{{end}}<a href="/painel/configuracao?aba=agente"{{if eq .Tab "agente"}} class="ativa" aria-current="page"{{end}}>Agente</a><a href="/painel/configuracao?aba=acesso"{{if eq .Tab "acesso"}} class="ativa" aria-current="page"{{end}}>Acesso</a><a href="/painel/configuracao?aba=auditoria"{{if eq .Tab "auditoria"}} class="ativa" aria-current="page"{{end}}>Auditoria</a><a href="/painel/configuracao?aba=autoatendimento"{{if eq .Tab "autoatendimento"}} class="ativa" aria-current="page"{{end}}>Autoatendimento</a><a href="/painel/configuracao?aba=patrimonio"{{if eq .Tab "patrimonio"}} class="ativa" aria-current="page"{{end}}>Patrimônio</a><a href="/painel/configuracao?aba=localizacoes"{{if eq .Tab "localizacoes"}} class="ativa" aria-current="page"{{end}}>Localizações</a><a href="/painel/configuracao?aba=descoberta"{{if eq .Tab "descoberta"}} class="ativa" aria-current="page"{{end}}>Descoberta</a><a href="/painel/configuracao?aba=bios"{{if eq .Tab "bios"}} class="ativa" aria-current="page"{{end}}>BIOS</a></nav>
+{{template "settings-navigation" .}}
 {{if eq .Tab "saude"}}{{with .Health}}
 <div class="card saude-veredito borda-{{.Report.Level}}"><div class="card-cab"><h2>{{.Report.Verdict}}</h2><span class="muted">medindo desde {{.Since}}</span></div>
 {{if .Report.Detail}}<p>{{.Report.Detail}}</p>{{end}}
@@ -1025,9 +1021,9 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{else}}<p class="muted">Nenhum evento com esse filtro.</p>{{end}}</div>
 {{end}}{{end}}
 {{if eq .Tab "parametros"}}{{template "parametros" .}}{{end}}
-{{if eq .Tab "sistema"}}<div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: o que muda pela tela fica em Parâmetros; o resto, no ambiente (.env) e nos arquivos de segredo</span></div>
+{{if eq .Tab "sistema"}}{{template "settings-start" .}}<details class="settings-diagnostics"{{if .DiagnosticsAttention}} open{{end}}><summary>Diagnóstico e versão do servidor{{if .DiagnosticsAttention}} <span class="estado faltando">Requer atenção</span>{{end}}</summary><div class="card"><div class="card-cab"><h2>Servidor</h2><span class="muted">só leitura: o que muda pela tela fica em Parâmetros; o resto, no ambiente (.env) e nos arquivos de segredo</span></div>
 <dl class="dados">{{range .System}}<dt>{{.Label}}</dt><dd{{if .Level}} class="nivel-{{.Level}}"{{end}}>{{.Value}}</dd>{{end}}</dl>
-{{if .NotifyOn}}<form class="lote" method="post" action="/painel/configuracao/notificacoes/teste"><button class="sec" type="submit">Mandar e-mail de teste</button> <span class="muted">uma mensagem para a lista de PATCHD_NOTIFY_TO; fica na auditoria</span></form>{{end}}</div>
+{{if .NotifyOn}}<form class="lote" method="post" action="/painel/configuracao/notificacoes/teste"><button class="sec" type="submit">Mandar e-mail de teste</button> <span class="muted">uma mensagem para a lista de PATCHD_NOTIFY_TO; fica na auditoria</span></form>{{end}}</div></details>
 {{with .WinCache}}<div class="card" id="cache-windows"><div class="card-cab"><h2>Cache do Windows Update</h2><span class="muted">{{.Files}} pacote(s) · {{.Size}}</span></div>
 <dl class="dados"><dt>Situação</dt><dd>{{.Mode}} <a href="/painel/configuracao?aba=parametros">(Parâmetros)</a></dd><dt>Pasta</dt><dd><code>{{.Dir}}</code></dd>{{if .Days}}<dt>Limpeza</dt><dd>sai o pacote que nenhuma máquina pediu em {{.Days}} dias</dd>{{end}}
 <dt>Baixar da Microsoft</dt><dd>{{if .Hours}}só das {{.Hours}}{{if .Opens}} · fechado agora, abre em {{.Opens}}{{else}} · aberto agora{{end}}{{else}}a qualquer hora, quando a primeira máquina pede{{end}} <a href="/painel/configuracao?aba=parametros">(Parâmetros)</a></dd></dl>
@@ -1158,7 +1154,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <td class="num">{{if .Exploited}}<span class="expl">{{.Exploited}}</span>{{else}}0{{end}}</td><td class="num">{{.Machines}}</td><td class="nowrap"><a href="{{.Href}}">{{if and $.Admin .Whole}}Ver{{else}}Ver e aprovar{{end}}</a>{{if and $.Admin .Whole}} <form class="inline" method="post" action="/painel/patch/correcao"><input type="hidden" name="fix" value="{{.FixedIn}}"><button class="sec" type="submit">Aprovar a correção</button></form>{{end}}</td></tr>{{end}}</tbody></table></div>
 {{if .MoreFixes}}<p class="muted">E mais {{.MoreFixes}} correção(ões): <a href="{{.FixesHref}}">ver todos os itens aguardando</a>.</p>{{end}}
 {{else}}<p class="muted">Nenhuma correção aguardando aprovação.</p>{{end}}</div>
-<div class="card"><div class="card-cab"><h2>Execução nos últimos 7 dias</h2><a class="muted" href="/painel/jobs">Jobs</a></div>
+<div class="card"><div class="card-cab"><h2>Execução nos últimos 7 dias</h2><a class="muted" href="/painel/jobs">Execuções</a></div>
 {{if .Exec}}<ul class="seg-linhas exec">{{range .Exec}}<li><span class="seg-nome">{{.Type}}</span><div class="seg-trilho">{{template "segbar" .Bar}}</div><span class="seg-fim">{{.Created}} criados</span></li>{{end}}</ul>
 <ul class="seg-legenda"><li><i class="st-ok"></i>Concluídos</li><li><i class="st-erro"></i>Sem sucesso</li><li><i class="st-sem"></i>Adiados ou dispensados</li><li><i class="st-aberto"></i>Em aberto</li></ul>
 <p class="muted">{{.ExecTotal.Created}} jobs criados: {{.ExecTotal.Done}} concluídos, {{.ExecTotal.Failed}} sem sucesso, {{.ExecTotal.Postponed}} adiados, {{.ExecTotal.Open}} em aberto. O comprimento da barra compara o volume entre os tipos.</p>
@@ -1798,7 +1794,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{template "fim"}}{{end}}
 
 {{define "jobs-tabela"}}<div class="tabela"><table>
-<thead><tr><th>Job</th>{{if not .MachineID}}<th>Máquina</th><th>Nome</th>{{end}}<th>Tipo</th><th>Estado</th><th>Janela</th><th>Criado</th><th>Por</th><th>Entregue</th><th>Encerrado</th><th>Detalhe</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
+<thead><tr><th>Execução</th>{{if not .MachineID}}<th>Máquina</th><th>Nome</th>{{end}}<th>Tipo</th><th>Estado</th><th>Janela</th><th>Criado</th><th>Por</th><th>Entregue</th><th>Encerrado</th><th>Detalhe</th>{{if .Admin}}<th></th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><td class="num">{{.ID}}</td>
 {{if not $.MachineID}}<td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{end}}
 <td>{{.Type}}</td><td><span class="job {{.State}}">{{.StateLabel}}</span></td><td>{{.Window}}</td><td>{{.Created}}</td><td>{{.By}}</td>
@@ -1807,16 +1803,16 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 </tr>{{end}}</tbody></table></div>{{end}}
 
 {{define "jobs"}}{{template "topo" .}}
-<h1>Automação <span class="muted">› Jobs</span></h1>
+<h1>Automação <span class="muted">› Execuções</span></h1>
 {{template "automacao-abas" "jobs"}}
 <div class="card"><div class="card-cab"><h2>Mais recentes</h2><span class="muted">Os {{.N}} mais recentes do parque. Para pedir uma busca, abra a máquina no Parque.</span></div>
-{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="vazio"><strong>Nenhum job ainda.</strong> Um job nasce de uma ação na página de uma máquina (buscar agora, atualizar, reiniciar) ou de uma <a href="/painel/campanhas">campanha</a>.</p>{{end}}</div>
+{{if .Jobs.Rows}}{{template "jobs-tabela" .Jobs}}{{else}}<p class="vazio"><strong>Nenhuma execução ainda.</strong> Uma execução nasce de uma ação na página de um computador (buscar agora, atualizar, reiniciar) ou de uma <a href="/painel/campanhas">campanha</a>.</p>{{end}}</div>
 {{template "fim"}}{{end}}
 
 {{define "campanhas"}}{{template "topo" .}}
 <h1>Automação <span class="muted">› Campanhas</span></h1>
 {{template "automacao-abas" "campanhas"}}
-<p class="muted">O mesmo pedido passando pelos grupos de implantação em ordem: o servidor libera o grupo seguinte quando o atual termina sem falha e o tempo de observação passa. Uma falha pausa a campanha até alguém decidir; um job adiado (programa aberto) ganha nova tentativa a cada hora, até 24.</p>
+<p class="muted">Distribua uma tarefa para os locais escolhidos, com piloto e horário definidos. Confira as atualizações aprovadas antes de criar e acompanhe o resultado de cada etapa. Abra “Como usar esta página” para entender pausas e reenvios.</p>
 <div class="card"><div class="card-cab"><h2>{{if .Archived}}Campanhas arquivadas{{else}}Campanhas recentes{{end}}</h2>
 <span class="acoes">{{if .Archived}}<a href="/painel/campanhas">← Campanhas</a>{{else}}{{if and .Admin .NFinished}}<form class="inline" method="post" action="/painel/campanhas/arquivar-encerradas"><button class="sec" type="submit" title="tiram da lista as concluídas e as canceladas; nada se perde">Arquivar as encerradas ({{.NFinished}})</button></form>{{end}}{{if .NArchived}} <a href="/painel/campanhas?arquivadas=1">Arquivadas ({{.NArchived}})</a>{{end}}{{end}}</span></div>{{if .Rows}}<div class="tabela"><table>
 <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Alvo</th><th>Etapas</th><th>Estado</th><th>Detalhe</th><th>Criada</th></tr></thead>
@@ -1951,7 +1947,7 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 {{if .Slots}}<select name="programa" aria-label="programa"><option value="">Todos os programas</option>{{range .Slots}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
 <input type="search" name="q" value="{{.Q}}" maxlength="100" placeholder="Máquina: nome ou começo do ID" aria-label="buscar máquina">
 <button type="submit">Filtrar</button>{{if or .Q .Filter .Slot}} <a href="{{.Href}}">Limpar</a>{{end}}</form>{{end}}
-{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Job</th><th>Máquina</th><th>Nome</th>{{if .HasSlot}}<th>Programa</th>{{end}}<th>Estado</th><th>Detalhe</th></tr></thead>
+{{if .Jobs}}<div class="tabela"><table><thead><tr><th>Execução</th><th>Máquina</th><th>Nome</th>{{if .HasSlot}}<th>Programa</th>{{end}}<th>Estado</th><th>Detalhe</th></tr></thead>
 <tbody>{{range .Jobs}}<tr><td class="num">{{.ID}}</td><td><a href="/painel/maquinas/{{.MachineID}}"><code>{{.Short}}</code></a></td><td>{{.Name}}</td>{{if $rv.HasSlot}}<td>{{.Slot}}</td>{{end}}
 <td><span class="job {{.State}}">{{.Label}}</span></td><td class="detalhe">{{template "leia-mais" (leia .Detail)}}</td></tr>{{end}}</tbody></table></div>
 <nav class="paginas" aria-label="páginas"><span class="muted">{{.Shown}}</span>{{if .Prev}}<a href="{{.Prev}}">‹ anterior</a>{{end}}{{if .Next}}<a href="{{.Next}}">próxima ›</a>{{end}}<a href="{{.CSV}}">Baixar CSV{{if or .Q .Filter .Slot}} com este filtro{{end}}</a></nav>
@@ -2492,4 +2488,4 @@ PATCHD_DISCOVERY_KEY_FILE=/caminho/seguro/discovery.key</pre>
 <div class="tabela"><table><thead><tr><th>Quando</th><th>Por</th><th>Endereços</th><th>Com portas abertas</th><th>Sem agente</th><th>Diagnóstico</th></tr></thead>
 <tbody>{{range .Runs}}<tr><td>{{.When}}</td><td>{{.By}}</td><td>{{.Scanned}}{{if .Partial}} <span class="muted">(parcial)</span>{{end}}</td><td>{{.Alive}}</td><td>{{.SemAg}}</td><td>{{if .Note}}{{.Note}}{{else}}Concluída{{end}}</td></tr>{{end}}</tbody></table></div></div>{{end}}
 {{template "fim"}}{{end}}
-` + dashboardTemplates + standardizationTemplates))
+` + dashboardTemplates + standardizationTemplates + panelGuidanceTemplates))

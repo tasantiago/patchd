@@ -65,7 +65,7 @@ func TestPainelDoAutoatendimento(t *testing.T) {
 
 	w := pagina(h, "GET", "/painel/autoatendimento", sessaoTeste, nil) // o perfil de leitura também vê
 	b := w.Body.String()
-	for _, quer := range []string{`class="ativa" aria-current="page">Autoatendimento</a>`, `EXEMPLO\ana`, "7-Zip 26.04", "pc-lab-01", "código 1603",
+	for _, quer := range []string{`class="ativa" aria-current="page">Pedidos de software</a>`, `EXEMPLO\ana`, "7-Zip 26.04", "pc-lab-01", "código 1603",
 		`<span class="kpi-rot">Não deram certo</span><span class="kpi-val v-vermelho">1</span>`, "1 de 1 nos últimos 30 dias",
 		"7zip · instalar · recusado", `<td>7-Zip</td><td class="num">1</td>`} {
 		if !strings.Contains(b, quer) {

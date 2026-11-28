@@ -27,7 +27,7 @@ func TestVisaoGeralDePatch(t *testing.T) {
 
 	b := pagina(h, "GET", "/painel/patch?aba=geral", sessaoTeste, nil).Body.String()
 	for _, tr := range []string{
-		`href="/painel/patch?aba=geral" title="Patch › Visão geral" class="ativo"`, `<a href="/painel/patch?aba=geral" class="ativa" aria-current="page">Visão geral</a>`,
+		`href="/painel/patch?aba=geral" title="Atualizações" class="ativo"`, `<a href="/painel/patch?aba=geral" class="ativa" aria-current="page">Visão geral</a>`,
 		`<span class="hero">33%</span><span class="muted">em dia · 1 de 3 máquinas</span>`,
 		`<a class="seg-p st-ok w34" href="/painel/parque?estado=em_dia"><span class="seg-rot">33%</span><span class="seg-dica dica-inicio" role="tooltip">Em dia: 1 máquina (33%)</span></a>`,
 		`<span class="seg-nome">Grupo de implantação 0 (piloto)<small>1 máquina(s)</small></span>`,
