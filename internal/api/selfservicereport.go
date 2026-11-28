@@ -126,7 +126,7 @@ func ssGroup(state string) string {
 }
 
 func (a *api) selfServiceReportPage(w http.ResponseWriter, r *http.Request) {
-	b := a.base(r, "Autoatendimento", "autoatendimento")
+	b := a.base(r, "Pedidos de software", "autoatendimento")
 	q := r.URL.Query()
 	switch q.Get("msg") { // Aula 18.3: o resultado da decisão
 	case "aprovado":

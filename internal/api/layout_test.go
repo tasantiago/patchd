@@ -34,9 +34,9 @@ func TestLayoutDoTribunal(t *testing.T) {
 	adm := pagina(h, "GET", "/painel/", sessaoAdmin, nil).Body.String()
 	for _, tr := range []string{
 		`<input type="checkbox" id="menu" class="menu-chk"`, `<label for="menu" class="hamb"`, `<aside class="lado"`,
-		`<p class="grupo"><span class="rot">Navegação</span></p>`, `<p class="grupo"><span class="rot">Patch</span></p>`,
-		`<p class="grupo"><span class="rot">Automação</span></p>`, `<p class="grupo"><span class="rot">Administração</span></p>`,
-		`<a href="/painel/configuracao?aba=auditoria" title="Auditoria"`, `<a href="/painel/autoatendimento" title="Autoatendimento"`,
+		`<p class="grupo"><span class="rot">Navegação</span></p>`, `<p class="grupo"><span class="rot">Gerenciar</span></p>`,
+		`<details class="nav-tools"`, `<p class="grupo"><span class="rot">Administração</span></p>`,
+		`<a href="/painel/ajuda" title="Ajuda e primeiros passos"`, `<a href="/painel/autoatendimento" title="Pedidos de software"`,
 		`<span class="avatar" aria-hidden="true">T</span>`, `<small>Administrador · AD</small>`,
 		`<nav class="trilha" aria-label="onde você está"><span class="titulo">Início</span></nav>`, `Servidor <b>v0.19.1</b>`,
 		`<a class="pular" href="#conteudo">Pular para o conteúdo</a>`, `<main id="conteudo" tabindex="-1">`,
@@ -59,12 +59,12 @@ func TestLayoutDoTribunal(t *testing.T) {
 	}
 	// O item de cada página.
 	for path, item := range map[string]string{
-		"/painel/autoatendimento":            `<a href="/painel/autoatendimento" title="Autoatendimento" class="ativo"`,
-		"/painel/configuracao?aba=auditoria": `<a href="/painel/configuracao?aba=auditoria" title="Auditoria" class="ativo"`,
+		"/painel/autoatendimento":            `<a href="/painel/autoatendimento" title="Pedidos de software" class="ativo"`,
+		"/painel/configuracao?aba=auditoria": `<a href="/painel/configuracao" title="Configuração" class="ativo"`,
 		"/painel/configuracao?aba=acesso":    `<a href="/painel/configuracao" title="Configuração" class="ativo"`,
-		"/painel/patch?aba=terceiros":        `<a href="/painel/patch?aba=terceiros" title="Patch › Programas de terceiros" class="ativo"`,
-		"/painel/aposentadas":                `<a href="/painel/aposentadas" title="Aposentadas" class="ativo"`,
-		"/painel/maquinas/60ef97e4-0001":     `<a href="/painel/inventario" title="Inventário" class="ativo"`,
+		"/painel/patch?aba=terceiros":        `<a href="/painel/patch?aba=geral" title="Atualizações" class="ativo"`,
+		"/painel/aposentadas":                `<a href="/painel/parque" title="Computadores" class="ativo"`,
+		"/painel/maquinas/60ef97e4-0001":     `<a href="/painel/parque" title="Computadores" class="ativo"`,
 	} {
 		b := pagina(h, "GET", path, sessaoAdmin, nil).Body.String()
 		if !strings.Contains(b, item) || strings.Count(b, `class="ativo"`) != 1 {
@@ -99,9 +99,9 @@ func TestContadoresDoMenu(t *testing.T) {
 
 	b := pagina(h, "GET", "/painel/", sessaoTeste, nil).Body.String()
 	for _, tr := range []string{
-		`<span class="rot">Autoatendimento</span><span class="cont" title="pedidos aguardando a TI">2</span>`,
+		`<span class="rot">Pedidos de software</span><span class="cont" title="pedidos aguardando a TI">2</span>`,
 		`<span class="rot">Campanhas</span><span class="cont" title="campanhas pausadas">1</span>`,
-		`<span class="rot">Visão geral</span><span class="cont" title="máquinas com a fonte de busca falhando">1</span>`,
+		`<span class="rot">Atualizações</span><span class="cont" title="máquinas com a fonte de busca falhando">1</span>`,
 	} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)

@@ -47,7 +47,7 @@ func TestPaginaDeEquipamentos(t *testing.T) {
 		`aria-sort="ascending"><a href="/painel/inventario?dir=desc">Nome ▲</a>`,
 		`<a href="/painel/inventario?ordem=ip">IP</a>`,
 		"&lt;script&gt;alert(1)&lt;/script&gt;", "<td>Desktop</td>", "192.0.2.3",
-		`<a href="/painel/inventario" title="Inventário" class="ativo" aria-current="page">`,
+		`<a href="/painel/parque" title="Computadores" class="ativo" aria-current="location">`,
 	} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)

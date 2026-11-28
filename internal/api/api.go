@@ -407,6 +407,7 @@ func New(st Store, logger *slog.Logger, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /painel/oidc/retorno", a.oidcReturn)
 	mux.Handle("GET /painel/{$}", a.panelPage(a.homePage))
 	mux.Handle("GET /painel/parque", a.panelPage(a.fleetPage))
+	mux.Handle("GET /painel/ajuda", a.panelPage(a.helpPage))
 	// "Frota" virou "Parque": o endereço antigo leva ao novo (favoritos e links salvos).
 	mux.Handle("GET /painel/frota", a.panelPage(movedTo("/painel/parque")))
 	mux.Handle("GET /painel/frota.csv", a.panelPage(movedTo("/painel/parque.csv")))

@@ -304,7 +304,7 @@ func logoFlash(q url.Values, v *pageBase) {
 func (b pageBase) Section() string {
 	switch b.Nav {
 	case "patch":
-		return "Patch"
+		return "Atualizações"
 	case "campanhas", "jobs", "aneis", "autoatendimento", "padronizacao", "scripts":
 		return "Automação"
 	case "configuracao", "descoberta":
@@ -328,11 +328,11 @@ var navHome = map[string]struct {
 	"aposentadas":     {crumb{"Aposentadas", "/painel/aposentadas"}, []string{"Máquinas aposentadas"}},
 	"alertas":         {crumb{"Alertas", "/painel/alertas"}, nil},
 	"shield":          {crumb{"Shield", "/painel/shield"}, nil},
-	"patch":           {crumb{"Patch", "/painel/patch?aba=geral"}, []string{"Patch · Terceiros"}},
+	"patch":           {crumb{"Atualizações", "/painel/patch?aba=geral"}, []string{"Patch", "Patch · Terceiros"}},
 	"campanhas":       {crumb{"Campanhas", "/painel/campanhas"}, []string{"Perguntas ao parque"}},
-	"jobs":            {crumb{"Jobs", "/painel/jobs"}, nil},
+	"jobs":            {crumb{"Execuções", "/painel/jobs"}, nil},
 	"aneis":           {crumb{"Prédios e implantação", "/painel/grupos-implantacao"}, []string{"Prédios e implantação"}},
-	"autoatendimento": {crumb{"Autoatendimento", "/painel/autoatendimento"}, nil},
+	"autoatendimento": {crumb{"Pedidos de software", "/painel/autoatendimento"}, []string{"Autoatendimento"}},
 	"padronizacao":    {crumb{"Padronização", "/painel/padronizacao"}, nil},
 	"scripts":         {crumb{"Scripts", "/painel/scripts"}, nil},
 	"descoberta":      {crumb{"Descoberta", "/painel/descoberta"}, []string{"Descoberta de rede"}},

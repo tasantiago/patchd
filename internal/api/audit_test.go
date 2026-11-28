@@ -87,7 +87,7 @@ func TestAbaAuditoria(t *testing.T) {
 	if n := strings.Count(b, "<tr><td class=\"nowrap\">"); n != 50 {
 		t.Errorf("primeira página: %d linhas", n)
 	}
-	for _, tr := range []string{`class="ativa" aria-current="page">Auditoria</a>`, "<code>CVE-2026-0059</code>", "<code>req59</code>",
+	for _, tr := range []string{`class="ativa" aria-current="page">Histórico de alterações</a>`, "<code>CVE-2026-0059</code>", "<code>req59</code>",
 		`<span class="expl">Login recusado</span>`, "mais antigos ›", `href="/painel/configuracao/auditoria.csv"`} {
 		if !strings.Contains(b, tr) {
 			t.Errorf("faltou %q", tr)
